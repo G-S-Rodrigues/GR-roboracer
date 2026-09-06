@@ -1,0 +1,67 @@
+# Named docker-compose.yaml, not compose.yaml. Compose v2 reads both.
+#
+# All ROS nodes run in `dev`. There is deliberately no cross-container DDS and
+# no network_mode: host -- `fast-sim` is a separate container precisely because
+# it contains no ROS at all, so the two never need to discover each other.
+name: gr-roboracer
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: dev
+    image: gr-roboracer:dev
+    container_name: gr-roboracer-dev
+    working_dir: /ws
+    volumes:
+      - ..:/ws
+      # Named volumes over the generated trees. This keeps tens of thousands of
+      # files out of the editor's indexer and stops dev and fast-sim clobbering
+      # each other's artifacts.
+      - ws-build:/ws/build
+      - ws-install:/ws/install
+      - ws-log:/ws/log
+      # WSLg / X11 passthrough for RViz.
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /mnt/wslg:/mnt/wslg
+    environment:
+      # Fixed so two developers on one network do not cross-talk.
+      ROS_DOMAIN_ID: "42"
+      # RMW_IMPLEMENTATION is deliberately left at the Jazzy default.
+      # The container runs as root while the WSL bind mount is owned by UID
+      # 1000. Tell Git this one workspace is trusted without changing global
+      # configuration or disabling the ownership check for other paths.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /ws
+      DISPLAY: ${DISPLAY:-:0}
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-}
+      XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-/mnt/wslg/runtime-dir}
+      PULSE_SERVER: ${PULSE_SERVER:-}
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+
+  fast-sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: fast-sim
+    image: gr-roboracer:fast-sim
+    container_name: gr-roboracer-fast-sim
+    working_dir: /ws
+    volumes:
+      - ..:/ws
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  ws-build:
+  ws-install:
+  ws-log:

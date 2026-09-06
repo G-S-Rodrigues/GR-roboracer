@@ -1,0 +1,10 @@
+{
+    "name": "GR-roboracer",
+    "dockerComposeFile": [
+        "../docker/docker-compose.yaml",
+        "docker-compose.override.yaml"
+    ],
+    "service": "dev",
+    "workspaceFolder": "/ws",
+    "shutdownAction": "stopCompose"
+}
