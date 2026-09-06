@@ -1,0 +1,16 @@
+std_msgs/Header header
+string source
+string scenario_id
+uint64 seed
+uint32 timestep_ratio
+bool lap_completed
+float64 lap_time
+uint32 collision_count
+float64 minimum_wall_clearance
+float64 maximum_tracking_error
+float64 p95_tracking_error
+uint32 control_saturation_events
+string code_revision
+string container_image_digest
+string track_version
+string vehicle_parameter_version

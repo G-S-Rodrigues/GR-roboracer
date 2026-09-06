@@ -15,6 +15,20 @@ mode="$1"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# A process started with `docker exec` does not inherit environment changes
+# made by the container entrypoint before it execs the long-running command.
+# Make this documented entry point self-contained for both attached shells and
+# direct execution in the persistent development container.
+set +u
+source /opt/ros/jazzy/setup.bash
+if [[ -f /opt/racing_underlay/setup.bash ]]; then
+    source /opt/racing_underlay/setup.bash
+fi
+if [[ -f "$repo_root/install/setup.bash" ]]; then
+    source "$repo_root/install/setup.bash"
+fi
+set -u
+
 echo "==> build"
 colcon build \
     --base-paths ros_ws/src \

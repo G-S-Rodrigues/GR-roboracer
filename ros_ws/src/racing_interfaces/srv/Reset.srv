@@ -1,0 +1,5 @@
+uint64 seed
+string scenario_id
+---
+bool success
+string message
