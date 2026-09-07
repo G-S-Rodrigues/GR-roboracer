@@ -5,7 +5,7 @@ import time
 import unittest
 
 import launch
-import launch.actions
+import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 import pytest
@@ -46,14 +46,9 @@ STATE_QOS = QoSProfile(
 
 @pytest.mark.launch_test
 def generate_test_description():
-    backend = launch.actions.ExecuteProcess(
-        cmd=[
-            "python3",
-            "-c",
-            "import signal, subprocess; "
-            "subprocess.run(['ros2', 'run', 'racing_sim_gym_jax', "
-            "'racing_sim_gym_jax_node']); signal.pause()",
-        ],
+    backend = launch_ros.actions.Node(
+        package="racing_sim_gym_jax",
+        executable="racing_sim_gym_jax_node",
         output="screen",
     )
     return launch.LaunchDescription(
@@ -61,10 +56,6 @@ def generate_test_description():
     )
 
 
-@unittest.skip(
-    "Step 9 implements the racing_sim_gym_jax backend and turns "
-    "ADAPT-2010..2050 green"
-)
 class TestAdapterContract(unittest.TestCase):
     """Assertions that define the simulator boundary."""
 
@@ -79,9 +70,18 @@ class TestAdapterContract(unittest.TestCase):
         rclpy.shutdown()
 
     def _require_adapter(self) -> None:
-        deadline = time.monotonic() + 2.0
+        # The JAX backend deliberately compiles before it publishes. A cold
+        # process import plus compile is slower than ordinary ROS discovery.
+        required_topics = {SCAN_TOPIC, ODOMETRY_TOPIC, IMU_TOPIC}
+        deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
-            if ADAPTER_NODE in self.node.get_node_names():
+            topics = {
+                name for name, _types in self.node.get_topic_names_and_types()
+            }
+            if (
+                ADAPTER_NODE in self.node.get_node_names()
+                and required_topics.issubset(topics)
+            ):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.fail(f"node not found: {ADAPTER_NODE}")
@@ -169,12 +169,10 @@ class TestAdapterContract(unittest.TestCase):
                 publisher_qos.reliability, expected_qos.reliability
             )
             self.assertEqual(publisher_qos.durability, expected_qos.durability)
-            compatibility = qos_check_compatible(publisher_qos, expected_qos)
-            self.assertNotEqual(
-                compatibility.compatibility,
-                QoSCompatibility.ERROR,
-                compatibility.reason,
+            compatibility, reason = qos_check_compatible(
+                publisher_qos, expected_qos
             )
+            self.assertNotEqual(compatibility, QoSCompatibility.ERROR, reason)
 
     def test_adapt_2050_seeded_reset_is_idempotent(self):
         """ADAPT-2050: equal reset seeds reproduce the initial state."""

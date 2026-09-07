@@ -99,6 +99,17 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # fast-sim: nothing here creates a venv that ament could discover.
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
+ARG GYM_JAX_SHA
+COPY docker/gym-cpu-overrides.txt /tmp/gym-cpu-overrides.txt
+# The ROS adapter is the one deliberate JAX-in-dev exception. Install the
+# pinned CPU backend into the system interpreter used by rclpy; fast-sim keeps
+# the CUDA environment isolated in its own image.
+RUN uv pip install --system \
+        --break-system-packages \
+        --override /tmp/gym-cpu-overrides.txt \
+        "f1tenth-gym-jax @ git+https://github.com/f1tenth/f1tenth_gym_jax.git@${GYM_JAX_SHA}" \
+    && rm /tmp/gym-cpu-overrides.txt
+
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
