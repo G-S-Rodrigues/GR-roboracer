@@ -19,6 +19,47 @@ from sim.track_importer import import_track
 ActionProvider = Callable[[Mapping[str, Any], Any], tuple[float, float]]
 
 
+def pure_pursuit_action_provider(
+    canonical_track: Path,
+    *,
+    lookahead_distance: float,
+    wheelbase: float,
+    minimum_speed: float,
+    maximum_speed: float,
+    curvature_speed_gain: float,
+) -> ActionProvider:
+    """Drive with the authoritative C++ Pure Pursuit implementation."""
+    import racing_controller_baseline
+    import yaml
+
+    document = yaml.safe_load(canonical_track.read_text(encoding="utf-8"))
+    trajectory = [
+        racing_controller_baseline.TrajectoryPoint(float(row[0]), float(row[1]))
+        for row in document["centerline"]
+    ]
+    params = racing_controller_baseline.ControllerParams()
+    params.lookahead_distance = lookahead_distance
+    params.wheelbase = wheelbase
+    params.minimum_speed = minimum_speed
+    params.maximum_speed = maximum_speed
+    params.curvature_speed_gain = curvature_speed_gain
+    params.closed_trajectory = bool(document["metadata"]["closed"])
+
+    def provide(
+        _observation: Mapping[str, Any], state: Any
+    ) -> tuple[float, float]:
+        cartesian = np.asarray(state.cartesian_states)[0]
+        vehicle = racing_controller_baseline.VehicleState(
+            float(cartesian[0]), float(cartesian[1]), float(cartesian[4])
+        )
+        command = racing_controller_baseline.PurePursuit.compute(
+            vehicle, trajectory, params
+        )
+        return float(command.steering_angle), float(command.speed)
+
+    return provide
+
+
 def _revision(repo_root: Path) -> str:
     return subprocess.run(
         [
@@ -165,8 +206,11 @@ def main() -> int:
     parser.add_argument("--max-steps", type=int, default=100)
     parser.add_argument("--image-digest", required=True)
     parser.add_argument("--vehicle-parameter-version", required=True)
-    parser.add_argument("--steering-angle", type=float, default=0.0)
-    parser.add_argument("--speed", type=float, default=0.0)
+    parser.add_argument("--lookahead-distance", type=float, default=1.5)
+    parser.add_argument("--wheelbase", type=float, default=0.33)
+    parser.add_argument("--minimum-speed", type=float, default=1.0)
+    parser.add_argument("--maximum-speed", type=float, default=3.0)
+    parser.add_argument("--curvature-speed-gain", type=float, default=5.0)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -179,9 +223,13 @@ def main() -> int:
         max_steps=args.max_steps,
         image_digest=args.image_digest,
         vehicle_parameter_version=args.vehicle_parameter_version,
-        action_provider=lambda _observation, _state: (
-            args.steering_angle,
-            args.speed,
+        action_provider=pure_pursuit_action_provider(
+            args.track,
+            lookahead_distance=args.lookahead_distance,
+            wheelbase=args.wheelbase,
+            minimum_speed=args.minimum_speed,
+            maximum_speed=args.maximum_speed,
+            curvature_speed_gain=args.curvature_speed_gain,
         ),
     )
     rendered = json.dumps(metrics, indent=2, sort_keys=True) + "\n"

@@ -58,8 +58,8 @@ services:
       - ws-build:/ws/build:ro
       - ws-install:/ws/install:ro
     environment:
-      PYTHONPATH: /ws/install/racing_common/lib/python3.12/site-packages
-      LD_LIBRARY_PATH: /ws/install/racing_common/lib
+      PYTHONPATH: /ws/install/racing_common/lib/python3.12/site-packages:/ws/install/racing_controller_baseline/lib/python3.12/site-packages
+      LD_LIBRARY_PATH: /ws/install/racing_common/lib:/ws/install/racing_controller_baseline/lib
     deploy:
       resources:
         reservations:
