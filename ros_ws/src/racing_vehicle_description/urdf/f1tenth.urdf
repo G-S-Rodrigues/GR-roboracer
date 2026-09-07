@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<robot name="f1tenth">
+
+  <material name="chassis_grey">
+    <color rgba="0.30 0.30 0.30 1.0"/>
+  </material>
+  <material name="laser_black">
+    <color rgba="0.05 0.05 0.05 1.0"/>
+  </material>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.50 0.30 0.10"/>
+      </geometry>
+      <material name="chassis_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.50 0.30 0.10"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="laser">
+    <visual>
+      <geometry>
+        <cylinder radius="0.03" length="0.04"/>
+      </geometry>
+      <material name="laser_black"/>
+    </visual>
+  </link>
+
+  <joint name="base_link_to_laser" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser"/>
+    <origin xyz="0.20 0.0 0.12" rpy="0 0 0"/>
+  </joint>
+
+</robot>
