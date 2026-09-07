@@ -7,7 +7,10 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-add_library(${PROJECT_NAME} SHARED src/track.cpp)
+add_library(${PROJECT_NAME} SHARED
+  src/action_map.cpp
+  src/track.cpp
+)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 target_include_directories(${PROJECT_NAME}
   PUBLIC
@@ -48,6 +51,10 @@ if(BUILD_TESTING)
     RACING_COMMON_UNSUPPORTED_TEST_TRACK="${CMAKE_CURRENT_SOURCE_DIR}/test/unsupported_track.yaml"
   )
   set_tests_properties(track_test PROPERTIES LABELS "tier1")
+
+  ament_add_gtest(action_map_test test/action_map_test.cpp)
+  target_link_libraries(action_map_test ${PROJECT_NAME})
+  set_tests_properties(action_map_test PROPERTIES LABELS "tier1")
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
