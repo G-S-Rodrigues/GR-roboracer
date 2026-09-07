@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY urdf/ DESTINATION share/${PROJECT_NAME}/urdf)
 install(DIRECTORY rviz/ DESTINATION share/${PROJECT_NAME}/rviz)
+install(DIRECTORY meshes/ DESTINATION share/${PROJECT_NAME}/meshes)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)

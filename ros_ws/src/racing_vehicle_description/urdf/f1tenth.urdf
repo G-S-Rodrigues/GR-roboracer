@@ -1,42 +1,148 @@
 <?xml version="1.0"?>
+<!--
+  Real F1TENTH chassis/wheel/hinge/hokuyo meshes (see meshes/NOTICE.md for
+  provenance and license), rewired from scratch for this repo's RViz-only
+  convention: visualization tags alone, no simulation or actuation elements
+  of any kind. Driven wheels and Gazebo are a spec non-goal, and this graph
+  has no joint-state publisher to move a non-fixed joint anyway. Mesh scale
+  and relative offsets are carried over from upstream so the assembled
+  model reads correctly.
+-->
 <robot name="f1tenth">
 
-  <material name="chassis_grey">
-    <color rgba="0.30 0.30 0.30 1.0"/>
+  <material name="chassis_red">
+    <color rgba="0.8 0.0 0.0 1.0"/>
   </material>
-  <material name="laser_black">
-    <color rgba="0.05 0.05 0.05 1.0"/>
+  <material name="wheel_black">
+    <color rgba="0.0 0.0 0.0 1.0"/>
+  </material>
+  <material name="hinge_grey">
+    <color rgba="0.2 0.2 0.2 1.0"/>
+  </material>
+  <material name="laser_grey">
+    <color rgba="0.2 0.2 0.2 1.0"/>
   </material>
 
-  <link name="base_link">
+  <!-- Virtual root, offset 0.05 m below the chassis mesh's own origin. -->
+  <link name="base_link"/>
+
+  <link name="chassis">
     <visual>
-      <origin xyz="0 0 0.05" rpy="0 0 0"/>
+      <origin xyz="0.46 -0.135 -0.180" rpy="1.57 0 3.14"/>
       <geometry>
-        <box size="0.50 0.30 0.10"/>
+        <mesh filename="package://racing_vehicle_description/meshes/chassis.stl"
+              scale="0.000990 0.0009375 0.0009375"/>
       </geometry>
-      <material name="chassis_grey"/>
+      <material name="chassis_red"/>
     </visual>
-    <collision>
-      <origin xyz="0 0 0.05" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.50 0.30 0.10"/>
-      </geometry>
-    </collision>
   </link>
+  <joint name="base_link_to_chassis" type="fixed">
+    <parent link="base_link"/>
+    <child link="chassis"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+  </joint>
 
+  <link name="left_rear_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/left_wheel.stl"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+  <joint name="chassis_to_left_rear_wheel" type="fixed">
+    <parent link="chassis"/>
+    <child link="left_rear_wheel"/>
+    <origin xyz="0 0.1 0" rpy="1.5708 0 0"/>
+  </joint>
+
+  <link name="right_rear_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/right_wheel.stl"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+  <joint name="chassis_to_right_rear_wheel" type="fixed">
+    <parent link="chassis"/>
+    <child link="right_rear_wheel"/>
+    <origin xyz="0 -0.1 0" rpy="1.5708 0 0"/>
+  </joint>
+
+  <link name="left_steering_hinge">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/hinge.stl"/>
+      </geometry>
+      <material name="hinge_grey"/>
+    </visual>
+  </link>
+  <joint name="chassis_to_left_steering_hinge" type="fixed">
+    <parent link="chassis"/>
+    <child link="left_steering_hinge"/>
+    <origin xyz="0.325 0.1 0" rpy="0 1.5708 0"/>
+  </joint>
+
+  <link name="right_steering_hinge">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/hinge.stl"/>
+      </geometry>
+      <material name="hinge_grey"/>
+    </visual>
+  </link>
+  <joint name="chassis_to_right_steering_hinge" type="fixed">
+    <parent link="chassis"/>
+    <child link="right_steering_hinge"/>
+    <origin xyz="0.325 -0.1 0" rpy="0 1.5708 0"/>
+  </joint>
+
+  <link name="left_front_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/left_wheel.stl"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+  <joint name="left_steering_hinge_to_left_front_wheel" type="fixed">
+    <parent link="left_steering_hinge"/>
+    <child link="left_front_wheel"/>
+    <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+  </joint>
+
+  <link name="right_front_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/right_wheel.stl"/>
+      </geometry>
+      <material name="wheel_black"/>
+    </visual>
+  </link>
+  <joint name="right_steering_hinge_to_right_front_wheel" type="fixed">
+    <parent link="right_steering_hinge"/>
+    <child link="right_front_wheel"/>
+    <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+  </joint>
+
+  <!--
+    base_link -> laser directly (not via chassis), because this repo's own
+    structural test requires that single-hop joint. Origin is chassis's own
+    0.125, 0, 0.155 offset composed with base_link_to_chassis's 0, 0, 0.05.
+  -->
   <link name="laser">
     <visual>
       <geometry>
-        <cylinder radius="0.03" length="0.04"/>
+        <mesh filename="package://racing_vehicle_description/meshes/hokuyo.stl"/>
       </geometry>
-      <material name="laser_black"/>
+      <material name="laser_grey"/>
     </visual>
   </link>
-
   <joint name="base_link_to_laser" type="fixed">
     <parent link="base_link"/>
     <child link="laser"/>
-    <origin xyz="0.20 0.0 0.12" rpy="0 0 0"/>
+    <origin xyz="0.125 0.0 0.205" rpy="0 0 0"/>
   </joint>
 
 </robot>

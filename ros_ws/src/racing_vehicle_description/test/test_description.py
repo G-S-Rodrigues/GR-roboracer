@@ -36,7 +36,8 @@ def test_rviz_shows_each_required_live_artifact() -> None:
     assert "Fixed Frame: map" in source
     assert "rviz_default_plugins/RobotModel" in source
     assert "rviz_default_plugins/LaserScan" in source
-    assert "Topic: /scan" in source
+    assert "Reliability Policy: Best Effort" in source
+    assert "Value: /scan" in source
     assert "rviz_default_plugins/MarkerArray" in source
     assert "Topic: /visualization/track" in source
     assert "Topic: /visualization/trajectory" in source
