@@ -73,16 +73,32 @@ def _write_image(
     if width <= 2 or height <= 2:
         raise ValueError("map dimensions are too small")
 
-    polygon = np.vstack((left, right[::-1]))
-    pixels = [
-        (
-            (float(x) - origin[0]) / resolution,
-            height - 1 - (float(y) - origin[1]) / resolution,
+    def area(polygon: np.ndarray) -> float:
+        next_polygon = np.roll(polygon, -1, axis=0)
+        cross_products = (
+            polygon[:, 0] * next_polygon[:, 1]
+            - next_polygon[:, 0] * polygon[:, 1]
         )
-        for x, y in polygon
-    ]
+        return abs(float(np.sum(cross_products))) / 2.0
+
+    # Both offset boundaries follow the centerline orientation. Whichever has
+    # the larger enclosed area is the outer edge, independent of whether the
+    # canonical centerline runs clockwise or counter-clockwise.
+    outer, inner = (left, right) if area(left) > area(right) else (right, left)
+
+    def pixels(polygon: np.ndarray) -> list[tuple[float, float]]:
+        return [
+            (
+                (float(x) - origin[0]) / resolution,
+                height - 1 - (float(y) - origin[1]) / resolution,
+            )
+            for x, y in polygon
+        ]
+
     image = Image.new("L", (int(width), int(height)), color=0)
-    ImageDraw.Draw(image).polygon(pixels, fill=255)
+    draw = ImageDraw.Draw(image)
+    draw.polygon(pixels(outer), fill=255)
+    draw.polygon(pixels(inner), fill=0)
     image.save(path)
     return float(origin[0]), float(origin[1])
 
