@@ -1,0 +1,8 @@
+format_version: 2
+metadata:
+  name: unsupported
+  closed: true
+  units: meters
+centerline:
+  - [0.0, 0.0, 0.0, 1.0, 1.0]
+  - [1.0, 0.0, 0.0, 1.0, 1.0]
