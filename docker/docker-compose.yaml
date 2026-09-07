@@ -53,6 +53,13 @@ services:
     working_dir: /ws
     volumes:
       - ..:/ws
+      # racing_common remains one C++ implementation. Consume the dev build
+      # read-only rather than growing a second Python Frenet implementation.
+      - ws-build:/ws/build:ro
+      - ws-install:/ws/install:ro
+    environment:
+      PYTHONPATH: /ws/install/racing_common/lib/python3.12/site-packages
+      LD_LIBRARY_PATH: /ws/install/racing_common/lib
     deploy:
       resources:
         reservations:

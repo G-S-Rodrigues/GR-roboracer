@@ -114,10 +114,12 @@ ARG JAX_PF_SHA
 # No ROS in this stage, by design.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
-        git curl ca-certificates \
+        git curl ca-certificates libyaml-cpp0.8 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+COPY sim/pyproject.toml sim/uv.lock /opt/gr-roboracer-sim/
 
 # Two overrides, both required:
 #
@@ -132,12 +134,8 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/b
 #     project, NOT when it is installed as a dependency. Without this line the
 #     resolve fails outright; passing only override (1) *replaces* upstream's
 #     override rather than adding to it.
-RUN printf '%s\n' \
-        "jax-pf @ git+https://github.com/hzheng40/jax_pf@${JAX_PF_SHA}" \
-        "jax>=0.7.2,<0.8" \
-        > /tmp/overrides.txt \
-    && uv pip install --system --override /tmp/overrides.txt \
-        "f1tenth_gym_jax[cuda] @ git+https://github.com/f1tenth/f1tenth_gym_jax@${GYM_JAX_SHA}"
+RUN uv sync --project /opt/gr-roboracer-sim --frozen --no-install-project
+ENV PATH=/opt/gr-roboracer-sim/.venv/bin:${PATH}
 
 # Pre-seed the map directory. Track.from_track_name downloads missing maps over
 # PLAIN HTTP from api.f1tenth.org at env-construction time; an unseeded image
