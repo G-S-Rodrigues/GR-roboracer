@@ -30,6 +30,31 @@ def test_urdf_is_visualization_only() -> None:
     assert "transmission" not in source
 
 
+def test_every_referenced_mesh_exists() -> None:
+    """A missing mesh is invisible: RViz draws nothing and logs nothing loud.
+
+    The URDF once referenced 21 meshes while 4 were on disk, and every other
+    test here still passed — robot_state_publisher does not load geometry, so
+    only a human looking at RViz would have noticed.
+    """
+    root = ET.parse(URDF_PATH).getroot()
+    references = {
+        mesh.attrib["filename"]
+        for mesh in root.iter("mesh")
+        if "filename" in mesh.attrib
+    }
+    assert references, "the URDF references no meshes at all"
+
+    missing = sorted(
+        reference
+        for reference in references
+        if not (
+            PACKAGE_ROOT / reference.split("racing_vehicle_description/")[-1]
+        ).is_file()
+    )
+    assert missing == [], f"URDF references meshes that do not exist: {missing}"
+
+
 def test_rviz_shows_each_required_live_artifact() -> None:
     """RViz is configured for robot, scan, track, and planned trajectory."""
     source = RVIZ_PATH.read_text(encoding="utf-8")

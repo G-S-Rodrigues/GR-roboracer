@@ -31,7 +31,7 @@ Visualization Manager:
       Topic: /visualization/trajectory
   Enabled: true
   Global Options:
-    Background Color: 0; 0; 0
+    Background Color: 255; 255; 255
     Fixed Frame: map
   Name: root
   Tools:
