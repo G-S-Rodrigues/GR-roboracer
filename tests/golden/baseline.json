@@ -1,0 +1,31 @@
+{
+  "code_revision": "7d11cbba5c69be58eb6056e24bf8be8b9a84ca3f",
+  "collision_count": 0,
+  "container_image_digest": "sha256:32d547dfb7fb8816d545950e6dd7d894f7458ea96f68549f0df22d51fcb5af03",
+  "control_saturation_events": 0,
+  "header": {
+    "frame_id": "map",
+    "stamp": {
+      "nanosec": 850000000,
+      "sec": 22
+    }
+  },
+  "lap_completed": true,
+  "lap_time": 22.85,
+  "maximum_tracking_error": 0.353077505925579,
+  "minimum_wall_clearance": 1.7234395742416382,
+  "p95_tracking_error": 0.13891541780938804,
+  "platform": {
+    "jax_backend": "gpu",
+    "jax_version": "0.7.2",
+    "machine": "x86_64",
+    "python": "3.12.14",
+    "system": "Linux"
+  },
+  "scenario_id": "baseline",
+  "seed": 42,
+  "source": "headless_sim",
+  "timestep_ratio": 1,
+  "track_version": "5cd44c74ef04a2d3dcf2264b8c12d9a8240462586c77d5c78bd389ba41d460ac",
+  "vehicle_parameter_version": "f1tenth-default-v1"
+}

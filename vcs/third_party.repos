@@ -1,0 +1,33 @@
+# Third-party ROS 2 sources built into the underlay at /opt/racing_underlay.
+#
+# Every entry is pinned to an explicit commit SHA, never a branch. The image
+# digest is a reproducibility record (spec item 13 puts it in every metrics
+# record), and a floating branch would silently invalidate it.
+#
+# NOTE: f1tenth_system is a *submodule* repository, and `vcs import` does not
+# recurse submodules. Its submodules are therefore listed here as siblings.
+# They are NOT pinned to the SHAs f1tenth_system's .gitmodules records: those
+# track Foxy branches, and Foxy-era vesc does not compile against Jazzy
+# (`declare_parameter(name)` with no default was removed after Foxy). See
+# docs/agents/repo-gotchas.md and ADR 0002.
+#
+# teleop_tools / joy_teleop / key_teleop / urg_node / rosbridge_server are
+# deliberately absent: they ship as Jazzy apt binaries and are installed in the
+# `base` stage instead of being built from source.
+repositories:
+  f1tenth_system:
+    type: git
+    url: https://github.com/f1tenth/f1tenth_system.git
+    version: 94cb8d7fb5439315316bf80aadbc7256b80cb4e2   # humble-devel, 2026-05-02
+  vesc:
+    type: git
+    url: https://github.com/f1tenth/vesc.git
+    version: 1bc8251296abb3936da5f30821b6311d67e861b7   # humble, 2025-02-18
+  ackermann_mux:
+    type: git
+    url: https://github.com/f1tenth/ackermann_mux.git
+    version: b3c0b083ac03aa8c648537d7e4d22608fcd3440c   # foxy-devel, only branch; builds clean
+  slam_toolbox:
+    type: git
+    url: https://github.com/SteveMacenski/slam_toolbox.git
+    version: 02afdde003313a10b8d21461a92d9e5f4f0bc5f2   # jazzy, 2026-08-17

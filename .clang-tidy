@@ -1,0 +1,18 @@
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  readability-identifier-naming
+WarningsAsErrors: '*'
+HeaderFilterRegex: '^/ws/ros_ws/src/'
+CheckOptions:
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: UPPER_CASE
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.MethodCase: lower_case
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: _

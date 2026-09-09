@@ -1,0 +1,19 @@
+format_version: 1
+scenario_id: contract_test
+environment:
+  map: analytic_circle
+  num_agents: 1
+  scans: true
+  collisions: true
+  rewards: [progress]
+  action:
+    longitudinal: velocity
+    steering: steeringangle
+  timestep_ratio: 1
+  version: v0
+parameters:
+  integrator: euler
+  num_beams: 64
+  theta_dis: 720
+track: ../tracks/analytic_circle.yaml
+map_directory: maps

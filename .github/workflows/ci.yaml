@@ -1,0 +1,112 @@
+# Two gates, deliberately unequal.
+#
+# The PR gate is small on purpose: tiers 0-2 plus one seeded tier-3 lap, aimed
+# at ~3 minutes. "Everything on every PR" was considered and rejected -- at 20+
+# minutes a gate gets bypassed, and a gate you bypass is worth less than a
+# smaller one you don't. The nightly job is where the full tier-3/4 suites and
+# the multi-seed sweep run, because that is work nobody is waiting on.
+#
+# Note that the local pre-commit hook (scripts/check.sh --fast) matters more
+# than either job here: CI feedback arrives after a mistake has been built on.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # 03:00 UTC daily.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pr-gate:
+    name: Tiers 0-2 + one seeded lap
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Loaded into the local daemon rather than pushed: nothing outside this
+      # job consumes the image, and the underlay layer is the expensive one to
+      # rebuild, so it is the one worth caching.
+      - name: Build the dev image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: dev
+          tags: gr-roboracer:dev
+          load: true
+          cache-from: type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev
+
+      - name: check.sh --ci
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            gr-roboracer:dev ./scripts/check.sh --ci
+
+  nightly:
+    name: Tiers 3-4, seed ${{ matrix.seed }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # 42 and 1030 are the seeds the committed tier-3 tests pin; the others
+        # exist so a controller that only survives the seeds it was tuned
+        # against fails here rather than on a track.
+        seed: [42, 1030, 7, 2026]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the dev image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: dev
+          tags: gr-roboracer:dev
+          load: true
+          cache-from: type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev
+
+      - name: check.sh --full
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            gr-roboracer:dev ./scripts/check.sh --full
+
+      - name: One seeded lap on this matrix seed
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            gr-roboracer:dev ./scripts/run_scenario.py \
+              --seed ${{ matrix.seed }} \
+              --output log/scenario-seed-${{ matrix.seed }}.json
+
+      - name: Upload the run's metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-seed-${{ matrix.seed }}
+          path: log/scenario-seed-${{ matrix.seed }}.json
+          if-no-files-found: warn

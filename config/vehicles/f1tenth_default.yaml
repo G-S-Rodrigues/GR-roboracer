@@ -1,0 +1,47 @@
+# One versioned file (vehicle_parameter_version: f1tenth-default-v1) for every node whose behaviour
+# depends on the physical vehicle or the track it races on. Bump the version string in
+# racing_metrics/racing_recording below whenever a value here changes, so a metrics record can be
+# attributed to the configuration that produced it.
+
+racing_controller_baseline:
+  ros__parameters:
+    wheelbase: 0.33
+    lookahead_distance: 1.0
+    minimum_speed: 0.5
+    maximum_speed: 3.0
+    curvature_speed_gain: 1.0
+    closed_trajectory: true
+
+racing_safety_supervisor:
+  ros__parameters:
+    maximum_speed: 3.0
+    maximum_steering_angle: 0.4
+    maximum_acceleration: 2.0
+    maximum_steering_rate: 1.5
+    vehicle_half_width: 0.15
+    # The startup hiccups this was once widened for were a JAX recompile on the
+    # sim node's second step, now warmed away in racing_sim_gym_jax's backend.
+    # Two full launches since measured zero gaps above 50ms in /controller/drive
+    # (3600 messages each), so 100ms is 2x the observed worst case. Widening it
+    # again is the wrong response to a latch: an unrecoverable emergency stop
+    # firing means the command stream really did stall, and the stall is the bug.
+    stale_input_timeout_ms: 100
+    track_path: config/tracks/analytic_circle.yaml
+
+racing_bringup_support:
+  ros__parameters:
+    track_path: config/tracks/analytic_circle.yaml
+    raceline_path: config/scenarios/maps/analytic_circle/analytic_circle_raceline.csv
+
+racing_metrics:
+  ros__parameters:
+    track_path: config/tracks/analytic_circle.yaml
+    scenario_id: baseline
+    track_version: analytic_circle-v1
+    vehicle_parameter_version: f1tenth-default-v1
+
+racing_recording:
+  ros__parameters:
+    scenario_id: baseline
+    track_version: analytic_circle-v1
+    vehicle_parameter_version: f1tenth-default-v1
