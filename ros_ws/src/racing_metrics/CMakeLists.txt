@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(racing_metrics)
 
 find_package(ament_cmake REQUIRED)
+find_package(racing_common REQUIRED)
 find_package(racing_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -17,7 +18,9 @@ target_include_directories(${PROJECT_NAME}
 
 add_executable(${PROJECT_NAME}_node src/node.cpp)
 target_compile_features(${PROJECT_NAME}_node PUBLIC cxx_std_17)
-target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
+# Only the node depends on racing_common: the accumulator stays a ROS-free,
+# track-model-free consumer of a plain length, so its tier-1 tests need no track.
+target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME} racing_common::racing_common)
 ament_target_dependencies(${PROJECT_NAME}_node
   racing_interfaces rclcpp sensor_msgs std_srvs
 )

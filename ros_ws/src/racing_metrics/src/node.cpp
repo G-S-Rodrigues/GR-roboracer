@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "racing_common/track.hpp"
 #include "racing_metrics/metrics_accumulator.hpp"
 
 namespace racing_metrics {
@@ -76,7 +77,16 @@ class MetricsNode : public rclcpp::Node {
         output_path_ = declare_parameter(
             "output_path", std::string{"/tmp/racing_metrics.json"});
         collision_threshold_ = declare_parameter("collision_threshold", 0.01);
-        const auto track_length = declare_parameter("track_length", 31.4159);
+        // The lap distance comes from the canonical track itself, never from a
+        // separately configured number. A hand-set length that disagrees with
+        // the track is invisible: the run still completes, publishes metrics
+        // and passes every structural check -- it just calls a fraction of a
+        // lap a lap, and reports a proportionally wrong lap_time.
+        const auto track_path = declare_parameter(
+            "track_path", std::string{"config/tracks/analytic_circle.yaml"});
+        const auto track =
+            racing_common::Track::from_yaml(std::filesystem::path{track_path});
+        const auto track_length = track.length();
         if (provenance.timestep_ratio == 0U) {
             throw std::invalid_argument("timestep_ratio must be positive");
         }

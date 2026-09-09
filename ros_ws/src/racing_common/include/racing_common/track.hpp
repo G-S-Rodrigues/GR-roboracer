@@ -24,6 +24,8 @@ class Track {
     FrenetPoint to_frenet(const CartesianPose &pose) const;
     CartesianPose to_cartesian(const FrenetPoint &point) const;
     double curvature_at(double s) const;
+    /// Centerline arc length: the distance one lap covers.
+    double length() const;
     bool is_inside(const FrenetPoint &point, double vehicle_half_width) const;
 
    private:

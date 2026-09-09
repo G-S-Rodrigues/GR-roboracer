@@ -44,6 +44,15 @@ TEST(TrackTest, Common1030ExactBoundaryIncludesVehicleEnvelope) {
     EXPECT_FALSE(track.is_inside({0.0, -2.500001, 0.0}, 0.5));
 }
 
+TEST(TrackTest, Common1035LengthIsTheClosedCenterlinePerimeter) {
+    const auto track = racing_common::Track::from_yaml(track_path());
+
+    // Eight equally spaced points on a radius-10 circle: the centerline is the
+    // inscribed octagon, 8 * 2 * 10 * sin(pi/8), NOT the circle's 2*pi*10. A
+    // lap is as long as the polyline the track model actually integrates.
+    EXPECT_NEAR(track.length(), 61.2293491, 1e-6);
+}
+
 TEST(TrackTest, Common1040LoadsAndValidatesCanonicalYaml) {
     EXPECT_NO_THROW(racing_common::Track::from_yaml(track_path()));
     EXPECT_THROW(racing_common::Track::from_yaml(unsupported_track_path()),

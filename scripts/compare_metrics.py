@@ -11,9 +11,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# minimum_wall_clearance is the one metric a seeded run does not reproduce
+# exactly, and it is worth being precise about why, because the trajectory
+# itself IS reproducible: five identical-seed runs (seed 1030, 2026-09-09)
+# agreed on maximum_tracking_error to every one of six decimal places, and on
+# lap_time to 0.01s. minimum_wall_clearance across those same five runs took
+# three discrete values spanning 0.021 m (1.746242 / 1.743318 / 1.725195).
+# The nadir sits in the first ticks of the run, and racing_metrics only starts
+# accumulating once its best-effort /scan subscription has delivered something
+# - so how many opening ticks the DDS discovery race costs decides whether the
+# nadir sample is in the window at all. Fixing that means giving the graph a
+# deterministic t=0 (the sim node's `~/reset` service, once every consumer is
+# discovered); until then this carries ~2.4x the measured spread.
 FLOAT_TOLERANCES = {
     "lap_time": 0.05,
-    "minimum_wall_clearance": 0.01,
+    "minimum_wall_clearance": 0.05,
     "maximum_tracking_error": 0.01,
     "p95_tracking_error": 0.01,
 }

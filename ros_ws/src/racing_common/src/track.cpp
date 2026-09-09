@@ -194,6 +194,8 @@ double Track::curvature_at(double s) const {
                        data_->points[next_index].curvature, ratio);
 }
 
+double Track::length() const { return data_->length; }
+
 bool Track::is_inside(const FrenetPoint &point,
                       double vehicle_half_width) const {
     if (vehicle_half_width < 0.0) {

@@ -59,5 +59,6 @@ PYBIND11_MODULE(racing_common, module) {
         .def("to_frenet", &racing_common::Track::to_frenet)
         .def("to_cartesian", &racing_common::Track::to_cartesian)
         .def("curvature_at", &racing_common::Track::curvature_at)
+        .def("length", &racing_common::Track::length)
         .def("is_inside", &racing_common::Track::is_inside);
 }
