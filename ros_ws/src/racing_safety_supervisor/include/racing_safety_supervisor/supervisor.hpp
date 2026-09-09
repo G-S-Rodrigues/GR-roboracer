@@ -34,6 +34,14 @@ struct DriveCommand {
     double acceleration{};
     double steering_angle_velocity{};
     Clock::time_point received_at{};
+    // False until the first real command arrives. Distinguishes "never heard
+    // from the controller yet" (safe to just command zero) from "the command
+    // stream went stale after flowing normally" (a genuine anomaly that
+    // latches an emergency stop). Without this, a supervisor whose ROS shell
+    // starts before the controller's first message reaches it — an ordinary
+    // ROS 2 discovery race on every multi-process launch — would latch a
+    // permanent, unrecoverable emergency stop before ever being commanded.
+    bool has_command{false};
 };
 
 struct VehicleState {

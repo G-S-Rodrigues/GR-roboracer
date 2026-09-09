@@ -36,7 +36,8 @@ SafetyDecision Supervisor::evaluate(const DriveCommand &command,
                                     const racing_common::Track &track,
                                     Clock::time_point now) {
     SafetyDecision decision{command};
-    if (now - command.received_at > params_.stale_input_timeout) {
+    if (command.has_command &&
+        now - command.received_at > params_.stale_input_timeout) {
         emergency_stop_latched_ = true;
         decision.command = stopped_command(command);
         decision.active_clamps =

@@ -33,7 +33,9 @@ SupervisorParams params() {
     return result;
 }
 
-DriveCommand nominal_command() { return DriveCommand{1.0, 0.1, 0.5, 0.2, now}; }
+DriveCommand nominal_command() {
+    return DriveCommand{1.0, 0.1, 0.5, 0.2, now, true};
+}
 
 VehicleState nominal_state() { return VehicleState{{10.0, 0.0, 0.0}}; }
 
@@ -131,6 +133,28 @@ TEST(SupervisorTest, Safe1030EmergencyStopStaysLatchedUntilExplicitClear) {
     EXPECT_EQ(cleared.active_clamps, static_cast<std::uint32_t>(Clamp::NONE));
     EXPECT_EQ(cleared.reason, SafetyReason::NONE);
     EXPECT_DOUBLE_EQ(cleared.command.speed, nominal_command().speed);
+    EXPECT_FALSE(supervisor.emergency_stop_latched());
+}
+
+TEST(SupervisorTest, Safe1040NeverReceivingACommandDoesNotLatchEmergencyStop) {
+    const auto track = test_track();
+    Supervisor supervisor{params()};
+
+    DriveCommand never_received{};
+    const auto before =
+        supervisor.evaluate(never_received, nominal_state(), track, now);
+
+    EXPECT_EQ(before.active_clamps, static_cast<std::uint32_t>(Clamp::NONE));
+    EXPECT_EQ(before.reason, SafetyReason::NONE);
+    EXPECT_DOUBLE_EQ(before.command.speed, 0.0);
+    EXPECT_FALSE(supervisor.emergency_stop_latched());
+
+    const auto after =
+        supervisor.evaluate(nominal_command(), nominal_state(), track, now);
+
+    EXPECT_EQ(after.active_clamps, static_cast<std::uint32_t>(Clamp::NONE));
+    EXPECT_EQ(after.reason, SafetyReason::NONE);
+    EXPECT_DOUBLE_EQ(after.command.speed, nominal_command().speed);
     EXPECT_FALSE(supervisor.emergency_stop_latched());
 }
 

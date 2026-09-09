@@ -75,11 +75,24 @@ class GymBackend:
         return {agent: vector for agent in self._env.agents}
 
     def _warm(self, seed: int) -> float:
+        """Compile every step signature the run will hit, before it starts.
+
+        Two steps, not one: stepping a *reset* state and stepping an *already
+        stepped* state are separate signatures to JAX, so warming only the
+        first leaves the second to compile at run time. That showed up as a
+        single ~0.5s (CPU) / ~1.5s (GPU) stall on step 2 of a live launch --
+        long enough to exceed the safety supervisor's stale-input timeout and
+        latch an unrecoverable emergency stop a second into every tier-3 run.
+        """
         self.reset(seed)
         warm_key, _ = jax.random.split(self._key)
         started = time.perf_counter()
         _, warm_state, _, _, _ = self._env.step_env(
             warm_key, self._state, self._action()
+        )
+        warm_state.cartesian_states.block_until_ready()
+        _, warm_state, _, _, _ = self._env.step_env(
+            warm_key, warm_state, self._action()
         )
         warm_state.cartesian_states.block_until_ready()
         latency = time.perf_counter() - started

@@ -59,7 +59,6 @@ class SafetySupervisorNode : public rclcpp::Node {
             racing_common::Track::from_yaml(std::filesystem::path{track_path}));
         supervisor_ = std::make_unique<Supervisor>(params);
         state_.pose = track_->to_cartesian({0.0, 0.0, 0.0});
-        command_.received_at = Clock::now();
 
         command_publisher_ =
             create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(
@@ -78,6 +77,7 @@ class SafetySupervisorNode : public rclcpp::Node {
                     command_.steering_angle_velocity =
                         message->drive.steering_angle_velocity;
                     command_.received_at = Clock::now();
+                    command_.has_command = true;
                 });
         odometry_subscription_ = create_subscription<nav_msgs::msg::Odometry>(
             "/odom", rclcpp::QoS(10).reliable(),
