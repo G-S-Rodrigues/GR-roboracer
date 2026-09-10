@@ -19,6 +19,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
+from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, LaserScan
 
 from .backend import DriveCommand, GymBackend, Snapshot
@@ -34,6 +35,15 @@ STATE_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
     reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
+# Matches rclpy's own TimeSource subscription QoS (rclpy/time_source.py), the
+# ClockQoS equivalent: a durability mismatch here would leave every
+# use_sim_time consumer stalled at t=0 with no error anywhere (gotcha #6).
+CLOCK_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,
 )
 
@@ -73,6 +83,9 @@ class RacingSimNode(Node):
             TrackRelativeState,
             "/ground_truth/track_relative_state",
             STATE_QOS,
+        )
+        self._clock_publisher = self.create_publisher(
+            Clock, "/clock", CLOCK_QOS
         )
         self.create_subscription(
             AckermannDriveStamped, "/drive", self._on_drive, STATE_QOS
@@ -148,6 +161,10 @@ class RacingSimNode(Node):
             self._simulation_time_ns += round(
                 self._scenario.control_period * 1_000_000_000
             )
+        clock_message = Clock()
+        clock_message.clock = stamp
+        self._clock_publisher.publish(clock_message)
+
         scan = LaserScan()
         scan.header.stamp = stamp
         scan.header.frame_id = "laser"

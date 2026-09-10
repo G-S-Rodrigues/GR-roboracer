@@ -12,6 +12,7 @@ import pytest
 import rclpy
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset
+from rclpy.parameter import Parameter
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -20,12 +21,14 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_check_compatible,
 )
+from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, LaserScan
 
 ADAPTER_NODE = "racing_sim"
 SCAN_TOPIC = "/scan"
 ODOMETRY_TOPIC = "/odom"
 IMU_TOPIC = "/imu"
+CLOCK_TOPIC = "/clock"
 RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
 EXPECTED_RATE_HZ = 100.0
 RATE_TOLERANCE = 0.20
@@ -40,6 +43,15 @@ STATE_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
     reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
+# Matches rclpy's own TimeSource subscription QoS (rclpy/time_source.py) -
+# the ClockQoS a use_sim_time consumer expects. A durability mismatch here
+# is gotcha #6's shape: the graph stalls at t=0 with nothing in the logs.
+CLOCK_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,
 )
 
@@ -183,3 +195,71 @@ class TestAdapterContract(unittest.TestCase):
         second = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         self.assertEqual(first.pose.pose, second.pose.pose)
         self.assertEqual(first.twist.twist, second.twist.twist)
+
+    def test_adapt_2070_clock_is_published_and_tracks_time_scale(self):
+        """ADAPT-2070: /clock advances monotonically at time_scale x
+        control_period, on a QoS profile a use_sim_time consumer accepts."""
+        self._require_adapter()
+        publishers = self.node.get_publishers_info_by_topic(CLOCK_TOPIC)
+        self.assertEqual(len(publishers), 1, "clock publisher missing")
+        publisher_qos = publishers[0].qos_profile
+        self.assertEqual(publisher_qos.reliability, CLOCK_QOS.reliability)
+        self.assertEqual(publisher_qos.durability, CLOCK_QOS.durability)
+        compatibility, reason = qos_check_compatible(publisher_qos, CLOCK_QOS)
+        self.assertNotEqual(compatibility, QoSCompatibility.ERROR, reason)
+
+        messages = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 20)
+        stamps_ns = [
+            message.clock.sec * 1_000_000_000 + message.clock.nanosec
+            for message in messages
+        ]
+        for earlier, later in zip(stamps_ns, stamps_ns[1:], strict=False):
+            self.assertLess(
+                earlier, later, "/clock must advance strictly monotonically"
+            )
+        elapsed = (stamps_ns[-1] - stamps_ns[0]) / 1e9
+        measured_rate = (len(messages) - 1) / elapsed
+        self.assertTrue(math.isfinite(measured_rate))
+        self.assertLessEqual(
+            abs(measured_rate - EXPECTED_RATE_HZ) / EXPECTED_RATE_HZ,
+            RATE_TOLERANCE,
+        )
+
+    def test_adapt_2075_use_sim_time_consumer_follows_clock(self):
+        """ADAPT-2075: a use_sim_time consumer reads /clock, not the wall.
+
+        Proves ADAPT-2070's /clock is actually *consumable*, not merely
+        published - and that the sim node publishing it does not stall
+        itself waiting for the clock it is responsible for advancing (the
+        plan's one unproven assumption).
+        """
+        self._require_adapter()
+        self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
+
+        consumer = rclpy.create_node(
+            "adapt_2075_use_sim_time_consumer",
+            parameter_overrides=[
+                Parameter("use_sim_time", Parameter.Type.BOOL, True)
+            ],
+        )
+        try:
+            deadline = time.monotonic() + 5.0
+            while (
+                consumer.get_clock().now().nanoseconds == 0
+                and time.monotonic() < deadline
+            ):
+                rclpy.spin_once(consumer, timeout_sec=0.05)
+            consumer_now_ns = consumer.get_clock().now().nanoseconds
+        finally:
+            consumer.destroy_node()
+
+        self.assertGreater(
+            consumer_now_ns,
+            0,
+            "use_sim_time consumer never received /clock "
+            "(the circular-clock case, or a QoS mismatch)",
+        )
+        # A node still on the wall clock reads ~1.7e18 ns (POSIX epoch); a
+        # consumer following simulated time reads a small tick counter, so
+        # the two are never confusable.
+        self.assertLess(consumer_now_ns, 1e15)
