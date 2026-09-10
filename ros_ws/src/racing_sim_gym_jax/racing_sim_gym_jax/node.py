@@ -135,7 +135,7 @@ class RacingSimNode(Node):
         response: SetStepMode.Response,
     ):
         if request.mode not in (
-            SetStepMode.Request.REAL_TIME,
+            SetStepMode.Request.CONTINUOUS,
             SetStepMode.Request.STEPPED,
         ):
             response.success = False
@@ -143,7 +143,7 @@ class RacingSimNode(Node):
             return response
         self._step_mode = request.mode == SetStepMode.Request.STEPPED
         response.success = True
-        response.message = "stepped" if self._step_mode else "real_time"
+        response.message = "stepped" if self._step_mode else "continuous"
         return response
 
     def _on_timer(self) -> None:
