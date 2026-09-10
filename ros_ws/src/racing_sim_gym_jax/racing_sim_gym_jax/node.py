@@ -23,6 +23,7 @@ from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, LaserScan
 
 from .backend import DriveCommand, GymBackend, Snapshot
+from .clock import wall_timer_period
 from .scenario import load_scenario
 
 SENSOR_QOS = QoSProfile(
@@ -61,6 +62,7 @@ class RacingSimNode(Node):
         )
         self.declare_parameter("scenario_path", str(default_scenario))
         self.declare_parameter("seed", 0)
+        self.declare_parameter("time_scale", 1.0)
         scenario_path = Path(
             self.get_parameter("scenario_path")
             .get_parameter_value()
@@ -92,8 +94,12 @@ class RacingSimNode(Node):
         )
         self.create_service(Reset, "~/reset", self._on_reset)
         self.create_service(SetStepMode, "~/step_mode", self._on_step_mode)
+        time_scale = (
+            self.get_parameter("time_scale").get_parameter_value().double_value
+        )
         self._timer = self.create_timer(
-            self._scenario.control_period, self._on_timer
+            wall_timer_period(self._scenario.control_period, time_scale),
+            self._on_timer,
         )
         self.get_logger().info(
             "gym_jax warmed in "
