@@ -3,14 +3,18 @@
 **Status:** accepted
 **Date:** 2026-09-09
 **Supersedes:** none
+**Amended:** 2026-09-10 — one sentence of Context below, by ADR 0006. The decision is unaffected.
 
 ## Context
 
 There are two ways to run this vehicle against `f1tenth_gym_jax`, and they want opposite things:
 
-- **`ros_ws/src/racing_sim_gym_jax`** — a ROS node stepping the env on a wall-clock timer at the
-  control period, so a human can watch it in RViz and so the rest of the graph experiences it the
-  way it will experience real hardware. It is bound to real time by construction.
+- **`ros_ws/src/racing_sim_gym_jax`** — a ROS node stepping the env on a timer at the control
+  period, inside a live DDS graph, so a human can watch it in RViz and so the rest of the graph
+  experiences it the way it will experience real hardware. **It runs at real time by default**
+  (ADR 0006 made the rate a `time_scale` parameter; this ADR originally said "bound to real time by
+  construction", which is no longer true). What matters to *this* decision is unchanged: it is
+  timer-driven and graph-bound, where `sim/rollout.py` is a tight headless loop.
 - **`sim/rollout.py`** — a headless batch harness stepping the env in a tight loop with no ROS at
   all, used to generate `tests/golden/baseline.json` and, later, to sweep parameters. It wants a GPU
   and as many steps per second as it can get.

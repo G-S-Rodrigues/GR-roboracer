@@ -19,16 +19,25 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~2 min |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~20 s |
+| 5 | The cross-product: tracks × implementations × seeds | `--nightly` *(not built yet)* | minutes-hours |
 
 **Robot Framework appears at tiers 3–4 only** — see ADR 0004.
+
+**Tier 5 is decided but not yet built.** ADR 0005 places the expensive cross-product there so that
+`--fast`, `--ci` and `--full` do not grow as implementations accumulate. Neither the tier nor
+`--nightly` exists in `scripts/check.sh` today; both arrive with the SLAM/localization phase. Until
+then, tier 5 is a place to put a test, not a way to run one.
 
 ## Running them
 
 ```bash
 ./scripts/check.sh --fast   # tiers 0-1. The pre-commit gate. Keep under ~45s.
 ./scripts/check.sh --ci     # + tier 2 and one seeded tier-3 lap. The PR gate.
-./scripts/check.sh --full   # everything. Required before calling a change done.
+./scripts/check.sh --full   # tiers 0-4. Required before calling a change done.
 ```
+
+`--full` was "everything" while tiers 0–4 were everything. ADR 0005 makes that two different
+statements: it stays the definition of done, and tier 5 sits outside it deliberately.
 
 All three run inside the `dev` container (`docker exec gr-roboracer-dev bash -lc '...'`).
 `./scripts/run_scenario.py --seed N` runs one seeded lap through the real graph and prints its
@@ -40,7 +49,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **18 tier-1, 6 tier-2, 4 tier-3, 2 tier-4.**
+Current counts: **18 tier-1, 6 tier-2, 4 tier-3, 2 tier-4, 0 tier-5.**
 
 ## The tests that matter most
 
