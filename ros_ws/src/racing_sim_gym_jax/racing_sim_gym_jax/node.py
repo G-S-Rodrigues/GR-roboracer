@@ -8,7 +8,6 @@ from pathlib import Path
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from ament_index_python.packages import get_package_share_directory
-from builtin_interfaces.msg import Time
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import TrackRelativeState
 from racing_interfaces.srv import Reset, SetStepMode
@@ -23,7 +22,7 @@ from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, LaserScan
 
 from .backend import DriveCommand, GymBackend, Snapshot
-from .clock import wall_timer_period
+from .clock import simulated_clock_message, wall_timer_period
 from .scenario import load_scenario
 
 SENSOR_QOS = QoSProfile(
@@ -159,10 +158,7 @@ class RacingSimNode(Node):
         # Message time follows deterministic simulator time, not how quickly a
         # CPU host happens to execute the JAX step. This keeps recorded rates
         # and seeded runs comparable across CPU/GPU hardware.
-        stamp = Time(
-            sec=self._simulation_time_ns // 1_000_000_000,
-            nanosec=self._simulation_time_ns % 1_000_000_000,
-        )
+        stamp = simulated_clock_message(self._simulation_time_ns)
         if not self._step_mode:
             self._simulation_time_ns += round(
                 self._scenario.control_period * 1_000_000_000
