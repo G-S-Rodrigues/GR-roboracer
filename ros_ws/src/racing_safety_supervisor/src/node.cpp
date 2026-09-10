@@ -6,6 +6,7 @@
 #include <memory>
 #include <nav_msgs/msg/odometry.hpp>
 #include <racing_interfaces/msg/safety_status.hpp>
+#include <rclcpp/create_timer.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <stdexcept>
@@ -27,6 +28,16 @@ double yaw_from_odometry(const nav_msgs::msg::Odometry &message) {
     const auto cos_yaw = 1.0 - 2.0 * (orientation.y * orientation.y +
                                       orientation.z * orientation.z);
     return std::atan2(sin_yaw, cos_yaw);
+}
+
+// Supervisor::evaluate takes a Clock::time_point (std::chrono::steady_clock)
+// purely as an opaque, subtractable duration type; it never calls
+// Clock::now() itself. Feeding it nanoseconds from the node's own ROS clock
+// - rather than a literal Clock::now() - is what makes the staleness check
+// follow /clock under use_sim_time (ADR 0006) instead of the wall, without
+// widening Supervisor's ROS-free contract.
+Clock::time_point to_clock_time_point(const rclcpp::Time &time) {
+    return Clock::time_point{std::chrono::nanoseconds{time.nanoseconds()}};
 }
 
 }  // namespace
@@ -76,7 +87,8 @@ class SafetySupervisorNode : public rclcpp::Node {
                     command_.acceleration = message->drive.acceleration;
                     command_.steering_angle_velocity =
                         message->drive.steering_angle_velocity;
-                    command_.received_at = Clock::now();
+                    command_.received_at =
+                        to_clock_time_point(get_clock()->now());
                     command_.has_command = true;
                 });
         odometry_subscription_ = create_subscription<nav_msgs::msg::Odometry>(
@@ -101,19 +113,19 @@ class SafetySupervisorNode : public rclcpp::Node {
                 const std_srvs::srv::Trigger::Request::SharedPtr &,
                 const std_srvs::srv::Trigger::Response::SharedPtr &response) {
                 supervisor_->clear_emergency_stop();
-                command_.received_at = Clock::now();
+                command_.received_at = to_clock_time_point(get_clock()->now());
                 response->success = true;
                 response->message = "emergency stop cleared";
             });
-        timer_ =
-            create_wall_timer(period, [this, period] { evaluate(period); });
+        timer_ = rclcpp::create_timer(this, get_clock(), period,
+                                      [this, period] { evaluate(period); });
     }
 
    private:
     void evaluate(std::chrono::milliseconds period) {
-        const auto decision =
-            supervisor_->evaluate(command_, state_, *track_, Clock::now());
         const auto stamp = get_clock()->now();
+        const auto decision = supervisor_->evaluate(command_, state_, *track_,
+                                                    to_clock_time_point(stamp));
 
         ackermann_msgs::msg::AckermannDriveStamped command_message;
         command_message.header.stamp = stamp;

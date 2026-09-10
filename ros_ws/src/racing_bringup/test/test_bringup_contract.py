@@ -53,6 +53,62 @@ def test_launch_exposes_reproducibility_and_headless_controls() -> None:
     assert "f1tenth_default.yaml" in source
 
 
+def test_launch_runs_on_simulated_time() -> None:
+    """ADR 0006: every node but sim_node takes time from /clock; sim_node
+    owns the clock and its rate is a launch-time control."""
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    nodes_by_variable = {
+        node.targets[0].id: node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "Node"
+    }
+
+    def _uses_sim_time(call: ast.Call) -> bool:
+        for keyword in call.keywords:
+            if keyword.arg != "parameters" or not isinstance(
+                keyword.value, ast.List
+            ):
+                continue
+            for element in keyword.value.elts:
+                if not isinstance(element, ast.Dict):
+                    continue
+                for key, value in zip(
+                    element.keys, element.values, strict=True
+                ):
+                    if (
+                        isinstance(key, ast.Constant)
+                        and key.value == "use_sim_time"
+                        and isinstance(value, ast.Constant)
+                        and value.value is True
+                    ):
+                        return True
+        return False
+
+    assert set(nodes_by_variable) == {
+        "sim_node",
+        "support_node",
+        "controller_node",
+        "supervisor_node",
+        "metrics_node",
+        "recording_node",
+        "robot_state_publisher_node",
+        "rviz_node",
+    }
+    assert not _uses_sim_time(nodes_by_variable["sim_node"])
+    for variable, call in nodes_by_variable.items():
+        if variable == "sim_node":
+            continue
+        assert _uses_sim_time(call), f"{variable} must run with use_sim_time"
+
+    source = LAUNCH_FILE.read_text(encoding="utf-8")
+    assert 'DeclareLaunchArgument("time_scale"' in source
+
+
 def test_default_vehicle_configuration_covers_each_configurable_node() -> None:
     """One versioned vehicle file owns every node's physical/control limits."""
     source = VEHICLE_CONFIG.read_text(encoding="utf-8")
