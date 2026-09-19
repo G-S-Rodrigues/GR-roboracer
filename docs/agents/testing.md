@@ -49,7 +49,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **21 tier-1, 9 tier-2, 5 tier-3, 2 tier-4, 0 tier-5.**
+Current counts: **21 tier-1, 11 tier-2, 5 tier-3, 2 tier-4, 0 tier-5.**
 
 ## The tests that matter most
 
