@@ -37,7 +37,10 @@ services:
       GIT_CONFIG_VALUE_0: /ws
       DISPLAY: ${DISPLAY:-:0}
       WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-}
-      XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-/mnt/wslg/runtime-dir}
+      # Not ${XDG_RUNTIME_DIR:-...}: a WSL host always exports its own
+      # /run/user/<uid>, which does not exist in here, so the fallback never
+      # applied and RViz found no runtime dir. WSLg's is the mounted one.
+      XDG_RUNTIME_DIR: /mnt/wslg/runtime-dir
       PULSE_SERVER: ${PULSE_SERVER:-}
     stdin_open: true
     tty: true

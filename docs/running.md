@@ -15,8 +15,10 @@ docker compose -f docker/docker-compose.yaml up -d dev
 docker exec -it gr-roboracer-dev bash
 ```
 
-Inside the container the ROS distro, the third-party underlay and (once built) the workspace overlay
-are already sourced by the entrypoint.
+The entrypoint sources the ROS distro, the third-party underlay and (once built) the workspace
+overlay for the container's main process only. A shell opened with `docker exec` inherits none of
+it, so source them first with `source /ws/setup.sh`. The devcontainer's VS Code terminal does
+this for you.
 
 ```bash
 colcon build --base-paths ros_ws/src --symlink-install

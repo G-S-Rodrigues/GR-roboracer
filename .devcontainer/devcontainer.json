@@ -6,5 +6,22 @@
     ],
     "service": "dev",
     "workspaceFolder": "/ws",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.profiles.linux": {
+                    "GR-roboracer": {
+                        "path": "bash",
+                        "args": [
+                            "--rcfile",
+                            "/ws/setup.sh",
+                            "-i"
+                        ]
+                    }
+                },
+                "terminal.integrated.defaultProfile.linux": "GR-roboracer"
+            }
+        }
+    },
     "shutdownAction": "stopCompose"
 }
