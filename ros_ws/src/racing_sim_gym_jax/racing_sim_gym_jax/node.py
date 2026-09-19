@@ -62,6 +62,11 @@ class RacingSimNode(Node):
         self.declare_parameter("scenario_path", str(default_scenario))
         self.declare_parameter("seed", 0)
         self.declare_parameter("time_scale", 1.0)
+        # Held, the node publishes its t=0 snapshot without advancing physics
+        # or /clock until the first `~/reset`, so a caller can wait for every
+        # consumer to be discovered and then define t=0 without rewinding a
+        # clock they already followed.
+        self.declare_parameter("start_held", False)
         scenario_path = Path(
             self.get_parameter("scenario_path")
             .get_parameter_value()
@@ -71,6 +76,9 @@ class RacingSimNode(Node):
         seed = self.get_parameter("seed").get_parameter_value().integer_value
         self._backend = GymBackend(self._scenario, seed)
         self._step_mode = False
+        self._held = (
+            self.get_parameter("start_held").get_parameter_value().bool_value
+        )
         self._simulation_time_ns = 0
 
         self._scan_publisher = self.create_publisher(
@@ -106,6 +114,10 @@ class RacingSimNode(Node):
             f"env={self._scenario.env_id}"
         )
 
+    @property
+    def _frozen(self) -> bool:
+        return self._step_mode or self._held
+
     def _on_drive(self, message: AckermannDriveStamped) -> None:
         drive = message.drive
         self._backend.set_command(
@@ -124,6 +136,7 @@ class RacingSimNode(Node):
             return response
         snapshot = self._backend.reset(int(request.seed))
         self._simulation_time_ns = 0
+        self._held = False
         self._publish(snapshot)
         response.success = True
         response.message = "reset"
@@ -148,9 +161,7 @@ class RacingSimNode(Node):
 
     def _on_timer(self) -> None:
         snapshot = (
-            self._backend.snapshot()
-            if self._step_mode
-            else self._backend.step()
+            self._backend.snapshot() if self._frozen else self._backend.step()
         )
         self._publish(snapshot)
 
@@ -159,7 +170,7 @@ class RacingSimNode(Node):
         # CPU host happens to execute the JAX step. This keeps recorded rates
         # and seeded runs comparable across CPU/GPU hardware.
         stamp = simulated_clock_message(self._simulation_time_ns)
-        if not self._step_mode:
+        if not self._frozen:
             self._simulation_time_ns += round(
                 self._scenario.control_period * 1_000_000_000
             )

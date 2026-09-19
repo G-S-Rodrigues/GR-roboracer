@@ -32,6 +32,7 @@ import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import SafetyStatus, ScenarioMetrics
+from racing_interfaces.srv import Reset
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -73,17 +74,46 @@ RELIABLE_QOS = QoSProfile(
     durability=DurabilityPolicy.VOLATILE,
 )
 
-# Measured on this host with `config/vehicles/f1tenth_default.yaml`'s tuning
-# (CPU-only JAX in `dev`, ~0.8s JIT warm-up, ~4s process startup): both
-# seed 1030 and seed 42 (SIM-3040's golden seed) complete a lap in ~16s
-# wall-clock in isolation. An early measurement of 86-90s+ turned out to be
-# contamination from a leftover graph from a *previous*, improperly torn-
-# down launch sharing the same ROS_DOMAIN_ID — not a real cost of this
-# scenario. A 60s budget (~4x that) still hit its ceiling once, running
-# last in a `check.sh --full` pass immediately after a full colcon build
-# and every other tier — i.e. under real host load, not in isolation. This
-# carries margin above *that* rather than the isolated number.
-DEFAULT_TIMEOUT_SECONDS = 90.0
+RESET_SERVICE = "/racing_sim/reset"
+# The seven nodes `sim_pure_pursuit.launch.py` always starts (excludes
+# rviz2, gated off by use_rviz:=false here).
+PARTICIPANT_NODES = (
+    "racing_sim",
+    "racing_bringup_support",
+    "racing_controller_baseline",
+    "racing_safety_supervisor",
+    "racing_metrics",
+    "racing_recording",
+    "robot_state_publisher",
+)
+# `racing_metrics` only starts accumulating once these best-effort/reliable
+# subscriptions have delivered something (scripts/compare_metrics.py's
+# comment on minimum_wall_clearance) - the clearance nadir sits in the
+# opening ticks, so these must be live *before* the deterministic reset
+# below, or the nadir sample is missed regardless of t=0 being repeatable.
+METRICS_ACCUMULATION_TOPICS = {
+    "/scan",
+    SAFETY_STATUS_TOPIC,
+    "/ground_truth/track_relative_state",
+}
+
+# ADR 0006: `time_scale` decouples simulated time from wall time, so a
+# budget reasoned in wall-clock lap durations measured on this host (the
+# previous version of this constant) no longer holds once time_scale != 1.
+# The budget is simulated lap length over time_scale, with a margin that
+# absorbs process startup and JIT warm-up (~4-5s measured on this host)
+# plus real host load. At the default time_scale=1.0, on the golden
+# analytic_circle lap (22.85s, tests/golden/baseline.json):
+# 22.85 / 1.0 * 4.0 ~= 91.4s - consistent with the 90s this constant carried
+# before, which was already validated as sufficient under real host load
+# (a 60s budget hit its ceiling once, running last in a `check.sh --full`
+# pass immediately after a full colcon build and every other tier).
+GOLDEN_LAP_TIME_SECONDS = 22.85
+DEFAULT_TIME_SCALE = 1.0
+TIMEOUT_MARGIN = 4.0
+DEFAULT_TIMEOUT_SECONDS = (
+    GOLDEN_LAP_TIME_SECONDS / DEFAULT_TIME_SCALE * TIMEOUT_MARGIN
+)
 
 _METRICS_FIELDS = (
     "source",
@@ -108,6 +138,32 @@ def metrics_to_dict(message: ScenarioMetrics) -> dict[str, Any]:
     return {field: getattr(message, field) for field in _METRICS_FIELDS}
 
 
+def _reset_at_deterministic_t0(node, seed: int, timeout: float) -> None:
+    """Wait for every participant, then release the held sim with a reset.
+
+    t=0 is otherwise wherever the DDS discovery race happens to land, and
+    `minimum_wall_clearance`'s nadir sits in the opening ticks
+    (`scripts/compare_metrics.py`). The sim must be launched with
+    `start_held:=true`: resetting a sim that is already running rewinds a
+    /clock every consumer has followed, and racing_metrics aborts on the
+    non-monotonic stamp.
+    """
+    for participant in PARTICIPANT_NODES:
+        wait_for_node(node, participant, METRICS_ACCUMULATION_TOPICS, timeout)
+
+    client = node.create_client(Reset, RESET_SERVICE)
+    if not client.wait_for_service(timeout_sec=timeout):
+        raise TimeoutError(f"{RESET_SERVICE} unavailable within {timeout}s")
+    future = client.call_async(Reset.Request(seed=seed, scenario_id=""))
+    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+    if not future.done() or future.result() is None:
+        raise TimeoutError(f"{RESET_SERVICE} timed out")
+    response = future.result()
+    if not response.success:
+        raise RuntimeError(f"{RESET_SERVICE} failed: {response.message}")
+    node.destroy_client(client)
+
+
 def run_scenario(
     seed: int,
     scenario: str | None = None,
@@ -120,7 +176,14 @@ def run_scenario(
     """
     ensure_rclpy_initialized()
 
-    launch_arguments = {"seed": str(seed), "use_rviz": "false"}
+    # Held until _reset_at_deterministic_t0 releases it, so nothing moves
+    # or accumulates before every participant is discovered.
+    launch_arguments = {
+        "seed": str(seed),
+        "use_rviz": "false",
+        "time_scale": str(DEFAULT_TIME_SCALE),
+        "start_held": "true",
+    }
     if scenario is not None:
         launch_arguments["scenario"] = scenario
 
@@ -143,6 +206,7 @@ def run_scenario(
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
         try:
+            _reset_at_deterministic_t0(node, seed, timeout)
             message = wait_for_message(
                 node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
             )

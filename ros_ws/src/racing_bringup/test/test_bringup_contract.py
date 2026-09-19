@@ -109,6 +109,16 @@ def test_launch_runs_on_simulated_time() -> None:
     assert 'DeclareLaunchArgument("time_scale"' in source
 
 
+def test_launch_can_hold_the_sim_until_reset() -> None:
+    """A caller that defines its own t=0 (scenario_runner) can start the sim
+    held; by default it runs, so a hand-driven launch still moves."""
+    source = LAUNCH_FILE.read_text(encoding="utf-8")
+    assert 'DeclareLaunchArgument("start_held", default_value="false")' in (
+        source
+    )
+    assert '"start_held": start_held' in source
+
+
 def test_default_vehicle_configuration_covers_each_configurable_node() -> None:
     """One versioned vehicle file owns every node's physical/control limits."""
     source = VEHICLE_CONFIG.read_text(encoding="utf-8")
