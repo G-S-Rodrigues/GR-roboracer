@@ -43,6 +43,7 @@ from rclpy.qos import (
 from .ros_helpers import (
     ensure_rclpy_initialized,
     reset_rclpy,
+    wait_for_endpoints,
     wait_for_message,
     wait_for_node,
 )
@@ -96,6 +97,12 @@ METRICS_ACCUMULATION_TOPICS = {
     SAFETY_STATUS_TOPIC,
     "/ground_truth/track_relative_state",
 }
+# The subset of METRICS_ACCUMULATION_TOPICS that racing_sim itself
+# publishes (/safety/status comes from racing_safety_supervisor instead).
+SIM_PUBLISHED_ACCUMULATION_TOPICS = {
+    "/scan",
+    "/ground_truth/track_relative_state",
+}
 
 # ADR 0006: `time_scale` decouples simulated time from wall time, so a
 # budget reasoned in wall-clock lap durations measured on this host (the
@@ -147,15 +154,49 @@ def _reset_at_deterministic_t0(node, seed: int, timeout: float) -> None:
     `start_held:=true`: resetting a sim that is already running rewinds a
     /clock every consumer has followed, and racing_metrics aborts on the
     non-monotonic stamp.
+
+    `wait_for_node` only proves a node with the right name exists and that
+    *some* publisher/subscriber of the right topic name exists somewhere in
+    the graph - not that racing_metrics' own subscriptions, or the sim's
+    own publishers, have actually matched in DDS. A reset released before
+    that matching finishes can still slip past whatever `wait_for_node`
+    checked. `wait_for_endpoints` checks the endpoint list instead, which is
+    as close to "matched" as a third node can observe.
+
+    One monotonic deadline is shared across every wait below - not a fresh
+    `timeout` per participant or per topic - so one slow participant cannot
+    hand every later wait a full fresh budget on top of the time already
+    spent.
     """
+    deadline = time.monotonic() + timeout
+
+    def _remaining() -> float:
+        return max(deadline - time.monotonic(), 0.0)
+
     for participant in PARTICIPANT_NODES:
-        wait_for_node(node, participant, METRICS_ACCUMULATION_TOPICS, timeout)
+        wait_for_node(
+            node, participant, METRICS_ACCUMULATION_TOPICS, _remaining()
+        )
+    wait_for_endpoints(
+        node,
+        "racing_metrics",
+        METRICS_ACCUMULATION_TOPICS,
+        "subscription",
+        _remaining(),
+    )
+    wait_for_endpoints(
+        node,
+        "racing_sim",
+        SIM_PUBLISHED_ACCUMULATION_TOPICS,
+        "publisher",
+        _remaining(),
+    )
 
     client = node.create_client(Reset, RESET_SERVICE)
-    if not client.wait_for_service(timeout_sec=timeout):
+    if not client.wait_for_service(timeout_sec=_remaining()):
         raise TimeoutError(f"{RESET_SERVICE} unavailable within {timeout}s")
     future = client.call_async(Reset.Request(seed=seed, scenario_id=""))
-    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=_remaining())
     if not future.done() or future.result() is None:
         raise TimeoutError(f"{RESET_SERVICE} timed out")
     response = future.result()

@@ -59,6 +59,50 @@ def wait_for_node(
     raise TimeoutError(f"node not found within {timeout}s: {node_name}")
 
 
+_ENDPOINT_GETTERS = {
+    "publisher": "get_publishers_info_by_topic",
+    "subscription": "get_subscriptions_info_by_topic",
+}
+
+
+def wait_for_endpoints(
+    node: Node,
+    node_name: str,
+    topics: Iterable[str],
+    role: str,
+    timeout: float = 15.0,
+) -> None:
+    """Block until ``node_name`` holds a ``role`` endpoint on every topic.
+
+    ``role`` is ``"publisher"`` or ``"subscription"``. ``wait_for_node``
+    only proves a topic name exists somewhere in the graph and that some
+    node with this name is present - it does not prove *this* node has
+    actually matched that topic in DDS. Endpoint discovery
+    (``get_publishers_info_by_topic`` / ``get_subscriptions_info_by_topic``)
+    is as close to "matched" as a third node can observe: real
+    subscription/publisher matching happens inside each participant's own
+    DDS layer and is not otherwise exposed to an outside process.
+
+    ``timeout`` is spent once across every topic in ``topics``, not reset
+    per topic, so a caller sharing one deadline across several calls (as
+    ``_reset_at_deterministic_t0`` does) gets one true deadline overall
+    rather than a fresh budget per call.
+    """
+    getter = getattr(node, _ENDPOINT_GETTERS[role])
+    deadline = time.monotonic() + timeout
+    for topic in topics:
+        while time.monotonic() < deadline:
+            infos = getter(topic)
+            if any(info.node_name == node_name for info in infos):
+                break
+            rclpy.spin_once(node, timeout_sec=0.05)
+        else:
+            raise TimeoutError(
+                f"{role} endpoint not found within {timeout}s: "
+                f"{node_name} on {topic}"
+            )
+
+
 def wait_for_message(
     node: Node,
     message_type: Any,
