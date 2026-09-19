@@ -154,3 +154,47 @@ def test_support_node_declares_the_visualization_contract() -> None:
         '"base_link"',
     ):
         assert contract in support
+
+
+def test_bringup_1010_the_scenario_selects_every_nodes_track() -> None:
+    """BRINGUP-1010: the scenario file, not the vehicle file, decides which
+    track every track-aware node loads.
+
+    Otherwise a scenario selects the sim's world while the supervisor, the
+    support node's trajectory and racing_metrics' lap length stay on the
+    vehicle file's track - repo-gotchas #15's shape: the run completes,
+    publishes metrics and passes every structural check on the wrong track.
+    """
+    from racing_bringup.scenario_parameters import track_parameters
+
+    spielberg = track_parameters(
+        REPOSITORY_ROOT / "config" / "scenarios" / "spielberg.yaml"
+    )
+    track = str(REPOSITORY_ROOT / "config" / "tracks" / "spielberg.yaml")
+    raceline = str(
+        REPOSITORY_ROOT
+        / "config"
+        / "scenarios"
+        / "maps"
+        / "Spielberg"
+        / "Spielberg_raceline.csv"
+    )
+    assert spielberg["racing_safety_supervisor"]["track_path"] == track
+    assert spielberg["racing_metrics"]["track_path"] == track
+    assert spielberg["racing_bringup_support"]["track_path"] == track
+    assert spielberg["racing_bringup_support"]["raceline_path"] == raceline
+    for reporter in ("racing_metrics", "racing_recording"):
+        assert spielberg[reporter]["scenario_id"] == "spielberg"
+        assert spielberg[reporter]["track_version"] == "spielberg-v1"
+
+    # A scenario that names no reporting identity keeps the vehicle file's,
+    # so the analytic_circle golden's "baseline" / "analytic_circle-v1"
+    # records are unchanged.
+    circle = track_parameters(
+        REPOSITORY_ROOT / "config" / "scenarios" / "contract_test.yaml"
+    )
+    assert circle["racing_metrics"]["track_path"] == str(
+        REPOSITORY_ROOT / "config" / "tracks" / "analytic_circle.yaml"
+    )
+    assert "scenario_id" not in circle["racing_metrics"]
+    assert "track_version" not in circle["racing_recording"]
