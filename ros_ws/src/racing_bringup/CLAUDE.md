@@ -22,4 +22,5 @@ Run from the repository root. The launch file and every node it starts resolve
 working directory — the same convention `scripts/check.sh` and each node's own parameter defaults
 already use.
 
-Launch arguments: `scenario`, `seed`, `recording_path`, `use_rviz`.
+Launch arguments: `scenario`, `seed`, `recording_path`, `use_rviz`, `time_scale` (default 1.0;
+scales wall rate, never physics), `start_held` (default false; sim stays frozen until `~/reset`).
