@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument(
         "--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS
     )
+    parser.add_argument("--time-scale", type=float, default=1.0)
     parser.add_argument("--output", type=Path, default=None)
     arguments = parser.parse_args()
 
@@ -41,6 +42,7 @@ def main() -> int:
         seed=arguments.seed,
         scenario=arguments.scenario,
         timeout=arguments.timeout,
+        time_scale=arguments.time_scale,
     )
     record = json.dumps(metrics, indent=2, sort_keys=True, default=str)
     if arguments.output is not None:
