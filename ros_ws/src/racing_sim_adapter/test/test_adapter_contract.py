@@ -68,6 +68,10 @@ def generate_test_description():
     )
 
 
+def _stamp_ns(message: Clock) -> int:
+    return message.clock.sec * 1_000_000_000 + message.clock.nanosec
+
+
 class TestAdapterContract(unittest.TestCase):
     """Assertions that define the simulator boundary."""
 
@@ -263,3 +267,25 @@ class TestAdapterContract(unittest.TestCase):
         # consumer following simulated time reads a small tick counter, so
         # the two are never confusable.
         self.assertLess(consumer_now_ns, 1e15)
+
+    def test_adapt_2085_runtime_reset_does_not_rewind_clock(self):
+        """ADAPT-2085: resetting a sim that was never held keeps /clock
+        monotonic across the reset.
+
+        This launch (unlike test_adapter_start_held.py's) never sets
+        `start_held`, so the backend has been advancing and publishing
+        /clock since startup - exactly the case ADAPT-2080's held-then-
+        released sim does not cover. Zeroing the simulated-time counter on
+        this reset would publish a stamp behind ones a use_sim_time
+        consumer already followed; racing_metrics aborts a run on a
+        non-monotonic stamp for exactly this reason.
+        """
+        self._require_adapter()
+        before = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
+        self._reset(seed=2085, scenario_id="")
+        after = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
+        stamps_ns = [_stamp_ns(message) for message in before + after]
+        for earlier, later in zip(stamps_ns, stamps_ns[1:], strict=False):
+            self.assertLessEqual(
+                earlier, later, "/clock must not rewind across a reset"
+            )

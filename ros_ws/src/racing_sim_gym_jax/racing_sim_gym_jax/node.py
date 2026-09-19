@@ -135,7 +135,16 @@ class RacingSimNode(Node):
             response.message = f"unknown scenario: {request.scenario_id}"
             return response
         snapshot = self._backend.reset(int(request.seed))
-        self._simulation_time_ns = 0
+        # Only a held sim defines t=0 here (ADAPT-2080): its /clock has
+        # never advanced past 0, so nothing has followed it yet. A sim that
+        # was never held, or was already released, has already published
+        # /clock to consumers who follow it - zeroing the counter again
+        # would publish a stamp behind one they already saw, and
+        # racing_metrics aborts on the non-monotonic stamp (ADAPT-2085).
+        # The backend's own state still resets; only the counter does not
+        # go backwards.
+        if self._held:
+            self._simulation_time_ns = 0
         self._held = False
         self._publish(snapshot)
         response.success = True
