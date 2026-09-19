@@ -17,6 +17,10 @@ if(BUILD_TESTING)
     TIMEOUT 30
     LABELS "tier2"
   )
+  add_launch_test(test/test_adapter_start_held.py
+    TIMEOUT 30
+    LABELS "tier2"
+  )
 endif()
 
 ament_export_include_directories(include)

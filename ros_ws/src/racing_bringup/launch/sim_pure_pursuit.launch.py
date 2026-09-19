@@ -37,12 +37,14 @@ def generate_launch_description() -> LaunchDescription:
     rec_arg = DeclareLaunchArgument("recording_path", default_value=REC_DEFAULT)
     use_rviz_arg = DeclareLaunchArgument("use_rviz", default_value="true")
     time_scale_arg = DeclareLaunchArgument("time_scale", default_value="1.0")
+    start_held_arg = DeclareLaunchArgument("start_held", default_value="false")
 
     scenario = LaunchConfiguration("scenario")
     seed = LaunchConfiguration("seed")
     recording_path = LaunchConfiguration("recording_path")
     use_rviz = LaunchConfiguration("use_rviz")
     time_scale = LaunchConfiguration("time_scale")
+    start_held = LaunchConfiguration("start_held")
 
     # The simulator owns the clock (ADR 0006): it publishes /clock from its
     # own simulated-time counter and stays off use_sim_time so its wall
@@ -52,7 +54,12 @@ def generate_launch_description() -> LaunchDescription:
         package="racing_sim_gym_jax",
         executable="racing_sim_gym_jax_node",
         parameters=[
-            {"scenario_path": scenario, "seed": seed, "time_scale": time_scale}
+            {
+                "scenario_path": scenario,
+                "seed": seed,
+                "time_scale": time_scale,
+                "start_held": start_held,
+            }
         ],
     )
     support_node = Node(
@@ -109,6 +116,7 @@ def generate_launch_description() -> LaunchDescription:
             rec_arg,
             use_rviz_arg,
             time_scale_arg,
+            start_held_arg,
             sim_node,
             support_node,
             controller_node,
