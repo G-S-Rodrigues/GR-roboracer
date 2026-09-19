@@ -77,6 +77,13 @@ void MetricsAccumulator::observe(const MetricsSample &sample) {
     if (!std::isfinite(sample.s)) {
         throw std::invalid_argument("s must be finite");
     }
+    // A republished simulated instant (a sim held at t=0, or in STEPPED
+    // mode) is one sample, not many: otherwise how long the hold lasted in
+    // wall time would weight the tracking-error percentile.
+    if (started_ && sample.elapsed_time == last_time_) {
+        return;
+    }
+    last_time_ = sample.elapsed_time;
 
     auto normalized_s = std::fmod(sample.s, track_length_);
     if (normalized_s < 0.0) {
