@@ -62,6 +62,29 @@ TEST(MetricsAccumulatorTest, AccumulatesHandComputedSyntheticRun) {
               std::string::npos);
 }
 
+// METRICS-1020: a sim held at t=0 (or in STEPPED mode) republishes the same
+// simulated instant; counting each copy would weight the percentile by how
+// long the hold happened to last.
+TEST(MetricsAccumulatorTest, RepublishedInstantIsOneSample) {
+    const RunProvenance provenance{"source",   "scenario", 1,       1,
+                                   "revision", "digest",   "track", "vehicle"};
+    MetricsAccumulator once{provenance, 10.0};
+    MetricsAccumulator repeated{provenance, 10.0};
+
+    once.observe({0.0, 0.0, 1.0, 0.9, false, false});
+    for (int copy = 0; copy < 50; ++copy) {
+        repeated.observe({0.0, 0.0, 1.0, 0.9, false, false});
+    }
+    for (int tick = 1; tick <= 19; ++tick) {
+        const auto time = static_cast<double>(tick);
+        once.observe({time, time * 0.1, 1.0, 0.1, false, false});
+        repeated.observe({time, time * 0.1, 1.0, 0.1, false, false});
+    }
+
+    EXPECT_DOUBLE_EQ(repeated.summary().p95_tracking_error,
+                     once.summary().p95_tracking_error);
+}
+
 TEST(MetricsAccumulatorTest, RejectsInvalidRunInput) {
     const RunProvenance provenance{"source",   "scenario", 1,       1,
                                    "revision", "digest",   "track", "vehicle"};

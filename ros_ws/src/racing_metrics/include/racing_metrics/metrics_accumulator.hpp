@@ -60,6 +60,7 @@ class MetricsAccumulator {
     RunProvenance provenance_;
     double track_length_;
     double start_time_{0.0};
+    double last_time_{0.0};
     double last_s_{0.0};
     double distance_travelled_{0.0};
     double lap_time_{0.0};
