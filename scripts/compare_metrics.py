@@ -20,9 +20,16 @@ from typing import Any
 # The nadir sits in the first ticks of the run, and racing_metrics only starts
 # accumulating once its best-effort /scan subscription has delivered something
 # - so how many opening ticks the DDS discovery race costs decides whether the
-# nadir sample is in the window at all. Fixing that means giving the graph a
-# deterministic t=0 (the sim node's `~/reset` service, once every consumer is
-# discovered); until then this carries ~2.4x the measured spread.
+# nadir sample is in the window at all.
+#
+# The deterministic t=0 (sim launched held, released by `~/reset` once every
+# participant is discovered) removed most of that: re-measured 2026-09-19,
+# five seed-1030 runs agreed on minimum_wall_clearance exactly, and five
+# seed-42 runs took two values 0.0066 m apart (1.736396 / 1.743012). What
+# binds this tolerance now is not run-to-run spread but the live stack's
+# offset from the headless golden: those seed-42 runs sit up to 0.0196 m
+# above baseline.json's 1.723440. 0.05 carries ~2.5x that offset, so it was
+# re-justified rather than tightened.
 FLOAT_TOLERANCES = {
     "lap_time": 0.05,
     "minimum_wall_clearance": 0.05,
