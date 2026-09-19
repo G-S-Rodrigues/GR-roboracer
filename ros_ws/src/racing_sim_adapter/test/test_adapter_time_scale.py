@@ -31,18 +31,20 @@ SAMPLE_COUNT = 60
 # measured rate toward 1x regardless of time_scale (repo-gotchas #13).
 STEADY_STATE_TAIL = 40
 # repo-gotchas #4 / ADR 0006: the JAX step bounds how fast the wall timer
-# can actually fire, so time_scale=5.0 never gets a clean 5x. Measured
-# steady state on this host (dev container, CPU JAX, shared with another
-# agent's test runs - see CLAUDE.md's task instructions): four runs gave
-# 3.51x / 3.64x / 3.65x / 2.34x, the low one coinciding with host
-# contention from that other agent. PR 1 measured ~2.5x effective across a
-# *whole lap* including process startup and JIT warm-up at time_scale=5.0;
-# this test excludes both, so in principle its floor could sit above that
-# whole-lap figure, but the contended run means host load can pull it back
-# down close to it. 2.0 stays clearly under every measured run - including
-# the contended one - while still clearly failing at time_scale=1
-# (rate ~1x), which is the point of the test.
-MINIMUM_RATE = 2.0
+# can actually fire, so time_scale=5.0 never gets a clean 5x, and how far
+# below 5x it lands depends on how loaded the host is. Measured steady
+# state on this host (dev container, CPU JAX), from least to most loaded:
+# 3.51x / 3.64x / 3.65x idle; 2.34x with another process contending for
+# CPU; 1.80x during an actual `check.sh --full` run at load average ~4.
+# The property under test is "time_scale reaches the running wall timer",
+# not a throughput figure - a wiring bug (time_scale parsed but never
+# passed to the timer) would show ~1x regardless of load, so the floor
+# only needs to sit clearly below every measured run, contended included,
+# and clearly above the ~1x a time_scale=1 run would show. 1.5 does both:
+# it sits comfortably below the worst run actually observed (1.80x),
+# while a wiring-bug run (time_scale never reaching the timer, rate ~1x)
+# would still fail it by a wide margin.
+MINIMUM_RATE = 1.5
 
 CLOCK_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
