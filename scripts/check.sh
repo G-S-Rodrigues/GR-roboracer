@@ -37,9 +37,6 @@ source /opt/ros/jazzy/setup.bash
 if [[ -f /opt/racing_underlay/setup.bash ]]; then
     source /opt/racing_underlay/setup.bash
 fi
-if [[ -f "$repo_root/install/setup.bash" ]]; then
-    source "$repo_root/install/setup.bash"
-fi
 set -u
 
 echo "==> build"
@@ -47,6 +44,14 @@ colcon build \
     --base-paths ros_ws/src \
     --symlink-install \
     --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+# Source the overlay only after the build that produced it. Sourcing it before
+# made every plain-python3 step below (sim/tests, the system tests) depend on an
+# install/ left over from some earlier build: on a fresh checkout there is none,
+# and racing_common's Python module was never importable.
+set +u
+source "$repo_root/install/setup.bash"
+set -u
 
 echo "==> clang-format"
 mapfile -d '' cpp_files < <(
