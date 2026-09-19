@@ -1,0 +1,25 @@
+# The league track (repo-gotchas #18): real geometry, a 2.2 m corridor and a
+# 343.3 m centerline. Every localization measurement runs here, never on
+# analytic_circle.
+format_version: 1
+scenario_id: spielberg
+environment:
+  map: Spielberg
+  num_agents: 1
+  scans: true
+  collisions: true
+  rewards: [progress]
+  action:
+    longitudinal: velocity
+    steering: steeringangle
+  timestep_ratio: 1
+  # Omitted, gym_jax derives 90 s (9000 steps) and ends the episode there - a
+  # Spielberg lap is longer than that. 300 s leaves room for a slow lap.
+  max_steps: 30000
+  version: v0
+parameters:
+  integrator: euler
+  num_beams: 64
+  theta_dis: 720
+track: ../tracks/spielberg.yaml
+map_directory: maps
