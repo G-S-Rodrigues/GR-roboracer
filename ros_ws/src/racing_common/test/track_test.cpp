@@ -62,4 +62,21 @@ TEST(TrackTest, Common1040LoadsAndValidatesCanonicalYaml) {
                  std::runtime_error);
 }
 
+TEST(TrackTest, Common1070SpielbergLengthMatchesItsCenterline) {
+    // repo-gotchas #15's guard for the league track: a lap is as long as the
+    // centerline the track model integrates. 343.3226169 m is the closed
+    // arc length of the upstream f1tenth_racetracks Spielberg_centerline.csv
+    // (864 points, summed including the closing segment); the CSV carries no
+    // s column of its own. A conversion that dropped, reordered or
+    // duplicated a point moves this.
+    const auto track = racing_common::Track::from_yaml(
+        std::filesystem::path{RACING_COMMON_SPIELBERG_TRACK});
+
+    EXPECT_NEAR(track.length(), 343.3226169, 1e-6);
+    // The 2.2 m corridor is 1.1 m either side. With the car centred and the
+    // reference half-width, 0.95 m of offset is still inside, 0.96 is not.
+    EXPECT_TRUE(track.is_inside({0.0, 0.95, 0.0}, 0.15));
+    EXPECT_FALSE(track.is_inside({0.0, 0.96, 0.0}, 0.15));
+}
+
 }  // namespace

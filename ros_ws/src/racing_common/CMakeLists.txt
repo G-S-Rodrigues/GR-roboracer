@@ -49,6 +49,7 @@ if(BUILD_TESTING)
   target_compile_definitions(track_test PRIVATE
     RACING_COMMON_TEST_TRACK="${CMAKE_CURRENT_SOURCE_DIR}/../../../config/tracks/analytic_circle.yaml"
     RACING_COMMON_UNSUPPORTED_TEST_TRACK="${CMAKE_CURRENT_SOURCE_DIR}/test/unsupported_track.yaml"
+    RACING_COMMON_SPIELBERG_TRACK="${CMAKE_CURRENT_SOURCE_DIR}/../../../config/tracks/spielberg.yaml"
   )
   set_tests_properties(track_test PROPERTIES LABELS "tier1")
 
