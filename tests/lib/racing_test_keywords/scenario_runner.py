@@ -118,9 +118,16 @@ SIM_PUBLISHED_ACCUMULATION_TOPICS = {
 GOLDEN_LAP_TIME_SECONDS = 22.85
 DEFAULT_TIME_SCALE = 1.0
 TIMEOUT_MARGIN = 4.0
-DEFAULT_TIMEOUT_SECONDS = (
-    GOLDEN_LAP_TIME_SECONDS / DEFAULT_TIME_SCALE * TIMEOUT_MARGIN
-)
+
+
+def timeout_for_time_scale(time_scale: float) -> float:
+    """The wall-clock budget for a run at ``time_scale``: simulated lap
+    length over the scale, plus ``TIMEOUT_MARGIN``'s margin for process
+    startup, JIT warm-up and real host load (see the comment above)."""
+    return GOLDEN_LAP_TIME_SECONDS / time_scale * TIMEOUT_MARGIN
+
+
+DEFAULT_TIMEOUT_SECONDS = timeout_for_time_scale(DEFAULT_TIME_SCALE)
 
 _METRICS_FIELDS = (
     "source",
@@ -208,13 +215,24 @@ def _reset_at_deterministic_t0(node, seed: int, timeout: float) -> None:
 def run_scenario(
     seed: int,
     scenario: str | None = None,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    timeout: float | None = None,
+    time_scale: float = DEFAULT_TIME_SCALE,
 ) -> dict[str, Any]:
     """Launch the full stack headlessly, run a seeded scenario, return metrics.
 
     Blocks until ``/scenario/metrics`` is published or ``timeout`` elapses,
     then tears the launch down either way. Raises ``TimeoutError`` on timeout.
+
+    ``time_scale`` sets how fast simulated time advances relative to wall
+    clock (ADR 0006); it changes only the wall-clock rate of the run, never
+    its physics or its simulated ``lap_time``. ``timeout`` defaults to
+    ``timeout_for_time_scale(time_scale)`` when not given explicitly, since
+    a scaled run's wall-clock budget must scale with it too - a fixed
+    default sized for ``time_scale=1.0`` would starve a faster run of no
+    extra margin, or give a slower one too little.
     """
+    if timeout is None:
+        timeout = timeout_for_time_scale(time_scale)
     ensure_rclpy_initialized()
 
     # Held until _reset_at_deterministic_t0 releases it, so nothing moves
@@ -222,7 +240,7 @@ def run_scenario(
     launch_arguments = {
         "seed": str(seed),
         "use_rviz": "false",
-        "time_scale": str(DEFAULT_TIME_SCALE),
+        "time_scale": str(time_scale),
         "start_held": "true",
     }
     if scenario is not None:

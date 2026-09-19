@@ -22,6 +22,11 @@ earlier version of this test *did* widen them, to absorb a seed-42 lap taking
 `racing_metrics` defaulting its lap distance to a hard-coded 31.4159 m —
 roughly half the analytic circle's real 61.23 m centerline — so it called
 half a lap a lap. It now reads the length from the canonical track.
+
+Since ADR 0006, this run is on simulated time: every node but `sim_node`
+runs with `use_sim_time: true`, driven by `/clock`, at `run_scenario`'s
+default `time_scale=1.0`. SIM-3050 makes the same comparison at
+`time_scale=2.0`, to prove `time_scale` changes wall-clock rate only.
 """
 
 import json
