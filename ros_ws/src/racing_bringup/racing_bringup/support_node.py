@@ -1,10 +1,12 @@
 """Support node: publishes the trajectory, track-boundary and TF outputs no
 other node in the vertical slice owns.
 
-``racing_sim_gym_jax`` publishes ``/odom`` but never a TF, so RViz has no way
-to place the robot in ``map``. Nothing publishes the raceline the controller
-needs on ``/trajectory``, and nothing publishes the track geometry RViz needs
-to draw. This node is the thin, ROS-only home for those three gaps.
+``racing_sim_gym_jax`` broadcasts ``odom -> base_link`` from its dead
+reckoning, but ``map -> odom`` belongs to whichever pose source is active;
+with ground truth as that source (the only one so far) nobody else owns
+it. Nothing publishes the raceline the controller needs on ``/trajectory``,
+and nothing publishes the track geometry RViz needs to draw. This node is
+the thin, ROS-only home for those three gaps.
 """
 
 from __future__ import annotations
@@ -75,6 +77,27 @@ def _boundaries_from_centerline(
     return left, right
 
 
+def _planar_pose(message: Odometry) -> tuple[float, float, float]:
+    pose = message.pose.pose
+    q = pose.orientation
+    yaw = math.atan2(
+        2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y**2 + q.z**2)
+    )
+    return pose.position.x, pose.position.y, yaw
+
+
+def _planar_correction(
+    truth: tuple[float, float, float],
+    dead_reckoning: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    """Return map -> odom such that (map -> odom) * dead_reckoning == truth."""
+    yaw = truth[2] - dead_reckoning[2]
+    cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
+    x = truth[0] - (cos_yaw * dead_reckoning[0] - sin_yaw * dead_reckoning[1])
+    y = truth[1] - (sin_yaw * dead_reckoning[0] + cos_yaw * dead_reckoning[1])
+    return x, y, yaw
+
+
 def _load_raceline(raceline_path: Path) -> list[TrajectoryPoint]:
     points: list[TrajectoryPoint] = []
     with raceline_path.open(encoding="utf-8", newline="") as handle:
@@ -127,7 +150,7 @@ def _trajectory_marker(points: list[TrajectoryPoint], frame_id: str) -> Marker:
 
 class SupportNode(Node):
     """Publishes /trajectory and /track/boundaries once, latched, and
-    broadcasts the map -> base_link TF that follows /odom."""
+    broadcasts the ground-truth pose source's map -> odom TF."""
 
     def __init__(self) -> None:
         super().__init__("racing_bringup_support")
@@ -139,7 +162,7 @@ class SupportNode(Node):
             "config/scenarios/maps/analytic_circle/analytic_circle_raceline.csv",
         )
         self.declare_parameter("map_frame", "map")
-        self.declare_parameter("base_frame", "base_link")
+        self.declare_parameter("odom_frame", "odom")
 
         track_path = Path(
             self.get_parameter("track_path").get_parameter_value().string_value
@@ -152,8 +175,8 @@ class SupportNode(Node):
         self._map_frame = (
             self.get_parameter("map_frame").get_parameter_value().string_value
         )
-        self._base_frame = (
-            self.get_parameter("base_frame").get_parameter_value().string_value
+        self._odom_frame = (
+            self.get_parameter("odom_frame").get_parameter_value().string_value
         )
 
         self._trajectory_publisher = self.create_publisher(
@@ -169,8 +192,16 @@ class SupportNode(Node):
             MarkerArray, "/visualization/trajectory", LATCHED_QOS
         )
         self._tf_broadcaster = TransformBroadcaster(self)
+        self._latest_truth: Odometry | None = None
+        self._latest_dead_reckoning: Odometry | None = None
         self.create_subscription(
-            Odometry, "/odom", self._on_odometry, LATCHED_QOS.depth
+            Odometry,
+            "/ground_truth/odom",
+            self._on_ground_truth,
+            LATCHED_QOS.depth,
+        )
+        self.create_subscription(
+            Odometry, "/odom", self._on_dead_reckoning, LATCHED_QOS.depth
         )
 
         self._publish_static_artifacts(track_path, raceline_path)
@@ -214,15 +245,42 @@ class SupportNode(Node):
         )
         self._trajectory_marker_publisher.publish(trajectory_markers)
 
-    def _on_odometry(self, message: Odometry) -> None:
+    def _on_ground_truth(self, message: Odometry) -> None:
+        self._latest_truth = message
+        self._publish_correction()
+
+    def _on_dead_reckoning(self, message: Odometry) -> None:
+        self._latest_dead_reckoning = message
+        self._publish_correction()
+
+    def _publish_correction(self) -> None:
+        """Broadcast map -> odom = truth * dead_reckoning^-1, per stamp.
+
+        The correction, not the ground-truth pose: the sim node already
+        broadcasts odom -> base_link from its drifting dead reckoning, so
+        publishing the pose here would double-count it and the vehicle would
+        sit at roughly twice its displacement in RViz; identity would leave
+        it on the drifting estimate. Both are invisible to every numeric
+        test (repo-gotchas #16). The two poses are paired by stamp, so the
+        composed map -> base_link is exactly the ground-truth pose.
+        """
+        truth = self._latest_truth
+        dead_reckoning = self._latest_dead_reckoning
+        if truth is None or dead_reckoning is None:
+            return
+        if truth.header.stamp != dead_reckoning.header.stamp:
+            return
+        x, y, yaw = _planar_correction(
+            _planar_pose(truth), _planar_pose(dead_reckoning)
+        )
         transform = TransformStamped()
-        transform.header.stamp = message.header.stamp
+        transform.header.stamp = truth.header.stamp
         transform.header.frame_id = self._map_frame
-        transform.child_frame_id = self._base_frame
-        transform.transform.translation.x = message.pose.pose.position.x
-        transform.transform.translation.y = message.pose.pose.position.y
-        transform.transform.translation.z = message.pose.pose.position.z
-        transform.transform.rotation = message.pose.pose.orientation
+        transform.child_frame_id = self._odom_frame
+        transform.transform.translation.x = x
+        transform.transform.translation.y = y
+        transform.transform.rotation.z = math.sin(yaw / 2.0)
+        transform.transform.rotation.w = math.cos(yaw / 2.0)
         self._tf_broadcaster.sendTransform(transform)
 
 

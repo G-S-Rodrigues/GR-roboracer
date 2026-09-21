@@ -62,6 +62,11 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         package="racing_controller_baseline",
         executable="racing_controller_baseline_node",
         parameters=[VEHICLE_CONFIG, {"use_sim_time": True}],
+        # The controller's pose source is ground truth, selected here rather
+        # than in its C++, which keeps the standard /odom: this remap is the
+        # seam PR 3's pose_source generalizes. Driving on /odom's drifting
+        # dead reckoning would move both goldens.
+        remappings=[("/odom", "/ground_truth/odom")],
     )
     supervisor_node = Node(
         package="racing_safety_supervisor",

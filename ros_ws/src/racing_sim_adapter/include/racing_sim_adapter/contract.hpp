@@ -8,8 +8,14 @@ namespace racing_sim_adapter::contract {
 
 inline constexpr std::string_view kNodeName{"racing_sim"};
 
+// /scan and /odom carry their standard ROS meanings: noisy ranges, and noisy
+// dead reckoning in kOdomFrame. The exact values are published alongside on
+// /ground_truth/*, for evaluation, metrics and the supervisor only.
 inline constexpr std::string_view kScanTopic{"/scan"};
 inline constexpr std::string_view kOdometryTopic{"/odom"};
+inline constexpr std::string_view kGroundTruthScanTopic{"/ground_truth/scan"};
+inline constexpr std::string_view kGroundTruthOdometryTopic{
+    "/ground_truth/odom"};
 inline constexpr std::string_view kImuTopic{"/imu"};
 inline constexpr std::string_view kTrackRelativeStateTopic{
     "/ground_truth/track_relative_state"};
@@ -19,6 +25,7 @@ inline constexpr std::string_view kResetService{"/racing_sim/reset"};
 inline constexpr std::string_view kStepModeService{"/racing_sim/step_mode"};
 
 inline constexpr std::string_view kMapFrame{"map"};
+inline constexpr std::string_view kOdomFrame{"odom"};
 inline constexpr std::string_view kBaseFrame{"base_link"};
 inline constexpr std::string_view kLaserFrame{"laser"};
 

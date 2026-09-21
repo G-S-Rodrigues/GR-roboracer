@@ -21,5 +21,35 @@ environment:
   version: v0
 parameters:
   num_beams: 64
+# Seeded noise on /scan and /odom (racing_sim_gym_jax/noise.py). The exact
+# values stay on /ground_truth/scan and /ground_truth/odom, which is what
+# racing_metrics, the supervisor and racing_evaluation read. Sized from the
+# reference car's parts; nothing here has been measured on hardware.
+noise:
+  scan:
+    # Hokuyo UST-10LX: "Repeated accuracy: sigma < 30 mm" (Hokuyo
+    # UST-10LX specification; its absolute accuracy is +/-40 mm). The bound
+    # is used as the value.
+    sigma_m: 0.03
+    # The datasheet publishes no dropout rate, so none is invented: 0.0
+    # until one is measured. The mechanism (a dropped beam reads +inf) is
+    # tested by SIMJAX-1010.
+    dropout_probability: 0.0
+  odometry:
+    # VESC wheel odometry, sized from F1TENTH's own calibration procedure
+    # (f1tenth_doc getting_started/driving/drive_calib_odom.rst): drive
+    # "more than 3 meters" straight and adjust speed_to_erpm_gain "until
+    # these values are within 2-3 cm", i.e. a calibrated car keeps a
+    # ~2.5 cm / 3 m ~= 1% distance-scale residual.
+    distance_scale_sigma: 0.01
+    # The same procedure calibrates steering on a half circle of 1.784 m
+    # diameter to within 2-3 cm: 2.5 cm / 1.784 m ~= 1.4% yaw-scale residual.
+    yaw_scale_sigma: 0.014
+    # Run-to-run repeatability of that 3 m check, as a random walk:
+    # 0.025 m / sqrt(3 m) ~= 0.0144 m per sqrt(m).
+    distance_noise_density: 0.0144
+    # The half-circle check's repeatability, as a random walk over pi rad:
+    # 1.4% * pi / sqrt(pi) ~= 0.0248 rad per sqrt(rad).
+    yaw_noise_density: 0.0248
 track: ../tracks/analytic_circle.yaml
 map_directory: maps

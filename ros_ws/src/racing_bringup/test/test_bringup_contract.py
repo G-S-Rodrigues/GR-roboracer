@@ -149,9 +149,9 @@ def test_support_node_declares_the_visualization_contract() -> None:
         '"/trajectory"',
         '"/track/boundaries"',
         '"/visualization/track"',
-        '"/odom"',
+        '"/ground_truth/odom"',
         '"map"',
-        '"base_link"',
+        '"odom"',
     ):
         assert contract in support
 
