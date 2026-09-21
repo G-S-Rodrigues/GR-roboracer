@@ -19,6 +19,52 @@ from sim.track_importer import import_track
 ActionProvider = Callable[[Mapping[str, Any], Any], tuple[float, float]]
 
 
+class CenterlineLap:
+    """A lap is the centerline distance travelled from the first sample
+    reaching the track's length.
+
+    `MetricsAccumulator`'s rule (racing_metrics/src/metrics_accumulator.cpp),
+    which the live graph reports, reimplemented because sim/ cannot import
+    from ros_ws/ (ADR 0003). Not the gym's own `num_laps`: that counts the
+    angle swept around a point beside s=0, which agrees on analytic_circle
+    and ends the lap 11.7 m (4.7 s) early on Spielberg (repo-gotchas #15).
+    """
+
+    def __init__(self, track_length: float) -> None:
+        if not np.isfinite(track_length) or track_length <= 0.0:
+            raise ValueError("track_length must be finite and positive")
+        self._length = track_length
+        self._last_s: float | None = None
+        self._start_time = 0.0
+        self._travelled = 0.0
+        self.completed = False
+        self.lap_time = 0.0
+
+    def update(self, s: float, elapsed_time: float) -> bool:
+        """Add one sample; return whether the lap is done.
+
+        The first sample starts both the distance and the lap clock, exactly
+        as in `MetricsAccumulator::add`, so the lap time is measured from
+        that sample's stamp.
+        """
+        if self.completed:
+            return True
+        normalized = float(np.mod(s, self._length))
+        if self._last_s is None:
+            self._start_time = elapsed_time
+        else:
+            delta = normalized - self._last_s
+            if delta < -self._length / 2.0:
+                delta += self._length
+            elif delta > self._length / 2.0:
+                delta -= self._length
+            self._travelled += delta
+        self._last_s = normalized
+        self.lap_time = elapsed_time - self._start_time
+        self.completed = self._travelled >= self._length
+        return self.completed
+
+
 def pure_pursuit_action_provider(
     canonical_track: Path,
     *,
@@ -122,12 +168,25 @@ def run_seeded_scenario(
 
     key = jax.random.PRNGKey(seed)
     observation, state = env.reset(key)
+
+    def frenet_of(state: Any) -> Any:
+        cartesian = np.asarray(state.cartesian_states)[0]
+        return shared_track.to_frenet(
+            racing_common.CartesianPose(
+                float(cartesian[0]), float(cartesian[1]), float(cartesian[4])
+            )
+        )
+
+    # Fed the first post-step state onward, never the reset pose: the live
+    # graph's first /ground_truth sample is what starts racing_metrics' lap.
+    lap = CenterlineLap(shared_track.length())
     tracking_errors: list[float] = []
     wall_clearances: list[float] = []
     collision_count = 0
     saturation_events = 0
     was_colliding = False
 
+    step_period = float(env.params.timestep) * timestep_ratio
     for _ in range(max_steps):
         steering, speed = action_provider(observation, state)
         requested = np.asarray([steering, speed], dtype=float)
@@ -144,24 +203,22 @@ def run_seeded_scenario(
             state,
             {"agent_0": jnp.asarray(clipped)},
         )
-        cartesian = np.asarray(state.cartesian_states)[0]
-        frenet = shared_track.to_frenet(
-            racing_common.CartesianPose(
-                float(cartesian[0]), float(cartesian[1]), float(cartesian[4])
-            )
-        )
+        frenet = frenet_of(state)
         tracking_errors.append(abs(float(frenet.d)))
         wall_clearances.append(float(np.min(np.asarray(state.scans)[0])))
 
         is_colliding = bool(np.asarray(state.collisions)[0])
         collision_count += int(is_colliding and not was_colliding)
         was_colliding = is_colliding
-        if bool(dones["__all__"]):
+        # The gym's `done` also fires on its own winding-number lap, which
+        # is not the lap (CenterlineLap); only its collision ends a run.
+        elapsed = int(np.asarray(state.step)) * step_period
+        if lap.update(frenet.s, elapsed) or is_colliding:
             break
 
     elapsed_steps = int(np.asarray(state.step))
     simulated_time = elapsed_steps * float(env.params.timestep) * timestep_ratio
-    lap_completed = bool(np.asarray(state.num_laps)[0] >= 1)
+    lap_completed = lap.completed
     repo_root = Path(__file__).resolve().parents[1]
     return {
         "header": {
@@ -176,7 +233,7 @@ def run_seeded_scenario(
         "seed": seed,
         "timestep_ratio": timestep_ratio,
         "lap_completed": lap_completed,
-        "lap_time": simulated_time if lap_completed else 0.0,
+        "lap_time": lap.lap_time if lap_completed else 0.0,
         "collision_count": collision_count,
         "minimum_wall_clearance": min(wall_clearances, default=0.0),
         "maximum_tracking_error": max(tracking_errors, default=0.0),
