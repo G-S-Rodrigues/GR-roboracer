@@ -1,20 +1,20 @@
 {
-  "code_revision": "7d11cbba5c69be58eb6056e24bf8be8b9a84ca3f",
+  "code_revision": "cf8fc4c8a6ad7fe66781b88d53e65181b8c103c9",
   "collision_count": 0,
-  "container_image_digest": "sha256:32d547dfb7fb8816d545950e6dd7d894f7458ea96f68549f0df22d51fcb5af03",
+  "container_image_digest": "sha256:63dd52cffb3915d0e6c11e57fefe0dbfd7647689cb200d077e90e85b97e6f9c3",
   "control_saturation_events": 0,
   "header": {
     "frame_id": "map",
     "stamp": {
-      "nanosec": 850000000,
+      "nanosec": 820000000,
       "sec": 22
     }
   },
   "lap_completed": true,
-  "lap_time": 22.85,
+  "lap_time": 22.81,
   "maximum_tracking_error": 0.353077505925579,
   "minimum_wall_clearance": 1.7234395742416382,
-  "p95_tracking_error": 0.13891541780938804,
+  "p95_tracking_error": 0.13893469627785066,
   "platform": {
     "jax_backend": "gpu",
     "jax_version": "0.7.2",
