@@ -66,9 +66,23 @@ Regenerating the golden baseline is a **reviewed diff**, run in `fast-sim`, and 
 failing run:
 
 ```bash
-docker compose -f docker/docker-compose.yaml run --rm fast-sim \
-  python sim/rollout.py --scenario baseline --seed 42
+# tests/golden/baseline.json (analytic_circle, SIM-3040)
+docker compose -f docker/docker-compose.yaml run --rm -T fast-sim python -m sim.rollout \
+  --track config/tracks/analytic_circle.yaml --maps-root config/scenarios/maps \
+  --scenario baseline --seed 42 --max-steps 9000 \
+  --image-digest "$(docker image inspect --format '{{.Id}}' gr-roboracer:fast-sim)" \
+  --vehicle-parameter-version f1tenth-default-v1 --lookahead-distance 1.0 \
+  --minimum-speed 0.5 --maximum-speed 3.0 --curvature-speed-gain 1.0 \
+  --output tests/golden/baseline.json
+
+# tests/golden/spielberg_baseline.json (SIM-3090): the same flags with
+#   --track config/tracks/spielberg.yaml --scenario spielberg --max-steps 30000
 ```
+
+The controller flags are `config/vehicles/f1tenth_default.yaml`'s values; `python sim/rollout.py`
+fails with `ModuleNotFoundError: sim`, so run it as a module. It regenerates the gym map assets
+under `config/scenarios/maps` from the canonical track, byte-identically. The live scenario must
+not set physics parameters the rollout does not (SIMJAX-1060).
 
 ## When a run misbehaves
 

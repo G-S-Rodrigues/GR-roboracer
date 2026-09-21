@@ -1,3 +1,11 @@
+# analytic_circle is NEVER used to measure localization (repo-gotchas #18):
+# a perfect annulus shows every centerline point an identical scan, so scan
+# matching cannot observe position along the track, and a SLAM/localization
+# node converges, reports no fault and slides freely along s. It is kept for
+# everything else because a lap is ~5x cheaper than Spielberg's. Localization
+# runs on config/scenarios/spielberg.yaml. (The warning lives here, not in
+# the track file, because tests/golden/baseline.json's track_version is that
+# file's sha256.)
 format_version: 1
 scenario_id: contract_test
 environment:

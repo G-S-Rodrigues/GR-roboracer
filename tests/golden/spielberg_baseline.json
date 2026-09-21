@@ -1,0 +1,31 @@
+{
+  "code_revision": "48bbe5b3d67f0413ec40e7e3fe805291f7e47563",
+  "collision_count": 0,
+  "container_image_digest": "sha256:63dd52cffb3915d0e6c11e57fefe0dbfd7647689cb200d077e90e85b97e6f9c3",
+  "control_saturation_events": 0,
+  "header": {
+    "frame_id": "map",
+    "stamp": {
+      "nanosec": 420000000,
+      "sec": 120
+    }
+  },
+  "lap_completed": true,
+  "lap_time": 120.41,
+  "maximum_tracking_error": 0.20817356974921253,
+  "minimum_wall_clearance": 0.8914279341697693,
+  "p95_tracking_error": 0.03197427105248468,
+  "platform": {
+    "jax_backend": "gpu",
+    "jax_version": "0.7.2",
+    "machine": "x86_64",
+    "python": "3.12.14",
+    "system": "Linux"
+  },
+  "scenario_id": "spielberg",
+  "seed": 42,
+  "source": "headless_sim",
+  "timestep_ratio": 1,
+  "track_version": "712d2403909da9a8107ffc968d69cf6863e7dbd80fce4a2f74a5b4d9f9f4dcf8",
+  "vehicle_parameter_version": "f1tenth-default-v1"
+}
