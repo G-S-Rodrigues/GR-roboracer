@@ -18,9 +18,7 @@ environment:
   max_steps: 30000
   version: v0
 parameters:
-  integrator: euler
   num_beams: 64
-  theta_dis: 720
 # The identity racing_metrics and racing_recording report for a run of this
 # scenario; tests/golden/spielberg_baseline.json carries the same pair.
 metrics:
