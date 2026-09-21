@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>racing_common</exec_depend>
   <exec_depend>racing_interfaces</exec_depend>

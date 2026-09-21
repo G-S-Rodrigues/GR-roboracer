@@ -11,6 +11,7 @@ import math
 
 import racing_common
 import rclpy
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import LocalizationError
 from rclpy.node import Node
@@ -50,6 +51,13 @@ ESTIMATE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,
 )
+# A pose source publishes one of these: the simulator and any composed
+# estimate are nav_msgs/Odometry; slam_toolbox (/pose) and nav2_amcl
+# (/amcl_pose) are geometry_msgs/PoseWithCovarianceStamped (EVAL-2020).
+ESTIMATE_TYPES = {
+    "odometry": Odometry,
+    "pose_with_covariance": PoseWithCovarianceStamped,
+}
 ERROR_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
@@ -58,7 +66,10 @@ ERROR_QOS = QoSProfile(
 )
 
 
-def pose_from_odometry(message: Odometry) -> Pose:
+def pose_from_odometry(
+    message: Odometry | PoseWithCovarianceStamped,
+) -> Pose:
+    # Both types carry header + pose.pose; only the name differs.
     stamp = message.header.stamp
     position = message.pose.pose.position
     q = message.pose.pose.orientation
@@ -84,6 +95,13 @@ class EvaluationNode(Node):
         ).value
         track_path = self.declare_parameter("track_path", "").value
         window = self.declare_parameter("window", DEFAULT_WINDOW).value
+        estimate_type = self.declare_parameter(
+            "estimate_type", "odometry"
+        ).value
+        if estimate_type not in ESTIMATE_TYPES:
+            raise ValueError(
+                f"estimate_type must be one of {sorted(ESTIMATE_TYPES)}"
+            )
         if not track_path:
             raise ValueError("track_path is required")
         self._track = racing_common.Track.from_yaml(track_path)
@@ -98,14 +116,19 @@ class EvaluationNode(Node):
             Odometry, truth_topic, self._on_truth, TRUTH_QOS
         )
         self._estimate_subscription = self.create_subscription(
-            Odometry, self._estimate_topic, self._on_estimate, ESTIMATE_QOS
+            ESTIMATE_TYPES[estimate_type],
+            self._estimate_topic,
+            self._on_estimate,
+            ESTIMATE_QOS,
         )
 
     def _on_truth(self, message: Odometry) -> None:
         self._truth_frame = message.header.frame_id
         self._publish(self._aligner.add_truth(pose_from_odometry(message)))
 
-    def _on_estimate(self, message: Odometry) -> None:
+    def _on_estimate(
+        self, message: Odometry | PoseWithCovarianceStamped
+    ) -> None:
         self._publish(self._aligner.add_estimate(pose_from_odometry(message)))
 
     def _publish(self, pairs: list[AlignedPair]) -> None:
