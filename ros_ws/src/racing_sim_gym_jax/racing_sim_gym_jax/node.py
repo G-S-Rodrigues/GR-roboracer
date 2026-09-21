@@ -27,6 +27,7 @@ from tf2_ros import TransformBroadcaster
 
 from .backend import DriveCommand, GymBackend, Snapshot
 from .clock import simulated_clock_message, step_due, wall_timer_period
+from .laser import LaserMount
 from .noise import (
     OdometryState,
     apply_scan_noise,
@@ -77,6 +78,11 @@ class RacingSimNode(Node):
         # consumer to be discovered and then define t=0 without rewinding a
         # clock they already followed.
         self.declare_parameter("start_held", False)
+        # base_link -> laser, planar: /scan is ray-marched from there. The
+        # vehicle file states it from the URDF (BRINGUP-1050); the default
+        # casts from base_link.
+        for name in ("laser_x", "laser_y", "laser_yaw"):
+            self.declare_parameter(name, 0.0)
         scenario_path = Path(
             self.get_parameter("scenario_path")
             .get_parameter_value()
@@ -84,7 +90,13 @@ class RacingSimNode(Node):
         )
         self._scenario = load_scenario(scenario_path)
         seed = self.get_parameter("seed").get_parameter_value().integer_value
-        self._backend = GymBackend(self._scenario, seed)
+        laser_mount = LaserMount(
+            *(
+                self.get_parameter(name).get_parameter_value().double_value
+                for name in ("laser_x", "laser_y", "laser_yaw")
+            )
+        )
+        self._backend = GymBackend(self._scenario, seed, laser_mount)
         self._reset_noise(seed, self._backend.snapshot())
         self._step_mode = False
         self._held = (
@@ -272,13 +284,19 @@ class RacingSimNode(Node):
         clock_message.clock = stamp
         self._clock_publisher.publish(clock_message)
 
-        ground_truth_scan = self._scan_message(stamp, snapshot.scan)
+        # Each scan is labelled with the frame it was cast from: the exact
+        # one from base_link (racing_metrics' clearance is measured from
+        # there), the noisy one from the laser mount, as a real lidar.
+        ground_truth_scan = self._scan_message(
+            stamp, "base_link", snapshot.scan
+        )
         self._ground_truth_scan_publisher.publish(ground_truth_scan)
         self._scan_publisher.publish(
             self._scan_message(
                 stamp,
+                "laser",
                 apply_scan_noise(
-                    snapshot.scan,
+                    snapshot.laser_scan,
                     self._scan_rng,
                     self._scenario.scan_noise_sigma_m,
                     self._scenario.scan_dropout_probability,
@@ -336,10 +354,12 @@ class RacingSimNode(Node):
         relative.covariance = [0.0] * 25
         self._track_state_publisher.publish(relative)
 
-    def _scan_message(self, stamp, ranges: np.ndarray) -> LaserScan:
+    def _scan_message(
+        self, stamp, frame_id: str, ranges: np.ndarray
+    ) -> LaserScan:
         scan = LaserScan()
         scan.header.stamp = stamp
-        scan.header.frame_id = "laser"
+        scan.header.frame_id = frame_id
         beam_count = len(ranges)
         field_of_view = float(self._scenario.parameters.get("fov", 4.7))
         scan.angle_min = -field_of_view / 2.0
