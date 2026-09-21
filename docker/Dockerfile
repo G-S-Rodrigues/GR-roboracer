@@ -39,6 +39,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ros-jazzy-teleop-tools \
         ros-jazzy-urg-node \
         ros-jazzy-rosbridge-server \
+        ros-jazzy-nav2-amcl \
+        ros-jazzy-nav2-map-server \
+        ros-jazzy-nav2-lifecycle-manager \
     && rm -rf /var/lib/apt/lists/*
 
 
