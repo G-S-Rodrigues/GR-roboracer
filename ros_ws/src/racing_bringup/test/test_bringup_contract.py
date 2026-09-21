@@ -244,3 +244,60 @@ def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
     source = LAUNCH_FILE.read_text(encoding="utf-8")
     assert 'remappings=[("/odom", GROUND_TRUTH_POSE)]' in source
     assert '"estimate_topic", default_value=GROUND_TRUTH_POSE' in source
+
+
+def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser() -> None:
+    """BRINGUP-1050: the sim's laser mount is the URDF's base_link_to_laser.
+
+    /scan is stamped in frame `laser` and every estimator places its beams
+    through TF base_link -> laser, which robot_state_publisher takes from the
+    URDF. The sim ray-marches /scan from the mount the vehicle file states.
+    Two copies of one geometry number drift silently (repo-gotchas #15's
+    shape): a mismatch shifts every scan point by the difference, and reads
+    as localization error, never as a fault. The sim is planar, so a mount
+    it cannot represent (roll, pitch) fails here too.
+    """
+    import xml.etree.ElementTree as ElementTree
+
+    import yaml
+
+    urdf = REPOSITORY_ROOT / (
+        "ros_ws/src/racing_vehicle_description/urdf/f1tenth.urdf"
+    )
+    origin = (
+        ElementTree.parse(urdf)
+        .getroot()
+        .find("./joint[@name='base_link_to_laser']/origin")
+    )
+    x, y, _z = (float(value) for value in origin.attrib["xyz"].split())
+    roll, pitch, yaw = (float(value) for value in origin.attrib["rpy"].split())
+    assert (roll, pitch) == (0.0, 0.0)
+
+    mount = yaml.safe_load(VEHICLE_CONFIG.read_text(encoding="utf-8"))[
+        "racing_sim"
+    ]["ros__parameters"]
+    assert (mount["laser_x"], mount["laser_y"], mount["laser_yaw"]) == (
+        x,
+        y,
+        yaw,
+    )
+
+    # ...and the launch hands the sim that file, or the mount never arrives
+    # and the sim casts from base_link.
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    sim_node = next(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "sim_node"
+    )
+    parameters = next(
+        keyword.value
+        for keyword in sim_node.keywords
+        if keyword.arg == "parameters"
+    )
+    assert any(
+        isinstance(element, ast.Name) and element.id == "VEHICLE_CONFIG"
+        for element in parameters.elts
+    )

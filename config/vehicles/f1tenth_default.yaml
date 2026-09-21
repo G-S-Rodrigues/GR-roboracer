@@ -3,6 +3,18 @@
 # racing_metrics/racing_recording below whenever a value here changes, so a metrics record can be
 # attributed to the configuration that produced it.
 
+racing_sim:
+  ros__parameters:
+    # base_link -> laser: the URDF joint base_link_to_laser's origin
+    # (racing_vehicle_description/urdf/f1tenth.urdf), planar part only.
+    # /scan is ray-marched from here, because it is stamped in frame `laser`
+    # and every estimator places its beams through that TF. BRINGUP-1050
+    # fails if these and the URDF disagree (repo-gotchas #15's shape: a
+    # duplicated geometry number drifts silently).
+    laser_x: 0.275
+    laser_y: 0.0
+    laser_yaw: 0.0
+
 racing_controller_baseline:
   ros__parameters:
     wheelbase: 0.33

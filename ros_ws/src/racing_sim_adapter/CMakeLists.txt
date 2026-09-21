@@ -21,6 +21,10 @@ if(BUILD_TESTING)
     TIMEOUT 30
     LABELS "tier2"
   )
+  add_launch_test(test/test_adapter_laser_origin.py
+    TIMEOUT 30
+    LABELS "tier2"
+  )
   add_launch_test(test/test_adapter_time_scale.py
     TIMEOUT 30
     LABELS "tier2"

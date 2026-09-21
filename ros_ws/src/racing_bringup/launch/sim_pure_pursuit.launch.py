@@ -46,13 +46,16 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     sim_node = Node(
         package="racing_sim_gym_jax",
         executable="racing_sim_gym_jax_node",
+        # The vehicle file carries the laser mount /scan is cast from
+        # (BRINGUP-1050).
         parameters=[
+            VEHICLE_CONFIG,
             {
                 "scenario_path": scenario,
                 "seed": seed,
                 "time_scale": time_scale,
                 "start_held": start_held,
-            }
+            },
         ],
     )
     support_node = Node(
