@@ -25,4 +25,5 @@ working directory — the same convention `scripts/check.sh` and each node's own
 already use.
 
 Launch arguments: `scenario`, `seed`, `recording_path`, `use_rviz`, `time_scale` (default 1.0;
-scales wall rate, never physics), `start_held` (default false; sim stays frozen until `~/reset`).
+scales wall rate, never physics), `start_held` (default false; sim stays frozen until `~/reset`),
+`estimate_topic` — the pose `racing_evaluation` scores, ground truth by default (SIM-3060).

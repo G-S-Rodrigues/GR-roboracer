@@ -1,5 +1,6 @@
 """Composes sim adapter + support + controller + supervisor + metrics +
-recording + robot_state_publisher (+ RViz) into the vertical slice.
+evaluation + recording + robot_state_publisher (+ RViz) into the vertical
+slice.
 
 Run from the repository root, so the relative config paths this launch file
 and the nodes it starts both use (``config/vehicles/...``, the launch
@@ -19,6 +20,10 @@ from racing_bringup.scenario_parameters import track_parameters
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
 REC_DEFAULT = "log/recording.jsonl"
+# The pose the controller drives on, and so the estimate racing_evaluation
+# scores by default: ground truth, the reference stack's pose source
+# (config/reference_stack.yaml).
+GROUND_TRUTH_POSE = "/ground_truth/odom"
 
 
 def _launch_nodes(context, robot_description: str, rviz_config: str):
@@ -28,6 +33,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     use_rviz = LaunchConfiguration("use_rviz")
     time_scale = LaunchConfiguration("time_scale")
     start_held = LaunchConfiguration("start_held")
+    estimate_topic = LaunchConfiguration("estimate_topic")
 
     # The scenario names the world; every track-aware node loads that same
     # world (BRINGUP-1010), over the vehicle file's defaults.
@@ -66,7 +72,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         # than in its C++, which keeps the standard /odom: this remap is the
         # seam PR 3's pose_source generalizes. Driving on /odom's drifting
         # dead reckoning would move both goldens.
-        remappings=[("/odom", "/ground_truth/odom")],
+        remappings=[("/odom", GROUND_TRUTH_POSE)],
     )
     supervisor_node = Node(
         package="racing_safety_supervisor",
@@ -86,6 +92,17 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
             {"seed": seed, "use_sim_time": True},
         ],
     )
+    # Scores estimate_topic against ground truth, live. With the default
+    # (ground truth scored against itself) every error is zero: SIM-3060,
+    # the check that the ruler itself is straight.
+    evaluation_node = Node(
+        package="racing_evaluation",
+        executable="racing_evaluation_node",
+        parameters=[
+            tracks["racing_evaluation"],
+            {"estimate_topic": estimate_topic, "use_sim_time": True},
+        ],
+    )
     recording_node = Node(
         package="racing_recording",
         executable="racing_recording_node",
@@ -95,6 +112,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
             {
                 "seed": seed,
                 "output_path": recording_path,
+                "estimate_topic": estimate_topic,
                 "use_sim_time": True,
             },
         ],
@@ -119,6 +137,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         controller_node,
         supervisor_node,
         metrics_node,
+        evaluation_node,
         recording_node,
         robot_state_publisher_node,
         rviz_node,
@@ -135,14 +154,18 @@ def generate_launch_description() -> LaunchDescription:
     rviz_config = str(description_share / "rviz" / "sim_pure_pursuit.rviz")
 
     # Launch-time controls: which scenario runs, its seed, where the replay
-    # log lands, whether RViz starts alongside the graph, and how fast
-    # simulated time advances relative to wall clock (ADR 0006).
+    # log lands, whether RViz starts alongside the graph, how fast
+    # simulated time advances relative to wall clock (ADR 0006), and which
+    # pose racing_evaluation scores.
     scenario_arg = DeclareLaunchArgument("scenario", default_value=SCENARIO)
     seed_arg = DeclareLaunchArgument("seed", default_value="0")
     rec_arg = DeclareLaunchArgument("recording_path", default_value=REC_DEFAULT)
     use_rviz_arg = DeclareLaunchArgument("use_rviz", default_value="true")
     time_scale_arg = DeclareLaunchArgument("time_scale", default_value="1.0")
     start_held_arg = DeclareLaunchArgument("start_held", default_value="false")
+    estimate_topic_arg = DeclareLaunchArgument(
+        "estimate_topic", default_value=GROUND_TRUTH_POSE
+    )
 
     return LaunchDescription(
         [
@@ -152,6 +175,7 @@ def generate_launch_description() -> LaunchDescription:
             use_rviz_arg,
             time_scale_arg,
             start_held_arg,
+            estimate_topic_arg,
             OpaqueFunction(
                 function=_launch_nodes,
                 args=[robot_description, rviz_config],
