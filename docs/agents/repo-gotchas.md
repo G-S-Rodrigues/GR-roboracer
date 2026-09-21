@@ -37,6 +37,12 @@ Traps any task in this repository can hit. Each one cost real time at least once
     fail in the worktree on a file that plainly exists. Point the worktree's
     `install/racing_sim_gym_jax/share/racing_sim_gym_jax/config` at its own `config/`.
 
+21. **Rebuilding the image can strand the colcon build volume.** The apt layer resolves current
+    Jazzy binaries, so a rebuild may bump a library the overlay linked against (seen: `libfastcdr`
+    2.2.7 -> 2.2.8). `build/` and `install/` are named volumes that survive the rebuild, and the next
+    `colcon build` fails with `No rule to make target '/opt/ros/jazzy/lib/libfastcdr.so.2.2.7'`.
+    After any image rebuild, `rm -rf build/* install/*` inside `dev` before building.
+
 ## ROS
 
 6. **QoS mismatch looks like absent data, not an error.** A reliable subscriber never hears a
