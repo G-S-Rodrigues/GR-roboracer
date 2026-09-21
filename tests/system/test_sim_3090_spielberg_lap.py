@@ -28,17 +28,16 @@ ROS_METRICS_SOURCE = "racing_metrics"
 # config/scenarios/spielberg.yaml: metrics.track_version
 ROS_TRACK_VERSION = "spielberg-v1"
 
-# Deliberately 1x, although ADR 0006's time_scale exists to make this lap
-# cheaper. Measured on this host (seed 42, the golden's own run): 1x costs
-# 130.0 s / 131.3 s of wall time and reproduces lap 120.44 twice, against the
-# golden's 120.41; 5x costs 53.9 s / 41.6 s / 41.6 s but laps in 120.50 /
-# 120.48 / 120.49, outside lap_time's 0.05 tolerance, and moves p95 from
-# ~0.030 to ~0.024 and minimum clearance from 0.89143 to 0.88928. So a run
-# above 1x is not the same run, contrary to ADR 0006; the suspected cause
-# (commands applied ticks stale when the wall period shrinks) is an open
-# issue PR 3 must resolve before any metric from a faster run is trusted.
-TIME_SCALE = 1.0
-LAP_WALL_SECONDS = 131.3
+# 5x, ADR 0006's time_scale paying for the league lap. A run above 1x is the
+# same run because the sim waits, above 1x, for the command answering the
+# tick it last published (SIMJAX-1070). Before that it did not: at 5x 1998
+# of 2000 steps applied a command one tick staler than at 1x, and this lap
+# measured 120.47-120.50 against the golden's 120.41, p95 ~0.024 against
+# 1x's ~0.030. Measured with it (seed 42): 5x 43.2 s / 42.2 s of wall time,
+# lap 120.44, p95 0.029779, clearance 0.8914279 - the 1x run's metrics
+# (130.3 s of wall), to the last digit but p95's 5th.
+TIME_SCALE = 5.0
+LAP_WALL_SECONDS = 43.2
 # 3x the measured wall time: absorbs host load (it runs last in `--full`)
 # without letting a hung graph cost much more than the lap itself.
 TIMEOUT_SECONDS = 3.0 * LAP_WALL_SECONDS

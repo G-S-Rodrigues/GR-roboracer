@@ -3,6 +3,7 @@
 import pytest
 from racing_sim_gym_jax.clock import (
     simulated_clock_message,
+    step_due,
     wall_timer_period,
 )
 
@@ -34,3 +35,39 @@ def test_simjax_1040_wall_timer_period_rejects_non_positive_time_scale(
 ):
     with pytest.raises(ValueError, match="time_scale"):
         wall_timer_period(0.01, time_scale)
+
+
+# One 10 ms control period.
+PERIOD = 0.01
+
+
+def test_simjax_1070_above_1x_a_step_waits_for_the_answering_command():
+    """SIMJAX-1070: above 1x the next step waits for a command answering the
+    tick the sim last published, so a command is applied the same number of
+    ticks after its state at every time_scale.
+
+    Measured before this existed (circle, seed 42): at 1x 1997 of 2000 steps
+    applied the command answering the last tick; at 5x 1998 of 2000 applied
+    the one before it, which moved p95 0.1365 -> 0.1332 (Spielberg: 0.0297 ->
+    0.0237).
+    """
+    assert not step_due(5.0, True, False, 0.002, PERIOD)
+    assert step_due(5.0, True, True, 0.002, PERIOD)
+
+
+def test_simjax_1070_at_1x_a_step_never_waits():
+    """SIMJAX-1070: 1x is the real-time rehearsal (ADR 0006); a late command
+    there is the graph's own lateness and stays visible, never absorbed."""
+    assert step_due(1.0, True, False, 0.0, PERIOD)
+
+
+def test_simjax_1070_without_a_commander_a_step_never_waits():
+    """SIMJAX-1070: a sim nobody drives (tier 2) runs at its time_scale."""
+    assert step_due(5.0, False, False, 0.0, PERIOD)
+
+
+def test_simjax_1070_a_step_waits_at_most_one_1x_tick():
+    """SIMJAX-1070: a commander that stops answering slows the run to 1x at
+    worst, never stalls it."""
+    assert not step_due(5.0, True, False, 0.0099, PERIOD)
+    assert step_due(5.0, True, False, 0.01, PERIOD)
