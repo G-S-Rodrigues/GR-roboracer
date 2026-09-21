@@ -17,7 +17,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
 | 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests` | < 10 s total |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
-| 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~2 min |
+| 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~6 min (SIM-3090 alone ~131 s) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~20 s |
 | 5 | The cross-product: tracks × implementations × seeds | `--nightly` *(not built yet)* | minutes-hours |
 
@@ -49,7 +49,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **21 tier-1, 11 tier-2, 5 tier-3, 2 tier-4, 0 tier-5.**
+Current counts: **36 tier-1, 14 tier-2, 8 tier-3, 2 tier-4, 0 tier-5.**
 
 ## The tests that matter most
 
@@ -59,6 +59,13 @@ Current counts: **21 tier-1, 11 tier-2, 5 tier-3, 2 tier-4, 0 tier-5.**
   the test must assert the *profile*, not that a message arrived.
 - **SIM-3040** — the live graph against `tests/golden/baseline.json`. Its value is entirely in its
   tolerances staying tight; see the gotchas.
+- **SIM-3060** — `racing_evaluation` scoring ground truth against itself must read exactly zero
+  error with full availability. It is the check that the ruler is straight; every localization
+  number after it is measured with that ruler.
+- **EVAL-1030** — a stalled estimator scores as *unavailable*, never as zero error. An error over no
+  samples is zero, so without it a dead estimator looks perfect.
+- **SIM-3100** — dead reckoning must drift past a stated floor over a lap. It is the only test that
+  notices noise silently disabled, which would make every localization test vacuous and green.
 
 ## What stays unverified, deliberately
 
