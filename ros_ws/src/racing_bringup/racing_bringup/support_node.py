@@ -27,7 +27,13 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from tf2_ros import TransformBroadcaster
+from rclpy.time import Time
+from tf2_ros import (
+    Buffer,
+    TransformBroadcaster,
+    TransformException,
+    TransformListener,
+)
 from visualization_msgs.msg import Marker, MarkerArray
 
 LATCHED_QOS = QoSProfile(
@@ -98,6 +104,19 @@ def _planar_correction(
     return x, y, yaw
 
 
+def _planar_compose(
+    first: tuple[float, float, float],
+    second: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    """Return the planar pose ``first * second`` (BRINGUP-1040)."""
+    cos_yaw, sin_yaw = math.cos(first[2]), math.sin(first[2])
+    return (
+        first[0] + cos_yaw * second[0] - sin_yaw * second[1],
+        first[1] + sin_yaw * second[0] + cos_yaw * second[1],
+        first[2] + second[2],
+    )
+
+
 def _load_raceline(raceline_path: Path) -> list[TrajectoryPoint]:
     points: list[TrajectoryPoint] = []
     with raceline_path.open(encoding="utf-8", newline="") as handle:
@@ -152,8 +171,8 @@ class SupportNode(Node):
     """Publishes /trajectory and /track/boundaries once, latched, and
     broadcasts the ground-truth pose source's map -> odom TF."""
 
-    def __init__(self) -> None:
-        super().__init__("racing_bringup_support")
+    def __init__(self, **kwargs) -> None:
+        super().__init__("racing_bringup_support", **kwargs)
         self.declare_parameter(
             "track_path", "config/tracks/analytic_circle.yaml"
         )
@@ -163,6 +182,14 @@ class SupportNode(Node):
         )
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("odom_frame", "odom")
+        # Ground truth is the only pose source that does not own map -> odom
+        # itself. An estimator (slam_toolbox, nav2_amcl) does, so this node
+        # must stop broadcasting it: two owners of one TF edge (BRINGUP-2010).
+        self.declare_parameter("publish_map_to_odom", True)
+        # Non-empty under an estimator: publish, per /odom, the latest
+        # map -> odom composed with that dead reckoning - an Odometry in
+        # map at control rate, which is what the controller consumes.
+        self.declare_parameter("composed_odometry_topic", "")
 
         track_path = Path(
             self.get_parameter("track_path").get_parameter_value().string_value
@@ -191,7 +218,24 @@ class SupportNode(Node):
         self._trajectory_marker_publisher = self.create_publisher(
             MarkerArray, "/visualization/trajectory", LATCHED_QOS
         )
+        self._publish_map_to_odom = (
+            self.get_parameter("publish_map_to_odom")
+            .get_parameter_value()
+            .bool_value
+        )
+        composed_topic = (
+            self.get_parameter("composed_odometry_topic")
+            .get_parameter_value()
+            .string_value
+        )
         self._tf_broadcaster = TransformBroadcaster(self)
+        self._composed_publisher = None
+        if composed_topic:
+            self._tf_buffer = Buffer()
+            self._tf_listener = TransformListener(self._tf_buffer, self)
+            self._composed_publisher = self.create_publisher(
+                Odometry, composed_topic, LATCHED_QOS.depth
+            )
         self._latest_truth: Odometry | None = None
         self._latest_dead_reckoning: Odometry | None = None
         self.create_subscription(
@@ -252,6 +296,45 @@ class SupportNode(Node):
     def _on_dead_reckoning(self, message: Odometry) -> None:
         self._latest_dead_reckoning = message
         self._publish_correction()
+        self._publish_composed(message)
+
+    def _publish_composed(self, dead_reckoning: Odometry) -> None:
+        """Publish (latest map -> odom) * dead reckoning, in map.
+
+        The same chain as map -> odom -> base_link in TF, so the pose the
+        controller drives on cannot disagree with what RViz shows. Nothing
+        is published until the estimator has published map -> odom: no pose
+        is better than one in the wrong frame.
+        """
+        if self._composed_publisher is None:
+            return
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self._map_frame, self._odom_frame, Time()
+            )
+        except TransformException:
+            return
+        rotation = transform.transform.rotation
+        yaw = math.atan2(
+            2.0 * (rotation.w * rotation.z + rotation.x * rotation.y),
+            1.0 - 2.0 * (rotation.y**2 + rotation.z**2),
+        )
+        translation = transform.transform.translation
+        x, y, heading = _planar_compose(
+            (translation.x, translation.y, yaw),
+            _planar_pose(dead_reckoning),
+        )
+        composed = Odometry()
+        composed.header.stamp = dead_reckoning.header.stamp
+        composed.header.frame_id = self._map_frame
+        composed.child_frame_id = dead_reckoning.child_frame_id
+        composed.pose.pose.position.x = x
+        composed.pose.pose.position.y = y
+        composed.pose.pose.orientation.z = math.sin(heading / 2.0)
+        composed.pose.pose.orientation.w = math.cos(heading / 2.0)
+        # The twist is in the body frame, which map -> odom does not move.
+        composed.twist = dead_reckoning.twist
+        self._composed_publisher.publish(composed)
 
     def _publish_correction(self) -> None:
         """Broadcast map -> odom = truth * dead_reckoning^-1, per stamp.
@@ -264,6 +347,8 @@ class SupportNode(Node):
         test (repo-gotchas #16). The two poses are paired by stamp, so the
         composed map -> base_link is exactly the ground-truth pose.
         """
+        if not self._publish_map_to_odom:
+            return
         truth = self._latest_truth
         dead_reckoning = self._latest_dead_reckoning
         if truth is None or dead_reckoning is None:

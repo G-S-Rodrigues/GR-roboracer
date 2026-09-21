@@ -11,7 +11,9 @@ needs: the raceline on `/trajectory`, the track geometry on `/track/boundaries` 
 makes `map -> odom -> base_link` the true pose; `racing_sim_gym_jax` broadcasts `odom -> base_link`
 from its dead reckoning). The launch file remaps the controller's `/odom` to `/ground_truth/odom`.
 `support_node.py` is the ROS-only home for those three gaps — it is scaffolding, not
-domain logic, and stays out of `racing_common`.
+domain logic, and stays out of `racing_common`. Under an estimator it stops broadcasting `map -> odom`
+(`publish_map_to_odom: false`) and publishes `composed_odometry_topic` = latest `map -> odom` ∘ `/odom`,
+the control-rate Odometry in `map` the controller drives on (BRINGUP-1040, BRINGUP-2010).
 
 ## Running it
 

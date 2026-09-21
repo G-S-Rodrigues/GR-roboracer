@@ -1,7 +1,7 @@
 import math
 
 import pytest
-from racing_bringup.support_node import _planar_correction
+from racing_bringup.support_node import _planar_compose, _planar_correction
 
 
 def _compose(first, second):
@@ -43,3 +43,37 @@ def test_bringup_1020_map_odom_composes_dead_reckoning_to_truth(
     )
     if truth == dead_reckoning:
         assert correction == pytest.approx((0.0, 0.0, 0.0), abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("map_to_odom", "dead_reckoning", "expected"),
+    [
+        ((0.0, 0.0, 0.0), (4.0, -1.0, 0.7), (4.0, -1.0, 0.7)),
+        ((1.0, 2.0, 0.0), (4.0, -1.0, 0.7), (5.0, 1.0, 0.7)),
+        (
+            (1.0, 2.0, math.pi / 2),
+            (4.0, -1.0, 0.7),
+            (2.0, 6.0, 0.7 + math.pi / 2),
+        ),
+    ],
+)
+def test_bringup_1040_composed_estimate_is_map_to_odom_after_odometry(
+    map_to_odom, dead_reckoning, expected
+) -> None:
+    """BRINGUP-1040: the pose the controller drives on under an estimator is
+    (map -> odom) composed with the /odom dead reckoning - the same chain as
+    map -> odom -> base_link in TF, so it cannot disagree with RViz. With
+    the ground-truth correction it is exactly the ground-truth pose.
+    """
+    composed = _planar_compose(map_to_odom, dead_reckoning)
+
+    assert composed[0] == pytest.approx(expected[0], abs=1e-12)
+    assert composed[1] == pytest.approx(expected[1], abs=1e-12)
+    assert math.remainder(composed[2] - expected[2], 2 * math.pi) == (
+        pytest.approx(0.0, abs=1e-12)
+    )
+    truth = (10.0, -2.0, 0.3)
+    correction = _planar_correction(truth, dead_reckoning)
+    assert _planar_compose(correction, dead_reckoning) == pytest.approx(
+        truth, abs=1e-12
+    )
