@@ -27,7 +27,11 @@ from tf2_ros import TransformBroadcaster
 
 from .backend import DriveCommand, GymBackend, Snapshot
 from .clock import simulated_clock_message, step_due, wall_timer_period
-from .laser import LaserMount
+from .laser import (
+    LaserMount,
+    declared_angle_increment,
+    gym_angle_increment,
+)
 from .noise import (
     OdometryState,
     apply_scan_noise,
@@ -288,7 +292,7 @@ class RacingSimNode(Node):
         # one from base_link (racing_metrics' clearance is measured from
         # there), the noisy one from the laser mount, as a real lidar.
         ground_truth_scan = self._scan_message(
-            stamp, "base_link", snapshot.scan
+            stamp, "base_link", snapshot.scan, gym_angle_increment
         )
         self._ground_truth_scan_publisher.publish(ground_truth_scan)
         self._scan_publisher.publish(
@@ -301,6 +305,7 @@ class RacingSimNode(Node):
                     self._scenario.scan_noise_sigma_m,
                     self._scenario.scan_dropout_probability,
                 ),
+                declared_angle_increment,
             )
         )
 
@@ -355,17 +360,19 @@ class RacingSimNode(Node):
         self._track_state_publisher.publish(relative)
 
     def _scan_message(
-        self, stamp, frame_id: str, ranges: np.ndarray
+        self, stamp, frame_id: str, ranges: np.ndarray, angle_increment
     ) -> LaserScan:
+        """`angle_increment(fov, beam_count)`: the spacing the ranges were
+        cast at. /scan's cast and the gym's differ (plan D6)."""
         scan = LaserScan()
         scan.header.stamp = stamp
         scan.header.frame_id = frame_id
         beam_count = len(ranges)
         field_of_view = float(self._scenario.parameters.get("fov", 4.7))
         scan.angle_min = -field_of_view / 2.0
-        scan.angle_max = field_of_view / 2.0
-        scan.angle_increment = (
-            field_of_view / (beam_count - 1) if beam_count > 1 else 0.0
+        scan.angle_increment = angle_increment(field_of_view, beam_count)
+        scan.angle_max = scan.angle_min + scan.angle_increment * (
+            beam_count - 1
         )
         scan.time_increment = 0.0
         scan.scan_time = self._scenario.control_period

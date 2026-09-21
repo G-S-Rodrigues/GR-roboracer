@@ -13,10 +13,16 @@ import numpy as np
 import racing_common
 from f1tenth_gym_jax import make
 
-from .laser import LaserMount, laser_poses
+from .laser import (
+    DistanceGrid,
+    LaserMount,
+    cast_scan,
+    declared_beam_angles,
+    laser_poses,
+)
 from .scenario import Scenario
 
-# A laser at base_link: the scan is the gym's own, cast once.
+# The default mount: /scan is cast from base_link, at the declared angles.
 BASE_LINK = LaserMount()
 
 
@@ -64,6 +70,10 @@ class GymBackend:
         self._laser_mount = laser_mount
         os.environ["F1TENTH_GYM_JAX_MAP_DIR"] = str(scenario.map_directory)
         self._env = make(scenario.env_id, **scenario.parameters)
+        self._grid = DistanceGrid.of_env(self._env)
+        self._beam_angles = declared_beam_angles(
+            float(self._env.fov), int(self._env.num_beams)
+        )
         self._track = racing_common.Track.from_yaml(scenario.track_path)
         self._command = DriveCommand()
         self._action_spec = racing_common.EnvActionSpec(
@@ -107,12 +117,12 @@ class GymBackend:
             warm_key, self._state, self._action()
         )
         warm_state.cartesian_states.block_until_ready()
-        self._cast_laser_scan(warm_state, warm_key)
+        self._cast_laser_scan(warm_state)
         _, warm_state, _, _, _ = self._env.step_env(
             warm_key, warm_state, self._action()
         )
         warm_state.cartesian_states.block_until_ready()
-        self._cast_laser_scan(warm_state, warm_key)
+        self._cast_laser_scan(warm_state)
         latency = time.perf_counter() - started
         self.reset(seed)
         return latency
@@ -125,7 +135,7 @@ class GymBackend:
         self._observation, self._state = self._env.reset(self._key)
         self._done = False
         self._state.cartesian_states.block_until_ready()
-        self._laser_scan = self._cast_laser_scan(self._state, self._key)
+        self._laser_scan = self._cast_laser_scan(self._state)
         return self.snapshot()
 
     def step(self) -> Snapshot:
@@ -139,40 +149,29 @@ class GymBackend:
         ) = self._env.step_env(step_key, self._state, self._action())
         self._state.cartesian_states.block_until_ready()
         self._done = bool(np.asarray(dones["__all__"]))
-        self._laser_scan = self._cast_laser_scan(self._state, step_key)
+        self._laser_scan = self._cast_laser_scan(self._state)
         return self.snapshot()
 
-    def _cast_laser_scan(self, state, key: jax.Array) -> np.ndarray:
-        """Ray-march the scan again, from the laser mount."""
-        if self._laser_mount.is_origin:
-            return np.asarray(state.scans[0], dtype=float)
-        return np.asarray(self._laser_scans(state, key)[0], dtype=float)
+    def _cast_laser_scan(self, state) -> np.ndarray:
+        """Ray-march /scan from the laser mount, at the declared angles."""
+        return np.asarray(self._laser_scans(state)[0], dtype=float)
 
     @partial(jax.jit, static_argnums=0)
-    def _laser_scans(self, state, key: jax.Array) -> jax.Array:
+    def _laser_scans(self, state) -> jax.Array:
         """One jitted call: eagerly, the pose shift alone cost ~1 ms a step.
 
-        Through the env's own `_scan`, on a state whose pose is the laser's:
-        the signature is the one `_scan` was already traced with, so
-        jax_pf's `get_scan` - which asserts it is traced at most once - is
-        not traced again, and a retrace would fail loudly, not slowly. The
-        key is folded, not split, so the run's own key chain (and with it
-        every ground-truth value and golden) is untouched.
+        Not through the env's `_scan`: jax_pf's `get_scan` puts its beams
+        off the angles a LaserScan declares (plan D6), so /scan is cast by
+        `cast_scan` on the env's own distance transform. The gym's scan -
+        `/ground_truth/scan`, what racing_metrics and every golden read -
+        is untouched, and so is the run's key chain.
         """
-        cartesian = state.cartesian_states
-        laser = laser_poses(cartesian[:, [0, 1, 4]], self._laser_mount)
-        cartesian = (
-            cartesian.at[:, 0]
-            .set(laser[:, 0])
-            .at[:, 1]
-            .set(laser[:, 1])
-            .at[:, 4]
-            .set(laser[:, 2])
+        poses = laser_poses(
+            state.cartesian_states[:, [0, 1, 4]], self._laser_mount
         )
-        return self._env._scan(
-            state.replace(cartesian_states=cartesian),
-            jax.random.fold_in(key, 1),
-        ).scans
+        return jax.vmap(
+            lambda pose: cast_scan(self._grid, pose, self._beam_angles)
+        )(poses)
 
     def snapshot(self) -> Snapshot:
         """Return ROS-neutral state from authoritative Cartesian state.

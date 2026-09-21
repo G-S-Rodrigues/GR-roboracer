@@ -95,6 +95,17 @@ Traps any task in this repository can hit. Each one cost real time at least once
     supervisor's stale-input timeout and latch an unrecoverable emergency stop.
     `GymBackend._warm` takes two chained steps for this reason.
 
+22. **The gym's scan beams are not where a `LaserScan` of it says they are.** f1tenth_gym_jax passes
+    jax_pf an increment of `fov/(N-1)`, and jax_pf's `get_scan` spreads N beams with
+    `linspace(start, start + inc * N, num=N, endpoint=True)` — `inc * N/(N-1)` apart. Its sweep is
+    4.775 rad for 64 beams, not 4.7; the last beam is 4.3 deg off. It also reads each angle from a
+    `linspace(0, 2pi, theta_dis)` table (endpoint included) at a truncated index. Nothing errors:
+    slam_toolbox built a warped, unclosed Spielberg map from it that looked like a tuning problem.
+    `/scan` is therefore cast by `racing_sim_gym_jax.laser.cast_scan` at the declared angles
+    (SIMJAX-1090); `/ground_truth/scan` keeps the gym's ranges (metrics and goldens read them) and
+    declares the gym's spacing (SIMJAX-1100). Never compare two scans beam-by-index: read both at
+    their declared angles. Plan D6 has the measurements.
+
 ## Visualization
 
 16. **A missing mesh is invisible, not an error.** `robot_state_publisher` never loads geometry, so a
