@@ -45,5 +45,6 @@ def track_parameters(scenario_path: Path) -> dict[str, dict[str, Any]]:
             "raceline_path": raceline,
         },
         "racing_metrics": {"track_path": track, **reporting},
+        "racing_evaluation": {"track_path": track},
         "racing_recording": dict(reporting),
     }

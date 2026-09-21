@@ -13,6 +13,7 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>racing_controller_baseline</exec_depend>
+  <exec_depend>racing_evaluation</exec_depend>
   <exec_depend>racing_interfaces</exec_depend>
   <exec_depend>racing_metrics</exec_depend>
   <exec_depend>racing_recording</exec_depend>

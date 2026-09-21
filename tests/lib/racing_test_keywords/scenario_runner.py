@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +79,7 @@ RELIABLE_QOS = QoSProfile(
 )
 
 RESET_SERVICE = "/racing_sim/reset"
-# The seven nodes `sim_pure_pursuit.launch.py` always starts (excludes
+# The eight nodes `sim_pure_pursuit.launch.py` always starts (excludes
 # rviz2, gated off by use_rviz:=false here).
 PARTICIPANT_NODES = (
     "racing_sim",
@@ -86,6 +87,7 @@ PARTICIPANT_NODES = (
     "racing_controller_baseline",
     "racing_safety_supervisor",
     "racing_metrics",
+    "racing_evaluation",
     "racing_recording",
     "robot_state_publisher",
 )
@@ -219,6 +221,7 @@ def run_scenario(
     scenario: str | None = None,
     timeout: float | None = None,
     time_scale: float = DEFAULT_TIME_SCALE,
+    launch_arguments: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Launch the full stack headlessly, run a seeded scenario, return metrics.
 
@@ -232,6 +235,10 @@ def run_scenario(
     a scaled run's wall-clock budget must scale with it too - a fixed
     default sized for ``time_scale=1.0`` would starve a faster run of no
     extra margin, or give a slower one too little.
+
+    ``launch_arguments`` passes further launch arguments through (e.g.
+    ``recording_path``, ``estimate_topic``); it cannot override the ones
+    this function owns.
     """
     if timeout is None:
         timeout = timeout_for_time_scale(time_scale)
@@ -239,14 +246,18 @@ def run_scenario(
 
     # Held until _reset_at_deterministic_t0 releases it, so nothing moves
     # or accumulates before every participant is discovered.
-    launch_arguments = {
+    owned = {
         "seed": str(seed),
         "use_rviz": "false",
         "time_scale": str(time_scale),
         "start_held": "true",
     }
     if scenario is not None:
-        launch_arguments["scenario"] = scenario
+        owned["scenario"] = scenario
+    overlap = set(owned) & set(launch_arguments or {})
+    if overlap:
+        raise ValueError(f"launch_arguments may not set {sorted(overlap)}")
+    launch_arguments = {**(launch_arguments or {}), **owned}
 
     description = launch.LaunchDescription(
         [

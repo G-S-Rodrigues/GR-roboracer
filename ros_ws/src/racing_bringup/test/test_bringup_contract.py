@@ -37,6 +37,7 @@ def test_launch_composes_the_complete_runtime_graph() -> None:
         ("racing_controller_baseline", "racing_controller_baseline_node"),
         ("racing_safety_supervisor", "racing_safety_supervisor_node"),
         ("racing_metrics", "racing_metrics_node"),
+        ("racing_evaluation", "racing_evaluation_node"),
         ("racing_recording", "racing_recording_node"),
         ("racing_bringup", "racing_bringup_support"),
         ("robot_state_publisher", "robot_state_publisher"),
@@ -95,6 +96,7 @@ def test_launch_runs_on_simulated_time() -> None:
         "controller_node",
         "supervisor_node",
         "metrics_node",
+        "evaluation_node",
         "recording_node",
         "robot_state_publisher_node",
         "rviz_node",
@@ -181,6 +183,7 @@ def test_bringup_1010_the_scenario_selects_every_nodes_track() -> None:
     )
     assert spielberg["racing_safety_supervisor"]["track_path"] == track
     assert spielberg["racing_metrics"]["track_path"] == track
+    assert spielberg["racing_evaluation"]["track_path"] == track
     assert spielberg["racing_bringup_support"]["track_path"] == track
     assert spielberg["racing_bringup_support"]["raceline_path"] == raceline
     for reporter in ("racing_metrics", "racing_recording"):

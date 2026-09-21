@@ -1,7 +1,10 @@
 #include <ackermann_msgs/msg/ackermann_drive_stamped.hpp>
+#include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <memory>
+#include <nav_msgs/msg/odometry.hpp>
+#include <racing_interfaces/msg/localization_error.hpp>
 #include <racing_interfaces/msg/safety_status.hpp>
 #include <racing_interfaces/msg/scenario_metrics.hpp>
 #include <racing_interfaces/msg/track_relative_state.hpp>
@@ -17,6 +20,8 @@
 
 namespace racing_recording {
 namespace {
+
+constexpr auto ground_truth_odometry_topic = "/ground_truth/odom";
 
 std::int64_t timestamp_nanoseconds(const builtin_interfaces::msg::Time &stamp) {
     constexpr std::int64_t nanoseconds_per_second = 1000000000;
@@ -66,6 +71,49 @@ std::string drive_payload(
            << ",\"acceleration\":" << message.drive.acceleration
            << ",\"steering_angle_velocity\":"
            << message.drive.steering_angle_velocity << '}';
+    return output.str();
+}
+
+// JSON has no NaN: an unavailable localization sample's errors are NaN by
+// contract (LocalizationError.msg), and must stay parseable as null.
+std::string json_number(double value) {
+    if (!std::isfinite(value)) {
+        return "null";
+    }
+    std::ostringstream output;
+    output << std::setprecision(17) << value;
+    return output.str();
+}
+
+std::string pose_payload(const nav_msgs::msg::Odometry &message) {
+    const auto &pose = message.pose.pose;
+    std::ostringstream output;
+    output << std::setprecision(17) << "{\"frame_id\":\""
+           << escape_json(message.header.frame_id)
+           << "\",\"x\":" << pose.position.x << ",\"y\":" << pose.position.y
+           << ",\"qx\":" << pose.orientation.x
+           << ",\"qy\":" << pose.orientation.y
+           << ",\"qz\":" << pose.orientation.z
+           << ",\"qw\":" << pose.orientation.w << '}';
+    return output.str();
+}
+
+std::string localization_error_payload(
+    const racing_interfaces::msg::LocalizationError &message) {
+    std::ostringstream output;
+    output << "{\"source\":\"" << escape_json(message.source)
+           << "\",\"estimate_topic\":\"" << escape_json(message.estimate_topic)
+           << "\",\"available\":" << (message.available ? "true" : "false")
+           << ",\"position_error\":" << json_number(message.position_error)
+           << ",\"lateral_error\":" << json_number(message.lateral_error)
+           << ",\"longitudinal_error\":"
+           << json_number(message.longitudinal_error)
+           << ",\"heading_error\":" << json_number(message.heading_error)
+           << ",\"sample_count\":" << message.sample_count
+           << ",\"available_count\":" << message.available_count
+           << ",\"position_rmse\":" << json_number(message.position_rmse)
+           << ",\"position_maximum\":" << json_number(message.position_maximum)
+           << '}';
     return output.str();
 }
 
@@ -191,6 +239,28 @@ class RecordingNode : public rclcpp::Node {
                                   metrics_payload(*message));
                 recorder_->flush();
             });
+        // The estimate and error streams racing_evaluation scores, plus the
+        // ground truth it scores against: enough for
+        // scripts/compare_localization.py to rescore a run offline.
+        const auto estimate_topic = declare_parameter(
+            "estimate_topic", std::string{ground_truth_odometry_topic});
+        truth_subscription_ = subscribe_pose(ground_truth_odometry_topic,
+                                             rclcpp::QoS(10).reliable());
+        if (estimate_topic != std::string{ground_truth_odometry_topic}) {
+            // Best effort hears a reliable or a best-effort pose source.
+            estimate_subscription_ =
+                subscribe_pose(estimate_topic, rclcpp::QoS(10).best_effort());
+        }
+        error_subscription_ =
+            create_subscription<racing_interfaces::msg::LocalizationError>(
+                "/evaluation/localization_error", rclcpp::QoS(10).reliable(),
+                [this](const racing_interfaces::msg::LocalizationError::
+                           ConstSharedPtr &message) {
+                    recorder_->record("/evaluation/localization_error",
+                                      "racing_interfaces/msg/LocalizationError",
+                                      message_timestamp(*message),
+                                      localization_error_payload(*message));
+                });
         flush_service_ = create_service<std_srvs::srv::Trigger>(
             "~/flush",
             [this](
@@ -201,6 +271,18 @@ class RecordingNode : public rclcpp::Node {
     }
 
    private:
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subscribe_pose(
+        const std::string &topic, const rclcpp::QoS &qos) {
+        return create_subscription<nav_msgs::msg::Odometry>(
+            topic, qos,
+            [this,
+             topic](const nav_msgs::msg::Odometry::ConstSharedPtr &message) {
+                recorder_->record(topic, "nav_msgs/msg/Odometry",
+                                  message_timestamp(*message),
+                                  pose_payload(*message));
+            });
+    }
+
     void flush(const std_srvs::srv::Trigger::Response::SharedPtr &response) {
         try {
             recorder_->flush();
@@ -221,6 +303,12 @@ class RecordingNode : public rclcpp::Node {
         safety_subscription_;
     rclcpp::Subscription<racing_interfaces::msg::ScenarioMetrics>::SharedPtr
         metrics_subscription_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr
+        truth_subscription_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr
+        estimate_subscription_;
+    rclcpp::Subscription<racing_interfaces::msg::LocalizationError>::SharedPtr
+        error_subscription_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr flush_service_;
 };
 

@@ -3,6 +3,7 @@ project(racing_recording)
 
 find_package(ackermann_msgs REQUIRED)
 find_package(ament_cmake REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(racing_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
@@ -19,7 +20,7 @@ add_executable(${PROJECT_NAME}_node src/node.cpp)
 target_compile_features(${PROJECT_NAME}_node PUBLIC cxx_std_17)
 target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
 ament_target_dependencies(${PROJECT_NAME}_node
-  ackermann_msgs racing_interfaces rclcpp std_srvs
+  ackermann_msgs nav_msgs racing_interfaces rclcpp std_srvs
 )
 
 install(TARGETS ${PROJECT_NAME}
