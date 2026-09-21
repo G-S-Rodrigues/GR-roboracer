@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +26,7 @@ from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import TransformBroadcaster
 
 from .backend import DriveCommand, GymBackend, Snapshot
-from .clock import simulated_clock_message, wall_timer_period
+from .clock import simulated_clock_message, step_due, wall_timer_period
 from .noise import (
     OdometryState,
     apply_scan_noise,
@@ -90,6 +91,12 @@ class RacingSimNode(Node):
             self.get_parameter("start_held").get_parameter_value().bool_value
         )
         self._simulation_time_ns = 0
+        # Above 1x the next step waits for the command answering the last
+        # published tick (SIMJAX-1070), so a faster run is the same run.
+        self._published_ns = 0
+        self._published_at = time.monotonic()
+        self._answered = False
+        self._step_deferred = False
 
         # /scan and /odom take their standard ROS meanings - noisy, what a
         # real car's sensors give - because every off-the-shelf estimator
@@ -121,11 +128,11 @@ class RacingSimNode(Node):
         )
         self.create_service(Reset, "~/reset", self._on_reset)
         self.create_service(SetStepMode, "~/step_mode", self._on_step_mode)
-        time_scale = (
+        self._time_scale = (
             self.get_parameter("time_scale").get_parameter_value().double_value
         )
         self._timer = self.create_timer(
-            wall_timer_period(self._scenario.control_period, time_scale),
+            wall_timer_period(self._scenario.control_period, self._time_scale),
             self._on_timer,
         )
         self.get_logger().info(
@@ -168,6 +175,9 @@ class RacingSimNode(Node):
 
     def _on_drive(self, message: AckermannDriveStamped) -> None:
         drive = message.drive
+        stamp = message.header.stamp
+        if stamp.sec * 1_000_000_000 + stamp.nanosec >= self._published_ns:
+            self._answered = True
         self._backend.set_command(
             DriveCommand(
                 steering_angle=float(drive.steering_angle),
@@ -176,6 +186,10 @@ class RacingSimNode(Node):
                 acceleration=float(drive.acceleration),
             )
         )
+        # The timer already found this step due by time and was only waiting
+        # for this command: step now, not on the next timer tick.
+        if self._step_deferred and self._step_due():
+            self._step()
 
     def _on_reset(self, request: Reset.Request, response: Reset.Response):
         if request.scenario_id not in ("", self._scenario.scenario_id):
@@ -195,6 +209,7 @@ class RacingSimNode(Node):
         if self._held:
             self._simulation_time_ns = 0
         self._held = False
+        self._step_deferred = False
         self._publish(snapshot)
         response.success = True
         response.message = "reset"
@@ -218,16 +233,37 @@ class RacingSimNode(Node):
         return response
 
     def _on_timer(self) -> None:
-        snapshot = (
-            self._backend.snapshot() if self._frozen else self._backend.step()
+        if self._frozen:
+            self._publish(self._backend.snapshot())
+        elif self._step_due():
+            self._step()
+        else:
+            self._step_deferred = True
+
+    def _step_due(self) -> bool:
+        return step_due(
+            self._time_scale,
+            # A commander is anything publishing /drive, known before t=0:
+            # the first answer arrives only after the first step, and
+            # waiting on it from then would leave that step unanswered.
+            self.count_publishers("/drive") > 0,
+            self._answered,
+            time.monotonic() - self._published_at,
+            self._scenario.control_period,
         )
-        self._publish(snapshot)
+
+    def _step(self) -> None:
+        self._step_deferred = False
+        self._publish(self._backend.step())
 
     def _publish(self, snapshot: Snapshot) -> None:
         # Message time follows deterministic simulator time, not how quickly a
         # CPU host happens to execute the JAX step. This keeps recorded rates
         # and seeded runs comparable across CPU/GPU hardware.
         stamp = simulated_clock_message(self._simulation_time_ns)
+        self._published_ns = self._simulation_time_ns
+        self._published_at = time.monotonic()
+        self._answered = False
         if not self._frozen:
             self._simulation_time_ns += round(
                 self._scenario.control_period * 1_000_000_000
