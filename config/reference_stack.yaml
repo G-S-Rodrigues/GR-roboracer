@@ -1,0 +1,34 @@
+# The reference stack (ADR 0005): the one composition every new
+# implementation is verified in - once, against ground truth - and never
+# against its peers or predecessors. It names the current default for each
+# replaceable role. Changing an entry re-points every future test, so it is a
+# reviewed decision, not a convenience.
+#
+# racing_bringup/launch/sim_pure_pursuit.launch.py composes it; BRINGUP-1030
+# fails if the two disagree. Adding an implementation adds a launch-time
+# choice beside the default below; it never deletes the default.
+schema_version: 1
+roles:
+  simulator:
+    implementation: f1tenth_gym_jax
+    package: racing_sim_gym_jax
+  pose_source:
+    # Exact simulator pose. The support node owns map -> odom for it,
+    # composing dead reckoning back to the truth. PR 3 adds slam_toolbox and
+    # amcl beside it.
+    implementation: ground_truth
+    package: racing_bringup
+    topic: /ground_truth/odom
+  planner:
+    # The scenario's precomputed raceline, published on /trajectory.
+    implementation: track_raceline
+    package: racing_bringup
+  controller:
+    implementation: pure_pursuit
+    package: racing_controller_baseline
+  safety:
+    implementation: safety_supervisor
+    package: racing_safety_supervisor
+  evaluation:
+    implementation: localization_error
+    package: racing_evaluation
