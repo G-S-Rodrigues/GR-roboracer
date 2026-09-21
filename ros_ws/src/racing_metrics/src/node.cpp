@@ -102,8 +102,15 @@ class MetricsNode : public rclcpp::Node {
             create_publisher<racing_interfaces::msg::ScenarioMetrics>(
                 "/scenario/metrics",
                 rclcpp::QoS(1).reliable().transient_local());
+        // The exact scan, never /scan: both minimum_wall_clearance and
+        // collision_count derive from it, and on the noisy /scan both would
+        // measure the noise floor and vary with the noise seed while passing
+        // every structural check (repo-gotchas #17). Deliberately still a
+        // scan, not a clearance computed from track geometry: a scan also
+        // sees obstacles that are not in the track - the Stage 4-5
+        // opponents.
         scan_subscription_ = create_subscription<sensor_msgs::msg::LaserScan>(
-            "/scan", rclcpp::SensorDataQoS(),
+            "/ground_truth/scan", rclcpp::SensorDataQoS(),
             [this](const sensor_msgs::msg::LaserScan::ConstSharedPtr &message) {
                 update_clearance(*message);
             });

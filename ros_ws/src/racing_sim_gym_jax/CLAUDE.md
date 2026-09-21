@@ -2,7 +2,8 @@
 
 Purpose: expose one warmed `f1tenth_gym_jax` environment through the backend-neutral ROS contract.
 
-Public contract: `/scan`, `/odom`, `/imu`, `/drive`, ground truth, `~/reset`, and `~/step_mode`.
+Public contract: noisy `/scan` and `/odom` (frame `odom`, plus TF `odom -> base_link`), exact
+`/ground_truth/scan` and `/ground_truth/odom` (frame `map`), `/imu`, `/drive`, `~/reset`, and `~/step_mode`.
 
 Language: Python because the simulator is JAX; keep all state evolution in the ROS-free backend.
 

@@ -9,6 +9,7 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <test_depend>ackermann_msgs</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>nav_msgs</test_depend>

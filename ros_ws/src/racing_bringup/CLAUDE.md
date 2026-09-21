@@ -7,8 +7,10 @@ Launch files and the one support node the vertical slice needs but no other pack
 Every other node in the slice is a thin shell around a ROS-free class (see each sibling package's
 own `CLAUDE.md`). None of them are responsible for the three things a human watching RViz actually
 needs: the raceline on `/trajectory`, the track geometry on `/track/boundaries` and
-`/visualization/track`, and a `map -> base_link` TF (`racing_sim_gym_jax` publishes `/odom`, never a
-transform). `support_node.py` is the ROS-only home for those three gaps — it is scaffolding, not
+`/visualization/track`, and the `map -> odom` TF of the ground-truth pose source (the correction that
+makes `map -> odom -> base_link` the true pose; `racing_sim_gym_jax` broadcasts `odom -> base_link`
+from its dead reckoning). The launch file remaps the controller's `/odom` to `/ground_truth/odom`.
+`support_node.py` is the ROS-only home for those three gaps — it is scaffolding, not
 domain logic, and stays out of `racing_common`.
 
 ## Running it

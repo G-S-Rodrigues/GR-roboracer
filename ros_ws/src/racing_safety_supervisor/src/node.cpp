@@ -91,8 +91,13 @@ class SafetySupervisorNode : public rclcpp::Node {
                         to_clock_time_point(get_clock()->now());
                     command_.has_command = true;
                 });
+        // In simulation the supervisor reads truth, whatever pose source the
+        // controller is on. If both read the estimate, a localization failure
+        // is a consistent delusion: the car leaves the track and the
+        // supervisor agrees everything is fine. On truth, it surfaces as an
+        // honest TRACK_LIMIT stop. A real car has no such luxury.
         odometry_subscription_ = create_subscription<nav_msgs::msg::Odometry>(
-            "/odom", rclcpp::QoS(10).reliable(),
+            "/ground_truth/odom", rclcpp::QoS(10).reliable(),
             [this](const nav_msgs::msg::Odometry::ConstSharedPtr &message) {
                 state_.pose = {message->pose.pose.position.x,
                                message->pose.pose.position.y,

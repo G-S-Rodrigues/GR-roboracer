@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from .noise import OdometryNoise
+
+NO_ODOMETRY_NOISE = OdometryNoise(0.0, 0.0, 0.0, 0.0)
 
 VALID_LONGITUDINAL = frozenset({"acceleration", "velocity"})
 VALID_STEERING = frozenset({"steeringangle", "steeringvelocity"})
@@ -31,6 +35,11 @@ class Scenario:
     parameters: dict[str, Any]
     track_path: Path
     map_directory: Path
+    # Seeded noise on /scan and /odom; the exact values stay on
+    # /ground_truth/*. Absent from a scenario file, the sensors are exact.
+    scan_noise_sigma_m: float = 0.0
+    scan_dropout_probability: float = 0.0
+    odometry_noise: OdometryNoise = field(default=NO_ODOMETRY_NOISE)
 
     @property
     def timestep_ratio(self) -> int:
@@ -72,6 +81,40 @@ def _required(mapping: dict[str, Any], name: str) -> Any:
     if name not in mapping:
         raise ValueError(f"scenario is missing {name}")
     return mapping[name]
+
+
+def _noise(document: dict[str, Any]) -> dict[str, Any]:
+    noise = document.get("noise") or {}
+    if not isinstance(noise, dict):
+        raise ValueError("noise must be a mapping")
+    scan = noise.get("scan") or {}
+    odometry = noise.get("odometry") or {}
+    parsed = {
+        "scan_noise_sigma_m": float(scan.get("sigma_m", 0.0)),
+        "scan_dropout_probability": float(
+            scan.get("dropout_probability", 0.0)
+        ),
+        "odometry_noise": OdometryNoise(
+            distance_scale_sigma=float(
+                odometry.get("distance_scale_sigma", 0.0)
+            ),
+            yaw_scale_sigma=float(odometry.get("yaw_scale_sigma", 0.0)),
+            distance_noise_density=float(
+                odometry.get("distance_noise_density", 0.0)
+            ),
+            yaw_noise_density=float(odometry.get("yaw_noise_density", 0.0)),
+        ),
+    }
+    magnitudes = [
+        parsed["scan_noise_sigma_m"],
+        parsed["scan_dropout_probability"],
+        *vars(parsed["odometry_noise"]).values(),
+    ]
+    if any(value < 0.0 for value in magnitudes):
+        raise ValueError("noise magnitudes must be non-negative")
+    if parsed["scan_dropout_probability"] > 1.0:
+        raise ValueError("noise.scan.dropout_probability must be <= 1")
+    return parsed
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -141,4 +184,5 @@ def load_scenario(path: Path) -> Scenario:
         parameters=dict(parameters),
         track_path=track_path,
         map_directory=map_directory,
+        **_noise(document),
     )

@@ -65,7 +65,9 @@ METRICS_QOS = QoSProfile(
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
 
-ODOMETRY_TOPIC = "/odom"
+# The supervisor's pose input: ground truth, not the dead reckoning on /odom
+# (racing_safety_supervisor/src/node.cpp says why).
+ODOMETRY_TOPIC = "/ground_truth/odom"
 DRIVE_TOPIC = "/drive"
 SAFETY_STATUS_TOPIC = "/safety/status"
 RELIABLE_QOS = QoSProfile(
@@ -93,7 +95,7 @@ PARTICIPANT_NODES = (
 # opening ticks, so these must be live *before* the deterministic reset
 # below, or the nadir sample is missed regardless of t=0 being repeatable.
 METRICS_ACCUMULATION_TOPICS = {
-    "/scan",
+    "/ground_truth/scan",
     SAFETY_STATUS_TOPIC,
     "/ground_truth/track_relative_state",
 }

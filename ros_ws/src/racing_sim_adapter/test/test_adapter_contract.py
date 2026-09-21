@@ -10,6 +10,7 @@ import launch_testing
 import launch_testing.actions
 import pytest
 import rclpy
+from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset
 from rclpy.parameter import Parameter
@@ -27,6 +28,9 @@ from sensor_msgs.msg import Imu, LaserScan
 ADAPTER_NODE = "racing_sim"
 SCAN_TOPIC = "/scan"
 ODOMETRY_TOPIC = "/odom"
+GROUND_TRUTH_SCAN_TOPIC = "/ground_truth/scan"
+GROUND_TRUTH_ODOMETRY_TOPIC = "/ground_truth/odom"
+DRIVE_TOPIC = "/drive"
 IMU_TOPIC = "/imu"
 CLOCK_TOPIC = "/clock"
 RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
@@ -150,9 +154,73 @@ class TestAdapterContract(unittest.TestCase):
         odometry = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         imu = self._collect(Imu, IMU_TOPIC, SENSOR_QOS, 1)[0]
         self.assertEqual(scan.header.frame_id, "laser")
-        self.assertEqual(odometry.header.frame_id, "map")
+        self.assertEqual(odometry.header.frame_id, "odom")
         self.assertEqual(odometry.child_frame_id, "base_link")
         self.assertEqual(imu.header.frame_id, "base_link")
+
+    def test_adapt_2090_dead_reckoning_and_ground_truth_differ(self):
+        """ADAPT-2090: /odom is dead reckoning in `odom`, /ground_truth/odom
+        is the exact pose in `map`, and once the vehicle moves they differ.
+
+        The last clause is the point: asserting only that both topics exist
+        passes with the odometry noise disabled.
+        """
+        self._require_adapter()
+        publisher = self.node.create_publisher(
+            AckermannDriveStamped, DRIVE_TOPIC, STATE_QOS
+        )
+        estimates = {}
+        truths = {}
+
+        def key(message):
+            return (message.header.stamp.sec, message.header.stamp.nanosec)
+
+        subscriptions = [
+            self.node.create_subscription(
+                Odometry,
+                ODOMETRY_TOPIC,
+                lambda message: estimates.__setitem__(key(message), message),
+                STATE_QOS,
+            ),
+            self.node.create_subscription(
+                Odometry,
+                GROUND_TRUTH_ODOMETRY_TOPIC,
+                lambda message: truths.__setitem__(key(message), message),
+                STATE_QOS,
+            ),
+        ]
+        command = AckermannDriveStamped()
+        command.drive.speed = 2.0
+        command.drive.steering_angle = 0.1
+        deadline = time.monotonic() + 2.0
+        try:
+            while time.monotonic() < deadline:
+                publisher.publish(command)
+                rclpy.spin_once(self.node, timeout_sec=0.01)
+        finally:
+            for subscription in subscriptions:
+                self.node.destroy_subscription(subscription)
+            self.node.destroy_publisher(publisher)
+
+        common = sorted(set(estimates) & set(truths))
+        self.assertTrue(common, "no simultaneous /odom and ground truth")
+        estimate = estimates[common[-1]]
+        truth = truths[common[-1]]
+        self.assertEqual(estimate.header.frame_id, "odom")
+        self.assertEqual(truth.header.frame_id, "map")
+        self.assertEqual(estimate.child_frame_id, "base_link")
+        self.assertEqual(truth.child_frame_id, "base_link")
+        first = truths[common[0]].pose.pose.position
+        moved = math.hypot(
+            truth.pose.pose.position.x - first.x,
+            truth.pose.pose.position.y - first.y,
+        )
+        self.assertGreater(moved, 0.5, "the vehicle did not move")
+        drift = math.hypot(
+            estimate.pose.pose.position.x - truth.pose.pose.position.x,
+            estimate.pose.pose.position.y - truth.pose.pose.position.y,
+        )
+        self.assertGreater(drift, 1e-4, "odometry equals ground truth")
 
     def test_adapt_2030_publish_rate_is_within_tolerance(self):
         """ADAPT-2030: the backend publishes at its configured 100 Hz rate."""
@@ -189,6 +257,32 @@ class TestAdapterContract(unittest.TestCase):
                 publisher_qos, expected_qos
             )
             self.assertNotEqual(compatibility, QoSCompatibility.ERROR, reason)
+
+    def test_adapt_2100_both_scans_publish_with_sensor_qos(self):
+        """ADAPT-2100: /scan and /ground_truth/scan both publish, and both
+        publishers carry the sensor QoS *profile*; ground-truth odometry
+        carries the state profile (repo-gotchas #6, as ADAPT-2040).
+        """
+        self._require_adapter()
+        for topic, message_type, expected_qos in (
+            (SCAN_TOPIC, LaserScan, SENSOR_QOS),
+            (GROUND_TRUTH_SCAN_TOPIC, LaserScan, SENSOR_QOS),
+            (GROUND_TRUTH_ODOMETRY_TOPIC, Odometry, STATE_QOS),
+        ):
+            publishers = self.node.get_publishers_info_by_topic(topic)
+            self.assertEqual(
+                len(publishers), 1, f"publisher missing on {topic}"
+            )
+            publisher_qos = publishers[0].qos_profile
+            self.assertEqual(
+                publisher_qos.reliability, expected_qos.reliability
+            )
+            self.assertEqual(publisher_qos.durability, expected_qos.durability)
+            compatibility, reason = qos_check_compatible(
+                publisher_qos, expected_qos
+            )
+            self.assertNotEqual(compatibility, QoSCompatibility.ERROR, reason)
+            self._collect(message_type, topic, expected_qos, 1)
 
     def test_adapt_2050_seeded_reset_is_idempotent(self):
         """ADAPT-2050: equal reset seeds reproduce the initial state."""
