@@ -28,9 +28,9 @@ never a code deletion.
 The rule that keeps this affordable: **every implementation is verified once, against ground truth,
 inside the reference stack current when it lands** — never against every peer, and never against its
 predecessors. Combinations are not tested. Test count grows linearly with implementations, not
-quadratically. ADR 0005 has the reasoning and what it gives up; the reference stack is whatever
-`racing_bringup/launch/sim_pure_pursuit.launch.py` composes until `config/reference_stack.yaml`
-lands with the SLAM phase.
+quadratically. ADR 0005 has the reasoning and what it gives up; the reference stack is named in
+`config/reference_stack.yaml` and composed by `racing_bringup/launch/sim_pure_pursuit.launch.py`
+(BRINGUP-1030 fails if they disagree). Changing what it names is a reviewed decision.
 
 ## Where you are
 

@@ -201,3 +201,46 @@ def test_bringup_1010_the_scenario_selects_every_nodes_track() -> None:
     )
     assert "scenario_id" not in circle["racing_metrics"]
     assert "track_version" not in circle["racing_recording"]
+
+
+def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
+    """BRINGUP-1030: `config/reference_stack.yaml` and the launch file agree.
+
+    ADR 0005 defines the reference stack in exactly one place. The launch
+    file is what actually runs, so a second, silently diverging description
+    is the failure this prevents: every implementation named in the file is
+    a node the launch starts, and the pose source it names is the pose the
+    controller drives on and racing_evaluation scores by default.
+    """
+    import yaml
+
+    reference = yaml.safe_load(
+        (REPOSITORY_ROOT / "config" / "reference_stack.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    launched = {
+        _literal_keyword(node, "package")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "Node"
+    }
+    constants = {
+        node.targets[0].id: node.value.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+    }
+
+    roles = reference["roles"]
+    for role, entry in roles.items():
+        assert entry["package"] in launched, f"{role}: {entry['package']}"
+    assert roles["pose_source"]["implementation"] == "ground_truth"
+    assert constants["GROUND_TRUTH_POSE"] == roles["pose_source"]["topic"]
+    source = LAUNCH_FILE.read_text(encoding="utf-8")
+    assert 'remappings=[("/odom", GROUND_TRUTH_POSE)]' in source
+    assert '"estimate_topic", default_value=GROUND_TRUTH_POSE' in source

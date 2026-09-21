@@ -40,10 +40,11 @@ of adding another.
 > **The reference stack** is one named composition, defined in exactly one place, naming the
 > current default choice for each replaceable role.
 
-The file that holds it is `config/reference_stack.yaml`. **It does not exist yet** — it is created by
-the SLAM/localization phase, the first work this rule governs
-(`.scratch/02-slam-localization/spec/2026-09-10-first-slam-and-evaluation-harness.md`). Until then the
-reference stack is what `racing_bringup/launch/sim_pure_pursuit.launch.py` composes.
+The file that holds it is `config/reference_stack.yaml`, created by the SLAM/localization phase, the
+first work this rule governs (`.scratch/02-slam-localization/spec/2026-09-10-first-slam-and-evaluation-harness.md`).
+It names each role's default implementation; `racing_bringup/launch/sim_pure_pursuit.launch.py`
+composes that stack, and BRINGUP-1030 fails if the launch and the file disagree — so the file is the
+one definition and the launch its one realization, never two descriptions free to drift.
 
 A new implementation is verified **once**: against ground truth, inside the reference stack current
 at the time it lands. It is *not* verified against every peer, and *not* against its predecessors. A
@@ -90,6 +91,6 @@ Do not write a test expecting `--nightly` to run it until that lands.
   that fails only together will not be caught until someone runs that pairing. This is the trade
   being made, knowingly: linear coverage of implementations in exchange for no coverage of
   compositions.
-- `config/reference_stack.yaml`, once it exists, becomes a load-bearing file. Changing what it names
+- `config/reference_stack.yaml` is a load-bearing file. Changing what it names
   re-points every future test, so a change to it is a reviewed decision, not a convenience.
 - A nightly failure is found the next morning rather than at commit time.
