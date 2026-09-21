@@ -29,6 +29,14 @@ Traps any task in this repository can hit. Each one cost real time at least once
    existing HTTPS remote; an HTTPS clone prompts for a username and password forever. Fix with
    `git remote set-url origin git@github.com:<owner>/<repo>.git`.
 
+20. **A colcon build in a `.scratch/` worktree reads the wrong `config/`.** `racing_sim_gym_jax`'s
+    `setup.py` installs `config/` from `parents[3]` of itself, which a symlink install inside
+    `/ws/.scratch/<worktree>/` resolves through the build directory to `/ws/.scratch/config` — a
+    shared path that may point at some other, possibly deleted, worktree. Every tier-2 adapter test
+    there then dies with `FileNotFoundError` on a scenario file. Symptom: tests that pass in `/ws`
+    fail in the worktree on a file that plainly exists. Point the worktree's
+    `install/racing_sim_gym_jax/share/racing_sim_gym_jax/config` at its own `config/`.
+
 ## ROS
 
 6. **QoS mismatch looks like absent data, not an error.** A reliable subscriber never hears a
@@ -109,3 +117,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     structural check, while calling a fraction of a lap a lap and reporting a proportionally wrong
     `lap_time`. This actually happened (a 31.4159 default against a 61.23 m centerline) and cost a
     "still-unexplained" 2x discrepancy that sat in a test docstring for a while.
+    The same trap sat in the golden generator: `sim/rollout.py` ended a lap on the gym's winding
+    number (angle swept around a point beside s=0), which on a non-circular track fires early —
+    after 331.6 m of Spielberg's 343.3 m — while `racing_metrics` ends it on centerline distance.
+    The rollout now reuses `racing_metrics`' rule (`CenterlineLap`, SIM-1010). A generator and a
+    live consumer that each define "a lap" will disagree, invisibly, on the first track where it
+    matters.
