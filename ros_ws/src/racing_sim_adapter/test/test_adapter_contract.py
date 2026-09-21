@@ -158,8 +158,8 @@ class TestAdapterContract(unittest.TestCase):
         self.assertEqual(odometry.child_frame_id, "base_link")
         self.assertEqual(imu.header.frame_id, "base_link")
 
-    def test_adapt_2090_dead_reckoning_and_ground_truth_differ(self):
-        """ADAPT-2090: /odom is dead reckoning in `odom`, /ground_truth/odom
+    def test_adapt_2110_dead_reckoning_and_ground_truth_differ(self):
+        """ADAPT-2110: /odom is dead reckoning in `odom`, /ground_truth/odom
         is the exact pose in `map`, and once the vehicle moves they differ.
 
         The last clause is the point: asserting only that both topics exist
