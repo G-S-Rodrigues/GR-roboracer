@@ -26,6 +26,10 @@ if(BUILD_TESTING)
     TIMEOUT 30
     LABELS "tier2"
   )
+  add_launch_test(test/test_evaluation_node_pose.py
+    TIMEOUT 30
+    LABELS "tier2"
+  )
 endif()
 
 ament_package()
