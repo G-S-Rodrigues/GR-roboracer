@@ -91,9 +91,7 @@ def _noise(document: dict[str, Any]) -> dict[str, Any]:
     odometry = noise.get("odometry") or {}
     parsed = {
         "scan_noise_sigma_m": float(scan.get("sigma_m", 0.0)),
-        "scan_dropout_probability": float(
-            scan.get("dropout_probability", 0.0)
-        ),
+        "scan_dropout_probability": float(scan.get("dropout_probability", 0.0)),
         "odometry_noise": OdometryNoise(
             distance_scale_sigma=float(
                 odometry.get("distance_scale_sigma", 0.0)
