@@ -103,9 +103,12 @@ METRICS_ACCUMULATION_TOPICS = {
 }
 # The subset of METRICS_ACCUMULATION_TOPICS that racing_sim itself
 # publishes (/safety/status comes from racing_safety_supervisor instead).
-SIM_PUBLISHED_ACCUMULATION_TOPICS = {
-    "/scan",
-    "/ground_truth/track_relative_state",
+# Defined as a difference so it can never drift from
+# METRICS_ACCUMULATION_TOPICS the way a hand-copied literal did (gotcha
+# #17: /scan is sensor noise, /ground_truth/scan is what racing_metrics
+# actually accumulates).
+SIM_PUBLISHED_ACCUMULATION_TOPICS = METRICS_ACCUMULATION_TOPICS - {
+    SAFETY_STATUS_TOPIC
 }
 
 # ADR 0006: `time_scale` decouples simulated time from wall time, so a
