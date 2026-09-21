@@ -62,9 +62,14 @@ def generate_test_description():
 
 
 def _forward_range(scan: LaserScan) -> float:
-    """The mean of the two beams either side of straight ahead."""
-    middle = len(scan.ranges) // 2
-    return (scan.ranges[middle - 1] + scan.ranges[middle]) / 2.0
+    """The range at angle 0, interpolated between the two beams either side
+    of it at the angles the message declares. Not the two middle indices:
+    /scan and /ground_truth/scan are cast at different spacings (plan D6),
+    so the same index is not the same direction in both."""
+    position = -scan.angle_min / scan.angle_increment
+    below = int(position)
+    weight = position - below
+    return (1.0 - weight) * scan.ranges[below] + weight * scan.ranges[below + 1]
 
 
 class TestAdapterLaserOrigin(unittest.TestCase):
@@ -105,11 +110,12 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         racing_metrics' clearance and collisions read, and the goldens
         depend on it. The median over held samples removes /scan's noise.
 
-        Measured at the held contract_test pose: the backend's two scans
-        differ by 0.2876 m straight ahead (the beams sit +/-0.037 rad off the
-        ray, and the map is a raster); cast from base_link, /scan read
-        0.0052 m. The 0.05 m delta is ~4x the first error and far from the
-        second.
+        Measured at the held contract_test pose, each scan read at angle 0
+        by its own declared angles: 0.2713 m (the map is a raster); cast
+        from base_link, /scan read 0.0052 m. Before plan D6 the two middle
+        beams were compared by index and read 0.2876 m, but the gym's beams
+        sit at -0.0004/+0.075 rad, not the declared +/-0.037. The 0.05 m
+        delta is ~14x the error and far from 0.0052.
         """
         truth = self._collect("/ground_truth/scan")
         noisy = self._collect("/scan")
