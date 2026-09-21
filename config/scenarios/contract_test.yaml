@@ -12,8 +12,6 @@ environment:
   timestep_ratio: 1
   version: v0
 parameters:
-  integrator: euler
   num_beams: 64
-  theta_dis: 720
 track: ../tracks/analytic_circle.yaml
 map_directory: maps
