@@ -43,6 +43,23 @@ All three run inside the `dev` container (`docker exec gr-roboracer-dev bash -lc
 `./scripts/run_scenario.py --seed N` runs one seeded lap through the real graph and prints its
 metrics, for when you want an answer rather than a test result.
 
+## Running one test
+
+The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` after
+`cd /ws && source setup.sh`. The ID is in the test's name, so filter on it:
+
+| Tier | One test |
+|---|---|
+| 1, C++ | `./build/<pkg>/<test_binary> --gtest_filter='*Common1060*'` |
+| 1, `sim/` | `python3 -m pytest sim/tests -k sim_1010` |
+| 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
+| 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
+| 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
+
+A C++ edit reaches none of these until
+`colcon build --base-paths ros_ws/src --symlink-install --packages-select <pkg>`
+has run. Python edits are live through the symlink install. Each runner exits non-zero on failure.
+
 ## Test IDs
 
 Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is the tier digit.
