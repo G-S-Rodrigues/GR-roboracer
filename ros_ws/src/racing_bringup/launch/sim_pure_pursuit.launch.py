@@ -15,7 +15,7 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from racing_bringup.estimators import slam_toolbox
+from racing_bringup.estimators import amcl, slam_toolbox
 from racing_bringup.scenario_parameters import track_parameters
 
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
@@ -32,10 +32,21 @@ GROUND_TRUTH_POSE = "/ground_truth/odom"
 ESTIMATED_POSE = "/localization/odom"
 # pose_source -> the configuration of the node that owns map -> odom.
 # slam_toolbox maps online, with no prior map (plan D7): `map` is then the
-# pose it starts at, which is the true start pose.
+# pose it starts at, which is the true start pose. nav2_amcl instead
+# localizes against the track's committed occupancy grid, which the scenario
+# names (scenario_parameters.track_parameters).
 POSE_SOURCE_CONFIGS = {
     "slam_toolbox": "config/localization/slam_toolbox_online.yaml",
+    "amcl": "config/localization/amcl.yaml",
 }
+# Where nav2_amcl's initial pose comes from. The sim places the car at an
+# arc length drawn from the run's seed (f110_env.reset), so no static pose
+# can be configured; the support node publishes the first ground-truth pose
+# here, once and latched, with the covariance of a human placing the car
+# roughly - the simulation's stand-in for RViz's 2D Pose Estimate
+# (BRINGUP-2020). slam_toolbox needs none: it defines `map` as where it
+# starts.
+INITIAL_POSE_TOPIC = "/initialpose"
 
 
 def _launch_nodes(context, robot_description: str, rviz_config: str):
@@ -100,6 +111,10 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
                 # then composes it with /odom into the control-rate pose.
                 "publish_map_to_odom": not estimating,
                 "composed_odometry_topic": ESTIMATED_POSE if estimating else "",
+                # Only AMCL needs to be told where it starts.
+                "initial_pose_topic": (
+                    INITIAL_POSE_TOPIC if pose_source == "amcl" else ""
+                ),
             },
         ],
     )
@@ -182,12 +197,23 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         recording_node,
         robot_state_publisher_node,
         rviz_node,
-        *(
-            slam_toolbox("mapping", [POSE_SOURCE_CONFIGS[pose_source]])
-            if estimating
-            else []
-        ),
+        *_pose_source_nodes(pose_source, tracks),
     ]
+
+
+def _pose_source_nodes(pose_source: str, tracks: dict) -> list:
+    """The nodes `pose_source` adds; none for ground truth, which the
+    support node already serves."""
+    if pose_source == "ground_truth":
+        return []
+    configuration = POSE_SOURCE_CONFIGS[pose_source]
+    if pose_source == "amcl":
+        # The grid comes from the scenario, like every other track-aware
+        # parameter (BRINGUP-1060): a hand-set path is a second copy of
+        # which world this is, and localizing against another track's walls
+        # is silent, not an error.
+        return amcl([configuration], tracks["map_server"]["yaml_filename"])
+    return slam_toolbox("mapping", [configuration])
 
 
 def generate_launch_description() -> LaunchDescription:

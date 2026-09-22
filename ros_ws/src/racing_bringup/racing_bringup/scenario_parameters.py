@@ -34,6 +34,20 @@ def track_parameters(scenario_path: Path) -> dict[str, dict[str, Any]]:
             / f"{map_name}_raceline.csv"
         ).resolve()
     )
+    # The track's committed occupancy grid, surveyed by scripts/map_track.sh
+    # and served to nav2_amcl by nav2_map_server. Derived from the scenario's
+    # own map for the same reason the raceline is: a hand-set grid path is a
+    # second copy of which world this is, and localizing against another
+    # track's walls is silent, not an error.
+    occupancy_grid = str(
+        (
+            base
+            / document["map_directory"]
+            / map_name
+            / "slam"
+            / f"{map_name}.yaml"
+        ).resolve()
+    )
     reported = document.get("metrics") or {}
     reporting = {
         key: reported[key] for key in REPORTING_KEYS if key in reported
@@ -47,4 +61,5 @@ def track_parameters(scenario_path: Path) -> dict[str, dict[str, Any]]:
         "racing_metrics": {"track_path": track, **reporting},
         "racing_evaluation": {"track_path": track},
         "racing_recording": dict(reporting),
+        "map_server": {"yaml_filename": occupancy_grid},
     }

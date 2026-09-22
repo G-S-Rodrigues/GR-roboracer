@@ -1,0 +1,111 @@
+# nav2_amcl as a pose source (plan Step 3): a particle filter localizing
+# against the track's committed occupancy grid, owning map -> odom.
+# Values not set here are nav2_amcl's own defaults (nav2_bringup's
+# nav2_params.yaml). The grid nav2_map_server serves is named by the launch
+# file from the scenario (config/scenarios/maps/<map>/slam/<map>.yaml), so
+# one scenario cannot be localized against another's track.
+#
+# AMCL is the second implementation of the pose-source role, not a
+# replacement for the first (ADR 0005): slam_toolbox stays, and this file
+# exists beside its own. It consumes a *different* artifact - the occupancy
+# grid rather than a pose graph - which is what forces the map to be a real
+# versioned output instead of one estimator's private state.
+#
+# AMCL exposes no RNG seed, so no bound on it may be written before its
+# run-to-run spread is measured: SIM-5030 is that measurement and SIM-3080
+# carries it.
+amcl:
+  ros__parameters:
+    use_sim_time: true
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_link
+    scan_topic: /scan
+    # AMCL owns map -> odom while it is the pose source; the support node
+    # is launched with publish_map_to_odom: false so the edge has one owner
+    # (BRINGUP-2010).
+    tf_broadcast: true
+    # Simulated seconds (ADR 0006), so this is a simulated-time budget and
+    # does not change with time_scale.
+    transform_tolerance: 0.2
+
+    # The motion model. The sim's dead reckoning is differential-drive-like
+    # (racing_sim_gym_jax/noise.py: a distance scale error, a yaw scale
+    # error and two random walks), and the scenario's own numbers are the
+    # only measurement available: distance_scale_sigma 0.01,
+    # yaw_scale_sigma 0.014, distance_noise_density 0.0144 m/sqrt(m),
+    # yaw_noise_density 0.0248 rad/sqrt(rad). At the update thresholds
+    # below (0.2 m, 0.2 rad) those give a per-update sd of ~0.007 m and
+    # ~0.011 rad, i.e. alphas of ~0.001 and ~0.003 in nav2's
+    # sd = sqrt(alpha * delta^2) form. The values below are ~4x that in sd:
+    # a particle filter given exactly its true process noise collapses,
+    # because the scan noise and the grid's own 0.05 m discretization are
+    # not in the motion model at all.
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    alpha1: 0.05
+    alpha2: 0.05
+    alpha3: 0.05
+    alpha4: 0.05
+    alpha5: 0.0
+
+    # The sensor model. sigma_hit is the scan noise the scenario declares
+    # (spielberg.yaml: Hokuyo UST-10LX, sigma 0.03 m), not a tuned number.
+    laser_model_type: "likelihood_field"
+    # The scenario publishes 64 beams; using fewer would discard measured
+    # information for a saving this run does not need.
+    max_beams: 64
+    laser_likelihood_max_dist: 2.0
+    sigma_hit: 0.03
+    z_hit: 0.9
+    z_rand: 0.1
+    z_short: 0.0
+    z_max: 0.0
+    lambda_short: 0.1
+    # The sim reports "no return" as range_max (10 m), not inf: a reading
+    # at the maximum is not a wall, so it is excluded below it - the same
+    # 9.5 m the survey mapper uses.
+    laser_max_range: 9.5
+    laser_min_range: 0.1
+
+    min_particles: 500
+    max_particles: 2000
+    pf_err: 0.05
+    pf_z: 0.99
+    update_min_d: 0.2
+    update_min_a: 0.2
+    resample_interval: 1
+    # Adaptive particle injection off. It fires on a short-term/long-term
+    # likelihood ratio, scattering fresh particles from the map's free
+    # space; on a track whose corridor repeats that is a jump, not a
+    # recovery, and it widens the run-to-run spread SIM-5030 measures for
+    # no gain a lap of a known track can use.
+    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.0
+
+    # The initial pose arrives on /initialpose, latched, from the support
+    # node (BRINGUP-2020): the start pose is drawn from the seed
+    # (f110_env.reset places the car at a random arc length), so no static
+    # pose can be written here. That is the simulation's stand-in for
+    # RViz's "2D Pose Estimate", and its covariance is deliberately a human
+    # placing the car roughly, not the truth handed over exactly.
+    set_initial_pose: false
+    always_reset_initial_pose: false
+    first_map_only: false
+    save_pose_rate: 0.5
+
+map_server:
+  ros__parameters:
+    use_sim_time: true
+    # Set by the launch file from the scenario's map.
+    yaml_filename: ""
+
+amcl_lifecycle_manager:
+  ros__parameters:
+    use_sim_time: true
+    # map_server first: AMCL's configure reads the map it serves.
+    node_names: ["map_server", "amcl"]
+    autostart: true
+    # Both nodes must be up and publishing before the scenario runner's
+    # deterministic reset releases t=0 (repo-gotchas #19); a bond that
+    # times out during a slow start would take them down instead.
+    bond_timeout: 0.0

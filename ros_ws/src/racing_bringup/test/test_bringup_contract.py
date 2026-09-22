@@ -301,3 +301,32 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser() -> None:
         isinstance(element, ast.Name) and element.id == "VEHICLE_CONFIG"
         for element in parameters.elts
     )
+
+
+def test_bringup_1060_the_scenario_selects_the_occupancy_grid() -> None:
+    """BRINGUP-1060: the occupancy grid nav2_amcl localizes against is the
+    one that belongs to the scenario's own map, and it exists.
+
+    The same trap as BRINGUP-1010, one artifact further out: AMCL matching
+    scans against another track's walls does not fail, it diverges - and a
+    divergence is exactly what a localization test is meant to be able to
+    attribute. The grid is a committed survey of the scenario's map
+    (scripts/map_track.sh), so the path is derived from the scenario rather
+    than hand-set anywhere.
+    """
+    from racing_bringup.scenario_parameters import track_parameters
+
+    spielberg = track_parameters(
+        REPOSITORY_ROOT / "config" / "scenarios" / "spielberg.yaml"
+    )
+    grid = (
+        REPOSITORY_ROOT
+        / "config"
+        / "scenarios"
+        / "maps"
+        / "Spielberg"
+        / "slam"
+        / "Spielberg.yaml"
+    )
+    assert spielberg["map_server"]["yaml_filename"] == str(grid)
+    assert grid.is_file(), "the committed occupancy grid is missing"

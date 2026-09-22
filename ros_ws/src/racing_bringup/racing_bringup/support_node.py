@@ -17,7 +17,12 @@ from pathlib import Path
 
 import rclpy
 import yaml
-from geometry_msgs.msg import Point, Point32, TransformStamped
+from geometry_msgs.msg import (
+    Point,
+    Point32,
+    PoseWithCovarianceStamped,
+    TransformStamped,
+)
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import TrackBoundaries, Trajectory, TrajectoryPoint
 from rclpy.node import Node
@@ -42,6 +47,14 @@ LATCHED_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
+
+# The covariance published with the initial pose: 0.5 m in x and y, 15 deg
+# in yaw (nav2's own defaults for a pose set by hand). It sizes nav2_amcl's
+# opening particle cloud, and it is deliberately not zero - this stands in
+# for RViz's "2D Pose Estimate", a human putting the car roughly where it
+# is, not ground truth handed to the estimator exactly. A zero covariance
+# would start AMCL at the truth and make its first seconds unmeasurable.
+INITIAL_POSE_VARIANCES = (0.25, 0.25, 0.06853891945200942)
 
 
 def _load_centerline(
@@ -190,6 +203,15 @@ class SupportNode(Node):
         # map -> odom composed with that dead reckoning - an Odometry in
         # map at control rate, which is what the controller consumes.
         self.declare_parameter("composed_odometry_topic", "")
+        # Non-empty for an estimator that has to be told where it starts
+        # (nav2_amcl). The start pose is drawn from the run's seed
+        # (f110_env.reset places the car at a random arc length), so it
+        # cannot be a configured constant; the first ground-truth pose is
+        # published here once, latched, and never again - re-seeding a
+        # particle filter mid-lap would hide the divergence the run
+        # measures. slam_toolbox needs none: it defines `map` as where it
+        # starts.
+        self.declare_parameter("initial_pose_topic", "")
 
         track_path = Path(
             self.get_parameter("track_path").get_parameter_value().string_value
@@ -236,6 +258,19 @@ class SupportNode(Node):
             self._composed_publisher = self.create_publisher(
                 Odometry, composed_topic, LATCHED_QOS.depth
             )
+        initial_pose_topic = (
+            self.get_parameter("initial_pose_topic")
+            .get_parameter_value()
+            .string_value
+        )
+        self._initial_pose_publisher = (
+            self.create_publisher(
+                PoseWithCovarianceStamped, initial_pose_topic, LATCHED_QOS
+            )
+            if initial_pose_topic
+            else None
+        )
+        self._initial_pose_sent = False
         self._latest_truth: Odometry | None = None
         self._latest_dead_reckoning: Odometry | None = None
         self.create_subscription(
@@ -291,7 +326,26 @@ class SupportNode(Node):
 
     def _on_ground_truth(self, message: Odometry) -> None:
         self._latest_truth = message
+        self._publish_initial_pose(message)
         self._publish_correction()
+
+    def _publish_initial_pose(self, truth: Odometry) -> None:
+        """Publish the start pose once, latched, for an estimator that needs
+        one. Latched, so it reaches nav2_amcl however late it activates."""
+        if self._initial_pose_publisher is None or self._initial_pose_sent:
+            return
+        initial = PoseWithCovarianceStamped()
+        initial.header.stamp = truth.header.stamp
+        initial.header.frame_id = self._map_frame
+        initial.pose.pose = truth.pose.pose
+        x_var, y_var, yaw_var = INITIAL_POSE_VARIANCES
+        initial.pose.covariance[0] = x_var
+        initial.pose.covariance[7] = y_var
+        initial.pose.covariance[35] = yaw_var
+        # The publisher itself stays alive - a transient-local message is
+        # only delivered to a late subscriber while its publisher exists.
+        self._initial_pose_publisher.publish(initial)
+        self._initial_pose_sent = True
 
     def _on_dead_reckoning(self, message: Odometry) -> None:
         self._latest_dead_reckoning = message
