@@ -14,11 +14,26 @@ roles:
     package: racing_sim_gym_jax
   pose_source:
     # Exact simulator pose. The support node owns map -> odom for it,
-    # composing dead reckoning back to the truth. PR 3 adds slam_toolbox and
-    # amcl beside it.
+    # composing dead reckoning back to the truth.
     implementation: ground_truth
     package: racing_bringup
     topic: /ground_truth/odom
+    # The other implementations of this role, each selected by
+    # `pose_source:=<implementation>` on sim_pure_pursuit.launch.py and
+    # verified once against ground truth inside this stack (ADR 0005).
+    # They are listed, not ranked: the default above is what every other
+    # test runs on, and an entry here is never a candidate to replace it
+    # without that being a reviewed decision.
+    alternatives:
+      - implementation: slam_toolbox
+        package: slam_toolbox
+        # Maps online with no prior map; `map` is where it starts (D7).
+        verified_by: SIM-3070
+      - implementation: amcl
+        package: nav2_amcl
+        # Localizes against the track's committed occupancy grid,
+        # config/scenarios/maps/<map>/slam/, served by nav2_map_server.
+        verified_by: SIM-3080
   planner:
     # The scenario's precomputed raceline, published on /trajectory.
     implementation: track_raceline
