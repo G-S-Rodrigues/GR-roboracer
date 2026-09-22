@@ -28,4 +28,6 @@ already use.
 
 Launch arguments: `scenario`, `seed`, `recording_path`, `use_rviz`, `time_scale` (default 1.0;
 scales wall rate, never physics), `start_held` (default false; sim stays frozen until `~/reset`),
-`estimate_topic` — the pose `racing_evaluation` scores, ground truth by default (SIM-3060).
+`estimate_topic` — the pose `racing_evaluation` scores, ground truth by default (SIM-3060),
+`pose_source` (`ground_truth` | `slam_toolbox`) — who owns `map -> odom`, and `drive_on_estimate`
+(default true) — whether the controller drives on it or only ground truth (SIM-3070).

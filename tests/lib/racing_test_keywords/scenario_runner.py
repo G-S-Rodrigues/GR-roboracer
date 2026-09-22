@@ -91,6 +91,12 @@ PARTICIPANT_NODES = (
     "racing_recording",
     "robot_state_publisher",
 )
+# The node each non-default `pose_source` adds, and the topic it has to
+# have subscribed to before t=0 is released. An estimator that starts
+# publishing after the drive stream does is repo-gotcha #19's latch, and
+# the fix is this deterministic t=0, never a longer stale-input timeout.
+POSE_SOURCE_NODES = {"slam_toolbox": ("slam_toolbox", "/scan")}
+
 # `racing_metrics` only starts accumulating once these best-effort/reliable
 # subscriptions have delivered something (scripts/compare_metrics.py's
 # comment on minimum_wall_clearance) - the clearance nadir sits in the
@@ -159,7 +165,9 @@ def metrics_to_dict(message: ScenarioMetrics) -> dict[str, Any]:
     return {field: getattr(message, field) for field in _METRICS_FIELDS}
 
 
-def _reset_at_deterministic_t0(node, seed: int, timeout: float) -> None:
+def _reset_at_deterministic_t0(
+    node, seed: int, timeout: float, pose_source: str = "ground_truth"
+) -> None:
     """Wait for every participant, then release the held sim with a reset.
 
     t=0 is otherwise wherever the DDS discovery race happens to land, and
@@ -205,6 +213,12 @@ def _reset_at_deterministic_t0(node, seed: int, timeout: float) -> None:
         "publisher",
         _remaining(),
     )
+    if pose_source in POSE_SOURCE_NODES:
+        estimator, scan_topic = POSE_SOURCE_NODES[pose_source]
+        wait_for_node(node, estimator, (scan_topic,), _remaining())
+        wait_for_endpoints(
+            node, estimator, {scan_topic}, "subscription", _remaining()
+        )
 
     client = node.create_client(Reset, RESET_SERVICE)
     if not client.wait_for_service(timeout_sec=_remaining()):
@@ -224,6 +238,8 @@ def run_scenario(
     scenario: str | None = None,
     timeout: float | None = None,
     time_scale: float = DEFAULT_TIME_SCALE,
+    pose_source: str = "ground_truth",
+    drive_on_estimate: bool = True,
     launch_arguments: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Launch the full stack headlessly, run a seeded scenario, return metrics.
@@ -238,6 +254,13 @@ def run_scenario(
     a scaled run's wall-clock budget must scale with it too - a fixed
     default sized for ``time_scale=1.0`` would starve a faster run of no
     extra margin, or give a slower one too little.
+
+    ``pose_source`` selects which node owns ``map -> odom`` and so which
+    pose the controller drives on; the default is the reference stack's
+    ground truth, and the discovery wait above covers whatever it starts.
+
+    ``drive_on_estimate`` closes the loop on it; with ``False`` the
+    controller keeps ground truth and the estimator is only scored.
 
     ``launch_arguments`` passes further launch arguments through (e.g.
     ``recording_path``, ``estimate_topic``); it cannot override the ones
@@ -254,6 +277,8 @@ def run_scenario(
         "use_rviz": "false",
         "time_scale": str(time_scale),
         "start_held": "true",
+        "pose_source": pose_source,
+        "drive_on_estimate": "true" if drive_on_estimate else "false",
     }
     if scenario is not None:
         owned["scenario"] = scenario
@@ -281,7 +306,7 @@ def run_scenario(
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
         try:
-            _reset_at_deterministic_t0(node, seed, timeout)
+            _reset_at_deterministic_t0(node, seed, timeout, pose_source)
             message = wait_for_message(
                 node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
             )
