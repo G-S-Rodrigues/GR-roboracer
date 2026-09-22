@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import signal
 import time
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import TrackRelativeState
 from racing_interfaces.srv import Reset, SetStepMode
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -398,13 +400,48 @@ class RacingSimNode(Node):
         return odometry
 
 
+def let_rclpy_own_sigint() -> None:
+    """Stop Python raising ``KeyboardInterrupt`` into rclpy's C calls.
+
+    Python's default SIGINT handler raises ``KeyboardInterrupt`` at the
+    next bytecode boundary, which for a spinning node is usually *inside*
+    a pybind11 call: ``take_message`` then fails to convert its argument
+    with an already-pending Python error and surfaces as ``RuntimeError:
+    Unable to convert call argument '0' to Python object``. Measured on
+    the support node and on ``racing_evaluation``; this node runs the
+    same spin, and its non-zero exit would read as a physics failure
+    rather than a shutdown race (SIMJAX-1110, BRINGUP-1070, EVAL-1050).
+
+    rclpy installs its own SIGINT handler in ``init`` and chains to
+    whatever was there before, so replacing the default with a no-op
+    first leaves rclpy's own shutdown - which wakes the executor between
+    calls instead of inside one - as the only thing SIGINT does.
+    """
+    signal.signal(signal.SIGINT, lambda signum, frame: None)
+
+
+def spin_until_shutdown(node) -> None:
+    """Spin until the context goes down, and treat that as a clean stop.
+
+    Anything raised while the context is still up is a genuine fault and
+    is re-raised: a sim node that swallowed every exception would keep
+    publishing a frozen state and report success.
+    """
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    except Exception:
+        if node.context.ok():
+            raise
+
+
 def main(args=None) -> None:
+    let_rclpy_own_sigint()
     rclpy.init(args=args)
     node = RacingSimNode()
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+        spin_until_shutdown(node)
     finally:
         node.destroy_node()
         if rclpy.ok():

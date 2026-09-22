@@ -11,7 +11,7 @@ Public contract: `estimate_topic` (nav_msgs/Odometry, or geometry_msgs/PoseWithC
 Language: Python, a thin node over the ROS-free `racing_evaluation.localization`; Frenet via
 `racing_common`'s binding, never a reimplementation. ament_cmake so tests carry tier labels.
 
-Test: `colcon test --packages-select racing_evaluation` (EVAL-1010..1040 tier 1, EVAL-2010..2020 tier 2).
+Test: `colcon test --packages-select racing_evaluation` (EVAL-1010..1050 tier 1, EVAL-2010..2020 tier 2).
 
 Trap: a stalled estimator has no error samples, and an error over none is zero. Every measure is
 taken over truth samples and carries availability; never report an error without it (EVAL-1030).
