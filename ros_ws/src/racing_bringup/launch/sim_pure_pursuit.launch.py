@@ -15,6 +15,7 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from racing_bringup.estimators import slam_toolbox
 from racing_bringup.scenario_parameters import track_parameters
 
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
@@ -24,6 +25,17 @@ REC_DEFAULT = "log/recording.jsonl"
 # scores by default: ground truth, the reference stack's pose source
 # (config/reference_stack.yaml).
 GROUND_TRUTH_POSE = "/ground_truth/odom"
+# What an estimator's pose reaches the rest of the stack as: the active
+# map -> odom composed with /odom's dead reckoning at control rate, by the
+# support node (BRINGUP-1040). An estimator's own pose topic updates once
+# per graph node, far slower than the controller's period.
+ESTIMATED_POSE = "/localization/odom"
+# pose_source -> the configuration of the node that owns map -> odom.
+# slam_toolbox maps online, with no prior map (plan D7): `map` is then the
+# pose it starts at, which is the true start pose.
+POSE_SOURCE_CONFIGS = {
+    "slam_toolbox": "config/localization/slam_toolbox_online.yaml",
+}
 
 
 def _launch_nodes(context, robot_description: str, rviz_config: str):
@@ -34,6 +46,24 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     time_scale = LaunchConfiguration("time_scale")
     start_held = LaunchConfiguration("start_held")
     estimate_topic = LaunchConfiguration("estimate_topic")
+    # Which node owns map -> odom, and so which pose the controller drives
+    # on. The safety supervisor stays on ground truth in simulation
+    # whatever this is: see the comment in its subscription.
+    pose_source = LaunchConfiguration("pose_source").perform(context)
+    if pose_source not in ("ground_truth", *POSE_SOURCE_CONFIGS):
+        raise RuntimeError(f"unknown pose_source: {pose_source}")
+    estimating = pose_source != "ground_truth"
+    # Whether the controller drives on that estimate or keeps ground truth
+    # while the estimator is merely scored. Open loop is how an estimator
+    # too rough to race on is still measured (SIM-3070); it changes nothing
+    # about who owns map -> odom.
+    driving_on_estimate = estimating and LaunchConfiguration(
+        "drive_on_estimate"
+    ).perform(context) in ("true", "True", "1")
+    # The estimate scored and recorded is the pose the controller drives
+    # on, unless the caller named another topic.
+    if estimating and estimate_topic.perform(context) == GROUND_TRUTH_POSE:
+        estimate_topic = ESTIMATED_POSE
 
     # The scenario names the world; every track-aware node loads that same
     # world (BRINGUP-1010), over the vehicle file's defaults.
@@ -64,18 +94,26 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         parameters=[
             VEHICLE_CONFIG,
             tracks["racing_bringup_support"],
-            {"use_sim_time": True},
+            {
+                "use_sim_time": True,
+                # An active estimator owns map -> odom; the support node
+                # then composes it with /odom into the control-rate pose.
+                "publish_map_to_odom": not estimating,
+                "composed_odometry_topic": ESTIMATED_POSE if estimating else "",
+            },
         ],
     )
     controller_node = Node(
         package="racing_controller_baseline",
         executable="racing_controller_baseline_node",
         parameters=[VEHICLE_CONFIG, {"use_sim_time": True}],
-        # The controller's pose source is ground truth, selected here rather
-        # than in its C++, which keeps the standard /odom: this remap is the
-        # seam PR 3's pose_source generalizes. Driving on /odom's drifting
-        # dead reckoning would move both goldens.
-        remappings=[("/odom", GROUND_TRUTH_POSE)],
+        # The pose the controller drives on is selected here rather than in
+        # its C++, which keeps the standard /odom: this remap is the seam
+        # pose_source moves. Its default stays ground truth - driving on
+        # /odom's drifting dead reckoning would move both goldens.
+        remappings=[("/odom", GROUND_TRUTH_POSE)]
+        if not driving_on_estimate
+        else [("/odom", ESTIMATED_POSE)],
     )
     supervisor_node = Node(
         package="racing_safety_supervisor",
@@ -144,6 +182,11 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         recording_node,
         robot_state_publisher_node,
         rviz_node,
+        *(
+            slam_toolbox("mapping", [POSE_SOURCE_CONFIGS[pose_source]])
+            if estimating
+            else []
+        ),
     ]
 
 
@@ -169,6 +212,12 @@ def generate_launch_description() -> LaunchDescription:
     estimate_topic_arg = DeclareLaunchArgument(
         "estimate_topic", default_value=GROUND_TRUTH_POSE
     )
+    pose_source_arg = DeclareLaunchArgument(
+        "pose_source", default_value="ground_truth"
+    )
+    drive_on_estimate_arg = DeclareLaunchArgument(
+        "drive_on_estimate", default_value="true"
+    )
 
     return LaunchDescription(
         [
@@ -179,6 +228,8 @@ def generate_launch_description() -> LaunchDescription:
             time_scale_arg,
             start_held_arg,
             estimate_topic_arg,
+            pose_source_arg,
+            drive_on_estimate_arg,
             OpaqueFunction(
                 function=_launch_nodes,
                 args=[robot_description, rviz_config],

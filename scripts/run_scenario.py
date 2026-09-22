@@ -36,6 +36,14 @@ def main() -> int:
     )
     parser.add_argument("--time-scale", type=float, default=1.0)
     parser.add_argument("--output", type=Path, default=None)
+    # Which node owns map -> odom, and so which pose the controller drives
+    # on (sim_pure_pursuit.launch.py's POSE_SOURCE_CONFIGS).
+    parser.add_argument("--pose-source", default="ground_truth")
+    parser.add_argument(
+        "--score-only",
+        action="store_true",
+        help="run the pose source but keep the controller on ground truth",
+    )
     arguments = parser.parse_args()
 
     metrics = run_scenario(
@@ -43,6 +51,8 @@ def main() -> int:
         scenario=arguments.scenario,
         timeout=arguments.timeout,
         time_scale=arguments.time_scale,
+        pose_source=arguments.pose_source,
+        drive_on_estimate=not arguments.score_only,
     )
     record = json.dumps(metrics, indent=2, sort_keys=True, default=str)
     if arguments.output is not None:

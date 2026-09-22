@@ -1,0 +1,32 @@
+# Spielberg with every sensor exact: spielberg.yaml without its `noise`
+# block (absent, the sim adds none). Only scripts/map_track.sh runs it, to
+# survey the slam_toolbox pose graph from exact odometry (plan D7). Keep the
+# rest identical to spielberg.yaml.
+# The league track (repo-gotchas #18): real geometry, a 2.2 m corridor and a
+# 343.3 m centerline. Every localization measurement runs here, never on
+# analytic_circle.
+format_version: 1
+scenario_id: spielberg_survey
+environment:
+  map: Spielberg
+  num_agents: 1
+  scans: true
+  collisions: true
+  rewards: [progress]
+  action:
+    longitudinal: velocity
+    steering: steeringangle
+  timestep_ratio: 1
+  # Omitted, gym_jax derives 90 s (9000 steps) and ends the episode there - a
+  # Spielberg lap is longer than that. 300 s leaves room for a slow lap.
+  max_steps: 30000
+  version: v0
+parameters:
+  num_beams: 64
+# The identity racing_metrics and racing_recording report for a run of this
+# scenario; tests/golden/spielberg_baseline.json carries the same pair.
+metrics:
+  scenario_id: spielberg_survey
+  track_version: spielberg-v1
+track: ../tracks/spielberg.yaml
+map_directory: maps

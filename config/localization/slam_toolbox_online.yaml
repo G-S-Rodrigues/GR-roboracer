@@ -1,0 +1,49 @@
+# slam_toolbox as a live pose source: `pose_source:=slam_toolbox` starts the
+# async mapper with this file, and it owns map -> odom for the run.
+#
+# It maps online, with no prior map (plan D7). Karto's scan matcher builds a
+# same-sign yaw drift of ~3e-4 rad per metre on Spielberg's straights even
+# from exact odometry and an exact scan, so a graph surveyed at the true
+# poses is not what it then matches against; and a graph surveyed with the
+# matcher off has no vertices at all, which segfaults
+# localization_slam_toolbox_node. Mapping online sidesteps both, and makes
+# `map` the pose the run starts at - the true start pose, with no
+# initial-pose parameter to keep in step with the scenario's seed.
+#
+# It does publish map -> odom (the support node stops doing so, and composes
+# it with /odom into the control-rate /localization/odom the controller
+# drives on: BRINGUP-1040). The period is the controller's, not the graph's.
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: true
+    mode: mapping
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    transform_publish_period: 0.02
+    resolution: 0.05
+    # The sim reports a no-return as range_max (10.0), not inf, so the
+    # threshold has to sit below it or every no-return is taken as a hit.
+    max_laser_range: 9.5
+    # One graph node per 0.2 m or 0.1 rad: at the controller's 100 Hz this
+    # is what keeps a 10 ms scan stream out of the optimizer (Step 2), and
+    # it is dense enough that map -> odom is never stale for long.
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.1
+    minimum_time_interval: 0.0
+    map_update_interval: 5.0
+    # Odometry is trusted more than Karto's default, measured on this track
+    # (plan D7): its free matcher drifts, our /odom does not scale-drift
+    # more than ~1 % per lap.
+    correlation_search_space_dimension: 0.2
+    coarse_search_angle_offset: 0.05
+    coarse_angle_resolution: 0.0087
+    distance_variance_penalty: 0.05
+    angle_variance_penalty: 0.05
+    minimum_angle_penalty: 0.3
+    minimum_distance_penalty: 0.2
+    scan_buffer_size: 30
+    scan_buffer_maximum_scan_distance: 15.0
+    do_loop_closing: true
+    stack_size_to_use: 40000000
