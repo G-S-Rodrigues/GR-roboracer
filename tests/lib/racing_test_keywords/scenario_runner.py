@@ -95,7 +95,13 @@ PARTICIPANT_NODES = (
 # have subscribed to before t=0 is released. An estimator that starts
 # publishing after the drive stream does is repo-gotcha #19's latch, and
 # the fix is this deterministic t=0, never a longer stale-input timeout.
-POSE_SOURCE_NODES = {"slam_toolbox": ("slam_toolbox", "/scan")}
+# nav2_amcl subscribes /scan only once the lifecycle manager has activated
+# it, which is after map_server has served the grid: waiting on that
+# subscription is waiting on the whole AMCL side being up.
+POSE_SOURCE_NODES = {
+    "slam_toolbox": ("slam_toolbox", "/scan"),
+    "amcl": ("amcl", "/scan"),
+}
 
 # `racing_metrics` only starts accumulating once these best-effort/reliable
 # subscriptions have delivered something (scripts/compare_metrics.py's
