@@ -8,9 +8,9 @@
 # Run in the dev container, from /ws, after a colcon build:
 #
 #   ./scripts/map_track.sh config/scenarios/spielberg_survey.yaml \
-#       config/scenarios/maps/Spielberg/slam/spielberg
+#       config/scenarios/maps/Spielberg/slam/Spielberg
 #
-# The output is <stem>.pgm + <stem>.yaml, owned by the container's user:
+# The output is <stem>.png + <stem>.yaml, owned by the container's user:
 # chown it back before committing it as a reviewed diff. Which scans the
 # async mapper takes is not deterministic, so two runs are not identical:
 # check the new grid against the track PNG (plan D7 has the method and the
@@ -48,7 +48,12 @@ grep -q "lap_completed: true" log/mapping_metrics.txt
 
 # The mapper publishes /map every map_update_interval; the last one covers
 # the whole lap.
-ros2 run nav2_map_server map_saver_cli --ros-args -p use_sim_time:=true \
-    -p save_map_timeout:=60.0 -p free_thresh_default:=0.196 \
-    -p occupied_thresh_default:=0.65 -p map_subscribe_transient_local:=true \
-    -- -f "$(pwd)/$stem"
+# map_saver_cli's own arguments come first and --ros-args last; its usage
+# text says so, and the other order is silent - it saved a map_<epoch>.pgm
+# in the working directory with default thresholds, reporting success.
+# PNG, not the default PGM: the same grid is ~2.7 MB raw and ~40 kB
+# compressed, and this one is committed to git.
+ros2 run nav2_map_server map_saver_cli \
+    -f "$(pwd)/$stem" --fmt png --occ 0.65 --free 0.196 \
+    --ros-args -p use_sim_time:=true -p save_map_timeout:=60.0 \
+    -p map_subscribe_transient_local:=true
