@@ -1,0 +1,32 @@
+# Spielberg's committed occupancy grid: what nav2_map_server serves to
+# nav2_amcl (pose_source:=amcl). A *survey*, not a SLAM result - the track's
+# own PNG is ground truth for the walls, and this is that geometry expressed
+# as the sensor sees it, so AMCL is measured against the same world every
+# other node reads.
+#
+# Regenerate, from /ws in the dev container after a colcon build:
+#
+#   ./scripts/map_track.sh config/scenarios/spielberg_survey.yaml \
+#       config/scenarios/maps/Spielberg/slam/Spielberg
+#
+# which drives one reference-stack lap of config/scenarios/spielberg_survey.yaml
+# (Spielberg with every sensor exact) on ground truth at 1x, seed 42, while
+# slam_toolbox's mapper lays /scan at the exact dead-reckoned poses with scan
+# matching off (config/localization/slam_toolbox_survey.yaml), then saves
+# /map. Then chown the two files back and validate before committing: which
+# scans the async mapper takes is not deterministic, so two runs differ.
+#
+# This grid, against config/scenarios/maps/Spielberg/Spielberg.png's corridor
+# edges (.scratch/pr3-exp/grid_to_npz.py + fit_map2.py --boundary): identity
+# residual median 0.043 m, p95 0.094 m; the best rigid fit is identity to
+# within -0.01 deg and 0.08 m, median 0.044 m, 95.7 % of wall cells within
+# 0.10 m; the best *reflected* fit is 40x worse (median 1.73 m). Aligned,
+# not rotated and not mirrored - which is the check a numeric localization
+# test cannot make for itself (repo-gotchas #16).
+image: Spielberg.png
+mode: trinary
+resolution: 0.050
+origin: [-77.257, -10.278, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
