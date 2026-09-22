@@ -7,7 +7,32 @@ from setuptools import find_packages, setup
 
 package_name = "racing_sim_gym_jax"
 package_root = Path(__file__).resolve().parent
-source_root = Path(__file__).resolve().parents[3]
+
+
+def find_source_root(start):
+    """Find the repository root without assuming where setup.py is run from.
+
+    A fixed number of parent hops is wrong the moment this file is read from
+    somewhere other than the source tree: colcon reads it from
+    <base>/build/racing_sim_gym_jax/, three parents above which is the
+    directory holding the build base, not the repository. Inside a
+    /ws/.scratch/<worktree> that is /ws/.scratch, so every worktree installs
+    the same shared /ws/.scratch/config -- missing, or another branch's
+    (repo gotcha #20). Walking up to the directory that actually contains
+    this package and a config/ lands on the repository from either location.
+    """
+    for candidate in [start, *start.parents]:
+        if (candidate / "config").is_dir() and (
+            candidate / "ros_ws" / "src" / package_name
+        ).is_dir():
+            return candidate
+    raise RuntimeError(
+        "cannot locate the repository root (a directory holding config/ and "
+        f"ros_ws/src/{package_name}) above {start}"
+    )
+
+
+source_root = find_source_root(package_root)
 config_root = source_root / "config"
 data_files = [
     (
