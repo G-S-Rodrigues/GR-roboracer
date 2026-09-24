@@ -4,17 +4,21 @@ set -euo pipefail
 
 usage() {
     cat >&2 <<'EOF'
-Usage: check.sh --fast|--ci|--full
+Usage: check.sh --fast|--ci|--full|--nightly
 
-  --fast  build, lint, tier 1. The pre-commit gate; keep it under ~45s.
-  --ci    --fast plus tier 2 and one seeded tier-3 run. The PR gate.
-  --full  everything, including all of tiers 3 and 4. Required before
-          calling any change done.
+  --fast    build, lint, tier 1. The pre-commit gate; keep it under ~45s.
+  --ci      --fast plus tier 2 and one seeded tier-3 run. The PR gate.
+  --full    tiers 0-4. The definition of done, and deliberately not every
+            test that exists (ADR 0005).
+  --nightly --full plus tier 5: the cross-product of tracks,
+            implementations and seeds. Minutes to hours; it runs on a
+            schedule, never in the development loop.
 EOF
 }
 
 if [[ $# -ne 1 ]] ||
-    [[ "$1" != "--fast" && "$1" != "--ci" && "$1" != "--full" ]]; then
+    [[ "$1" != "--fast" && "$1" != "--ci" && "$1" != "--full" &&
+    "$1" != "--nightly" ]]; then
     usage
     exit 2
 fi
@@ -101,7 +105,7 @@ if [[ "$mode" == "--ci" ]] && [[ -f "$ci_system_test" ]]; then
     python3 -m pytest "$ci_system_test"
 fi
 
-if [[ "$mode" == "--full" ]]; then
+if [[ "$mode" == "--full" || "$mode" == "--nightly" ]]; then
     if find tests/system -type f -name 'test_*.py' -print -quit | grep -q .; then
         echo "==> system tests"
         python3 -m pytest tests/system
@@ -110,6 +114,17 @@ if [[ "$mode" == "--full" ]]; then
     if find tests/acceptance -type f -name '*.robot' -print -quit | grep -q .; then
         echo "==> acceptance tests"
         robot --pythonpath tests/lib --outputdir log/robot tests/acceptance
+    fi
+fi
+
+# Tier 5: the cross-product ADR 0005 keeps out of the gate, so that --fast,
+# --ci and --full do not grow as implementations accumulate. Nothing here is
+# part of "done"; what it buys is that a regression only the combination of
+# track, implementation and seed shows up in is visible the next morning.
+if [[ "$mode" == "--nightly" ]]; then
+    if find tests/nightly -type f -name 'test_*.py' -print -quit | grep -q .; then
+        echo "==> nightly cross-product"
+        python3 -m pytest tests/nightly
     fi
 fi
 

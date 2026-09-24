@@ -58,10 +58,11 @@ jobs:
             gr-roboracer:dev ./scripts/check.sh --ci
 
   nightly:
-    name: Tiers 3-4, seed ${{ matrix.seed }}
+    name: Tiers 3-4 (tier 5 on seed 42), seed ${{ matrix.seed }}
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The seed-42 leg runs tier 5 as well, and tier 5 is laps, not seconds.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +87,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=dev
 
       - name: check.sh --full
+        if: matrix.seed != 42
         run: |
           docker run --rm \
             --volume "$PWD:/ws" \
@@ -102,6 +104,19 @@ jobs:
             gr-roboracer:dev ./scripts/run_scenario.py \
               --seed ${{ matrix.seed }} \
               --output log/scenario-seed-${{ matrix.seed }}.json
+
+      # Tier 5 on one leg only, and as a replacement for --full on that leg
+      # rather than an addition to it: --nightly already runs everything
+      # --full does, and the cross-product is the cost ADR 0005 keeps out
+      # of the gate - running it once per matrix seed would square it.
+      - name: check.sh --nightly
+        if: matrix.seed == 42
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            gr-roboracer:dev ./scripts/check.sh --nightly
 
       - name: Upload the run's metrics
         if: always()

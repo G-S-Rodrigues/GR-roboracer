@@ -19,14 +19,16 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~6 min (SIM-3090 alone ~131 s) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~20 s |
-| 5 | The cross-product: tracks × implementations × seeds | `--nightly` *(not built yet)* | minutes-hours |
+| 5 | The cross-product: tracks × implementations × seeds | `pytest tests/nightly` via `--nightly` | minutes-hours |
 
 **Robot Framework appears at tiers 3–4 only** — see ADR 0004.
 
-**Tier 5 is decided but not yet built.** ADR 0005 places the expensive cross-product there so that
-`--fast`, `--ci` and `--full` do not grow as implementations accumulate. Neither the tier nor
-`--nightly` exists in `scripts/check.sh` today; both arrive with the SLAM/localization phase. Until
-then, tier 5 is a place to put a test, not a way to run one.
+**Tier 5 exists** (`tests/nightly/`, `check.sh --nightly`), built with the SLAM/localization phase.
+ADR 0005 places the expensive cross-product there so that `--fast`, `--ci` and `--full` do not grow
+as implementations accumulate: `--nightly` runs everything `--full` does and then the cross-product,
+and the scheduled CI job runs it on one seed leg. Nothing in tier 5 is part of "done" — a test
+belongs there when its cost is laps rather than seconds and what it catches is a regression only a
+combination shows.
 
 ## Running them
 
@@ -34,6 +36,7 @@ then, tier 5 is a place to put a test, not a way to run one.
 ./scripts/check.sh --fast   # tiers 0-1. The pre-commit gate. Keep under ~45s.
 ./scripts/check.sh --ci     # + tier 2 and one seeded tier-3 lap. The PR gate.
 ./scripts/check.sh --full   # tiers 0-4. Required before calling a change done.
+./scripts/check.sh --nightly # + tier 5. Scheduled, not part of done.
 ```
 
 `--full` was "everything" while tiers 0–4 were everything. ADR 0005 makes that two different
@@ -66,7 +69,12 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **36 tier-1, 14 tier-2, 8 tier-3, 2 tier-4, 0 tier-5.**
+Current counts: **46 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+
+The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
+`BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;
+tier 3 `SIM-3070` (slam_toolbox) and `SIM-3080` (amcl); tier 4 `ACC-4030` (one row per pose source)
+and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
 
 ## The tests that matter most
 
