@@ -20,6 +20,7 @@ thread, spins its own rclpy node to wait for ``/scenario/metrics``, then calls
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from collections.abc import Mapping
@@ -79,6 +80,9 @@ RELIABLE_QOS = QoSProfile(
 )
 
 RESET_SERVICE = "/racing_sim/reset"
+# Where an active pose source puts the pose the controller may drive on:
+# the support node's composition of map -> odom with /odom (BRINGUP-1040).
+ESTIMATE_TOPIC = "/localization/odom"
 # The eight nodes `sim_pure_pursuit.launch.py` always starts (excludes
 # rviz2, gated off by use_rviz:=false here).
 PARTICIPANT_NODES = (
@@ -332,6 +336,27 @@ def run_scenario(
     if failure:
         raise failure[0]
     return outcome
+
+
+def score_localization(
+    recording: str | Path, estimate_topic: str = ESTIMATE_TOPIC
+) -> dict[str, Any]:
+    """Score one run's recording against its ground truth, offline.
+
+    The same comparator tier 3 calls directly
+    (``scripts/compare_localization.py``); this wrapper exists so tier 4
+    reaches it without `scripts` having to be importable from whatever
+    directory ``robot`` was started in - tier 3 gets that for free from
+    ``python3 -m pytest`` putting the repository root on the path, and
+    ``robot --pythonpath tests/lib`` does not.
+    """
+    if str(REPOSITORY_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPOSITORY_ROOT))
+    from scripts.compare_localization import read_recording, score_recording
+
+    return score_recording(
+        read_recording(Path(recording)), estimate_topic=estimate_topic
+    )
 
 
 def run_scenario_with_track_limit_violation(
