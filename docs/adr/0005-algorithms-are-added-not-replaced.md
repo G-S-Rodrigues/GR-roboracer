@@ -72,10 +72,10 @@ cross-product belongs in tier 3 or tier 5 `pytest`, which is parameterizable and
 of the expensive one. The full cross-product — tracks × implementations × seeds — runs at **tier 5**
 under `--nightly`.
 
-**Tier 5 and `--nightly` do not exist yet.** `docs/agents/testing.md` documents tiers 0–4 and
-`scripts/check.sh` accepts `--fast|--ci|--full`; both are extended by the SLAM/localization phase.
-This section is the decision about where that coverage belongs, not a description of what is built.
-Do not write a test expecting `--nightly` to run it until that lands.
+**Tier 5 and `--nightly` exist** as of the SLAM/localization phase: the tests live in
+`tests/nightly/` and `scripts/check.sh --nightly` runs everything `--full` does and then them. The
+scheduled CI job runs `--nightly` on one seed leg and `--full` on the others, because running the
+cross-product once per matrix seed would square the cost this section exists to contain.
 
 ## Consequences
 
