@@ -29,6 +29,14 @@ source install/setup.bash
 set -u
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-77}
 mkdir -p log "$(dirname "$stem")"
+# The stem is relative to the repository root, which this script has
+# already cd'd to - but SIM-5010 hands it a tmp_path. Prefixing an
+# absolute stem with $(pwd) makes map_saver_cli write to a path under
+# /ws that does not exist, and it fails with nothing on stderr.
+case "$stem" in
+/*) output=$stem ;;
+*) output=$(pwd)/$stem ;;
+esac
 
 ros2 launch racing_bringup slam_toolbox_mapping.launch.py \
     scenario:="$scenario" use_rviz:=false seed:=42 \
@@ -54,6 +62,6 @@ grep -q "lap_completed: true" log/mapping_metrics.txt
 # PNG, not the default PGM: the same grid is ~2.7 MB raw and ~40 kB
 # compressed, and this one is committed to git.
 ros2 run nav2_map_server map_saver_cli \
-    -f "$(pwd)/$stem" --fmt png --occ 0.65 --free 0.196 \
+    -f "$output" --fmt png --occ 0.65 --free 0.196 \
     --ros-args -p use_sim_time:=true -p save_map_timeout:=60.0 \
     -p map_subscribe_transient_local:=true
