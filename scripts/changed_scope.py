@@ -9,6 +9,11 @@ turns that into bash `check.sh` can `eval`. See CHECK-1010..1100 and
 
 from __future__ import annotations
 
+import os
+import shlex
+import subprocess
+import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 
 CPP_EXTENSIONS = (".cpp", ".hpp", ".h", ".cc", ".cxx")
@@ -82,3 +87,97 @@ def scope_for(changed_paths: list[str]) -> Scope:
         cpp=tuple(sorted(cpp)),
         py=tuple(sorted(py)),
     )
+
+
+RunGit = Callable[[list[str]], str]
+
+
+def _lines(output: str) -> list[str]:
+    return [line for line in output.splitlines() if line]
+
+
+def changed_paths(run_git: RunGit) -> list[str]:
+    """The branch's changed set: merge-base diff, staged diff and
+    untracked new files, deduplicated. `run_git` raises on failure."""
+    base = run_git(["merge-base", "main", "HEAD"]).strip()
+    paths: set[str] = set()
+    paths.update(_lines(run_git(["diff", "--name-only", base])))
+    paths.update(_lines(run_git(["diff", "--name-only", "--cached", base])))
+    paths.update(
+        _lines(run_git(["ls-files", "--others", "--exclude-standard"]))
+    )
+    return sorted(paths)
+
+
+def resolve(
+    env: dict[str, str],
+    run_git: RunGit,
+    exists: Callable[[str], bool],
+) -> tuple[Scope, str]:
+    """The scope for this run, plus a one-line reason for the log."""
+    if env.get("CHECK_SCOPE") == "all":
+        return (
+            Scope(whole_tree=True, packages=frozenset(), cpp=(), py=()),
+            "CHECK_SCOPE=all",
+        )
+
+    try:
+        changed = changed_paths(run_git)
+    except subprocess.CalledProcessError as exc:
+        return (
+            Scope(whole_tree=True, packages=frozenset(), cpp=(), py=()),
+            f"git failed: {exc}",
+        )
+
+    scope = scope_for(changed)
+    if scope.whole_tree:
+        return scope, "whole-tree trigger in changed set"
+
+    scope = Scope(
+        whole_tree=False,
+        packages=scope.packages,
+        cpp=tuple(p for p in scope.cpp if exists(p)),
+        py=tuple(p for p in scope.py if exists(p)),
+    )
+    return scope, "scoped to changed packages"
+
+
+def render_shell(scope: Scope, reason: str) -> str:
+    """Render `scope` as bash `check.sh` can `eval`."""
+    lines = [
+        f"scope_whole_tree={1 if scope.whole_tree else 0}",
+        "scope_packages=("
+        + " ".join(shlex.quote(p) for p in sorted(scope.packages))
+        + ")",
+        "scope_cpp=(" + " ".join(shlex.quote(p) for p in scope.cpp) + ")",
+        "scope_py=(" + " ".join(shlex.quote(p) for p in scope.py) + ")",
+    ]
+    if scope.packages:
+        select = ["--packages-above", *sorted(scope.packages)]
+        lines.append(
+            "scope_colcon_select=("
+            + " ".join(shlex.quote(a) for a in select)
+            + ")"
+        )
+    else:
+        lines.append("scope_colcon_select=()")
+    lines.append(f"scope_reason={shlex.quote(reason)}")
+    return "\n".join(lines) + "\n"
+
+
+def main() -> None:
+    def run_git(args: list[str]) -> str:
+        return subprocess.run(
+            ["git", *args],
+            cwd=os.getcwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    scope, reason = resolve(dict(os.environ), run_git, os.path.exists)
+    sys.stdout.write(render_shell(scope, reason))
+
+
+if __name__ == "__main__":
+    main()

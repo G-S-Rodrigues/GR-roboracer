@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
-from scripts.changed_scope import scope_for
+from scripts.changed_scope import (
+    Scope,
+    changed_paths,
+    render_shell,
+    resolve,
+    scope_for,
+)
 
 
 def test_check_1010_python_only_change_scopes_to_one_package() -> None:
@@ -76,6 +84,15 @@ def test_check_1060_paths_outside_ros_ws_src() -> None:
     assert scope.cpp == ()
 
 
+def test_check_1070b_shallow_ros_ws_src_path_names_no_package() -> None:
+    """L2: a path at ros_ws/src/<file> depth (no package segment) names no
+    package, e.g. a stray ros_ws/src/.gitkeep."""
+    scope = scope_for(["ros_ws/src/.gitkeep"])
+
+    assert scope.whole_tree is False
+    assert scope.packages == frozenset()
+
+
 def test_check_1070_near_misses_do_not_force_whole_tree() -> None:
     """CHECK-1070: near-miss paths do not trip the whole-tree triggers."""
     scope = scope_for(
@@ -87,3 +104,98 @@ def test_check_1070_near_misses_do_not_force_whole_tree() -> None:
     )
 
     assert scope.whole_tree is False
+
+
+def _fake_run_git(calls: dict[tuple[str, ...], str]):
+    def run_git(args: list[str]) -> str:
+        return calls[tuple(args)]
+
+    return run_git
+
+
+def test_check_1080_changed_paths_is_deduplicated_union() -> None:
+    """CHECK-1080: changed_paths unions merge-base diff, cached diff and
+    untracked files; resolve drops a non-existent cpp path but keeps its
+    package."""
+    base = "abc123"
+    run_git = _fake_run_git(
+        {
+            ("merge-base", "main", "HEAD"): base + "\n",
+            ("diff", "--name-only", base): "a.py\nshared.py\n",
+            ("diff", "--name-only", "--cached", base): "shared.py\nb.cpp\n",
+            ("ls-files", "--others", "--exclude-standard"): "c.py\n",
+        }
+    )
+
+    result = changed_paths(run_git)
+
+    assert sorted(result) == ["a.py", "b.cpp", "c.py", "shared.py"]
+
+    missing_cpp = "ros_ws/src/racing_metrics/src/gone.cpp"
+    run_git2 = _fake_run_git(
+        {
+            ("merge-base", "main", "HEAD"): base + "\n",
+            ("diff", "--name-only", base): missing_cpp,
+            ("diff", "--name-only", "--cached", base): "",
+            ("ls-files", "--others", "--exclude-standard"): "",
+        }
+    )
+    scope, _reason = resolve({}, run_git2, exists=lambda p: False)
+
+    assert scope.whole_tree is False
+    assert scope.cpp == ()
+    assert scope.packages == frozenset({"racing_metrics"})
+
+
+def test_check_1090_git_failure_and_check_scope_all_force_whole_tree() -> None:
+    """CHECK-1090: a git failure and CHECK_SCOPE=all both force whole_tree;
+    CHECK_SCOPE=all never calls git."""
+
+    def raising_run_git(args: list[str]) -> str:
+        raise subprocess.CalledProcessError(1, args)
+
+    scope, reason = resolve({}, raising_run_git, exists=lambda p: True)
+
+    assert scope.whole_tree is True
+    assert "git" in reason.lower()
+
+    def unexpected_run_git(args: list[str]) -> str:
+        raise AssertionError("git should not be called when CHECK_SCOPE=all")
+
+    scope, reason = resolve(
+        {"CHECK_SCOPE": "all"}, unexpected_run_git, exists=lambda p: True
+    )
+
+    assert scope.whole_tree is True
+
+
+def test_check_1100_render_shell() -> None:
+    """CHECK-1100: render_shell emits scope_colcon_select with
+    --packages-above only, quotes paths with spaces, and marks whole-tree
+    scopes."""
+    scope = Scope(
+        whole_tree=False,
+        packages=frozenset({"racing_common", "racing_metrics"}),
+        cpp=(),
+        py=(),
+    )
+    rendered = render_shell(scope, "reason with space")
+
+    select_line = next(
+        line for line in rendered.splitlines() if "scope_colcon_select=" in line
+    )
+    assert "--packages-select" not in select_line
+    assert set(
+        select_line.split("--packages-above ")[1].strip("()").split()
+    ) == {
+        "racing_common",
+        "racing_metrics",
+    }
+    assert (
+        "'reason with space'" in rendered or '"reason with space"' in rendered
+    )
+
+    whole = render_shell(
+        Scope(whole_tree=True, packages=frozenset(), cpp=(), py=()), "mode --ci"
+    )
+    assert "scope_whole_tree=1" in whole
