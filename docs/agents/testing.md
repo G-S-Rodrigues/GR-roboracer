@@ -15,7 +15,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | Tier | What it proves | Runner | Cost |
 |---|---|---|---|
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
-| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests` | < 10 s total |
+| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests` | < 10 s total |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~6 min (SIM-3090 alone ~131 s) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~20 s |
@@ -33,11 +33,30 @@ combination shows.
 ## Running them
 
 ```bash
-./scripts/check.sh --fast   # tiers 0-1. The pre-commit gate. Keep under ~45s.
+./scripts/check.sh --fast   # tiers 0-1, scoped to the branch's changes. The pre-commit gate.
 ./scripts/check.sh --ci     # + tier 2 and one seeded tier-3 lap. The PR gate.
 ./scripts/check.sh --full   # tiers 0-4. Required before calling a change done.
 ./scripts/check.sh --nightly # + tier 5. Scheduled, not part of done.
 ```
+
+`--fast` diffs the branch against `main` (plus index, worktree and untracked files) and lints and tests
+only what that touches: `clang-format` and `clang-tidy` run only when a C/C++ file changed, and then
+only over the changed packages; `ruff` runs over the changed Python files; `colcon test` runs
+`--packages-above` the changed packages, so a `racing_common` change re-tests everything that depends
+on it. The build stays whole-tree, because `clang-tidy` needs its compilation database (gotcha #7).
+It prints `scope: ...` first. Measured in a warm throwaway clone in `dev`:
+
+| Change | Command | Wall time |
+|---|---|---|
+| whole tree | `CHECK_SCOPE=all ./scripts/check.sh --fast` | 223 s |
+| one `.py` (`racing_bringup`) | `./scripts/check.sh --fast` | 10.5 s |
+| one `.hpp` (`racing_metrics`) | `./scripts/check.sh --fast` | 53.9 s |
+| one `.hpp` (`racing_common`, 6 dependents re-tested) | `./scripts/check.sh --fast` | 47.4 s |
+
+A change to `scripts/check.sh`, `.pre-commit-config.yaml`, `setup.sh`, `.clang-tidy`, any
+`package.xml` or `CMakeLists.txt`, or anything under `docker/`, `config/` or `tests/golden/`, an empty
+changed set, `CHECK_SCOPE=all`, or a failed `git` call, all fall back to the whole tree. The saving
+decays along a branch: once it has touched one of those, every `--fast` on it is whole tree again.
 
 `--full` was "everything" while tiers 0–4 were everything. ADR 0005 makes that two different
 statements: it stays the definition of done, and tier 5 sits outside it deliberately.
@@ -55,6 +74,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 |---|---|
 | 1, C++ | `./build/<pkg>/<test_binary> --gtest_filter='*Common1060*'` |
 | 1, `sim/` | `python3 -m pytest sim/tests -k sim_1010` |
+| 1, `scripts/` | `python3 -m pytest scripts/tests -k check_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
 | 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
@@ -69,7 +89,9 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **46 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **56 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+
+The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1100` (ten IDs, `scripts/tests`).
 
 The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
 `BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;
