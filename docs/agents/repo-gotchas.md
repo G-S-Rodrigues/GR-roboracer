@@ -140,3 +140,14 @@ Traps any task in this repository can hit. Each one cost real time at least once
     The rollout now reuses `racing_metrics`' rule (`CenterlineLap`, SIM-1010). A generator and a
     live consumer that each define "a lap" will disagree, invisibly, on the first track where it
     matters.
+
+23. **`check.sh --fast` is scoped, and can miss what only the whole tree catches.** It lints and
+    tests the packages the branch touched. `clang-tidy` there sees one package's compilation
+    database, so a header change that breaks a *dependent* package's tidy result passes `--fast` and
+    fails `--ci`. The whole-tree trigger list in `scripts/changed_scope.py` is a hand-kept copy and
+    goes stale: `ruff.toml` and `.clang-format` are not on it today, so a change to only those lints
+    nothing under `--fast`. Symptom: `--fast` green, `--ci` red. Remedy: `CHECK_SCOPE=all
+    ./scripts/check.sh --fast`. The measurement procedure (a throwaway clone whose `main` is the
+    branch head, since a branch that already touches `check.sh` or `config/` is always whole tree)
+    is in the part-1 PR; inside `dev`, cloning `/ws` needs `git config --global --add safe.directory
+    /ws/.git`.
