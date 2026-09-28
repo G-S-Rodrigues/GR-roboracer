@@ -17,7 +17,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
 | 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests` | < 10 s total |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
-| 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~6 min (SIM-3090 alone ~131 s) |
+| 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~20 s |
 | 5 | The cross-product: tracks × implementations × seeds | `pytest tests/nightly` via `--nightly` | minutes-hours |
 
@@ -35,7 +35,7 @@ combination shows.
 ```bash
 ./scripts/check.sh --fast   # tiers 0-1, scoped to the branch's changes. The pre-commit gate.
 ./scripts/check.sh --ci     # + tier 2 and one seeded tier-3 lap. The PR gate.
-./scripts/check.sh --full   # tiers 0-4. Required before calling a change done.
+./scripts/check.sh --full   # tiers 0-4. Required before calling a change done. ~13 min.
 ./scripts/check.sh --nightly # + tier 5. Scheduled, not part of done.
 ```
 
