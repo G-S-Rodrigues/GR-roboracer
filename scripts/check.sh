@@ -6,7 +6,9 @@ usage() {
     cat >&2 <<'EOF'
 Usage: check.sh --fast|--ci|--full|--nightly
 
-  --fast    build, lint, tier 1. The pre-commit gate; keep it under ~45s.
+  --fast    build, lint, tier 1, scoped to the branch's changes (see
+            scripts/changed_scope.py). The pre-commit gate. Set
+            CHECK_SCOPE=all to force the whole-tree checks below.
   --ci      --fast plus tier 2 and one seeded tier-3 run. The PR gate.
   --full    tiers 0-4. The definition of done, and deliberately not every
             test that exists (ADR 0005).
@@ -31,6 +33,28 @@ ci_system_test="tests/system/test_sim_3020_seeded_lap_completes.py"
 mode="$1"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+
+# What --fast scopes to. Every array is initialised empty up front (set -u)
+# so the whole-tree branches below never reference an unset scope_* array.
+scope_whole_tree=1
+scope_reason="mode ${mode}"
+scope_packages=()
+scope_cpp=()
+scope_py=()
+scope_colcon_select=()
+if [[ "$mode" == "--fast" ]]; then
+    if scope_sh="$(python3 scripts/changed_scope.py)"; then
+        eval "$scope_sh"
+    else
+        scope_whole_tree=1
+        scope_reason="changed_scope.py failed"
+    fi
+fi
+if (( scope_whole_tree )); then
+    echo "==> scope: whole tree (${scope_reason})"
+else
+    echo "==> scope: packages ${scope_packages[*]:-<none>}"
+fi
 
 # A process started with `docker exec` does not inherit environment changes
 # made by the container entrypoint before it execs the long-running command.
@@ -58,46 +82,82 @@ source "$repo_root/install/setup.bash"
 set -u
 
 echo "==> clang-format"
-mapfile -d '' cpp_files < <(
-    find ros_ws/src -type f \
-        \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' \
-        -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' \) \
-        -print0
-)
-if (( ${#cpp_files[@]} )); then
-    clang-format --dry-run --Werror "${cpp_files[@]}"
+if (( scope_whole_tree )); then
+    mapfile -d '' cpp_files < <(
+        find ros_ws/src -type f \
+            \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' \
+            -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' \) \
+            -print0
+    )
+    if (( ${#cpp_files[@]} )); then
+        clang-format --dry-run --Werror "${cpp_files[@]}"
+    fi
+elif (( ${#scope_cpp[@]} )); then
+    clang-format --dry-run --Werror "${scope_cpp[@]}"
+else
+    echo "skipped (no C++ changed)"
 fi
 
 echo "==> clang-tidy"
-while IFS= read -r -d '' compilation_database; do
-    run-clang-tidy \
-        -p "$(dirname "$compilation_database")" \
-        -config-file "$repo_root/.clang-tidy"
-done < <(find build -name compile_commands.json -type f -print0)
+if (( scope_whole_tree )); then
+    while IFS= read -r -d '' compilation_database; do
+        run-clang-tidy \
+            -p "$(dirname "$compilation_database")" \
+            -config-file "$repo_root/.clang-tidy"
+    done < <(find build -name compile_commands.json -type f -print0)
+elif (( ${#scope_cpp[@]} == 0 )); then
+    echo "skipped (no C++ changed)"
+else
+    for pkg in "${scope_packages[@]}"; do
+        if [[ -f "build/$pkg/compile_commands.json" ]]; then
+            run-clang-tidy \
+                -p "build/$pkg" \
+                -config-file "$repo_root/.clang-tidy"
+        fi
+    done
+fi
 
 echo "==> ruff"
-ruff check sim tools tests scripts ros_ws/src
-ruff format --check sim tools tests scripts ros_ws/src
-
-echo "==> ROS package tests"
-if [[ "$mode" == "--fast" ]]; then
-    colcon test \
-        --event-handlers console_cohesion+ \
-        --return-code-on-test-failure \
-        --ctest-args -L 'tier1|gtest|lint' --output-on-failure
+if (( scope_whole_tree )); then
+    ruff check sim tools tests scripts ros_ws/src
+    ruff format --check sim tools tests scripts ros_ws/src
+elif (( ${#scope_py[@]} )); then
+    ruff check "${scope_py[@]}"
+    ruff format --check "${scope_py[@]}"
 else
-    # --ci and --full both run every package test: tier 2 costs ~5s, so
-    # splitting it out would buy nothing and leave a hole in the PR gate.
-    colcon test \
-        --event-handlers console_cohesion+ \
-        --return-code-on-test-failure \
-        --ctest-args --output-on-failure
+    echo "skipped (no Python changed)"
 fi
-colcon test-result --verbose
+
+if [[ "$mode" == "--fast" ]] && ! (( scope_whole_tree )) && (( ${#scope_packages[@]} == 0 )); then
+    echo "==> ROS package tests"
+    echo "skipped (no ROS package changed)"
+else
+    echo "==> ROS package tests"
+    if [[ "$mode" == "--fast" ]]; then
+        colcon test \
+            --event-handlers console_cohesion+ \
+            --return-code-on-test-failure \
+            --ctest-args -L 'tier1|gtest|lint' --output-on-failure \
+            "${scope_colcon_select[@]}"
+    else
+        # --ci and --full both run every package test: tier 2 costs ~5s, so
+        # splitting it out would buy nothing and leave a hole in the PR gate.
+        colcon test \
+            --event-handlers console_cohesion+ \
+            --return-code-on-test-failure \
+            --ctest-args --output-on-failure
+    fi
+    colcon test-result --verbose
+fi
 
 if find sim/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
     echo "==> simulator unit tests"
     python3 -m pytest sim/tests
+fi
+
+if find scripts/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
+    echo "==> scripts unit tests"
+    python3 -m pytest scripts/tests
 fi
 
 if [[ "$mode" == "--ci" ]] && [[ -f "$ci_system_test" ]]; then
