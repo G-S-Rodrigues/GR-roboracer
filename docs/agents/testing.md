@@ -18,7 +18,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests` | < 10 s total |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
-| 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~20 s |
+| 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~201 s |
 | 5 | The cross-product: tracks × implementations × seeds | `pytest tests/nightly` via `--nightly` | minutes-hours |
 
 **Robot Framework appears at tiers 3–4 only** — see ADR 0004.
@@ -89,9 +89,9 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **56 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **57 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
-The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1100` (ten IDs, `scripts/tests`).
+The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1110` (eleven IDs, `scripts/tests`).
 
 The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
 `BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;

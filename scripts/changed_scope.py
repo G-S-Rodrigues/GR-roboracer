@@ -3,7 +3,7 @@
 
 `scope_for` is the pure rule set. `changed_paths`/`resolve` reach git, the
 environment and the filesystem so `check.sh` gets a real scope; `render_shell`
-turns that into bash `check.sh` can `eval`. See CHECK-1010..1100 and
+turns that into bash `check.sh` can `eval`. See CHECK-1010..1110 and
 `docs/agents/repo-gotchas.md` #23.
 """
 
@@ -18,9 +18,9 @@ from dataclasses import dataclass
 
 CPP_EXTENSIONS = (".cpp", ".hpp", ".h", ".cc", ".cxx")
 
-# Duplicated deliberately from GR-rebase/SKILL.md's whole-tree trigger list
-# (cross-repo reuse is impossible in prose); see the plan's Reuse decisions
-# and repo-gotchas.md #23 for what can drift.
+# The spec's nine whole-tree triggers. GR-rebase/SKILL.md keeps a shorter
+# list of five, so the two differ; see the open topic
+# 2026-09-24-whole-tree-trigger-list and repo-gotchas.md #23.
 WHOLE_TREE_FILES = (
     "scripts/check.sh",
     ".pre-commit-config.yaml",
@@ -101,8 +101,12 @@ def changed_paths(run_git: RunGit) -> list[str]:
     untracked new files, deduplicated. `run_git` raises on failure."""
     base = run_git(["merge-base", "main", "HEAD"]).strip()
     paths: set[str] = set()
-    paths.update(_lines(run_git(["diff", "--name-only", base])))
-    paths.update(_lines(run_git(["diff", "--name-only", "--cached", base])))
+    paths.update(_lines(run_git(["diff", "--name-only", "--no-renames", base])))
+    paths.update(
+        _lines(
+            run_git(["diff", "--name-only", "--no-renames", "--cached", base])
+        )
+    )
     paths.update(
         _lines(run_git(["ls-files", "--others", "--exclude-standard"]))
     )
