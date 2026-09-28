@@ -121,8 +121,14 @@ def test_check_1080_changed_paths_is_deduplicated_union() -> None:
     run_git = _fake_run_git(
         {
             ("merge-base", "main", "HEAD"): base + "\n",
-            ("diff", "--name-only", base): "a.py\nshared.py\n",
-            ("diff", "--name-only", "--cached", base): "shared.py\nb.cpp\n",
+            ("diff", "--name-only", "--no-renames", base): "a.py\nshared.py\n",
+            (
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "--cached",
+                base,
+            ): "shared.py\nb.cpp\n",
             ("ls-files", "--others", "--exclude-standard"): "c.py\n",
         }
     )
@@ -135,8 +141,8 @@ def test_check_1080_changed_paths_is_deduplicated_union() -> None:
     run_git2 = _fake_run_git(
         {
             ("merge-base", "main", "HEAD"): base + "\n",
-            ("diff", "--name-only", base): missing_cpp,
-            ("diff", "--name-only", "--cached", base): "",
+            ("diff", "--name-only", "--no-renames", base): missing_cpp,
+            ("diff", "--name-only", "--no-renames", "--cached", base): "",
             ("ls-files", "--others", "--exclude-standard"): "",
         }
     )
@@ -199,3 +205,38 @@ def test_check_1100_render_shell() -> None:
         Scope(whole_tree=True, packages=frozenset(), cpp=(), py=()), "mode --ci"
     )
     assert "scope_whole_tree=1" in whole
+
+
+def test_check_1110_moving_a_file_out_of_a_package_keeps_the_package(
+    tmp_path,
+) -> None:
+    """CHECK-1110: git's rename detection lists only a moved file's new
+    path; the package it left must still be in scope. Real git, because
+    the fake cannot express rename detection."""
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    git("config", "commit.gpgsign", "false")
+    src = tmp_path / "ros_ws/src/racing_sim_gym_jax/laser.py"
+    src.parent.mkdir(parents=True)
+    src.write_text("".join(f"line {i}\n" for i in range(40)))
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "feature")
+    (tmp_path / "sim").mkdir()
+    git("mv", "ros_ws/src/racing_sim_gym_jax/laser.py", "sim/laser.py")
+    git("commit", "-q", "-m", "move")
+
+    scope, _reason = resolve({}, lambda args: git(*args), exists=lambda p: True)
+
+    assert scope.whole_tree is False
+    assert scope.packages == frozenset({"racing_sim_gym_jax"})
