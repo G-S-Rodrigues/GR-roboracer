@@ -8,6 +8,7 @@ Public contract: noisy `/scan` and `/odom` (frame `odom`, plus TF `odom -> base_
 URDF (BRINGUP-1050, ADAPT-2120); `/ground_truth/scan` stays cast from, and labelled, `base_link`.
 Above 1x, while a `/drive` publisher exists, each step waits up to one 1x tick for a `/drive` stamped
 at or after the tick last published (SIMJAX-1070): a commander must stamp `/drive` with the tick it answers.
+Known limitation: the supervisor restamps `/drive` on its own timer, so the gate syncs to that phase, not the controller's answer (plan D1).
 
 Language: Python because the simulator is JAX; keep all state evolution in the ROS-free backend.
 
