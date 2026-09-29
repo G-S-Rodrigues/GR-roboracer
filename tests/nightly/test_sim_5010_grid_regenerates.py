@@ -35,17 +35,19 @@ SURVEY_TIMEOUT_SECONDS = 600.0
 # Half a cell at 0.05 m resolution, rounded up to a full cell: a wall that
 # regenerates one cell over is the same wall.
 NEIGHBOURHOOD_CELLS = 1
-# Measured, one regenerated survey (2 min 21 s) against the committed
-# grid: every one of the fresh grid's 20 000 wall cells has a committed
-# wall cell beside it (1.0000), and 0.9937 of the committed grid's 20 234
-# do in the fresh one - the fresh survey is very slightly the sparser of
-# the two. The bound keeps headroom under the worse direction, because
-# which scans the async mapper takes is not deterministic and one run
-# does not bound that. A survey that drops below it has changed what the
-# grid means; it is not a number to lower (repo-gotchas #14).
+# Measured, two regenerated surveys against the committed grid. Before the
+# floor fix (2 min 21 s): every one of the fresh grid's 20 000 wall cells
+# has a committed wall cell beside it (1.0000), and 0.9937 of the
+# committed grid's 20 234 do in the fresh one. After it (2 min 17 s):
+# 1.0000 and 0.9999, 20 251 fresh wall cells. The two runs differ because
+# which scans the async mapper takes is not deterministic, so the fix and
+# the run-to-run spread are not separable from two runs; the bound keeps
+# headroom under the worse direction and is not a number to lower
+# (repo-gotchas #14).
 MEASUREMENT = (
-    "one regenerated survey vs the committed grid: fresh->committed "
-    "1.0000, committed->fresh 0.9937, 20000 vs 20234 wall cells"
+    "two regenerated surveys vs the committed grid: fresh->committed "
+    "1.0000 both times, committed->fresh 0.9937 (20000 wall cells) then "
+    "0.9999 (20251 wall cells, after the floor fix), against 20234 committed"
 )
 AGREEMENT_MINIMUM = 0.95
 
@@ -75,10 +77,15 @@ def _fraction_within(
 ) -> float:
     """Fraction of `points` with an occupied cell of `occupied` beside them."""
     resolution = document["resolution"]
-    columns = ((points[:, 0] - document["origin"][0]) / resolution).astype(int)
+    # floor, not a bare int cast: that truncates toward zero, folding a
+    # point just outside the grid (cell -0.5) into boundary cell 0.
+    columns = np.floor((points[:, 0] - document["origin"][0]) / resolution)
+    columns = columns.astype(int)
     rows = (
         occupied.shape[0]
-        - ((points[:, 1] - document["origin"][1]) / resolution).astype(int)
+        - np.floor((points[:, 1] - document["origin"][1]) / resolution).astype(
+            int
+        )
         - 1
     )
     hit = np.zeros(len(points), dtype=bool)
