@@ -95,20 +95,13 @@ jobs:
             --env ROS_DOMAIN_ID=42 \
             gr-roboracer:dev ./scripts/check.sh --full
 
-      - name: One seeded lap on this matrix seed
-        run: |
-          docker run --rm \
-            --volume "$PWD:/ws" \
-            --workdir /ws \
-            --env ROS_DOMAIN_ID=42 \
-            gr-roboracer:dev ./scripts/run_scenario.py \
-              --seed ${{ matrix.seed }} \
-              --output log/scenario-seed-${{ matrix.seed }}.json
-
       # Tier 5 on one leg only, and as a replacement for --full on that leg
-      # rather than an addition to it: --nightly already runs everything
-      # --full does, and the cross-product is the cost ADR 0005 keeps out
-      # of the gate - running it once per matrix seed would square it.
+      # rather than an addition to it. It comes before the seeded lap because
+      # it is the seed-42 leg's only workspace build, and the lap needs the
+      # built overlay (the bind mount carries build/ and install/ across).
+      # --nightly already runs everything --full does, and the cross-product
+      # is the cost ADR 0005 keeps out of the gate - running it once per
+      # matrix seed would square it.
       - name: check.sh --nightly
         if: matrix.seed == 42
         run: |
@@ -125,3 +118,13 @@ jobs:
           name: scenario-seed-${{ matrix.seed }}
           path: log/scenario-seed-${{ matrix.seed }}.json
           if-no-files-found: warn
+
+      - name: One seeded lap on this matrix seed
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            gr-roboracer:dev ./scripts/run_scenario.py \
+              --seed ${{ matrix.seed }} \
+              --output log/scenario-seed-${{ matrix.seed }}.json
