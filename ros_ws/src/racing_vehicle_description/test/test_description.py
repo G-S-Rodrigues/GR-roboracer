@@ -64,8 +64,29 @@ def test_rviz_shows_each_required_live_artifact() -> None:
     assert "Reliability Policy: Best Effort" in source
     assert "Value: /scan" in source
     assert "rviz_default_plugins/MarkerArray" in source
-    assert "Topic: /visualization/track" in source
-    assert "Topic: /visualization/trajectory" in source
+    assert "Value: /visualization/track" in source
+    assert "Value: /visualization/trajectory" in source
+
+
+def test_rviz_receives_every_latched_topic() -> None:
+    """/map and both marker topics are published latched, once or rarely.
+
+    A Volatile display never receives a message published before it
+    subscribed, so each needs Transient Local or it stays empty with no
+    error (repo-gotchas #6).
+    """
+    source = RVIZ_PATH.read_text(encoding="utf-8")
+    assert "rviz_default_plugins/Map" in source
+    for topic in ("/map", "/visualization/track", "/visualization/trajectory"):
+        block = source.split(f"Value: {topic}\n")[0].rsplit("Topic:", 1)[-1]
+        assert "Durability Policy: Transient Local" in block, topic
+
+
+def test_rviz_camera_follows_the_vehicle() -> None:
+    """A league track does not start at the origin: Spielberg's car starts
+    ~50 m from it, outside a camera orbiting (0, 0)."""
+    source = RVIZ_PATH.read_text(encoding="utf-8")
+    assert "Target Frame: base_link" in source
 
 
 def test_manual_tf_sign_check_is_explicitly_documented() -> None:
