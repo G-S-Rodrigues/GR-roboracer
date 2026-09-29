@@ -21,6 +21,15 @@ if(BUILD_TESTING)
     set_tests_properties(test_${tier1_test} PROPERTIES LABELS "tier1")
   endforeach()
 
+  # EVAL-1050: named test_evaluation_node_shutdown.py, so it cannot go
+  # through the test_${tier1_test}.py loop above.
+  ament_add_pytest_test(test_evaluation_node_shutdown
+    test/test_evaluation_node_shutdown.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  set_tests_properties(test_evaluation_node_shutdown PROPERTIES
+    LABELS "tier1")
+
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_evaluation_node.py
     TIMEOUT 30
