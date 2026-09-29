@@ -3,7 +3,7 @@
 
 `scope_for` is the pure rule set. `changed_paths`/`resolve` reach git, the
 environment and the filesystem so `check.sh` gets a real scope; `render_shell`
-turns that into bash `check.sh` can `eval`. See CHECK-1010..1110 and
+turns that into bash `check.sh` can `eval`. See CHECK-1010..1130 and
 `docs/agents/repo-gotchas.md` #23.
 """
 
@@ -16,16 +16,20 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-CPP_EXTENSIONS = (".cpp", ".hpp", ".h", ".cc", ".cxx")
+# The extensions scripts/check.sh hands to clang-format and clang-tidy.
+CPP_EXTENSIONS = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx")
 
-# The spec's nine whole-tree triggers. GR-rebase/SKILL.md keeps a shorter
-# list of five, so the two differ; see the open topic
-# 2026-09-24-whole-tree-trigger-list and repo-gotchas.md #23.
+# The spec's nine whole-tree triggers plus .clang-format and ruff.toml.
+# GR-rebase/SKILL.md keeps a shorter list of five, so the two differ; see
+# the open topic 2026-09-24-whole-tree-trigger-list and
+# repo-gotchas.md #23.
 WHOLE_TREE_FILES = (
     "scripts/check.sh",
     ".pre-commit-config.yaml",
     "setup.sh",
     ".clang-tidy",
+    ".clang-format",
+    "ruff.toml",
 )
 WHOLE_TREE_BASENAMES = ("package.xml", "CMakeLists.txt")
 WHOLE_TREE_PREFIXES = ("docker/", "config/", "tests/golden/")

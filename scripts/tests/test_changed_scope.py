@@ -240,3 +240,28 @@ def test_check_1110_moving_a_file_out_of_a_package_keeps_the_package(
 
     assert scope.whole_tree is False
     assert scope.packages == frozenset({"racing_sim_gym_jax"})
+
+
+@pytest.mark.parametrize(
+    "ext", [".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"]
+)
+def test_check_1120_every_extension_check_sh_formats_is_cpp(
+    ext: str,
+) -> None:
+    """CHECK-1120: the classifier matches the extensions check.sh hands
+    to clang-format and clang-tidy."""
+    path = f"ros_ws/src/racing_common/src/x{ext}"
+
+    scope = scope_for([path])
+
+    assert scope.packages == frozenset({"racing_common"})
+    assert scope.cpp == (path,)
+
+
+@pytest.mark.parametrize("path", [".clang-format", "ruff.toml"])
+def test_check_1130_lint_config_files_are_whole_tree_triggers(
+    path: str,
+) -> None:
+    """CHECK-1130: a change to only the formatter or linter config runs
+    the whole tree."""
+    assert scope_for([path]).whole_tree is True
