@@ -229,6 +229,19 @@ def _reset_at_deterministic_t0(
         wait_for_endpoints(
             node, estimator, {scan_topic}, "subscription", _remaining()
         )
+        # amcl only. The sim is held, but a held sim republishes its
+        # snapshot, so amcl can already produce map -> odom and the support
+        # node compose an estimate; releasing t=0 before one exists lets the
+        # supervisor's stale-input timeout fire (gotcha #19). slam_toolbox is
+        # deliberately left with the scan-subscription wait above: a held sim
+        # republishes an identical snapshot at stamp 0, and slam_toolbox,
+        # which (hypothesis, untested) needs motion before it emits, never
+        # produced /localization/odom while held - measured as a 394 s
+        # timeout on SIM-3070, while SIM-3080 passes with this wait.
+        if pose_source == "amcl":
+            wait_for_message(
+                node, Odometry, ESTIMATE_TOPIC, RELIABLE_QOS, _remaining()
+            )
 
     client = node.create_client(Reset, RESET_SERVICE)
     if not client.wait_for_service(timeout_sec=_remaining()):
