@@ -145,8 +145,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     tests the packages the branch touched. `clang-tidy` there sees one package's compilation
     database, so a header change that breaks a *dependent* package's tidy result passes `--fast` and
     fails `--ci`. The whole-tree trigger list in `scripts/changed_scope.py` is a hand-kept copy and
-    goes stale: `ruff.toml` and `.clang-format` are not on it today, so a change to only those lints
-    nothing under `--fast`. Symptom: `--fast` green, `--ci` red. Remedy: `CHECK_SCOPE=all
+    goes stale: `ruff.toml` and `.clang-format` were missing until a review caught them, and any
+    config file added later is missing the same way, so a change to only it lints nothing under
+    `--fast`. Symptom: `--fast` green, `--ci` red. Remedy: `CHECK_SCOPE=all
     ./scripts/check.sh --fast`. The measurement procedure (a throwaway clone whose `main` is the
     branch head, since a branch that already touches `check.sh` or `config/` is always whole tree)
     is in the part-1 PR; inside `dev`, cloning `/ws` needs `git config --global --add safe.directory

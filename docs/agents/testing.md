@@ -89,9 +89,9 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **57 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **59 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
-The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1110` (eleven IDs, `scripts/tests`).
+The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
 The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
 `BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;
