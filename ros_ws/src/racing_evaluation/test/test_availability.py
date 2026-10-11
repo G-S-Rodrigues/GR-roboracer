@@ -58,3 +58,22 @@ def test_eval_1030_a_dead_estimator_has_no_error_rather_than_zero() -> None:
     assert math.isnan(error.maximum)
     assert summary.availability == 0.0
     assert summary.maximum_gap == 10.0
+
+
+def test_eval_1060_an_unbroken_stream_is_exactly_available() -> None:
+    """An identity estimate must read availability exactly 1.0.
+
+    The 2026-10-01 and 2026-10-07 nightlies failed SIM-3060 and SIM-3100
+    with ``availability: 0.9999999999999999``: summing ~2,280 covered gaps
+    does not telescope, and for some start offsets it lands one ulp low.
+    Stamps are built as the recording reader builds them.
+    """
+    stamps = [
+        (ns // 1_000_000_000) + (ns % 1_000_000_000) * 1e-9
+        for ns in range(20_000_000, 20_000_000 + 2280 * 10_000_000, 10_000_000)
+    ]
+    stream = [Pose(stamp=stamp, x=0.0, y=0.0) for stamp in stamps]
+
+    summary = availability(stream, window=0.5, start=stamps[0], end=stamps[-1])
+
+    assert summary.availability == 1.0
