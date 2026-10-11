@@ -55,7 +55,7 @@ def test_desc_1010_wheel_axles_are_wheelbase_apart() -> None:
     """DESC-1010: RViz must show the car the sim drives.
 
     The controller's wheelbase comes from the vehicle file; the URDF's
-    rear and front wheel origins must be that far apart, per side.
+    front wheel origin must be that far ahead of the rear one, per side.
     """
     config = yaml.safe_load(VEHICLE_CONFIG.read_text())
     wheelbase = config["racing_controller_baseline"]["ros__parameters"][
@@ -65,8 +65,9 @@ def test_desc_1010_wheel_axles_are_wheelbase_apart() -> None:
     for side in ("left", "right"):
         rear = _origin_in_base_link(root, f"{side}_rear_wheel")
         front = _origin_in_base_link(root, f"{side}_front_wheel")
-        distance = float(np.linalg.norm(front - rear))
-        assert distance == pytest.approx(wheelbase, abs=1e-6), (
-            f"{side}: wheels are {distance:.4f} m apart, "
-            f"vehicle file says {wheelbase}"
+        offset = front - rear
+        assert offset == pytest.approx([wheelbase, 0.0, 0.0], abs=1e-6), (
+            f"{side}: front axle is {offset.round(4).tolist()} m from the "
+            f"rear axle, vehicle file says [{wheelbase}, 0.0, 0.0] "
+            "(forward by the wheelbase, level and on the same side)"
         )

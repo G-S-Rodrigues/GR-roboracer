@@ -18,7 +18,7 @@ All other meshes are produced from scratch by
 `../scripts/generate_f1tenth_meshes.py` (geometry assembled from boxes and
 cylinders in Python, written out as binary STL). None is traced from any CAD
 source, so nothing is copied. They are sized to fit this repo's fixed URDF
-dimensions (wheelbase 0.3302 m, track 0.2032 m, wheel radius 0.0508 m) and are
+dimensions (wheelbase 0.33 m, track 0.236 m, wheel radius 0.058 m) and are
 authored directly in `base_link` coordinates, so the URDF attaches each one with
 an identity joint and there is no per-link placement math in the URDF.
 
