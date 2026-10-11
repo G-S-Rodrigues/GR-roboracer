@@ -7,7 +7,8 @@
 
   Joint offsets are the source of truth for vehicle geometry and MUST stay put:
   wheelbase 0.33 m (config wheelbase), track 0.236 m (0.118 m each side),
-  wheel radius 0.058 m; base_link is the rear axle. All meshes are cosmetic
+  wheel radius 0.058 m; base_link is the rear axle of this drawing only (the
+  sim's pose reference is the centre of gravity, not the axle). All meshes are cosmetic
   and are authored in base_link coordinates
   (see scripts/generate_f1tenth_meshes.py), so each new link's joint origin is
   identity and the mesh renders exactly where it was generated.
