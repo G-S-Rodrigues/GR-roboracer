@@ -41,6 +41,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
+from rosgraph_msgs.msg import Clock
 
 from .ros_helpers import (
     ensure_rclpy_initialized,
@@ -76,6 +77,14 @@ RELIABLE_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
     reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
+
+# The sim publishes /clock best effort (racing_sim_gym_jax/node.py CLOCK_QOS).
+CLOCK_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,
 )
 
@@ -173,6 +182,87 @@ _METRICS_FIELDS = (
 
 def metrics_to_dict(message: ScenarioMetrics) -> dict[str, Any]:
     return {field: getattr(message, field) for field in _METRICS_FIELDS}
+
+
+class _HangObserver:
+    """Records what the stack reported, so a hung lap can say why.
+
+    The supervisor and the metrics node log nothing, so a latched stop is
+    silent: the car stops, the lap never completes and /scenario/metrics
+    never publishes. Observing /safety/status and /clock on the driver node
+    names the latch and the sim time reached. It changes no deadline.
+    """
+
+    def __init__(self, node) -> None:
+        self.status = None
+        self.first_latch = None
+        self.stale_count = 0
+        self.clock = None
+        self._node = node
+        self._subscriptions = [
+            node.create_subscription(
+                SafetyStatus, SAFETY_STATUS_TOPIC, self._on_status, RELIABLE_QOS
+            ),
+            node.create_subscription(
+                Clock, "/clock", self._on_clock, CLOCK_QOS
+            ),
+        ]
+
+    def _on_status(self, message) -> None:
+        self.status = message
+        if message.reason == SafetyStatus.REASON_STALE_INPUT:
+            self.stale_count += 1
+        if message.reason != SafetyStatus.REASON_NONE and (
+            self.first_latch is None
+        ):
+            self.first_latch = message
+
+    def _on_clock(self, message) -> None:
+        self.clock = message.clock
+
+    def close(self) -> None:
+        for subscription in self._subscriptions:
+            self._node.destroy_subscription(subscription)
+
+    @staticmethod
+    def _name(prefix: str, value: int) -> str:
+        for name in dir(SafetyStatus):
+            if name.startswith(prefix) and getattr(SafetyStatus, name) == value:
+                return name
+        return str(value)
+
+    def _describe(self, status) -> str:
+        clamps = [
+            name
+            for name in dir(SafetyStatus)
+            if name.startswith("CLAMP_")
+            and name != "CLAMP_NONE"
+            and status.active_clamps & getattr(SafetyStatus, name)
+        ]
+        stamp = status.header.stamp
+        return (
+            f"{self._name('REASON_', status.reason)} "
+            f"clamps={clamps or ['CLAMP_NONE']} "
+            f"stamp={stamp.sec + stamp.nanosec * 1e-9:.3f}s"
+        )
+
+    def describe(self) -> str:
+        clock = (
+            "none"
+            if self.clock is None
+            else f"{self.clock.sec + self.clock.nanosec * 1e-9:.3f}s"
+        )
+        last = "none" if self.status is None else self._describe(self.status)
+        first = (
+            "none"
+            if self.first_latch is None
+            else self._describe(self.first_latch)
+        )
+        return (
+            f"last /clock={clock}; last /safety/status={last}; "
+            f"first non-NONE status={first}; "
+            f"REASON_STALE_INPUT messages={self.stale_count}"
+        )
 
 
 def _reset_at_deterministic_t0(
@@ -328,15 +418,20 @@ def run_scenario(
 
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
+        observer = _HangObserver(node)
         try:
             _reset_at_deterministic_t0(node, seed, timeout, pose_source)
             message = wait_for_message(
                 node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
             )
             outcome.update(metrics_to_dict(message))
+        except TimeoutError as error:
+            failure.append(TimeoutError(f"{error} [{observer.describe()}]"))
+            failure[0].__cause__ = error
         except BaseException as error:  # noqa: BLE001 - re-raised on the caller's thread
             failure.append(error)
         finally:
+            observer.close()
             node.destroy_node()
             service.shutdown()
 
