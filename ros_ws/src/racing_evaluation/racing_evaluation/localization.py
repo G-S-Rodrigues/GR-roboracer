@@ -364,7 +364,7 @@ def availability(
         pose.stamp for pose in estimates if start <= pose.stamp <= end
     )
     boundaries = [start, *stamps, end]
-    covered = 0.0
+    uncovered = 0.0
     maximum_gap = 0.0
     stale_gap_count = 0
     for index in range(len(boundaries) - 1):
@@ -372,12 +372,14 @@ def availability(
         maximum_gap = max(maximum_gap, gap)
         if gap > window:
             stale_gap_count += 1
-        # Time before the first estimate is uncovered; after one, the
-        # window it stays fresh for.
-        if index > 0:
-            covered += min(gap, window)
+        # Time before the first estimate is uncovered; after one, only the
+        # part of a gap beyond the window it stays fresh for. The sum runs
+        # over uncovered time because covered time summed over thousands of
+        # ticks does not telescope, and an unbroken stream must read
+        # exactly 1.0 (EVAL-1060).
+        uncovered += gap if index == 0 else max(gap - window, 0.0)
     return AvailabilitySummary(
-        availability=covered / (end - start),
+        availability=1.0 - uncovered / (end - start),
         maximum_gap=maximum_gap,
         stale_gap_count=stale_gap_count,
     )

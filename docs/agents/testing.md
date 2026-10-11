@@ -89,7 +89,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **60 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **61 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -99,6 +99,7 @@ tier 3 `SIM-3070` (slam_toolbox) and `SIM-3080` (amcl); tier 4 `ACC-4030` (one r
 and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
 
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
+The nightly-flake work added tier 1 `EVAL-1060`.
 
 ## The tests that matter most
 
