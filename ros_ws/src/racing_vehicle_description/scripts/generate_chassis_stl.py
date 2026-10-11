@@ -1,8 +1,8 @@
 """Generate an original, license-free chassis plate mesh as a binary STL.
 
 Purely a visual stand-in: a thin tapered plate extruded in Z, sized to fit
-within this repo's already-fixed URDF dimensions (wheelbase 0.3302 m, track
-0.2032 m). Does not affect any joint offset or vehicle behavior -- meshes here
+within this repo's already-fixed URDF dimensions (wheelbase 0.33 m, track
+0.236 m). Does not affect any joint offset or vehicle behavior -- meshes here
 are visualization only. Run from this directory:
 
     python3 generate_chassis_stl.py
@@ -11,9 +11,9 @@ are visualization only. Run from this directory:
 import struct
 from pathlib import Path
 
-L = 0.3302  # length, rear (x=0) to front (x=L) -- matches the wheelbase
-W = 0.22  # plate width -- track is 0.2413 m center-to-center
-# (0.12065*2) with ~0.05 m wheel radius each side, so wheel
+L = 0.33  # length, rear (x=0) to front (x=L) -- matches the wheelbase
+W = 0.22  # plate width -- track is 0.236 m center-to-center
+# (0.118*2) with ~0.05 m wheel radius each side, so wheel
 # outer faces sit near y=+-0.17; the plate stays inboard of
 # the tires instead of the previous 0.16 m, which read as a
 # toy-block chassis floating between four wheels

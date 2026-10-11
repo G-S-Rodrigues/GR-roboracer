@@ -5,8 +5,8 @@ chassis, A-arm suspension, coil-over shocks, motor cans, Jetson compute
 module, battery, camera, and hubs. All geometry authored in base_link
 coordinates to match the fixed URDF joint offsets:
 
-  wheelbase 0.3302 m, track 0.2032 m (0.12065 m each side),
-  wheel radius 0.0508 m (center at z=0.0508).
+  wheelbase 0.33 m, track 0.236 m (0.118 m each side),
+  wheel radius 0.058 m (center at z=0.058).
 
 Usage:
     python3 generate_f1tenth_meshes.py
@@ -19,11 +19,14 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Vehicle constants (must match URDF joint offsets exactly)
 # ---------------------------------------------------------------------------
-WHEELBASE = 0.3302
-TRACK = 0.2032
+WHEELBASE = 0.33
+TRACK = 0.236
 HALF_TRACK = TRACK / 2
-WHEEL_R = 0.0508
-REAR_AXLE_X = -0.0508
+# Tyre inner face (|y|): 0.118 - 0.045/2 = 0.0955. Hubs, arms and shocks
+# must end here or inboard of it, never inside the tyre.
+TYRE_INNER_Y = 0.0955
+WHEEL_R = 0.058
+REAR_AXLE_X = 0.0
 FRONT_AXLE_X = REAR_AXLE_X + WHEELBASE
 WHEEL_Z = WHEEL_R
 
@@ -36,7 +39,7 @@ CHASSIS_BOT = 0.038
 CHASSIS_PLATE_H = CHASSIS_TOP - CHASSIS_BOT
 CHASSIS_REAR = REAR_AXLE_X - 0.03
 CHASSIS_FRONT = FRONT_AXLE_X + 0.035
-NOSE_X = CHASSIS_FRONT + 0.015
+NOSE_X = CHASSIS_FRONT + 0.030  # bumper front lands at x = 0.420
 TAPER_START_X = 0.22
 
 # Front shock tower
@@ -162,6 +165,37 @@ def _add_cylinder_x(cx, y0, z0, x0, x1, r, n_seg=10):
         )
         _tri((x0, y0, z0), (x0, y0 + dy1, z0 + dz1), (x0, y0 + dy0, z0 + dz0))
         _tri((x1, y0, z0), (x1, y0 + dy0, z0 + dz0), (x1, y0 + dy1, z0 + dz1))
+
+
+def _add_cylinder_y(cx, cz, y0, y1, r, n_seg=10):
+    """Horizontal cylinder along Y axis at (cx,cz), from y0 to y1."""
+    for i in range(n_seg):
+        a0 = 2 * math.pi * i / n_seg
+        a1 = 2 * math.pi * (i + 1) / n_seg
+        dx0, dz0 = r * math.cos(a0), r * math.sin(a0)
+        dx1, dz1 = r * math.cos(a1), r * math.sin(a1)
+        p00 = (cx + dx0, y0, cz + dz0)
+        p10 = (cx + dx0, y1, cz + dz0)
+        p11 = (cx + dx1, y1, cz + dz1)
+        p01 = (cx + dx1, y0, cz + dz1)
+        _tri(p00, p10, p11)
+        _tri(p00, p11, p01)
+        _tri((cx, y0, cz), p01, p00)
+        _tri((cx, y1, cz), p10, p11)
+
+
+def _mirror_y(gen_fn):
+    """Run gen_fn, then replace its triangles with their y=0 reflection.
+
+    Negates y only and flips the winding so normals stay outward.
+    """
+    start = len(triangles)
+    gen_fn()
+    mirrored = [
+        ((a[0], -a[1], a[2]), (c[0], -c[1], c[2]), (b[0], -b[1], b[2]))
+        for a, b, c in triangles[start:]
+    ]
+    triangles[start:] = mirrored
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +349,7 @@ def gen_chassis():
     )
 
     # --- Rear bumper/cage (tubular frame at the back) ---
-    rear_bumper_x = CHASSIS_REAR - 0.015
+    rear_bumper_x = CHASSIS_REAR - 0.050  # rear end plate at x = -0.080
     for sign in (1, -1):
         ry = sign * (plate_y_outer + 0.008)
         _add_box(
@@ -382,7 +416,7 @@ def gen_chassis():
 def gen_front_suspension_left():
     """Left front lower A-arm + upper arm + hub carrier (C-hub)."""
     hub_x = FRONT_AXLE_X
-    hub_y = HALF_TRACK
+    hub_y = TYRE_INNER_Y - 0.005
     # Lower A-arm
     arm_x0 = FRONT_AXLE_X - 0.025
     arm_x1 = hub_x + 0.003
@@ -421,46 +455,14 @@ def gen_front_suspension_left():
 
 
 def gen_front_suspension_right():
-    """Mirror of left front suspension about Y=0."""
-    hub_x = FRONT_AXLE_X
-    hub_y = -HALF_TRACK
-    arm_x0 = FRONT_AXLE_X - 0.025
-    arm_x1 = hub_x + 0.003
-    _add_box(
-        arm_x0,
-        hub_y - 0.004,
-        CHASSIS_BOT + 0.004,
-        arm_x1,
-        hub_y + 0.004,
-        CHASSIS_BOT + 0.004 + ARM_H,
-    )
-    upper_arm_x0 = FRONT_AXLE_X - 0.010
-    upper_arm_x1 = hub_x
-    upper_arm_z = CHASSIS_TOP - 0.005
-    _add_box(
-        upper_arm_x0,
-        hub_y - 0.003,
-        upper_arm_z,
-        upper_arm_x1,
-        hub_y + 0.003,
-        upper_arm_z + 0.003,
-    )
-    hub_cz = WHEEL_Z
-    _add_box_centered(hub_x + 0.002, hub_y, hub_cz, 0.004, 0.005, 0.014)
-    _add_box(
-        hub_x,
-        hub_y + 0.002,
-        hub_cz + 0.008,
-        hub_x + 0.008,
-        hub_y + 0.006,
-        hub_cz + 0.011,
-    )
+    """Exact y=0 reflection of the left front suspension."""
+    _mirror_y(gen_front_suspension_left)
 
 
 def gen_rear_suspension_left():
     """Left rear lower A-arm + upper arm."""
     hub_x = REAR_AXLE_X
-    hub_y = HALF_TRACK
+    hub_y = TYRE_INNER_Y - 0.005
     arm_x0 = REAR_AXLE_X + 0.020
     arm_x1 = hub_x - 0.003
     _add_box(
@@ -486,31 +488,8 @@ def gen_rear_suspension_left():
 
 
 def gen_rear_suspension_right():
-    """Mirror of left rear suspension about Y=0."""
-    hub_x = REAR_AXLE_X
-    hub_y = -HALF_TRACK
-    arm_x0 = REAR_AXLE_X + 0.020
-    arm_x1 = hub_x - 0.003
-    _add_box(
-        arm_x1,
-        hub_y - 0.004,
-        CHASSIS_BOT + 0.004,
-        arm_x0,
-        hub_y + 0.004,
-        CHASSIS_BOT + 0.004 + ARM_H,
-    )
-    upper_arm_x0 = REAR_AXLE_X + 0.012
-    upper_arm_x1 = hub_x
-    upper_arm_z = CHASSIS_TOP - 0.008
-    _add_box(
-        upper_arm_x1,
-        hub_y - 0.003,
-        upper_arm_z,
-        upper_arm_x0,
-        hub_y + 0.003,
-        upper_arm_z + 0.003,
-    )
-    _add_box_centered(hub_x - 0.002, hub_y, WHEEL_Z, 0.004, 0.005, 0.014)
+    """Exact y=0 reflection of the left rear suspension."""
+    _mirror_y(gen_rear_suspension_left)
 
 
 def _gen_shock(tower_x, tower_z, arm_x, arm_z, y_offset, lean_x=-0.008):
@@ -568,20 +547,14 @@ def gen_front_shock_left():
         TOWER_TOP_Z,
         FRONT_AXLE_X - 0.015,
         CHASSIS_BOT + 0.004,
-        HALF_TRACK - 0.006,
+        TYRE_INNER_Y - 0.004,
         lean_x=-0.010,
     )
 
 
 def gen_front_shock_right():
-    _gen_shock(
-        TOWER_BASE_X,
-        TOWER_TOP_Z,
-        FRONT_AXLE_X - 0.015,
-        CHASSIS_BOT + 0.004,
-        -(HALF_TRACK - 0.006),
-        lean_x=-0.010,
-    )
+    """Exact y=0 reflection of the left front shock."""
+    _mirror_y(gen_front_shock_left)
 
 
 def gen_rear_shock_left():
@@ -590,20 +563,14 @@ def gen_rear_shock_left():
         REAR_TOWER_TOP_Z,
         REAR_AXLE_X + 0.015,
         CHASSIS_BOT + 0.004,
-        HALF_TRACK - 0.006,
+        TYRE_INNER_Y - 0.004,
         lean_x=0.010,
     )
 
 
 def gen_rear_shock_right():
-    _gen_shock(
-        REAR_TOWER_X,
-        REAR_TOWER_TOP_Z,
-        REAR_AXLE_X + 0.015,
-        CHASSIS_BOT + 0.004,
-        -(HALF_TRACK - 0.006),
-        lean_x=0.010,
-    )
+    """Exact y=0 reflection of the left rear shock."""
+    _mirror_y(gen_rear_shock_left)
 
 
 def _gen_hub(cx, cy):
@@ -619,25 +586,25 @@ def _gen_hub(cx, cy):
         10,
     )
     inner_y = cy - (1 if cy > 0 else -1) * 0.008
-    _add_cylinder_x(
-        cx, (cy + inner_y) / 2, cz, min(cy, inner_y), max(cy, inner_y), 0.002, 8
-    )
+    _add_cylinder_y(cx, cz, min(cy, inner_y), max(cy, inner_y), 0.002, 8)
 
 
 def gen_front_hub_left():
-    _gen_hub(FRONT_AXLE_X, HALF_TRACK)
+    _gen_hub(FRONT_AXLE_X, TYRE_INNER_Y - 0.0105)
 
 
 def gen_front_hub_right():
-    _gen_hub(FRONT_AXLE_X, -HALF_TRACK)
+    """Exact y=0 reflection of the left front hub."""
+    _mirror_y(gen_front_hub_left)
 
 
 def gen_rear_hub_left():
-    _gen_hub(REAR_AXLE_X, HALF_TRACK)
+    _gen_hub(REAR_AXLE_X, TYRE_INNER_Y - 0.0105)
 
 
 def gen_rear_hub_right():
-    _gen_hub(REAR_AXLE_X, -HALF_TRACK)
+    """Exact y=0 reflection of the left rear hub."""
+    _mirror_y(gen_rear_hub_left)
 
 
 def _gen_motor(cx, cy):
@@ -660,14 +627,8 @@ def _gen_motor(cx, cy):
     # Drive shaft stub
     shaft_dir = 1 if cy > 0 else -1
     shaft_y_end = cy + shaft_dir * 0.015
-    _add_cylinder_x(
-        cx,
-        (cy + shaft_y_end) / 2,
-        cz,
-        min(cy, shaft_y_end),
-        max(cy, shaft_y_end),
-        0.0015,
-        8,
+    _add_cylinder_y(
+        cx, cz, min(cy, shaft_y_end), max(cy, shaft_y_end), 0.0015, 8
     )
     # Gearbox housing
     _add_box(
@@ -698,7 +659,8 @@ def gen_motor_left():
 
 
 def gen_motor_right():
-    _gen_motor(REAR_AXLE_X, -(HALF_TRACK - 0.004))
+    """Exact y=0 reflection of the left motor."""
+    _mirror_y(gen_motor_left)
 
 
 def gen_jetson_board():

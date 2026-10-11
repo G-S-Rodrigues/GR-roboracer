@@ -6,8 +6,9 @@
   sensor, plugin, or actuator-coupling elements (a spec non-goal here).
 
   Joint offsets are the source of truth for vehicle geometry and MUST stay put:
-  wheelbase 0.3302 m, track 0.2032 m (0.12065 m each side), wheel radius
-  0.0508 m. All meshes are cosmetic and are authored in base_link coordinates
+  wheelbase 0.33 m (config wheelbase), track 0.236 m (0.118 m each side),
+  wheel radius 0.058 m; base_link is the rear axle. All meshes are cosmetic
+  and are authored in base_link coordinates
   (see scripts/generate_f1tenth_meshes.py), so each new link's joint origin is
   identity and the mesh renders exactly where it was generated.
 
@@ -102,7 +103,7 @@
     <visual>
       <origin xyz="0 0 0.0225" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="package://racing_vehicle_description/meshes/left_wheel.stl"/>
+        <mesh filename="package://racing_vehicle_description/meshes/left_wheel.stl" scale="1.16 1.16 1"/>
       </geometry>
       <material name="wheel_black"/>
     </visual>
@@ -110,14 +111,14 @@
   <joint name="base_link_to_left_rear_wheel" type="fixed">
     <parent link="base_link"/>
     <child link="left_rear_wheel"/>
-    <origin xyz="-0.0508 0.12065 0.0508" rpy="1.5708 0 0"/>
+    <origin xyz="0 0.118 0.058" rpy="1.5708 0 0"/>
   </joint>
 
   <link name="right_rear_wheel">
     <visual>
-      <origin xyz="0 0 0.0225" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.0225" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="package://racing_vehicle_description/meshes/right_wheel.stl"/>
+        <mesh filename="package://racing_vehicle_description/meshes/right_wheel.stl" scale="1.16 1.16 1"/>
       </geometry>
       <material name="wheel_black"/>
     </visual>
@@ -125,7 +126,7 @@
   <joint name="base_link_to_right_rear_wheel" type="fixed">
     <parent link="base_link"/>
     <child link="right_rear_wheel"/>
-    <origin xyz="-0.0508 -0.12065 0.0508" rpy="1.5708 0 0"/>
+    <origin xyz="0 -0.118 0.058" rpy="1.5708 0 0"/>
   </joint>
 
   <link name="motor_left">
@@ -236,21 +237,21 @@
   <joint name="base_link_to_left_steering_hinge" type="fixed">
     <parent link="base_link"/>
     <child link="left_steering_hinge"/>
-    <origin xyz="0.3810 0.12065 0.0508" rpy="0 0 0"/>
+    <origin xyz="0.33 0.118 0.058" rpy="0 0 0"/>
   </joint>
 
   <link name="right_steering_hinge"/>
   <joint name="base_link_to_right_steering_hinge" type="fixed">
     <parent link="base_link"/>
     <child link="right_steering_hinge"/>
-    <origin xyz="0.3810 -0.12065 0.0508" rpy="0 0 0"/>
+    <origin xyz="0.33 -0.118 0.058" rpy="0 0 0"/>
   </joint>
 
   <link name="left_front_wheel">
     <visual>
       <origin xyz="0 0 0.0225" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="package://racing_vehicle_description/meshes/left_wheel.stl"/>
+        <mesh filename="package://racing_vehicle_description/meshes/left_wheel.stl" scale="1.16 1.16 1"/>
       </geometry>
       <material name="wheel_black"/>
     </visual>
@@ -263,9 +264,9 @@
 
   <link name="right_front_wheel">
     <visual>
-      <origin xyz="0 0 0.0225" rpy="0 0 0"/>
+      <origin xyz="0 0 -0.0225" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="package://racing_vehicle_description/meshes/right_wheel.stl"/>
+        <mesh filename="package://racing_vehicle_description/meshes/right_wheel.stl" scale="1.16 1.16 1"/>
       </geometry>
       <material name="wheel_black"/>
     </visual>
@@ -356,9 +357,10 @@
 
   <link name="laser">
     <visual>
+      <origin xyz="0 0 0.0065" rpy="0 0 0"/>
       <geometry>
         <mesh filename="package://racing_vehicle_description/meshes/hokuyo.stl"
-               scale="0.12 0.12 0.12"/>
+               scale="1 1 1"/>
       </geometry>
       <material name="laser_grey"/>
     </visual>
