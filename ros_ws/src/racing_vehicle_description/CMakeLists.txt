@@ -14,6 +14,11 @@ if(BUILD_TESTING)
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   set_tests_properties(test_description PROPERTIES LABELS "tier1")
+  ament_add_pytest_test(test_urdf_matches_vehicle
+    test/test_urdf_matches_vehicle.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/test
+  )
+  set_tests_properties(test_urdf_matches_vehicle PROPERTIES LABELS "tier1")
 endif()
 
 ament_package()
