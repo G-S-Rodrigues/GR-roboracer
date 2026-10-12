@@ -7,17 +7,46 @@
 # racing_bringup/launch/sim_pure_pursuit.launch.py composes it; BRINGUP-1030
 # fails if the two disagree. Adding an implementation adds a launch-time
 # choice beside the default below; it never deletes the default.
+#
+# `--ready` (ADR 0007) selects tier-3/4 tests from this file, and it fails
+# closed: a changed path that no `paths` glob below (or `neutral_paths`)
+# places, or a test no `verified_by` claims, makes `--ready` run the whole
+# tree. A new implementation adds its `paths`, its `verified_by` and an
+# `impl:<role>=<implementation>` tag on its Robot case in
+# tests/acceptance/racing.robot (BRINGUP-1080 checks the tags against the
+# claims). Globs use fnmatch.fnmatchcase, where `*` also matches `/`.
+#
+# `verified_by` is who answers for a test; measuring-instrument couplings
+# (the simulator feeding every estimator, the evaluator scoring them) are
+# `paths` instead, so `--owners SIM-3080` names the claimant only.
 schema_version: 1
+# The one lap `--ready` always runs: it exercises every default below.
+reference_lap: SIM-3020
+# Select no implementation, only the reference lap.
+neutral_paths:
+  - docs/*
+  - README.md
+  - CLAUDE.md
+  - LICENSE
+  - ros_ws/src/*/CLAUDE.md
+  - scripts/tests/*
 roles:
   simulator:
     implementation: f1tenth_gym_jax
     package: racing_sim_gym_jax
+    paths:
+      - ros_ws/src/racing_sim_gym_jax/*
+      - ros_ws/src/racing_sim_adapter/*
+    verified_by: [SIM-3030, SIM-3040, SIM-3050, SIM-3090, SIM-3100, ACC-4010]
   pose_source:
     # Exact simulator pose. The support node owns map -> odom for it,
     # composing dead reckoning back to the truth.
     implementation: ground_truth
     package: racing_bringup
     topic: /ground_truth/odom
+    paths:
+      - ros_ws/src/racing_bringup/*
+    verified_by: [SIM-3040, SIM-3060, SIM-3090, ACC-4010]
     # The other implementations of this role, each selected by
     # `pose_source:=<implementation>` on sim_pure_pursuit.launch.py and
     # verified once against ground truth inside this stack (ADR 0005).
@@ -28,22 +57,56 @@ roles:
       - implementation: slam_toolbox
         package: slam_toolbox
         # Maps online with no prior map; `map` is where it starts (D7).
-        verified_by: SIM-3070
+        paths:
+          - ros_ws/src/racing_bringup/racing_bringup/estimators.py
+          - ros_ws/src/racing_bringup/launch/slam_toolbox_mapping.launch.py
+          - config/localization/slam_toolbox_*.yaml
+          - ros_ws/src/racing_sim_gym_jax/*
+          - ros_ws/src/racing_sim_adapter/*
+          - ros_ws/src/racing_evaluation/*
+        verified_by: [SIM-3070, ACC-4030]
       - implementation: amcl
         package: nav2_amcl
         # Localizes against the track's committed occupancy grid,
         # config/scenarios/maps/<map>/slam/, served by nav2_map_server.
-        verified_by: SIM-3080
+        paths:
+          - ros_ws/src/racing_bringup/racing_bringup/estimators.py
+          - config/localization/amcl.yaml
+          - ros_ws/src/racing_sim_gym_jax/*
+          - ros_ws/src/racing_sim_adapter/*
+          - ros_ws/src/racing_evaluation/*
+        verified_by: [SIM-3080, ACC-4030, ACC-4040]
   planner:
     # The scenario's precomputed raceline, published on /trajectory.
     implementation: track_raceline
     package: racing_bringup
+    paths:
+      - ros_ws/src/racing_bringup/*
+    verified_by: [SIM-3040, SIM-3090, ACC-4010]
   controller:
     implementation: pure_pursuit
     package: racing_controller_baseline
+    paths:
+      - ros_ws/src/racing_controller_baseline/*
+    verified_by:
+      [SIM-3030, SIM-3040, SIM-3050, SIM-3090, ACC-4010, ACC-4020, ACC-4040]
   safety:
     implementation: safety_supervisor
     package: racing_safety_supervisor
+    paths:
+      - ros_ws/src/racing_safety_supervisor/*
+    verified_by:
+      - SIM-3010
+      - SIM-3030
+      - SIM-3040
+      - SIM-3050
+      - SIM-3090
+      - ACC-4010
+      - ACC-4020
+      - ACC-4040
   evaluation:
     implementation: localization_error
     package: racing_evaluation
+    paths:
+      - ros_ws/src/racing_evaluation/*
+    verified_by: [SIM-3060, SIM-3100]
