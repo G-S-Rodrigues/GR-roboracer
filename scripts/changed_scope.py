@@ -231,11 +231,14 @@ SYSTEM_TEST_PATH = re.compile(r"tests/system/test_sim_(\d{4})_[^/]*\.py")
 def discover_system_tests(root: Path) -> dict[str, str]:
     """Tier-3 ID -> repo-relative file, from `test_sim_NNNN_*.py` names.
 
-    Fails closed: a test file the pattern cannot read, or an ID found
-    twice, raises rather than being skipped by the scoped run."""
+    Fails closed: any .py file (other than conftest/__init__) the pattern
+    cannot read, or an ID found twice, raises rather than being skipped
+    by the scoped run."""
     found: dict[str, str] = {}
     system = root / "tests" / "system"
-    for path in sorted(system.glob("**/test_*.py")):
+    for path in sorted(system.glob("**/*.py")):
+        if path.name in ("conftest.py", "__init__.py"):
+            continue
         relative = path.relative_to(root).as_posix()
         match = SYSTEM_TEST_NAME.fullmatch(path.name)
         if match is None or path.parent != system:
@@ -266,6 +269,8 @@ def discover_acceptance_tags(root: Path) -> dict[str, frozenset[str]]:
             raise ValueError(f"tier-4 case without an ACC-4NNN ID: {case.name}")
         test_id = match.group(0)
         own = frozenset(str(t) for t in case.tags if str(t).startswith("impl:"))
+        if not own:
+            raise ValueError(f"tier-4 case without an impl: tag: {case.name}")
         if test_id in tags and tags[test_id] & own:
             raise ValueError(
                 f"duplicate {test_id} with overlapping tags: {case.name}"
@@ -281,9 +286,13 @@ def load_stack(root: Path) -> StackMap:
     data = yaml.safe_load(
         (root / "config" / "reference_stack.yaml").read_text(encoding="utf-8")
     )
-    return stack_from_dict(
+    stack = stack_from_dict(
         data, discover_system_tests(root), discover_acceptance_tags(root)
     )
+    for impl in stack.implementations:
+        if not impl.verified_by:
+            raise ValueError(f"{impl.key} claims no test (empty verified_by)")
+    return stack
 
 
 # Files that are whole tree for tiers 3-4 beyond the shared triggers (D4):
