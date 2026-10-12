@@ -294,8 +294,10 @@ def test_check_1140_reverse_closure_matches_colcon() -> None:
         "c": set(),
     }
 
-    if shutil.which("colcon") is None:
-        pytest.skip("colcon is not on PATH")
+    assert shutil.which("colcon") is not None, (
+        "CHECK-1140 needs colcon on PATH to cross-check the package.xml "
+        "graph; run scripts/tests inside the dev container"
+    )
     manifests = read_manifests(REPO_ROOT)
     dependents = reverse_dependents(manifests)
     assert set(manifests) == set(dependents) and manifests
