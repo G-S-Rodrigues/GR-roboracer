@@ -38,8 +38,8 @@ an unrelated one: each implementation is verified once, in the reference stack (
    test. BRINGUP-1080 checks that tests, claims and Robot tags agree.
 4. **Measuring-instrument couplings are `paths`, not claims.** The simulator feeds every estimator and
    `racing_evaluation` scores them, so their paths select the estimators' tests, but only the estimator
-   claims them. `check.sh`'s companion `changed_scope.py --owners SIM-3080` therefore names
-   `pose_source=amcl` and nothing else.
+   claims them. `scripts/changed_scope.py --owners SIM-3080` therefore prints `pose_source=amcl` and
+   nothing else.
 5. **Earlier implementations are covered by the nightly `--full`,** which stays tiers 0-4 and runs on a
    schedule. The full run is local and nightly, not a CI job on the PR (owner ruling in the grill).
 6. **Tiers 0-2 keep every `config/` change whole tree.** CHECK-1040 is unchanged. Only the tier-3/4

@@ -22,7 +22,7 @@ this for you.
 
 ```bash
 colcon build --base-paths ros_ws/src --symlink-install
-./scripts/check.sh --full
+./scripts/check.sh --ready
 ```
 
 Optional, and only if you want the headless GPU simulator:
