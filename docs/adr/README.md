@@ -23,3 +23,4 @@ that records an obvious choice trains readers to skip the directory.
 | [0004](0004-robot-framework-at-tiers-3-4.md) | Robot Framework at tiers 3–4 only, not per package | accepted |
 | [0005](0005-algorithms-are-added-not-replaced.md) | Algorithms are added, never replaced; the reference stack bounds the matrix | accepted |
 | [0006](0006-simulated-time-is-the-time-base.md) | Simulated time is the stack's time base (`/clock`, `use_sim_time`, `time_scale`) | accepted |
+| [0007](0007-ready-is-a-scoped-local-run.md) | Ready is one scoped local `check.sh --ready`; the reference-stack map selects tier-3/4 and fails closed | accepted |
