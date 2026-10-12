@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,9 +17,12 @@ from scripts.changed_scope import (
     StackMap,
     changed_paths,
     load_stack,
+    owners_of,
     read_manifests,
+    render_ready_shell,
     render_shell,
     resolve,
+    resolve_ready,
     reverse_dependents,
     scope_for,
     select_ready,
@@ -638,3 +643,128 @@ def test_check_1230_a_changed_system_test_selects_its_id() -> None:
     assert scope.whole_tree is False
     assert scope.implementations == ()
     assert scope.tests == ("SIM-3020", "SIM-3030")
+
+
+def test_check_1240_owners_of_names_the_claimants() -> None:
+    """CHECK-1240: a test's owners are the implementations that claim it;
+    the reference lap is owned by every default; an unknown ID by none."""
+    stack = stack_from_dict(SELECT_MAP, SELECT_SYSTEM, SELECT_TAGS)
+
+    assert owners_of("SIM-3080", stack) == ["pose_source=amcl"]
+    assert owners_of("ACC-4030", stack) == [
+        "pose_source=amcl",
+        "pose_source=slam",
+    ]
+    assert owners_of("SIM-3020", stack) == [
+        "controller=pp",
+        "pose_source=truth",
+    ]
+    assert owners_of("SIM-9999", stack) == []
+
+
+def _eval_shell(rendered: str, expression: str) -> str:
+    """Run `rendered` through bash's eval and print `expression`."""
+    return subprocess.run(
+        ["bash", "-c", f"set -u; eval {shlex.quote(rendered)}; {expression}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def test_check_1250_render_ready_shell() -> None:
+    """CHECK-1250: scoped output lists test files, Robot tags and the
+    `ready scope:` summary; whole tree renders empty arrays; both eval."""
+    stack = stack_from_dict(SELECT_MAP, SELECT_SYSTEM, SELECT_TAGS)
+    scope = select_ready(
+        ["config/loc/amcl.yaml"], stack, {"pkg_sim": {"pkg_pp"}}
+    )
+
+    rendered = render_ready_shell(scope, stack)
+
+    assert _eval_shell(rendered, 'echo "$ready_whole_tree"').strip() == "0"
+    files = _eval_shell(rendered, 'printf "%s\\n" "${ready_system_tests[@]}"')
+    assert files.split() == [
+        "tests/system/test_sim_3020_x.py",
+        "tests/system/test_sim_3080_x.py",
+    ]
+    tags = _eval_shell(rendered, 'printf "%s\\n" "${ready_robot_tags[@]}"')
+    assert tags.split() == ["impl:pose_source=amcl"]
+    line = _eval_shell(rendered, 'echo "$ready_line"')
+    assert "pose_source=amcl" in line
+    assert "SIM-3080" in line
+
+    whole = render_ready_shell(select_ready([], stack, {}), None)
+    assert _eval_shell(whole, 'echo "$ready_whole_tree"').strip() == "1"
+    assert _eval_shell(whole, 'echo "${#ready_system_tests[@]}"').strip() == "0"
+    assert "whole tree (empty changed set)" in _eval_shell(
+        whole, 'echo "$ready_line"'
+    )
+
+
+def _git_returning(paths: str):
+    base = "abc"
+    return _fake_run_git(
+        {
+            ("merge-base", "main", "HEAD"): base,
+            ("diff", "--name-only", "--no-renames", base): paths,
+            ("diff", "--name-only", "--no-renames", "--cached", base): "",
+            ("ls-files", "--others", "--exclude-standard"): "",
+        }
+    )
+
+
+def test_check_1260_resolve_ready_falls_back_to_whole_tree() -> None:
+    """CHECK-1260: CHECK_SCOPE=all, a git failure, an empty set and a map
+    load failure are all whole tree; a healthy run is scoped."""
+    stack = stack_from_dict(SELECT_MAP, SELECT_SYSTEM, SELECT_TAGS)
+
+    def load():
+        return stack, SELECT_DEPS
+
+    def broken():
+        raise ModuleNotFoundError("No module named 'robot'")
+
+    def failing_git(args: list[str]) -> str:
+        raise subprocess.CalledProcessError(1, args)
+
+    def unexpected_git(args: list[str]) -> str:
+        raise AssertionError("git should not be called")
+
+    scope, _ = resolve_ready({"CHECK_SCOPE": "all"}, unexpected_git, load)
+    assert scope.whole_tree and "CHECK_SCOPE=all" in scope.reason
+
+    scope, _ = resolve_ready({}, failing_git, load)
+    assert scope.whole_tree and "git failed" in scope.reason
+
+    scope, _ = resolve_ready({}, _git_returning(""), load)
+    assert scope.whole_tree and "empty changed set" in scope.reason
+
+    scope, _ = resolve_ready({}, _git_returning("docs/x.md\n"), broken)
+    assert scope.whole_tree
+    assert "reference_stack.yaml unreadable" in scope.reason
+
+    scope, got = resolve_ready({}, _git_returning("docs/x.md\n"), load)
+    assert not scope.whole_tree and got is stack
+
+
+def _cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "scripts/changed_scope.py", *args],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_check_1270_cli_owners_and_ready() -> None:
+    """CHECK-1270: an unknown test exits 1 saying nobody claims it, and
+    `--ready` prints something bash can eval."""
+    unknown = _cli("--owners", "SIM-9999")
+    assert unknown.returncode == 1
+    assert "claimed by no implementation" in unknown.stderr
+
+    ready = _cli("--ready")
+    assert ready.returncode == 0
+    flag = _eval_shell(ready.stdout, 'echo "$ready_whole_tree"').strip()
+    assert flag in {"0", "1"}
