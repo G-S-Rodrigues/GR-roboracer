@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from scripts.changed_scope import (
+    READY_WHOLE_TREE_FILES,
+    ReadyScope,
     Scope,
     StackMap,
     changed_paths,
@@ -18,6 +20,7 @@ from scripts.changed_scope import (
     resolve,
     reverse_dependents,
     scope_for,
+    select_ready,
     stack_from_dict,
 )
 
@@ -459,3 +462,179 @@ def test_check_1280_discovery_fails_closed(
 
     with pytest.raises(ValueError, match=needle):
         load_stack(root)
+
+
+SELECT_MAP = {
+    "schema_version": 1,
+    "reference_lap": "SIM-3020",
+    "neutral_paths": ["docs/*", "README.md", "scripts/tests/*"],
+    "roles": {
+        "controller": {
+            "implementation": "pp",
+            "package": "pkg_pp",
+            "paths": ["ros_ws/src/pkg_pp/*"],
+            "verified_by": ["SIM-3030", "ACC-4020"],
+        },
+        "pose_source": {
+            "implementation": "truth",
+            "package": "pkg_truth",
+            "paths": ["ros_ws/src/pkg_truth/*"],
+            "verified_by": ["SIM-3040"],
+            "alternatives": [
+                {
+                    "implementation": "amcl",
+                    "package": "nav2_amcl",
+                    "paths": ["config/loc/amcl.yaml", "ros_ws/src/pkg_sim/*"],
+                    "verified_by": ["SIM-3080", "ACC-4030"],
+                },
+                {
+                    "implementation": "slam",
+                    "package": "slam_toolbox",
+                    "paths": ["config/loc/slam.yaml", "ros_ws/src/pkg_sim/*"],
+                    "verified_by": ["SIM-3070", "ACC-4030"],
+                },
+            ],
+        },
+    },
+}
+SELECT_SYSTEM = {
+    f"SIM-{n}": f"tests/system/test_sim_{n}_x.py"
+    for n in (3020, 3030, 3040, 3070, 3080)
+}
+SELECT_TAGS = {
+    "ACC-4020": frozenset(),
+    "ACC-4030": frozenset({"impl:pose_source=amcl", "impl:pose_source=slam"}),
+}
+SELECT_DEPS = {
+    "pkg_sim": {"pkg_pp"},
+    "pkg_pp": set(),
+    "pkg_truth": set(),
+}
+
+
+def _select(paths: list[str], **overrides) -> ReadyScope:
+    system = overrides.get("system", SELECT_SYSTEM)
+    tags = overrides.get("tags", SELECT_TAGS)
+    data = overrides.get("data", SELECT_MAP)
+    return select_ready(paths, stack_from_dict(data, system, tags), SELECT_DEPS)
+
+
+def test_check_1160_an_owned_path_selects_only_its_tests() -> None:
+    """CHECK-1160: a path one implementation owns selects its claims plus
+    the reference lap, and says why."""
+    scope = _select(["config/loc/amcl.yaml"])
+
+    assert scope.whole_tree is False
+    assert scope.implementations == ("pose_source=amcl",)
+    assert scope.tests == ("ACC-4030", "SIM-3020", "SIM-3080")
+    assert scope.why == ("config/loc/amcl.yaml -> pose_source=amcl",)
+
+
+def test_check_1170_a_shared_package_selects_its_dependents() -> None:
+    """CHECK-1170: a path owned by two implementations selects both, and
+    every implementation whose package depends on the changed package."""
+    scope = _select(["ros_ws/src/pkg_sim/x.py"])
+
+    assert scope.implementations == (
+        "controller=pp",
+        "pose_source=amcl",
+        "pose_source=slam",
+    )
+    assert {"SIM-3070", "SIM-3080", "SIM-3030", "ACC-4030"} <= set(scope.tests)
+    assert "SIM-3040" not in scope.tests
+
+
+def test_check_1180_an_unmapped_path_is_whole_tree() -> None:
+    """CHECK-1180: a path nothing places widens to the whole tree and the
+    reason names it."""
+    scope = _select(["ros_ws/src/pkg_unowned/src/x.cpp"])
+
+    assert scope.whole_tree is True
+    assert "unmapped path: ros_ws/src/pkg_unowned/src/x.cpp" in scope.reason
+    assert scope.implementations == scope.tests == scope.why == ()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "scripts/check.sh",
+        "ros_ws/src/pkg_pp/package.xml",
+        "docker/Dockerfile",
+        "tests/golden/baseline.json",
+        "config/reference_stack.yaml",
+        "ros_ws/src/racing_bringup/launch/sim_pure_pursuit.launch.py",
+        "ros_ws/src/racing_bringup/racing_bringup/support_node.py",
+        "ros_ws/src/racing_bringup/racing_bringup/scenario_parameters.py",
+        "ros_ws/src/racing_bringup/setup.py",
+        "config/vehicles/f1tenth_default.yaml",
+    ],
+)
+def test_check_1190_triggers_and_composition_files_are_whole_tree(
+    path: str,
+) -> None:
+    """CHECK-1190: whole-tree triggers, each D4 composition file and an
+    unmapped config/ path run everything."""
+    assert _select([path]).whole_tree is True
+
+
+def test_check_1190_ready_whole_tree_files_are_the_d4_files() -> None:
+    """CHECK-1190: the D4 list is exactly the five files the plan names."""
+    assert set(READY_WHOLE_TREE_FILES) == {
+        "config/reference_stack.yaml",
+        "ros_ws/src/racing_bringup/launch/sim_pure_pursuit.launch.py",
+        "ros_ws/src/racing_bringup/racing_bringup/support_node.py",
+        "ros_ws/src/racing_bringup/racing_bringup/scenario_parameters.py",
+        "ros_ws/src/racing_bringup/setup.py",
+    }
+
+
+def test_check_1200_a_mapped_config_path_selects_its_implementation() -> None:
+    """CHECK-1200: unlike scope_for, a config/ path the map places is not
+    whole tree for tiers 3-4."""
+    scope = _select(["config/loc/slam.yaml"])
+
+    assert scope.whole_tree is False
+    assert scope.implementations == ("pose_source=slam",)
+
+
+def test_check_1210_the_reference_lap_is_always_selected() -> None:
+    """CHECK-1210: a neutral-only change selects SIM-3020 alone."""
+    scope = _select(["docs/agents/testing.md", "scripts/tests/x.py"])
+
+    assert scope.whole_tree is False
+    assert scope.implementations == ()
+    assert scope.tests == ("SIM-3020",)
+
+
+def test_check_1220_unclaimed_and_missing_tests_are_whole_tree() -> None:
+    """CHECK-1220: a discovered test nobody claims, or a claim with no
+    test, widens even a neutral-only change."""
+    unclaimed = _select(
+        ["docs/x.md"], system={**SELECT_SYSTEM, "SIM-3999": "t.py"}
+    )
+    assert unclaimed.whole_tree is True
+    assert "unclaimed test: SIM-3999" in unclaimed.reason
+
+    missing = {k: v for k, v in SELECT_SYSTEM.items() if k != "SIM-3080"}
+    gone = _select(["config/loc/amcl.yaml"], system=missing)
+    assert gone.whole_tree is True
+    assert "claimed test not found: SIM-3080" in gone.reason
+
+
+def test_check_1220_empty_set_and_missing_reference_lap() -> None:
+    """CHECK-1220: an empty changed set and a map without a reference
+    lap are both whole tree."""
+    assert _select([]).whole_tree is True
+    assert _select(
+        ["docs/x.md"], data={**SELECT_MAP, "reference_lap": ""}
+    ).whole_tree
+
+
+def test_check_1230_a_changed_system_test_selects_its_id() -> None:
+    """CHECK-1230: editing tests/system/test_sim_3030_*.py selects SIM-3030
+    without selecting its claimant's other tests."""
+    scope = _select(["tests/system/test_sim_3030_x.py"])
+
+    assert scope.whole_tree is False
+    assert scope.implementations == ()
+    assert scope.tests == ("SIM-3020", "SIM-3030")

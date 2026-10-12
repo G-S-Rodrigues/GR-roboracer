@@ -9,6 +9,7 @@ turns that into bash `check.sh` can `eval`. See CHECK-1010..1130 and
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import shlex
@@ -223,6 +224,7 @@ def stack_from_dict(
 
 SYSTEM_TEST_NAME = re.compile(r"test_sim_(\d{4})_[^/]*\.py")
 ACCEPTANCE_ID = re.compile(r"ACC-4\d{3}")
+SYSTEM_TEST_PATH = re.compile(r"tests/system/test_sim_(\d{4})_[^/]*\.py")
 
 
 def discover_system_tests(root: Path) -> dict[str, str]:
@@ -280,6 +282,106 @@ def load_stack(root: Path) -> StackMap:
     )
     return stack_from_dict(
         data, discover_system_tests(root), discover_acceptance_tags(root)
+    )
+
+
+# Files that are whole tree for tiers 3-4 beyond the shared triggers (D4):
+# the map itself and the composition code every implementation runs inside.
+READY_WHOLE_TREE_FILES = (
+    "config/reference_stack.yaml",
+    "ros_ws/src/racing_bringup/launch/sim_pure_pursuit.launch.py",
+    "ros_ws/src/racing_bringup/racing_bringup/support_node.py",
+    "ros_ws/src/racing_bringup/racing_bringup/scenario_parameters.py",
+    "ros_ws/src/racing_bringup/setup.py",
+)
+
+
+@dataclass(frozen=True)
+class ReadyScope:
+    """What `--ready` should run in tiers 3-4. Under `whole_tree` the
+    other fields are empty, because the caller runs everything."""
+
+    whole_tree: bool
+    reason: str
+    implementations: tuple[str, ...]
+    tests: tuple[str, ...]
+    why: tuple[str, ...]
+
+
+def _whole(reason: str) -> ReadyScope:
+    return ReadyScope(
+        whole_tree=True,
+        reason=reason,
+        implementations=(),
+        tests=(),
+        why=(),
+    )
+
+
+def _matches(path: str, globs: tuple[str, ...]) -> bool:
+    return any(fnmatch.fnmatchcase(path, glob) for glob in globs)
+
+
+def select_ready(
+    changed: list[str],
+    stack: StackMap,
+    deps: Mapping[str, set[str]],
+) -> ReadyScope:
+    """The tier-3/4 tests `--ready` runs for a changed set (ADR 0007).
+
+    Rules apply per path, first match decides: whole-tree files and
+    triggers, neutral paths, a changed tier-3 file, then implementation
+    `paths`. Anything unplaced is whole tree - the map fails closed."""
+    if not changed:
+        return _whole("empty changed set")
+    if not stack.reference_lap:
+        return _whole("reference_stack.yaml names no reference_lap")
+
+    selected: set[str] = set()
+    explicit: set[str] = set()
+    why: list[str] = []
+    for path in changed:
+        if path in READY_WHOLE_TREE_FILES:
+            return _whole(f"whole-tree file: {path}")
+        if not path.startswith("config/") and _is_whole_tree_trigger(path):
+            return _whole(f"whole-tree trigger: {path}")
+        if _matches(path, stack.neutral_paths):
+            continue
+        system = SYSTEM_TEST_PATH.fullmatch(path)
+        if system is not None:
+            test_id = f"SIM-{system.group(1)}"
+            explicit.add(test_id)
+            why.append(f"{path} -> {test_id}")
+            continue
+        owners = [i for i in stack.implementations if _matches(path, i.paths)]
+        if not owners:
+            kind = "config path" if path.startswith("config/") else "path"
+            return _whole(f"unmapped {kind}: {path}")
+        package = _package_for(path)
+        dependents = deps.get(package, set()) if package else set()
+        for impl in stack.implementations:
+            if impl in owners or impl.package in dependents:
+                selected.add(impl.key)
+                why.append(f"{path} -> {impl.key}")
+
+    claimed = {t for i in stack.implementations for t in i.verified_by}
+    discovered = set(stack.system_tests) | set(stack.acceptance_tags)
+    for test_id in sorted(discovered - claimed - {stack.reference_lap}):
+        return _whole(f"unclaimed test: {test_id}")
+
+    chosen = {stack.reference_lap} | explicit
+    for impl in stack.implementations:
+        if impl.key in selected:
+            chosen.update(impl.verified_by)
+    for test_id in sorted(chosen - discovered):
+        return _whole(f"claimed test not found: {test_id}")
+
+    return ReadyScope(
+        whole_tree=False,
+        reason="scoped to the map",
+        implementations=tuple(sorted(selected)),
+        tests=tuple(sorted(chosen)),
+        why=tuple(sorted(set(why))),
     )
 
 
