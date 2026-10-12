@@ -6,17 +6,20 @@ An autonomous racing stack for F1TENTH / RoboRacer on ROS 2 Jazzy, plus a headle
 
 ## The rule
 
-**`./scripts/check.sh --full` must pass before any change is described as done.** Not "the tests I
-touched" — the gate. It runs in the `dev` container:
+**`./scripts/check.sh --ready` must pass once at the end of an implementation (and again after a
+failure), and CI must be green on the PR head, before any change is described as done.** Not "the tests
+I touched" — the gate. It runs in the `dev` container:
 
 ```bash
-docker exec gr-roboracer-dev bash -lc 'cd /ws && ./scripts/check.sh --full'
+docker exec gr-roboracer-dev bash -lc 'cd /ws && ./scripts/check.sh --ready'
 ```
 
-`--fast` (tiers 0–1, the pre-commit hook) and `--ci` (adds tier 2 and one seeded lap) exist for
-faster loops, but neither of them is "done". `--full` is the gate; it is not the same as *every test
-that exists*, and ADR 0005 says why — the expensive cross-product belongs to a nightly sweep, and a
-gate nobody runs is worse than no gate.
+`--ready` is `--fast`'s scoped tiers 0–2, the seeded lap, and the tier-3/4 tests that
+`config/reference_stack.yaml` selects for the implementations the branch touched; whatever the map
+cannot place runs the whole tree (ADR 0007). `--full` is no longer in the development loop: the nightly
+runs it, and ADR 0007 says why. `--fast` (tiers 0–1, the pre-commit hook) and `--ci` (the PR job: adds
+tier 2 and one seeded lap) are faster loops. A gate nobody runs is worse than no gate (ADR 0005, ADR
+0007).
 
 ## Algorithms are added, never replaced
 
@@ -51,11 +54,12 @@ has no ROS in it at all — that split is deliberate and load-bearing (ADR 0002,
 | working in any `ros_ws/src/<package>/` | that package's own `CLAUDE.md` |
 | adding a second implementation of anything, or wondering whether to delete the old one | `docs/adr/0005-algorithms-are-added-not-replaced.md` |
 | touching message stamps, timers, `use_sim_time`, or anything that reads the clock | `docs/adr/0006-simulated-time-is-the-time-base.md` |
+| changing `check.sh --ready`'s selection, or a `paths` / `verified_by` in `config/reference_stack.yaml` | `docs/adr/0007-ready-is-a-scoped-local-run.md` |
 | regenerating `tests/golden/baseline.json` | `docs/agents/repo-gotchas.md` #14 — it is a reviewed diff, never a way to green a run |
 
 ## Git
 
-Work goes on a branch off `main` and lands by PR. The one standing exception, authorized by the
+Work goes on a branch off `main` and lands by PR. PRs land as merge commits (`gh pr merge --merge`). The one standing exception, authorized by the
 owner: **the `1-stack-bootstrap` work may push directly to `main`**, because it is what created the
 default branch. That authorization does not extend past it.
 

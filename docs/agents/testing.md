@@ -35,7 +35,8 @@ combination shows.
 ```bash
 ./scripts/check.sh --fast   # tiers 0-1, scoped to the branch's changes. The pre-commit gate.
 ./scripts/check.sh --ci     # + tier 2 and one seeded tier-3 lap. The PR gate.
-./scripts/check.sh --full   # tiers 0-4. Required before calling a change done. ~13 min.
+./scripts/check.sh --ready  # scoped tiers 0-2, SIM-3020, and the tier-3/4 tests the map selects. Done. ~5-7 min.
+./scripts/check.sh --full   # tiers 0-4, whole tree. The nightly's gate. ~13 min.
 ./scripts/check.sh --nightly # + tier 5. Scheduled, not part of done.
 ```
 
@@ -58,10 +59,28 @@ A change to `scripts/check.sh`, `.pre-commit-config.yaml`, `setup.sh`, `.clang-t
 changed set, `CHECK_SCOPE=all`, or a failed `git` call, all fall back to the whole tree. The saving
 decays along a branch: once it has touched one of those, every `--fast` on it is whole tree again.
 
-`--full` was "everything" while tiers 0–4 were everything. ADR 0005 makes that two different
-statements: it stays the definition of done, and tier 5 sits outside it deliberately.
+`--ready` selects by the map. `scripts/changed_scope.py --ready` (which `check.sh` evals) takes the
+branch's changed set and applies, per path and first match first: a whole-tree trigger or composition
+file (the map, `sim_pure_pursuit.launch.py`, `support_node.py`, `scenario_parameters.py`, bringup
+`setup.py`); a `neutral_paths` glob (selects nothing); a changed `tests/system/test_sim_NNNN_*.py`
+(selects that ID); an implementation's `paths` glob (selects it, and every implementation whose package
+depends on the changed package). SIM-3020 always runs. A path nothing places, a test nobody claims, a
+claim with no test, or an undiscoverable test file makes the run whole tree: the map fails closed, so a
+stale map costs time and never skips a test. `python3 scripts/changed_scope.py --owners SIM-3080` prints
+the implementations answerable for a test (the reference lap names every default); an unclaimed ID
+exits 1. It prints `ready scope:` first. Measured in a warm throwaway clone in `dev` (tiers 0-2 whole
+tree when the branch touches `config/`, scoped otherwise):
 
-All three run inside the `dev` container (`docker exec gr-roboracer-dev bash -lc '...'`).
+| Change | Selected | Wall time |
+|---|---|---|
+| comment in `config/localization/amcl.yaml` | amcl: SIM-3020, SIM-3080, ACC-4030 (amcl case), ACC-4040 | 426 s |
+| comment in `racing_controller_baseline/src/node.cpp` | controller, planner, ground_truth: 6 tier-3 tests, 3 Robot cases | 342 s |
+| `racing_common` `.cpp` | whole tree (unmapped), the same as `--full`, ~13 min | not timed |
+
+`--full` was "everything" while tiers 0–4 were everything. ADR 0007 makes `--ready` the definition of
+done and leaves `--full` to the nightly; tier 5 still sits outside both deliberately.
+
+All of them run inside the `dev` container (`docker exec gr-roboracer-dev bash -lc '...'`).
 `./scripts/run_scenario.py --seed N` runs one seeded lap through the real graph and prints its
 metrics, for when you want an answer rather than a test result.
 
@@ -89,17 +108,18 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **61 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **77 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
 The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
 `BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;
-tier 3 `SIM-3070` (slam_toolbox) and `SIM-3080` (amcl); tier 4 `ACC-4030` (one row per pose source)
+tier 3 `SIM-3070` (slam_toolbox) and `SIM-3080` (amcl); tier 4 `ACC-4030` (one case per pose source)
 and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
 
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
 The nightly-flake work added tier 1 `EVAL-1060`.
+The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
 
 ## The tests that matter most
 

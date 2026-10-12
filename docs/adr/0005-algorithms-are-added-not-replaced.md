@@ -65,12 +65,17 @@ them. The additive rule is a standing invitation to violate that, so it is bound
 case, parameterized over pose source — a fourth method adds a data row, not a test case. A
 cross-product belongs in tier 3 or tier 5 `pytest`, which is parameterizable and cheap to filter.
 
+Row wording amended by ADR 0007: in `.robot`, a row is a one-row test case sharing the template, so
+that it can carry its `impl:` tag; still one claim, one ID.
+
 ### 4. Where the expensive coverage lives
 
 `--fast` and `--ci` never grow with the matrix; the development loop is not allowed to get slower.
 `--full` stays the definition of done and runs the whole matrix on the cheap track plus a single lap
 of the expensive one. The full cross-product — tracks × implementations × seeds — runs at **tier 5**
 under `--nightly`.
+
+Superseded by ADR 0007: `--ready` is the definition of done; `--full` runs nightly.
 
 **Tier 5 and `--nightly` exist** as of the SLAM/localization phase: the tests live in
 `tests/nightly/` and `scripts/check.sh --nightly` runs everything `--full` does and then them. The

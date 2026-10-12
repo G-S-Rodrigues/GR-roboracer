@@ -152,3 +152,8 @@ Traps any task in this repository can hit. Each one cost real time at least once
     branch head, since a branch that already touches `check.sh` or `config/` is always whole tree)
     is in the part-1 PR; inside `dev`, cloning `/ws` needs `git config --global --add safe.directory
     /ws/.git`.
+
+    `config/reference_stack.yaml`'s `paths` / `verified_by` (ADR 0007) is the *second* hand-kept list.
+    Unlike the first, it fails closed: an unplaced path or an unclaimed test widens `--ready` to the whole
+    tree, so a stale map shows up as a slow `--ready`, never a skipped test. The exception is a path
+    assigned to the *wrong* implementation, which nothing catches but review and the nightly.
