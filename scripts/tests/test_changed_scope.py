@@ -395,7 +395,8 @@ def _layout(tmp_path: Path, robot: str | None = None, **tests: str) -> Path:
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "reference_stack.yaml").write_text(
         "schema_version: 1\nreference_lap: SIM-3020\nroles:\n"
-        "  controller:\n    implementation: pp\n    package: pkg_pp\n",
+        "  controller:\n    implementation: pp\n    package: pkg_pp\n"
+        "    verified_by: [SIM-3020]\n",
         encoding="utf-8",
     )
     (tmp_path / "tests" / "system").mkdir(parents=True)
@@ -455,8 +456,27 @@ def test_check_1280_clean_layout_loads(tmp_path: Path) -> None:
             "    Log    b\n",
             "ACC-4030",
         ),
+        (
+            {},
+            ROBOT_HEAD
+            + "A\n    [Documentation]    ACC-4030\n    [Tags]    impl:x=a\n"
+            "    Log    a\n"
+            "B\n    [Documentation]    ACC-4030\n    Log    b\n",
+            "impl:",
+        ),
+        ({"foo_test.py": ""}, None, "foo_test.py"),
+        ({"helper.py": ""}, None, "helper.py"),
     ],
-    ids=["no-id-file", "nested-file", "duplicate-sim", "no-acc-id", "dup-acc"],
+    ids=[
+        "no-id-file",
+        "nested-file",
+        "duplicate-sim",
+        "no-acc-id",
+        "dup-acc",
+        "no-impl-tag",
+        "suffix-test-file",
+        "other-py-file",
+    ],
 )
 def test_check_1280_discovery_fails_closed(
     tmp_path: Path, files: dict[str, str], robot: str | None, needle: str
@@ -467,6 +487,31 @@ def test_check_1280_discovery_fails_closed(
     root = _layout(tmp_path, robot, **files)
 
     with pytest.raises(ValueError, match=needle):
+        load_stack(root)
+
+
+def test_check_1280_conftest_and_init_are_not_tests(tmp_path: Path) -> None:
+    """CHECK-1280: the two files pytest collects nothing from are skipped."""
+    root = _layout(tmp_path, None, **{"conftest.py": "", "__init__.py": ""})
+
+    assert set(load_stack(root).system_tests) == {"SIM-3020"}
+
+
+def test_check_1280_an_implementation_without_verified_by_raises(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1280: an implementation claiming no test would be selected by
+    no change to it, so load_stack rejects the map (C3)."""
+    root = _layout(tmp_path)
+    path = root / "config" / "reference_stack.yaml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "    verified_by: [SIM-3020]\n", ""
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="pp"):
         load_stack(root)
 
 

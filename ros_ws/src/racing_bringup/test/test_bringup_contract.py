@@ -270,6 +270,7 @@ def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
 
     stack = module.load_stack(REPOSITORY_ROOT)
 
+    assert [i.key for i in stack.implementations if not i.verified_by] == []
     discovered = set(stack.system_tests) | set(stack.acceptance_tags)
     claimed = {t for i in stack.implementations for t in i.verified_by}
     assert sorted(discovered - claimed - {stack.reference_lap}) == []
