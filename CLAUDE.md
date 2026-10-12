@@ -59,9 +59,10 @@ has no ROS in it at all — that split is deliberate and load-bearing (ADR 0002,
 
 ## Git
 
-Work goes on a branch off `main` and lands by PR. PRs land as merge commits (`gh pr merge --merge`). The one standing exception, authorized by the
-owner: **the `1-stack-bootstrap` work may push directly to `main`**, because it is what created the
-default branch. That authorization does not extend past it.
+Work goes on a branch off `main` and lands by PR. PRs land as merge commits
+(`gh pr merge --merge`). The one standing exception, authorized by the owner: **the
+`1-stack-bootstrap` work may push directly to `main`**, because it is what created the default
+branch. That authorization does not extend past it.
 
 Host setup, the WSL2 quirks that bite from a Windows shell, and how to drive a scenario by hand are
 in `docs/running.md`.
