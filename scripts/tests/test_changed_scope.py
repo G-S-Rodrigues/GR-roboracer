@@ -10,12 +10,15 @@ import pytest
 
 from scripts.changed_scope import (
     Scope,
+    StackMap,
     changed_paths,
+    load_stack,
     read_manifests,
     render_shell,
     resolve,
     reverse_dependents,
     scope_for,
+    stack_from_dict,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -305,3 +308,154 @@ def test_check_1140_reverse_closure_matches_colcon() -> None:
             text=True,
         ).stdout.split()
         assert {package} | dependents[package] == set(listed), package
+
+
+SYNTHETIC_MAP = {
+    "schema_version": 1,
+    "reference_lap": "SIM-3020",
+    "neutral_paths": ["docs/*"],
+    "roles": {
+        "controller": {
+            "implementation": "pp",
+            "package": "pkg_pp",
+            "paths": ["ros_ws/src/pkg_pp/*"],
+            "verified_by": ["SIM-3030"],
+        },
+        "pose_source": {
+            "implementation": "truth",
+            "package": "pkg_truth",
+            "alternatives": [
+                {
+                    "implementation": "amcl",
+                    "package": "nav2_amcl",
+                    "paths": ["config/loc/amcl.yaml"],
+                    "verified_by": "SIM-3080",
+                }
+            ],
+        },
+    },
+}
+
+
+def test_check_1150_the_real_map_loads_with_its_shape() -> None:
+    """CHECK-1150: the real map loads; each implementation has its key and
+    its derived Robot tag; discovery reads tier-3 IDs from file names and
+    tier-4 IDs and tags from racing.robot."""
+    stack = load_stack(REPO_ROOT)
+
+    keys = {impl.key for impl in stack.implementations}
+    assert len(stack.implementations) == 8
+    assert "pose_source=amcl" in keys
+    assert "pose_source=slam_toolbox" in keys
+    amcl = next(i for i in stack.implementations if i.name == "amcl")
+    assert amcl.tag == "impl:pose_source=amcl"
+    assert amcl.default is False
+    assert set(stack.system_tests) == {
+        f"SIM-{n}" for n in range(3010, 3101, 10)
+    }
+    assert set(stack.acceptance_tags) == {
+        "ACC-4010",
+        "ACC-4020",
+        "ACC-4030",
+        "ACC-4040",
+    }
+
+
+def test_check_1150_synthetic_map_reads_scalars_and_defaults() -> None:
+    """CHECK-1150: a scalar verified_by is one ID, a missing field reads as
+    empty, and alternatives are not defaults."""
+    stack = stack_from_dict(
+        SYNTHETIC_MAP,
+        {"SIM-3030": "t30.py", "SIM-3080": "t80.py"},
+        {"ACC-4030": frozenset({"impl:pose_source=amcl"})},
+    )
+
+    assert isinstance(stack, StackMap)
+    by_key = {i.key: i for i in stack.implementations}
+    assert by_key["pose_source=amcl"].verified_by == ("SIM-3080",)
+    assert by_key["pose_source=amcl"].default is False
+    assert by_key["pose_source=truth"].verified_by == ()
+    assert by_key["pose_source=truth"].paths == ()
+    assert by_key["controller=pp"].default is True
+    assert stack.neutral_paths == ("docs/*",)
+
+
+def _layout(tmp_path: Path, robot: str | None = None, **tests: str) -> Path:
+    """A minimal repo: the map, tier-3 files named by `tests` (relative
+    name -> contents) and optionally a tier-4 suite."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "reference_stack.yaml").write_text(
+        "schema_version: 1\nreference_lap: SIM-3020\nroles:\n"
+        "  controller:\n    implementation: pp\n    package: pkg_pp\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tests" / "system").mkdir(parents=True)
+    (tmp_path / "tests" / "system" / "test_sim_3020_ok.py").write_text("")
+    for name, body in tests.items():
+        target = tmp_path / "tests" / "system" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body)
+    if robot is not None:
+        (tmp_path / "tests" / "acceptance").mkdir(parents=True)
+        (tmp_path / "tests" / "acceptance" / "t.robot").write_text(robot)
+    return tmp_path
+
+
+ROBOT_HEAD = "*** Test Cases ***\n"
+
+
+def test_check_1280_clean_layout_loads(tmp_path: Path) -> None:
+    """CHECK-1280: the control for the cases below - a well-formed layout
+    loads, and ACC-4030's two cases with disjoint tags are legal."""
+    root = _layout(
+        tmp_path,
+        ROBOT_HEAD
+        + "A\n    [Documentation]    ACC-4030\n    [Tags]    impl:x=a\n"
+        "    Log    a\n"
+        "B\n    [Documentation]    ACC-4030\n    [Tags]    impl:x=b\n"
+        "    Log    b\n",
+    )
+
+    stack = load_stack(root)
+
+    assert stack.acceptance_tags["ACC-4030"] == frozenset(
+        {"impl:x=a", "impl:x=b"}
+    )
+    assert stack.system_tests == {
+        "SIM-3020": "tests/system/test_sim_3020_ok.py"
+    }
+
+
+@pytest.mark.parametrize(
+    ("files", "robot", "needle"),
+    [
+        ({"test_foo.py": ""}, None, "test_foo.py"),
+        ({"sub/test_sim_3990_x.py": ""}, None, "test_sim_3990_x.py"),
+        ({"test_sim_3020_again.py": ""}, None, "SIM-3020"),
+        (
+            {},
+            ROBOT_HEAD + "C\n    [Documentation]    none\n    Log    c\n",
+            "C",
+        ),
+        (
+            {},
+            ROBOT_HEAD
+            + "A\n    [Documentation]    ACC-4030\n    [Tags]    impl:x=a\n"
+            "    Log    a\n"
+            "B\n    [Documentation]    ACC-4030\n    [Tags]    impl:x=a\n"
+            "    Log    b\n",
+            "ACC-4030",
+        ),
+    ],
+    ids=["no-id-file", "nested-file", "duplicate-sim", "no-acc-id", "dup-acc"],
+)
+def test_check_1280_discovery_fails_closed(
+    tmp_path: Path, files: dict[str, str], robot: str | None, needle: str
+) -> None:
+    """CHECK-1280: a test discovery cannot see, or sees twice, raises
+    ValueError naming it, so resolve_ready can run the whole tree instead
+    of silently skipping it (R9)."""
+    root = _layout(tmp_path, robot, **files)
+
+    with pytest.raises(ValueError, match=needle):
+        load_stack(root)
