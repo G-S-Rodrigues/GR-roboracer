@@ -9,6 +9,7 @@ turns that into bash `check.sh` can `eval`. See CHECK-1010..1130 and
 
 from __future__ import annotations
 
+import argparse
 import fnmatch
 import os
 import re
@@ -385,6 +386,16 @@ def select_ready(
     )
 
 
+def owners_of(test_id: str, stack: StackMap) -> list[str]:
+    """Keys of the implementations answerable for `test_id`. The reference
+    lap exercises every default, so it names them all (D7)."""
+    if test_id == stack.reference_lap:
+        return sorted(i.key for i in stack.implementations if i.default)
+    return sorted(
+        i.key for i in stack.implementations if test_id in i.verified_by
+    )
+
+
 RunGit = Callable[[list[str]], str]
 
 
@@ -465,19 +476,112 @@ def render_shell(scope: Scope, reason: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main() -> None:
-    def run_git(args: list[str]) -> str:
+LoadStack = Callable[[], tuple[StackMap, Mapping[str, set[str]]]]
+
+
+def resolve_ready(
+    env: dict[str, str],
+    run_git: RunGit,
+    load: LoadStack,
+) -> tuple[ReadyScope, StackMap | None]:
+    """The tier-3/4 selection for this run. Every way of not knowing -
+    CHECK_SCOPE=all, git failing, an empty set, an unreadable map - is
+    whole tree, never a smaller run."""
+    if env.get("CHECK_SCOPE") == "all":
+        return _whole("CHECK_SCOPE=all"), None
+    try:
+        changed = changed_paths(run_git)
+    except subprocess.CalledProcessError as exc:
+        return _whole(f"git failed: {exc}"), None
+    try:
+        stack, deps = load()
+    except Exception as exc:  # yaml, robot import, missing file, ValueError
+        return _whole(f"reference_stack.yaml unreadable: {exc}"), None
+    return select_ready(changed, stack, deps), stack
+
+
+def render_ready_shell(scope: ReadyScope, stack: StackMap | None) -> str:
+    """Render `scope` as bash `check.sh` can `eval`."""
+    files: list[str] = []
+    tags: list[str] = []
+    if not scope.whole_tree and stack is not None:
+        files = [
+            stack.system_tests[t]
+            for t in scope.tests
+            if t in stack.system_tests
+        ]
+        tags = sorted(
+            impl.tag
+            for impl in stack.implementations
+            if impl.key in scope.implementations
+            and any(t in stack.acceptance_tags for t in impl.verified_by)
+        )
+        line = (
+            f"implementations {', '.join(scope.implementations) or 'none'}; "
+            f"tests {', '.join(scope.tests)}; "
+            f"because {'; '.join(scope.why) or 'no mapped path'}"
+        )
+    else:
+        line = f"whole tree ({scope.reason})"
+    return (
+        "\n".join(
+            [
+                f"ready_whole_tree={1 if scope.whole_tree else 0}",
+                f"ready_line={shlex.quote(line)}",
+                "ready_system_tests=("
+                + " ".join(shlex.quote(f) for f in files)
+                + ")",
+                "ready_robot_tags=("
+                + " ".join(shlex.quote(t) for t in tags)
+                + ")",
+            ]
+        )
+        + "\n"
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--ready", action="store_true", help="print the --ready selection"
+    )
+    group.add_argument(
+        "--owners", metavar="ID", help="print the implementations owning ID"
+    )
+    args = parser.parse_args(argv)
+    root = Path(__file__).resolve().parents[1]
+
+    def run_git(git_args: list[str]) -> str:
         return subprocess.run(
-            ["git", *args],
+            ["git", *git_args],
             cwd=os.getcwd(),
             check=True,
             capture_output=True,
             text=True,
         ).stdout
 
+    if args.owners is not None:
+        owners = owners_of(args.owners, load_stack(root))
+        if not owners:
+            sys.stderr.write(f"{args.owners}: claimed by no implementation\n")
+            return 1
+        sys.stdout.write("\n".join(owners) + "\n")
+        return 0
+
+    if args.ready:
+
+        def load() -> tuple[StackMap, Mapping[str, set[str]]]:
+            return load_stack(root), reverse_dependents(read_manifests(root))
+
+        ready, stack = resolve_ready(dict(os.environ), run_git, load)
+        sys.stdout.write(render_ready_shell(ready, stack))
+        return 0
+
     scope, reason = resolve(dict(os.environ), run_git, os.path.exists)
     sys.stdout.write(render_shell(scope, reason))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
