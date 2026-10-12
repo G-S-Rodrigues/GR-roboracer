@@ -13,8 +13,10 @@ import os
 import shlex
 import subprocess
 import sys
+import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 # The extensions scripts/check.sh hands to clang-format and clang-tidy.
 CPP_EXTENSIONS = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx")
@@ -91,6 +93,57 @@ def scope_for(changed_paths: list[str]) -> Scope:
         cpp=tuple(sorted(cpp)),
         py=tuple(sorted(py)),
     )
+
+
+DEPEND_TAGS = (
+    "depend",
+    "build_depend",
+    "build_export_depend",
+    "exec_depend",
+    "test_depend",
+)
+
+
+def read_manifests(root: Path) -> dict[str, set[str]]:
+    """Package name -> in-tree packages it depends on, from every
+    `ros_ws/src/*/package.xml`. Parsed here, not asked of colcon, because
+    this runs before ROS is sourced (D9); CHECK-1140 pins it to colcon."""
+    declared: dict[str, set[str]] = {}
+    for manifest in sorted((root / "ros_ws" / "src").glob("*/package.xml")):
+        tree = ElementTree.parse(manifest).getroot()
+        name = (tree.findtext("name") or "").strip()
+        wanted = {
+            (element.text or "").strip()
+            for tag in DEPEND_TAGS
+            for element in tree.findall(tag)
+        }
+        declared[name] = wanted
+    return {
+        name: {dep for dep in deps if dep in declared and dep != name}
+        for name, deps in declared.items()
+    }
+
+
+def reverse_dependents(
+    manifests: dict[str, set[str]],
+) -> dict[str, set[str]]:
+    """Package -> every package that depends on it, transitively."""
+    direct: dict[str, set[str]] = {name: set() for name in manifests}
+    for name, deps in manifests.items():
+        for dep in deps:
+            direct[dep].add(name)
+    closure: dict[str, set[str]] = {}
+    for name in manifests:
+        seen: set[str] = set()
+        pending = list(direct[name])
+        while pending:
+            current = pending.pop()
+            if current not in seen:
+                seen.add(current)
+                pending.extend(direct[current])
+        seen.discard(name)
+        closure[name] = seen
+    return closure
 
 
 RunGit = Callable[[list[str]], str]
