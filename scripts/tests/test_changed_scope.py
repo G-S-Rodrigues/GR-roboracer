@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from scripts.changed_scope import (
     Scope,
     changed_paths,
+    read_manifests,
     render_shell,
     resolve,
+    reverse_dependents,
     scope_for,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_check_1010_python_only_change_scopes_to_one_package() -> None:
@@ -265,3 +271,37 @@ def test_check_1130_lint_config_files_are_whole_tree_triggers(
     """CHECK-1130: a change to only the formatter or linter config runs
     the whole tree."""
     assert scope_for([path]).whole_tree is True
+
+
+def test_check_1140_reverse_closure_matches_colcon() -> None:
+    """CHECK-1140: the reverse dependency closure parsed from package.xml
+    is what `colcon --packages-above` selects (D9), so the parse that runs
+    before ROS is sourced cannot drift from colcon's own graph."""
+    assert reverse_dependents({"a": set(), "b": {"a"}, "c": {"b"}}) == {
+        "a": {"b", "c"},
+        "b": {"c"},
+        "c": set(),
+    }
+
+    if shutil.which("colcon") is None:
+        pytest.skip("colcon is not on PATH")
+    manifests = read_manifests(REPO_ROOT)
+    dependents = reverse_dependents(manifests)
+    assert set(manifests) == set(dependents) and manifests
+    for package in manifests:
+        listed = subprocess.run(
+            [
+                "colcon",
+                "list",
+                "--base-paths",
+                "ros_ws/src",
+                "--packages-above",
+                package,
+                "--names-only",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        assert {package} | dependents[package] == set(listed), package
