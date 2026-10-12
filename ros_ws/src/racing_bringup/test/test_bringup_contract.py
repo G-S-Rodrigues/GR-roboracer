@@ -246,6 +246,41 @@ def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
     assert '"estimate_topic", default_value=GROUND_TRUTH_POSE' in source
 
 
+def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
+    """BRINGUP-1080: the reference-stack map and the tier-3/4 tests agree.
+
+    `check.sh --ready` runs only the tests the map selects (ADR 0007), so a
+    test no implementation claims, a claim on a test that does not exist, or
+    a Robot `impl:` tag that disagrees with the claims is a test the scoped
+    gate skips or runs for the wrong reason. `load_stack` also raises on a
+    test it cannot discover (no ID in the name or the documentation, or a
+    duplicate), which fails this test the same way.
+    """
+    import importlib.util
+    import sys
+
+    module_path = REPOSITORY_ROOT / "scripts" / "changed_scope.py"
+    spec = importlib.util.spec_from_file_location(
+        "racing_changed_scope", module_path
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    stack = module.load_stack(REPOSITORY_ROOT)
+
+    discovered = set(stack.system_tests) | set(stack.acceptance_tags)
+    claimed = {t for i in stack.implementations for t in i.verified_by}
+    assert sorted(discovered - claimed - {stack.reference_lap}) == []
+    assert sorted(claimed - discovered) == []
+    for test_id, tags in stack.acceptance_tags.items():
+        expected = {
+            i.tag for i in stack.implementations if test_id in i.verified_by
+        }
+        assert tags == expected, test_id
+
+
 def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser() -> None:
     """BRINGUP-1050: the sim's laser mount is the URDF's base_link_to_laser.
 

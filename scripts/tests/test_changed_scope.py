@@ -358,6 +358,7 @@ def test_check_1150_the_real_map_loads_with_its_shape() -> None:
     amcl = next(i for i in stack.implementations if i.name == "amcl")
     assert amcl.tag == "impl:pose_source=amcl"
     assert amcl.default is False
+    assert set(amcl.verified_by) == {"SIM-3080", "ACC-4030", "ACC-4040"}
     assert set(stack.system_tests) == {
         f"SIM-{n}" for n in range(3010, 3101, 10)
     }
@@ -768,3 +769,34 @@ def test_check_1270_cli_owners_and_ready() -> None:
     assert ready.returncode == 0
     flag = _eval_shell(ready.stdout, 'echo "$ready_whole_tree"').strip()
     assert flag in {"0", "1"}
+
+
+def test_check_1170_real_map_instrument_couplings() -> None:
+    """CHECK-1170: on the real map the sim feeds every estimator (R1) and
+    racing_evaluation is their measuring instrument (R2), so each path
+    selects the estimators' tests though neither claims them."""
+    stack = load_stack(REPO_ROOT)
+    deps = reverse_dependents(read_manifests(REPO_ROOT))
+
+    sim = select_ready(
+        ["ros_ws/src/racing_sim_gym_jax/racing_sim_gym_jax/laser.py"],
+        stack,
+        deps,
+    )
+    assert {"SIM-3070", "SIM-3080"} <= set(sim.tests)
+
+    evaluation = select_ready(
+        ["ros_ws/src/racing_evaluation/racing_evaluation/node.py"],
+        stack,
+        deps,
+    )
+    assert {"SIM-3070", "SIM-3080", "ACC-4030"} <= set(evaluation.tests)
+    assert evaluation.whole_tree is False
+
+
+def test_check_1270_real_map_owners_of_amcl_localizing() -> None:
+    """CHECK-1270: `--owners SIM-3080` prints exactly the amcl claimant."""
+    result = _cli("--owners", "SIM-3080")
+
+    assert result.returncode == 0
+    assert result.stdout == "pose_source=amcl\n"
