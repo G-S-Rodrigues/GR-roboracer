@@ -4,13 +4,18 @@ set -euo pipefail
 
 usage() {
     cat >&2 <<'EOF'
-Usage: check.sh --fast|--ci|--full|--nightly
+Usage: check.sh --fast|--ci|--ready|--full|--nightly
 
   --fast    build, lint, tier 1, scoped to the branch's changes (see
             scripts/changed_scope.py). The pre-commit gate. Set
             CHECK_SCOPE=all to force the whole-tree checks below.
   --ci      --fast plus tier 2 and one seeded tier-3 run. The PR gate.
-  --full    tiers 0-4. The definition of done, and deliberately not every
+  --ready   --fast's scoped tiers 0-2, the seeded lap (SIM-3020) and the
+            tier-3/4 tests that config/reference_stack.yaml selects for the
+            branch's implementations (ADR 0007). Prints "ready scope:"
+            first. The definition of done; whole tree when the map cannot
+            place a changed path.
+  --full    tiers 0-4. The nightly's gate, and deliberately not every
             test that exists (ADR 0005).
   --nightly --full plus tier 5: the cross-product of tracks,
             implementations and seeds. Minutes to hours; it runs on a
@@ -19,7 +24,7 @@ EOF
 }
 
 if [[ $# -ne 1 ]] ||
-    [[ "$1" != "--fast" && "$1" != "--ci" && "$1" != "--full" &&
+    [[ "$1" != "--fast" && "$1" != "--ci" && "$1" != "--ready" && "$1" != "--full" &&
     "$1" != "--nightly" ]]; then
     usage
     exit 2
@@ -42,7 +47,22 @@ scope_packages=()
 scope_cpp=()
 scope_py=()
 scope_colcon_select=()
-if [[ "$mode" == "--fast" ]]; then
+# What --ready runs in tiers 3-4, from the reference-stack map. Initialised
+# for set -u; whole tree unless changed_scope.py says otherwise.
+ready_whole_tree=1
+ready_line="mode ${mode}"
+ready_system_tests=()
+ready_robot_tags=()
+if [[ "$mode" == "--ready" ]]; then
+    if ready_sh="$(python3 scripts/changed_scope.py --ready)"; then
+        eval "$ready_sh"
+    else
+        ready_whole_tree=1
+        ready_line="whole tree (changed_scope.py --ready failed)"
+    fi
+    echo "==> ready scope: ${ready_line}"
+fi
+if [[ "$mode" == "--fast" || "$mode" == "--ready" ]]; then
     if scope_sh="$(python3 scripts/changed_scope.py)"; then
         eval "$scope_sh"
     else
@@ -128,12 +148,19 @@ else
     echo "skipped (no Python changed)"
 fi
 
-if [[ "$mode" == "--fast" ]] && ! (( scope_whole_tree )) && (( ${#scope_packages[@]} == 0 )); then
+if [[ "$mode" == "--fast" || "$mode" == "--ready" ]] && ! (( scope_whole_tree )) && (( ${#scope_packages[@]} == 0 )); then
     echo "==> ROS package tests"
     echo "skipped (no ROS package changed)"
 else
     echo "==> ROS package tests"
-    if [[ "$mode" == "--fast" ]]; then
+    if [[ "$mode" == "--ready" ]]; then
+        # Every label: tiers 1 and 2, scoped to the changed packages.
+        colcon test \
+            --event-handlers console_cohesion+ \
+            --return-code-on-test-failure \
+            --ctest-args --output-on-failure \
+            "${scope_colcon_select[@]}"
+    elif [[ "$mode" == "--fast" ]]; then
         colcon test \
             --event-handlers console_cohesion+ \
             --return-code-on-test-failure \
@@ -163,6 +190,30 @@ fi
 if [[ "$mode" == "--ci" ]] && [[ -f "$ci_system_test" ]]; then
     echo "==> system smoke test"
     python3 -m pytest "$ci_system_test"
+fi
+
+if [[ "$mode" == "--ready" ]]; then
+    echo "==> system tests"
+    if (( ready_whole_tree )); then
+        python3 -m pytest tests/system
+    else
+        python3 -m pytest "${ready_system_tests[@]}"
+    fi
+
+    echo "==> acceptance tests"
+    if (( ready_whole_tree )); then
+        robot --pythonpath tests/lib --outputdir log/robot tests/acceptance
+    elif (( ${#ready_robot_tags[@]} )); then
+        robot_include=()
+        for tag in "${ready_robot_tags[@]}"; do
+            robot_include+=(--include "$tag")
+        done
+        robot --pythonpath tests/lib --outputdir log/robot \
+            "${robot_include[@]}" tests/acceptance
+    else
+        # A Robot run whose --include matches nothing exits 252.
+        echo "skipped (no acceptance test selected)"
+    fi
 fi
 
 if [[ "$mode" == "--full" || "$mode" == "--nightly" ]]; then
