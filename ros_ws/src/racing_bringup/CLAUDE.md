@@ -26,8 +26,9 @@ Run from the repository root. The launch file and every node it starts resolve
 working directory — the same convention `scripts/check.sh` and each node's own parameter defaults
 already use.
 
-Launch arguments: `scenario`, `vehicle` (default `config/vehicles/f1tenth_default.yaml`;
-`f1tenth_gym_limits.yaml` is the 8 m/s gym-limits car, nightly only; a missing file raises), `seed`, `recording_path`, `use_rviz`, `time_scale` (default 1.0;
+Launch arguments: `scenario`, `vehicle` (default
+`config/vehicles/f1tenth_default.yaml`; `f1tenth_gym_limits.yaml` is the 8 m/s
+gym-limits car, nightly only; a missing file raises), `seed`, `recording_path`, `use_rviz`, `time_scale` (default 1.0;
 scales wall rate, never physics), `start_held` (default false; sim stays frozen until `~/reset`),
 `estimate_topic` — the pose `racing_evaluation` scores, ground truth by default (SIM-3060),
 `pose_source` (`ground_truth` | `slam_toolbox` | `amcl`) — who owns `map -> odom`, and
