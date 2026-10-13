@@ -116,13 +116,26 @@ survey's against the same edges. Measured (2026-10-13, 0.05 m cells):
 |---|---|---|
 | bound to own edge, max | 0.034 (left), 0.000 (right) | 0.129 (left), 0.114 (right) |
 | edge to bound, max | 0.049 (left), 0.000 (right) | 0.114 (right); left: 98.0 % of edge points within 0.15 m |
-| centerline / committed length | 0.9863 | 0.9882 |
+| centerline / committed length (medial axis alone) | 0.9863 | 0.9882 |
+| centerline / committed length (shipped, re-centred) | 0.9986 | 1.0017 |
 | tolerance | 0.05 m | 0.15 m, 97 % coverage, <= 10 % of the bound on the frame |
 
 The survey's free space leaks past the wall at the top-left hairpin out to the
 map frame (up to 0.96 m beyond the true wall); a bound on the frame is not a
-wall, and no extractor can know. The length ceiling is 1.5 % (owner-authorized
-increase from 1 %): the medial axis cuts hairpins whatever the cell size.
+wall, and no extractor can know. The medial axis cuts hairpins whatever the
+cell size, so the shipped centerline is re-centred after the bounds are known:
+at a corner it is the outer bound moved inward by the half-width (the inner
+wall is clipped, the outer one is intact), on straights the mean of both
+bounds' offsets (RACELINE-1130; assumes a constant half-width). Lateral
+distance to the committed centerline, medial axis alone -> shipped:
+
+| | gym lap p95 | gym corner p95 | gym max | survey lap p95 | survey corner p95 | survey max |
+|---|---|---|---|---|---|---|
+| m | 0.272 -> 0.081 | 0.649 -> 0.082 | 1.025 -> 0.622 | 0.273 -> 0.053 | 0.649 -> 0.413 | 0.817 -> 0.705 |
+
+"Corner" is the committed track's |kappa| >= 0.1 (about 500 of 3400 points).
+The remaining max is the 0.165 m hairpin near (-75.4, 52.3); the survey's corner
+p95 is its top-left leak. The length ceiling went 1.5 % -> 0.3 %.
 
 **Finer cells (scratch study, owner ask).** The gym PNG regenerated at finer
 resolution with `sim/track_importer.py` (not committed):

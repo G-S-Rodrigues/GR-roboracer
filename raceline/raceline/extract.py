@@ -33,6 +33,9 @@ STEP_M = 0.1  # output spacing; upstream's interp_track step
 CURVATURE_SIGMA_M = 0.5
 MAX_START_OFFSET = 1.0  # m; a loop must pass this close to start_pose
 MIN_SIDE_AGREEMENT = 0.95  # share of points that must agree on a bound's side
+BOUND_SIGMA_M = 0.2  # smoothing of a bound before its normals are taken
+RECENTRE_SIGMA_M = 0.1  # smoothing of the re-centred line
+CORNER_KAPPA = 0.1  # 1/m; the outer bound takes over at this curvature
 
 
 @dataclass(frozen=True)
@@ -294,6 +297,53 @@ def _widths(xy: np.ndarray, bound: np.ndarray) -> np.ndarray:
     return d
 
 
+def _offset_bound(
+    bound: np.ndarray, xy: np.ndarray, half_width: float
+) -> np.ndarray:
+    # The bound moved half_width towards the centreline along its own normal.
+    b = gaussian_filter1d(
+        _resample_closed(bound), BOUND_SIGMA_M / STEP_M, axis=0, mode="wrap"
+    )
+    t = _tangents(b)
+    n = np.column_stack([-t[:, 1], t[:, 0]])
+    _, i = cKDTree(xy).query(b)
+    side = np.sign(np.einsum("ij,ij->i", xy[i] - b, n))
+    side[side == 0] = 1.0
+    side = np.sign(gaussian_filter1d(side, 20, mode="wrap"))
+    side[side == 0] = 1.0
+    return b + half_width * side[:, None] * n
+
+
+def _recentre(
+    xy: np.ndarray, right: np.ndarray, left: np.ndarray
+) -> np.ndarray:
+    # Not upstream. A medial axis cuts a corner tighter than the corridor is
+    # wide: the inner wall is a short arc (or a clipped cusp) and the axis
+    # runs along it. The outer wall is intact there, so at a corner the line
+    # is the OUTER bound moved inward by the half-width; on straights it is
+    # the mean of both bounds' offsets, blended by the curvature's sign.
+    # Assumes a constant half-width (the median of the medial axis's
+    # distances to the bounds); a corridor that varies at a corner is only as
+    # good as that.
+    half = float(
+        np.median(
+            (cKDTree(left).query(xy)[0] + cKDTree(right).query(xy)[0]) / 2
+        )
+    )
+    off_left = _offset_bound(left, xy, half)
+    off_right = _offset_bound(right, xy, half)
+    # curvature > 0 is a left turn: the left bound is the inner one
+    w_right = np.clip(0.5 + 0.5 * _curvature(xy) / CORNER_KAPPA, 0.0, 1.0)
+    w_right = gaussian_filter1d(w_right, 10, mode="wrap")
+    near_l = off_left[cKDTree(off_left).query(xy)[1]]
+    near_r = off_right[cKDTree(off_right).query(xy)[1]]
+    mixed = (1.0 - w_right)[:, None] * near_l + w_right[:, None] * near_r
+    mixed = gaussian_filter1d(
+        mixed, RECENTRE_SIGMA_M / STEP_M, axis=0, mode="wrap"
+    )
+    return _resample_closed(mixed)
+
+
 def _check_args(grid, resolution, origin):
     if not np.isclose(resolution, grid.resolution):
         raise ValueError(
@@ -375,6 +425,7 @@ def extract_track(
             f"{'ccw' if ccw else 'cw'}"
         )
     right, left = _classify_bounds(xy, _bound_contours(grid, binary, xy))
+    xy = _recentre(xy, right, left)
     return Track(
         name=name,
         xy=xy,

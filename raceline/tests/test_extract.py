@@ -263,14 +263,16 @@ SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
 #   centerline length / committed length: 0.9863 (gym), 0.9882 (survey), and
 #     0.9859 / 0.9858 at 0.025 / 0.0125 m cells. The medial axis cuts the
 #     hairpins whatever the resolution; the owner allowed a modest increase of
-#     the 1 % ceiling                                     -> LENGTH_RTOL 0.015
+#     the 1 % ceiling. Re-centring the corners on the outer bound (the
+#     corner clean-up of 2026-10-13) lifted it to 0.9986 (gym) / 1.0017
+#     (survey)                                            -> LENGTH_RTOL 0.003
 #   mean bound length / mean PNG edge length: 0.004 %    -> BOUND_LEN_RTOL 0.001
 #   median |width - 1.1|: 0.012 / 0.003 m (gym), 0.017 / 0.009 (survey)
 GYM_EDGE_TOL = 0.05
 SLAM_EDGE_TOL = 0.15
 SLAM_MIN_COVERAGE = 0.97
 SLAM_MAX_FRAME_SHARE = 0.10  # measured 0.0603 of the left bound
-LENGTH_RTOL = 0.015
+LENGTH_RTOL = 0.003
 BOUND_LEN_RTOL = 0.001
 WIDTH_MEDIAN_TOL = 0.05
 FRAME_CELLS = 2  # bound points this close to the map frame are not walls
@@ -485,3 +487,43 @@ def test_raceline_1120_survey_walls_match_the_gym_walls(spielberg_maps):
             _coverage(grid, bound, maps["gym_edges"], SLAM_EDGE_TOL)
             >= SLAM_MIN_COVERAGE
         )
+
+
+# Lateral distance of the extracted centerline from the committed one, in the
+# corners (committed |kappa| >= CORNER_KAPPA, 1/10 m; 500 of 3386 points) and
+# over the lap. The medial axis cuts every corner; a2c6f0b measured:
+#   gym:    lap p95 0.272  corner p95 0.649  max 1.025  length 0.9863
+#   survey: lap p95 0.273  corner p95 0.649  max 0.817  length 0.9882
+# Re-centring the corners on the outer bound measured (sigma 0.2, final 0.1):
+#   gym:    lap p95 0.081  corner p95 0.082  max 0.622  length 0.9986
+#   survey: lap p95 0.053  corner p95 0.413  max 0.705  length 1.0017
+# The max is the 0.165 m hairpin at (-75.4, 52.3), whose drawn centerline no
+# bound reveals; the survey's corner p95 is its top-left leak (45 points).
+CORNER_KAPPA = 0.1
+LAP_P95_TOL = {"gym": 0.10, "survey": 0.07}
+CORNER_P95_TOL = {"gym": 0.10, "survey": 0.50}
+LATERAL_MAX_TOL = {"gym": 0.70, "survey": 0.80}
+
+
+def _lateral_to_committed(committed, xy):
+    from scipy.spatial import cKDTree
+
+    d, _ = cKDTree(_resample(committed.xy, 0.02)).query(xy)
+    _, j = cKDTree(committed.xy).query(xy)
+    corner = np.abs(committed.curvature)[j] >= CORNER_KAPPA
+    return d, corner
+
+
+@pytest.mark.parametrize("which", ["gym", "survey"])
+def test_raceline_1130_corners_follow_the_committed_centerline(
+    spielberg_maps, which
+):
+    """RACELINE-1130: the corner clean-up. The medial axis cuts the corners;
+    the lateral error over them, and the length, must stay with the track."""
+    maps = spielberg_maps
+    track = maps[which + "_result"][0]
+    d, corner = _lateral_to_committed(maps["committed"], track.xy)
+    assert corner.sum() > 100  # the stretch under test exists
+    assert np.percentile(d, 95) <= LAP_P95_TOL[which]
+    assert np.percentile(d[corner], 95) <= CORNER_P95_TOL[which]
+    assert d.max() <= LATERAL_MAX_TOL[which]
