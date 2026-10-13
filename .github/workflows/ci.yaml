@@ -19,6 +19,12 @@ on:
     # 03:00 UTC daily.
     - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      # TEMPORARY (fix part N1): runs only the n1-repro job. Reverted before the PR.
+      n1_repro:
+        description: "Run only the N1 ACC-4010 repro loop"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -27,7 +33,7 @@ concurrency:
 jobs:
   pr-gate:
     name: Tiers 0-2 + one seeded lap
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && !inputs.n1_repro
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -59,7 +65,7 @@ jobs:
 
   nightly:
     name: Tiers 3-4 (tier 5 on seed 42), seed ${{ matrix.seed }}
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && !inputs.n1_repro
     runs-on: ubuntu-latest
     # The seed-42 leg runs tier 5 as well, and tier 5 is laps, not seconds.
     timeout-minutes: 180
@@ -144,3 +150,72 @@ jobs:
             gr-roboracer:dev ./scripts/run_scenario.py \
               --seed ${{ matrix.seed }} \
               --output log/scenario-seed-${{ matrix.seed }}.json
+
+  # TEMPORARY (fix part N1): loops ACC-4010 on a real runner to capture the
+  # startup stale-input latch the observer describes. Dispatch-only.
+  n1-repro:
+    name: N1 repro, leg ${{ matrix.leg }}
+    if: github.event_name == 'workflow_dispatch' && inputs.n1_repro
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the dev image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: dev
+          tags: gr-roboracer:dev
+          load: true
+          cache-from: type=gha,scope=dev
+          cache-to: type=gha,mode=max,scope=dev
+
+      - name: Loop ACC-4010 twenty times
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            --env ROS_LOG_DIR=/ws/log/ros \
+            gr-roboracer:dev bash -lc '
+              set +e
+              source /opt/ros/jazzy/setup.bash
+              source /opt/racing_underlay/setup.bash
+              colcon build --base-paths ros_ws/src --symlink-install || exit 1
+              source install/setup.bash
+              fails=0
+              for i in $(seq 1 20); do
+                echo "=== lap $i"
+                robot --pythonpath tests/lib --outputdir log/robot/run-$i \
+                  --test "Vehicle Completes Baseline Lap Safely" \
+                  tests/acceptance > log/robot-$i.txt 2>&1
+                code=$?
+                if [ $code -ne 0 ]; then
+                  fails=$((fails+1))
+                  echo "LAP $i FAILED (exit $code)"
+                  grep -h "TimeoutError" log/robot-$i.txt
+                fi
+                pkill -f install/racing_ ; sleep 1
+              done
+              echo "N1_REPRO_FAILS=$fails of 20"
+              exit 0
+            '
+
+      - name: Upload node and Robot logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: n1-repro-leg-${{ matrix.leg }}
+          path: |
+            log/ros/
+            log/robot/
+            log/robot-*.txt
+          if-no-files-found: warn
