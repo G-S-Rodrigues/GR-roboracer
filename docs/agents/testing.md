@@ -123,6 +123,7 @@ The nightly-flake work added tier 1 `EVAL-1060`.
 The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
 The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
 The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130`.
+`raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.
 
 ## The tests that matter most
 

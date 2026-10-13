@@ -174,7 +174,7 @@ Reading it:
   up to half a cell (0.025 m per axis) of its bound error is that convention.
 - Upstream raised where a cell reads `failed`. On the gym map with `K=3` it
   still produced a centerline (those columns are filled) but its bounds step
-  found more than two closed contours. On the survey it produced nothing:
+  raised `OSError` ("More than two track bounds detected"). On the survey it produced nothing:
   upstream does not produce a track from the survey, `K=9` or `K=3`.
 - Not compared: width medians (upstream's `dist_to_bounds` needs TUM's LGPL
   `interp_track`), the start-pose and heading checks (upstream orients its
