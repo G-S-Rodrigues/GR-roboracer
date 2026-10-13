@@ -109,7 +109,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **84 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **95 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -122,6 +122,8 @@ The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` a
 The nightly-flake work added tier 1 `EVAL-1060`.
 The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
 The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
+The vehicle-limits work added tier 1 `RACELINE-1210..1250`, `SIMJAX-1120/1130`, `BRINGUP-1090/1100`,
+`CHECK-1310/1320`.
 
 ## The tests that matter most
 

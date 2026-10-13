@@ -69,8 +69,11 @@ Read 2026-10-13 from `f1tenth_gym_jax/envs/utils.py:61-78` (class `Param`)
   sv_max 3.2 rad/s.
 - Part 8 (minimum time): m 3.74 kg, I 0.04712, C_Sf 4.718, C_Sr 5.4562, h 0.074,
   lf 0.15875, lr 0.17145, width 0.31, length 0.58.
-- lf + lr = 0.3302 against the vehicle file's 0.33 (open topic
-  2026-10-11-urdf-reference-point-vs-gym, part 3).
+- lf + lr = 0.3302 against the default vehicle file's 0.33. Part 3 sets the
+  gym-limits file to 0.3302; its header records the reference point (the gym's
+  state is the centre of gravity). The loader is `raceline.vehicle`
+  (`load_vehicle`), which reads the supervisor's and controller's keys and the
+  GGV tables beside the file.
 
 ## Does the gym read `<map>_raceline.csv`?
 
