@@ -139,8 +139,8 @@ fi
 
 echo "==> ruff"
 if (( scope_whole_tree )); then
-    ruff check sim tools tests scripts ros_ws/src
-    ruff format --check sim tools tests scripts ros_ws/src
+    ruff check sim tools tests scripts raceline ros_ws/src
+    ruff format --check sim tools tests scripts raceline ros_ws/src
 elif (( ${#scope_py[@]} )); then
     ruff check "${scope_py[@]}"
     ruff format --check "${scope_py[@]}"
@@ -185,6 +185,14 @@ fi
 if find scripts/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
     echo "==> scripts unit tests"
     python3 -m pytest scripts/tests
+fi
+
+if find raceline/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
+    echo "==> raceline unit tests"
+    # Its own uv project (ADR 0003's seam). PYTHONPATH is unset because the
+    # ROS environment sourced above would otherwise sit ahead of the venv and
+    # let rclpy import silently (RACELINE-1020, gotcha 24).
+    env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests
 fi
 
 if [[ "$mode" == "--ci" ]] && [[ -f "$ci_system_test" ]]; then
