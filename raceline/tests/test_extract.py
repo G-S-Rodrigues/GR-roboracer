@@ -244,3 +244,244 @@ def test_raceline_1090_no_usable_loop_raises_and_noise_is_cleaned():
     data[dashes & (data == 0)] = -1
     noisy = _extract(_grid(data), Pose2D(3.5, -3.6, 0.0))
     _assert_annulus(noisy)
+
+
+# ---- Spielberg ground truth ------------------------------------------------
+
+MAPS = REPO / "config" / "scenarios" / "maps" / "Spielberg"
+GYM_MAP = MAPS / "Spielberg.yaml"
+SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
+# Tolerances, from the measurements of 2026-10-13 (raceline/README.md has the
+# table). Lateral ceilings are one cell on the gym map and three on the survey.
+#   gym PNG vs its own free-cell edges, both ways: max 0.0344 / 0.0493 m
+#     (left), 0.0000 (right)                              -> GYM_EDGE_TOL 0.05
+#   survey vs the gym PNG's edges, extracted bound -> edge: max 0.1293 (left),
+#     0.1135 (right); edge -> bound (left): 98.0 % of the edge points within
+#     0.15 m. The rest is a leak: the survey's free space runs past the wall at
+#     the top-left hairpin out to the map frame (up to 0.96 m), which no
+#     extractor can know                                  -> SLAM_EDGE_TOL 0.15
+#   centerline length / committed length: 0.9863 (gym), 0.9882 (survey), and
+#     0.9859 / 0.9858 at 0.025 / 0.0125 m cells. The medial axis cuts the
+#     hairpins whatever the resolution; the owner allowed a modest increase of
+#     the 1 % ceiling                                     -> LENGTH_RTOL 0.015
+#   mean bound length / mean PNG edge length: 0.004 %    -> BOUND_LEN_RTOL 0.001
+#   median |width - 1.1|: 0.012 / 0.003 m (gym), 0.017 / 0.009 (survey)
+GYM_EDGE_TOL = 0.05
+SLAM_EDGE_TOL = 0.15
+SLAM_MIN_COVERAGE = 0.97
+SLAM_MAX_FRAME_SHARE = 0.10  # measured 0.0603 of the left bound
+LENGTH_RTOL = 0.015
+BOUND_LEN_RTOL = 0.001
+WIDTH_MEDIAN_TOL = 0.05
+FRAME_CELLS = 2  # bound points this close to the map frame are not walls
+MIN_WALL_M2 = 0.5  # the test's own island fill, independent of the extractor
+
+
+def _committed():
+    from raceline.track import load_track
+
+    return load_track(SPIELBERG)
+
+
+def _resample(poly, step=0.02):
+    closed = np.vstack([poly, poly[:1]])
+    s = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(closed, axis=0).T))])
+    t = np.arange(0.0, s[-1], step)
+    return np.column_stack(
+        [np.interp(t, s, closed[:, 0]), np.interp(t, s, closed[:, 1])]
+    )
+
+
+def _polyline_length(poly):
+    return float(
+        np.hypot(*np.diff(np.vstack([poly, poly[:1]]), axis=0).T).sum()
+    )
+
+
+def _png_edges(grid):
+    """The PNG's own free-cell wall edges: the two long contours of its free
+    mask at the cell edge, stray wall islands filled."""
+    from scipy import ndimage
+    from skimage.measure import find_contours
+
+    free = grid.data == 0
+    walls, n = ndimage.label(~free)
+    area = ndimage.sum(np.ones_like(walls), walls, index=np.arange(1, n + 1))
+    for i in np.flatnonzero(area * grid.resolution**2 < MIN_WALL_M2) + 1:
+        free |= walls == i
+    # features narrower than 5 cells (0.25 m) are cracks, not walls
+    free = ndimage.binary_closing(
+        np.pad(free, 3), structure=np.ones((5, 5), bool)
+    )[3:-3, 3:-3]
+    contours = [
+        c
+        for c in find_contours(np.pad(free.astype(float), 1), 0.5)
+        if np.allclose(c[0], c[-1])
+    ]
+    contours = sorted(contours, key=len)[-2:]
+    assert len(contours) == 2
+    return [
+        np.column_stack(
+            [
+                grid.origin.x + (c[:-1, 1] - 1 + 0.5) * grid.resolution,
+                grid.origin.y + (c[:-1, 0] - 1 + 0.5) * grid.resolution,
+            ]
+        )
+        for c in contours
+    ]
+
+
+def _extract_spielberg(grid, committed):
+    from raceline.extract import Pose2D, extract_track, track_bounds
+
+    p0, p1 = committed.xy[0], committed.xy[1]
+    yaw = float(np.arctan2(p1[1] - p0[1], p1[0] - p0[0]))
+    direction = "ccw" if _area(committed.xy) > 0 else "cw"
+    track = extract_track(
+        grid,
+        grid.resolution,
+        grid.origin,
+        Pose2D(float(p0[0]), float(p0[1]), yaw),
+        direction,
+    )
+    right, left = track_bounds(grid, track.xy)
+    return track, right, left, yaw
+
+
+def _inside(grid, pts, cells):
+    """Points farther than ``cells`` cells from the map frame."""
+    h, w = grid.data.shape
+    m = cells * grid.resolution
+    x0, y0 = grid.origin.x + m, grid.origin.y + m
+    x1 = grid.origin.x + w * grid.resolution - m
+    y1 = grid.origin.y + h * grid.resolution - m
+    return (
+        (pts[:, 0] > x0)
+        & (pts[:, 0] < x1)
+        & (pts[:, 1] > y0)
+        & (pts[:, 1] < y1)
+    )
+
+
+def _edge_errors(grid, bound, edges):
+    """Max distance both ways between a bound and the nearest PNG edge,
+    ignoring points on (or beyond) the extracted map's frame."""
+    from scipy.spatial import cKDTree
+
+    b = _resample(bound)
+    sample = b[:: max(len(b) // 200, 1)]
+    edge = min(
+        (_resample(e) for e in edges),
+        key=lambda e: cKDTree(e).query(sample)[0].mean(),
+    )
+    keep_b, keep_e = (
+        _inside(grid, b, FRAME_CELLS),
+        _inside(grid, edge, FRAME_CELLS),
+    )
+    to_edge = cKDTree(edge).query(b[keep_b])[0]
+    to_bound = cKDTree(b).query(edge[keep_e])[0]
+    return to_edge.max(), to_bound.max(), 1.0 - keep_b.mean()
+
+
+def _coverage(grid, bound, edges, tol):
+    """Share of the PNG's edge points (inside the frame) within ``tol`` of
+    the bound."""
+    from scipy.spatial import cKDTree
+
+    b = _resample(bound)
+    sample = b[:: max(len(b) // 200, 1)]
+    edge = min(
+        (_resample(e) for e in edges),
+        key=lambda e: cKDTree(e).query(sample)[0].mean(),
+    )
+    edge = edge[_inside(grid, edge, FRAME_CELLS)]
+    return float(np.mean(cKDTree(b).query(edge)[0] <= tol))
+
+
+def _side_fraction(bound, committed):
+    """Fraction of the bound's points on the committed centerline's left."""
+    from scipy.spatial import cKDTree
+
+    pts = _resample(bound, 0.1)
+    _, i = cKDTree(committed.xy).query(pts)
+    t = np.roll(committed.xy, -1, axis=0) - np.roll(committed.xy, 1, axis=0)
+    t /= np.hypot(*t.T)[:, None]
+    d = pts - committed.xy[i]
+    return float(np.mean(t[i, 0] * d[:, 1] - t[i, 1] * d[:, 0] > 0))
+
+
+@pytest.fixture(scope="module")
+def spielberg_maps():
+    from raceline.extract import load_map
+
+    committed = _committed()
+    gym, survey = load_map(GYM_MAP), load_map(SURVEY_MAP)
+    return {
+        "committed": committed,
+        "gym": gym,
+        "survey": survey,
+        "gym_edges": _png_edges(gym),
+        "gym_result": _extract_spielberg(gym, committed),
+        "survey_result": _extract_spielberg(survey, committed),
+    }
+
+
+def _common_checks(maps, grid, result):
+    committed = maps["committed"]
+    track, right, left, yaw = result
+    # the extractor starts where the committed track does, heading its way
+    assert np.hypot(*(track.xy[0] - committed.xy[0])) <= 0.2
+    seg = track.xy[1] - track.xy[0]
+    err = np.arctan2(seg[1], seg[0]) - yaw
+    assert abs(np.arctan2(np.sin(err), np.cos(err))) <= np.radians(30.0)
+    # left and right are the committed track's left and right
+    assert _side_fraction(left, committed) >= 0.99
+    assert _side_fraction(right, committed) <= 0.01
+    # the length shortfall is the medial axis at hairpins, never longer
+    ratio = _polyline_length(track.xy) / _polyline_length(committed.xy)
+    assert 1.0 - LENGTH_RTOL <= ratio <= 1.0 + LENGTH_RTOL
+    assert abs(np.median(track.w_left) - 1.1) <= WIDTH_MEDIAN_TOL
+    assert abs(np.median(track.w_right) - 1.1) <= WIDTH_MEDIAN_TOL
+    # curvature is computed from the path, so it is finite and bounded
+    assert np.isfinite(track.curvature).all()
+    assert np.abs(track.curvature).max() < 1.0 / 0.5  # tighter than the car
+
+
+def test_raceline_1110_gym_png_walls_match_its_own_edges(spielberg_maps):
+    """RACELINE-1110: extracted bounds vs the gym PNG's free-cell wall edges."""
+    maps = spielberg_maps
+    grid = maps["gym"]
+    result = maps["gym_result"]
+    _common_checks(maps, grid, result)
+    track, right, left, _ = result
+    for bound in (left, right):
+        to_edge, to_bound, outside = _edge_errors(
+            grid, bound, maps["gym_edges"]
+        )
+        assert to_edge <= GYM_EDGE_TOL
+        assert to_bound <= GYM_EDGE_TOL
+        assert outside == 0.0
+    mean_bound = np.mean(
+        [_polyline_length(_resample(b)) for b in (left, right)]
+    )
+    mean_edge = np.mean(
+        [_polyline_length(_resample(e)) for e in maps["gym_edges"]]
+    )
+    assert abs(mean_bound / mean_edge - 1.0) <= BOUND_LEN_RTOL
+
+
+def test_raceline_1120_survey_walls_match_the_gym_walls(spielberg_maps):
+    """RACELINE-1120: the same on the committed slam survey (acceptance 2)."""
+    maps = spielberg_maps
+    grid = maps["survey"]
+    result = maps["survey_result"]
+    _common_checks(maps, grid, result)
+    track, right, left, _ = result
+    for bound in (left, right):
+        to_edge, _, outside = _edge_errors(grid, bound, maps["gym_edges"])
+        assert to_edge <= SLAM_EDGE_TOL
+        assert outside <= SLAM_MAX_FRAME_SHARE
+        assert (
+            _coverage(grid, bound, maps["gym_edges"], SLAM_EDGE_TOL)
+            >= SLAM_MIN_COVERAGE
+        )
