@@ -859,6 +859,27 @@ def test_check_1300_raceline_paths_are_neutral_on_the_real_map() -> None:
     assert scope.tests == ("SIM-3020",)
 
 
+def test_check_1310_gym_limits_vehicle_and_ggv_paths_are_neutral() -> None:
+    """CHECK-1310: no gate test launches the gym-limits vehicle and no node
+    reads a GGV table, so on the real map their paths select only the
+    reference lap. The default vehicle's yaml stays whole tree (CHECK-1190)."""
+    stack = load_stack(REPO_ROOT)
+    deps = reverse_dependents(read_manifests(REPO_ROOT))
+
+    scope = select_ready(
+        [
+            "config/vehicles/f1tenth_gym_limits.yaml",
+            "config/vehicles/f1tenth_gym_limits/ggv.csv",
+            "config/vehicles/f1tenth_default/ggv.csv",
+        ],
+        stack,
+        deps,
+    )
+
+    assert scope.whole_tree is False
+    assert scope.tests == ("SIM-3020",)
+
+
 def test_check_1170_real_map_instrument_couplings() -> None:
     """CHECK-1170: on the real map the sim feeds every estimator (R1) and
     racing_evaluation is their measuring instrument (R2), so each path
