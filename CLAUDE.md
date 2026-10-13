@@ -35,6 +35,15 @@ quadratically. ADR 0005 has the reasoning and what it gives up; the reference st
 `config/reference_stack.yaml` and composed by `racing_bringup/launch/sim_pure_pursuit.launch.py`
 (BRINGUP-1030 fails if they disagree). Changing what it names is a reviewed decision.
 
+## Built for the real car
+
+Today's track is a known simulator map; next is the competition's unseen map, then our own car.
+Design every implementation for that last case: a map built by SLAM with no ground-truth centerline,
+walls that may be open in places, a track that may pass over itself, and walls that move — a car hits
+a barrier and whoever resets it does not put it back exactly where it was, so the map is a snapshot
+the track drifts from. Each spec states how its feature will be validated without ground truth; that
+validation is built once a mapped-map workflow exists (AutoDRIVE), not before.
+
 ## Where you are
 
 Everything runs in containers. `docker compose -f docker/docker-compose.yaml up -d dev` starts the
