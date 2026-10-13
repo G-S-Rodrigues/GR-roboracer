@@ -98,8 +98,9 @@ from pathlib import Path
 from raceline.extract import Pose2D, extract_track, load_map
 
 grid = load_map(Path("config/scenarios/maps/Spielberg/Spielberg.yaml"))
-track = extract_track(grid, grid.resolution, grid.origin,
-                      Pose2D(0.0, 0.0, -2.879), "cw")
+track = extract_track(
+    grid, grid.resolution, grid.origin, Pose2D(0.0, 0.0, -2.879), "cw"
+)
 ```
 
 **What it is judged against.** The committed `spielberg.yaml` centerline is
