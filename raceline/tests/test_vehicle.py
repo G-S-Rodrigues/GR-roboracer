@@ -68,9 +68,26 @@ def _copy_vehicle(tmp_path, edit=None, ggv=None, machines=None):
     return path
 
 
+def _controller(key, value):
+    def edit(document):
+        document["racing_controller_baseline"]["ros__parameters"][key] = value
+
+    return edit
+
+
 def _supervisor(key, value):
     def edit(document):
         document["racing_safety_supervisor"]["ros__parameters"][key] = value
+
+    return edit
+
+
+def _speed_cap(value):
+    """Both maximum_speed keys, which the loader requires to agree."""
+
+    def edit(document):
+        _controller("maximum_speed", value)(document)
+        _supervisor("maximum_speed", value)(document)
 
     return edit
 
@@ -107,7 +124,7 @@ def test_raceline_1220_every_committed_vehicle_loads():
 @pytest.mark.parametrize(
     ("edit", "field", "value"),
     [
-        (_supervisor("maximum_speed", 7.0), "v_max", 7.0),
+        (_speed_cap(7.0), "v_max", 7.0),
         (_supervisor("maximum_acceleration", 9.6), "a_x_max", 9.6),
         (_supervisor("vehicle_half_width", 0.2), "half_width", 0.2),
         (
@@ -124,8 +141,13 @@ def test_raceline_1230_a_changed_key_moves_the_loaded_limit(
     from raceline.vehicle import load_vehicle
 
     limits = load_vehicle(_copy_vehicle(tmp_path, edit))
+    unedited = load_vehicle(GYM_LIMITS)
 
     assert getattr(limits, field) == value
+    for other in ("v_max", "a_x_max", "half_width", "max_steering_angle"):
+        if other != field:
+            assert getattr(limits, other) == getattr(unedited, other)
+    assert limits.wheelbase == unedited.wheelbase
 
 
 def test_raceline_1230_a_changed_wheelbase_moves_wheelbase_and_kappa(
@@ -170,11 +192,23 @@ MACHINES_OK = "0,9.51\n20,3.0\n"
         ({"machines": "0,9.51\n7,3\n"}, "cover"),
         ({"ggv": "-1,9.51,10\n20,9.51,10\n"}, "negative"),
         ({"ggv": "0,-1,10\n20,9.51,10\n"}, "negative"),
-        ({"ggv": "0,9.51,10\n20,9.51,60\n"}, "50"),
-        ({"machines": "0,21\n20,3\n"}, "20"),
+        ({"ggv": "0,9.51,10\n20,9.51,60\n"}, "above 50"),
+        (
+            {
+                "edit": _supervisor("maximum_acceleration", 25.0),
+                "machines": "0,21\n20,3\n",
+            },
+            "above 20",
+        ),
         ({"ggv": "0,9.51\n20,9.51\n"}, "column"),
         ({"machines": "0,9.51,1\n20,3,1\n"}, "column"),
         ({"edit": _metrics_version}, "version"),
+        ({"edit": _controller("maximum_speed", 5.0)}, "differs"),
+        (
+            {"ggv": "0,9.51,10\n10,9.51,10\n5,9.51,10\n20,9.51,10\n"},
+            "increasing",
+        ),
+        ({"machines": "0,9.51\n10,3\n10,3\n20,3\n"}, "increasing"),
         (
             {"edit": _drop("racing_safety_supervisor", "maximum_speed")},
             "maximum_speed",
@@ -196,6 +230,9 @@ MACHINES_OK = "0,9.51\n20,3.0\n"
         "ggv_columns",
         "machines_columns",
         "version_mismatch",
+        "controller_speed_differs",
+        "ggv_v_not_increasing",
+        "machines_v_not_increasing",
         "missing_supervisor_key",
         "missing_controller_key",
     ],

@@ -90,6 +90,14 @@ def load_vehicle(path: Path) -> VehicleLimits:
     steering = float(get(supervisor, "maximum_steering_angle"))
     half_width = float(get(supervisor, "vehicle_half_width"))
     wheelbase = float(get("racing_controller_baseline", "wheelbase"))
+    # Pure Pursuit clamps its command to its own cap, so a planner speed above
+    # it would be unreachable and read as a slow but plausible lap.
+    controller_v_max = float(get("racing_controller_baseline", "maximum_speed"))
+    if controller_v_max != v_max:
+        raise ValueError(
+            f"{path}: maximum_speed differs, controller {controller_v_max} "
+            f"vs supervisor {v_max}"
+        )
 
     tables = path.with_suffix("")
     ggv_path = tables / "ggv.csv"
@@ -118,6 +126,11 @@ def load_vehicle(path: Path) -> VehicleLimits:
             f"maximum_acceleration {a_x_max}"
         )
     for table_path, table in ((ggv_path, ggv), (machines_path, machines)):
+        # tph interpolates with np.interp, which is silent on an unsorted grid.
+        if (np.diff(table[:, 0]) <= 0).any():
+            raise ValueError(
+                f"{table_path}: speed column is not strictly increasing"
+            )
         if table[:, 0].max() < v_max:
             raise ValueError(
                 f"{table_path}: does not cover maximum_speed {v_max}"
