@@ -3,6 +3,7 @@
 **Status:** accepted
 **Date:** 2026-09-06
 **Supersedes:** none
+**Amended:** 2026-10-13 — §4, by issue #12 part 1 (a ROS-free `raceline/` uv project may run in `dev`).
 
 ## Context
 
@@ -29,6 +30,14 @@ packages build in `/ws` at runtime.
 
 **4. `uv` and `colcon` live in separate images.** `dev` (ROS, no JAX) and `fast-sim` (JAX/CUDA, no
 ROS) do not overlap.
+
+*Amendment (2026-10-13, issue #12 part 1).* A ROS-free uv project may run in `dev` when (a) it lives
+outside `ros_ws/`, so `colcon build --base-paths ros_ws/src` never scans it; (b) it runs with
+`env -u PYTHONPATH`, so it never shares an interpreter path with `rclpy` (RACELINE-1020, gotcha 24);
+and (c) it needs no CUDA. `raceline/` (offline raceline generation) is the one such project. The
+image is unchanged: "nothing here creates a venv" in the Dockerfile stays true. The cost is that its
+venvs (`raceline/.venv`, `raceline/tum_env/.venv`) sit on the bind mount, root-owned, outside the
+named volumes §3 uses for generated files.
 
 ## Consequences
 

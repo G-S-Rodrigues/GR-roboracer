@@ -51,7 +51,7 @@ Traps any task in this repository can hit. Each one cost real time at least once
 
 7. **clang-tidy needs `-p=build`** — run `colcon build` first, or it has no compilation database.
 
-8. **`sim/`, `tools/` and `scripts/` are excluded from `ament_lint`** and linted by `ruff` from
+8. **`sim/`, `tools/`, `scripts/` and `raceline/` are excluded from `ament_lint`** and linted by `ruff` from
    `scripts/check.sh` instead. Do not remove the exclusion to "fix" a lint gap.
 
 9. **Never add a ROS dependency to `racing_common`.** Tier 1 depends on it having none: that is what
@@ -157,3 +157,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
     Unlike the first, it fails closed: an unplaced path or an unclaimed test widens `--ready` to the whole
     tree, so a stale map shows up as a slow `--ready`, never a skipped test. The exception is a path
     assigned to the *wrong* implementation, which nothing catches but review and the nightly.
+
+24. **The sourced ROS `PYTHONPATH` leaks into every uv venv run after it.** `check.sh` sources ROS and
+    the overlay, and `PYTHONPATH` is honoured inside a uv venv, ahead of its site-packages. A
+    `raceline/` run without `env -u PYTHONPATH` can import `rclpy` and `racing_common` (ADR 0003's
+    no-ROS rule broken, no error) and pytest itself may die loading ROS's launch plugin. Run raceline
+    code as `env -u PYTHONPATH uv run --project raceline --locked ...`. Guard: RACELINE-1020. The
+    TUM optimizer runs in `raceline/tum_env/` (Python 3.8, original pins), reached as a subprocess
+    by `raceline.tum` (README there); never import it into the 3.12 env.
