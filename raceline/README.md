@@ -79,6 +79,68 @@ Yes (`envs/track/track.py:194-208`): `;`-delimited, 7 columns
 centerline. **The first two raceline points also set the reset pose and racing
 direction** (`f110_env.py:218-225`). Part 6 must know this.
 
+## Map -> track (part 2)
+
+`raceline.extract.extract_track(grid, resolution, origin, start_pose, direction)`
+turns an occupancy grid (`load_map` reads a map_server YAML + PNG) into a
+`raceline.track.Track`: centerline at 0.1 m, widths to each wall, curvature
+computed from the path (never copied). It is a port of ForzaETH's map to
+centerline code (`NOTICE.md`), plus a clean-up pre-pass the committed maps
+needed: stray wall islands and corridor patches are filled, free space is
+closed 5x5 before upstream's 3x3 opening, skeleton spurs are pruned, and the
+loop is the closed skeleton contour near `start_pose` that encloses the largest
+area. `start_pose.yaw` is the gym/ROS yaw (0 = +x), not TUM's psi. Per the
+spec, part 4's runner takes its input from `extract_track` on the map; the
+committed `config/tracks/` file stays the gym's world.
+
+```python
+from pathlib import Path
+from raceline.extract import Pose2D, extract_track, load_map
+
+grid = load_map(Path("config/scenarios/maps/Spielberg/Spielberg.yaml"))
+track = extract_track(grid, grid.resolution, grid.origin,
+                      Pose2D(0.0, 0.0, -2.879), "cw")
+```
+
+**What it is judged against.** The committed `spielberg.yaml` centerline is
+not ground truth for the extracted centerline: a medial axis cannot follow a
+centerline through a hairpin tighter than half the corridor width (the
+committed track has a 0.165 m radius at the top-left corner), so a first
+measurement against it failed (lateral max 0.89 m, length 1.3 % short, owner
+ruling 2026-10-13). RACELINE-1110 judges the extracted left and right bounds
+against the gym PNG's own free-cell wall edges, and RACELINE-1120 judges the
+survey's against the same edges. Measured (2026-10-13, 0.05 m cells):
+
+| | gym PNG | survey |
+|---|---|---|
+| bound to own edge, max | 0.034 (left), 0.000 (right) | 0.129 (left), 0.114 (right) |
+| edge to bound, max | 0.049 (left), 0.000 (right) | 0.114 (right); left: 98.0 % of edge points within 0.15 m |
+| centerline / committed length | 0.9863 | 0.9882 |
+| tolerance | 0.05 m | 0.15 m, 97 % coverage, <= 10 % of the bound on the frame |
+
+The survey's free space leaks past the wall at the top-left hairpin out to the
+map frame (up to 0.96 m beyond the true wall); a bound on the frame is not a
+wall, and no extractor can know. The length ceiling is 1.5 % (owner-authorized
+increase from 1 %): the medial axis cuts hairpins whatever the cell size.
+
+**Finer cells (scratch study, owner ask).** The gym PNG regenerated at finer
+resolution with `sim/track_importer.py` (not committed):
+
+| cell | bound to own edge, max (left) | time | length ratio | shift of the PNG vs the committed walls |
+|---|---|---|---|---|
+| 0.05 m | 0.050 | 0.36 s | 0.9863 | (-0.02, +0.05) m |
+| 0.025 m | 0.021 | 1.8 s | 0.9859 | (-0.01, +0.03) m |
+| 0.0125 m | 0.010 | 11 s | 0.9858 | (+0.00, +0.015) m |
+
+Errors scale with the cell; the length shortfall does not. The PNG's offset from
+the committed walls is `sim/track_importer.py`'s pixel convention (open topic
+`2026-10-13-gym-png-importer-offset`). Part 4's verifier checks a line against
+extracted walls while the gym collides with the committed ones: add that shift
+(and the survey's 0.15 m) to its margin.
+
+Cost: `extract_track` takes ~0.4 s per Spielberg map at 0.05 m. The three new
+dependencies add ~116 MB of wheels to a cold `uv sync` (331 MB installed).
+
 ## Licences
 
 TUM `global_racetrajectory_optimization` and `trajectory_planning_helpers` are
