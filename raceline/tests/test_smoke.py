@@ -18,6 +18,7 @@ SAFETY_WIDTH = 0.3
 # overshoot an active bound slightly between them. Measured worst overshoot
 # on this oval: 0.0009 m (min -0.4492 against -0.45, max 1.4509 against 1.45).
 BOUND_TOL = 0.02
+MIN_ARC_CUT = 0.5
 
 
 def _oval():
@@ -65,6 +66,10 @@ def test_raceline_1010_mincurv_iqp_on_asymmetric_oval(tmp_path):
     margin = SAFETY_WIDTH / 2
     assert off.min() >= -W_RIGHT + margin - BOUND_TOL
     assert off.max() <= W_LEFT - margin + BOUND_TOL
+    # The line must depart from the centerline: a no-op optimizer returns it
+    # (offset 0). Measured mean inside offset on the arcs: 1.21 m.
+    arcs = np.abs(traj[:, 1]) > A_HALF
+    assert off[arcs].mean() > MIN_ARC_CUT
 
 
 def test_raceline_1020_env_has_no_ros():
