@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 INPUTS = Path(__file__).parent / "fixtures" / "tum_inputs"
 
@@ -87,3 +88,30 @@ def test_raceline_1030_tum_column_order(tmp_path):
     assert (data[:, 2] == 0.4).all()
     assert (data[:, 3] == 1.6).all()
     assert (data[:, :2] == xy).all()
+
+
+def _small_track(tmp_path):
+    from raceline.tum import write_tum_track
+
+    return write_tum_track(_oval(), W_RIGHT, W_LEFT, tmp_path / "oval.csv")
+
+
+def test_raceline_1040_run_tum_timeout_is_settable(tmp_path):
+    import subprocess
+
+    from raceline.tum import run_tum
+
+    track = _small_track(tmp_path)
+    # uv start-up plus TUM's imports alone take longer than this.
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_tum(track, INPUTS, "mincurv_iqp", SAFETY_WIDTH, timeout=0.2)
+
+
+def test_raceline_1050_run_tum_failure_carries_stderr(tmp_path):
+    from raceline.tum import run_tum
+
+    track = _small_track(tmp_path)
+    with pytest.raises(RuntimeError) as err:
+        run_tum(track, INPUTS, "no_such_opt_type", SAFETY_WIDTH)
+    # TUM's own diagnostic, not just an exit status.
+    assert "Unknown optimization type" in str(err.value)

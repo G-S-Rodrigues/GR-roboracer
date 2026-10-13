@@ -5,6 +5,8 @@ README.md), so it runs in the isolated Python 3.8 project ``tum_env/`` as a
 subprocess, exchanging CSV files.
 """
 
+import os
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -39,29 +41,55 @@ def run_tum(
     inputs_dir: Path,
     curv_opt_type: str,
     safety_width: float,
+    timeout: float | None = None,
 ) -> np.ndarray:
-    """Return [s, x, y, psi, kappa, vx, ax], closed, from TUM."""
+    """Return [s, x, y, psi, kappa, vx, ax], closed, from TUM.
+
+    ``timeout`` is in seconds and unset by default: a Spielberg run takes
+    ~450 s, so the caller sets the bound. On expiry the whole process group is
+    killed and ``subprocess.TimeoutExpired`` is raised. A non-zero exit raises
+    ``RuntimeError`` carrying TUM's stderr.
+
+    ``psi`` is TUM's heading: 0 = north (+y), from ``arctan2(...) - pi/2``
+    (tph ``calc_head_curv_an``). The gym's yaw is 0 along +x. Convert before
+    writing a gym ``<map>_raceline.csv``; the gym reads that column as yaw.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         out_csv = Path(tmp) / "traj.csv"
         # PYTHONPATH is unset so the ROS environment never reaches TUM's env.
-        subprocess.run(
-            [
-                "env",
-                "-u",
-                "PYTHONPATH",
-                "uv",
-                "run",
-                "--project",
-                str(_TUM_ENV),
-                "--locked",
-                "python",
-                str(_TUM_ENV / "run_tum.py"),
-                str(track_csv),
-                str(inputs_dir),
-                curv_opt_type,
-                str(safety_width),
-                str(out_csv),
-            ],
-            check=True,
+        cmd = [
+            "env",
+            "-u",
+            "PYTHONPATH",
+            "uv",
+            "run",
+            "--project",
+            str(_TUM_ENV),
+            "--locked",
+            "python",
+            str(_TUM_ENV / "run_tum.py"),
+            str(track_csv),
+            str(inputs_dir),
+            curv_opt_type,
+            str(safety_width),
+            str(out_csv),
+        ]
+        # Own process group, so a timeout kills uv's child python as well.
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
         )
+        try:
+            _, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+            raise
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"TUM optimizer exited {proc.returncode}:\n{stderr}"
+            )
         return np.loadtxt(out_csv, delimiter=";", ndmin=2)
