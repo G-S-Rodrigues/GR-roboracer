@@ -44,7 +44,9 @@ def _validate(xy, widths_left, widths_right) -> None:
 def load_track(path: Path) -> Track:
     doc = yaml.safe_load(Path(path).read_text())
     if doc.get("format_version") != 1:
-        raise ValueError(f"unsupported format_version {doc.get('format_version')}")
+        raise ValueError(
+            f"unsupported format_version {doc.get('format_version')}"
+        )
     meta = doc.get("metadata") or {}
     for key in ("name", "closed", "units"):
         if key not in meta:
@@ -81,7 +83,11 @@ def write_track(track: Track, path: Path, source: str = "") -> Path:
         "  # x, y, curvature, left width, right width",
     ]
     for (x, y), k, wl, wr in zip(
-        track.xy, track.curvature, track.w_left, track.w_right
+        track.xy,
+        track.curvature,
+        track.w_left,
+        track.w_right,
+        strict=True,
     ):
         lines.append(f"  - [{x:.9f}, {y:.9f}, {k:.9f}, {wl:.6f}, {wr:.6f}]")
     path.write_text("\n".join(lines) + "\n")
