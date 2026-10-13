@@ -85,7 +85,9 @@ def scope_for(changed_paths: list[str]) -> Scope:
             if path.endswith(CPP_EXTENSIONS):
                 cpp.append(path)
         if path.endswith(".py") and (
-            path.startswith(("sim/", "tools/", "tests/", "scripts/"))
+            path.startswith(
+                ("sim/", "tools/", "tests/", "scripts/", "raceline/")
+            )
             or pkg is not None
         ):
             py.append(path)

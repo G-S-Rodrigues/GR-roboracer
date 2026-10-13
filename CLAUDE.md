@@ -83,6 +83,7 @@ ros_ws/src/     ROS 2 packages. Each is a thin shell over a ROS-free core.
 sim/            Headless GPU rollout + golden generation. uv project, no ROS. (ADR 0003)
 config/         Tracks, scenarios, and one versioned vehicle parameter file.
 tests/          Tier 3 (pytest), tier 4 (Robot Framework), shared keywords, golden baseline.
+raceline/       Offline raceline generation (TUM optimizer). uv project, no ROS, runs in dev.
 scripts/        check.sh (the gate), run_scenario.py, compare_metrics.py.
 docker/         Multi-stage image: base → underlay → dev / fast-sim / runtime.
 docs/           ADRs, agent-facing notes, research.

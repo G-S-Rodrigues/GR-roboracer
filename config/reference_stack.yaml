@@ -30,6 +30,9 @@ neutral_paths:
   - LICENSE
   - ros_ws/src/*/CLAUDE.md
   - scripts/tests/*
+  # raceline/ is offline: its output reaches a lap only through files committed
+  # under config/racelines/ (config/ is whole tree; part 6 maps it).
+  - raceline/*
 roles:
   simulator:
     implementation: f1tenth_gym_jax

@@ -123,6 +123,25 @@ def test_check_1070_near_misses_do_not_force_whole_tree() -> None:
     assert scope.whole_tree is False
 
 
+def test_check_1290_raceline_python_is_linted_with_no_package() -> None:
+    """CHECK-1290: raceline/ is a Python root with no ROS package, so a
+    raceline/*.py edit is linted under --fast and is not whole tree."""
+    scope = scope_for(
+        [
+            "raceline/raceline/tum.py",
+            "raceline/tests/test_smoke.py",
+            "raceline/README.md",
+        ]
+    )
+
+    assert scope.whole_tree is False
+    assert scope.packages == frozenset()
+    assert scope.py == (
+        "raceline/raceline/tum.py",
+        "raceline/tests/test_smoke.py",
+    )
+
+
 def _fake_run_git(calls: dict[tuple[str, ...], str]):
     def run_git(args: list[str]) -> str:
         return calls[tuple(args)]
@@ -816,6 +835,28 @@ def test_check_1270_cli_owners_and_ready() -> None:
     assert ready.returncode == 0
     flag = _eval_shell(ready.stdout, 'echo "$ready_whole_tree"').strip()
     assert flag in {"0", "1"}
+
+
+def test_check_1300_raceline_paths_are_neutral_on_the_real_map() -> None:
+    """CHECK-1300: raceline/ is offline (its output reaches a lap only through
+    committed files), so on the real map its paths select only the reference
+    lap, not the whole tree."""
+    stack = load_stack(REPO_ROOT)
+    deps = reverse_dependents(read_manifests(REPO_ROOT))
+
+    scope = select_ready(
+        [
+            "raceline/raceline/tum.py",
+            "raceline/pyproject.toml",
+            "raceline/uv.lock",
+            "raceline/README.md",
+        ],
+        stack,
+        deps,
+    )
+
+    assert scope.whole_tree is False
+    assert scope.tests == ("SIM-3020",)
 
 
 def test_check_1170_real_map_instrument_couplings() -> None:

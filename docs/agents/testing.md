@@ -15,7 +15,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | Tier | What it proves | Runner | Cost |
 |---|---|---|---|
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
-| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests` | < 10 s total |
+| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~4 s warm (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~201 s |
@@ -94,6 +94,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 1, C++ | `./build/<pkg>/<test_binary> --gtest_filter='*Common1060*'` |
 | 1, `sim/` | `python3 -m pytest sim/tests -k sim_1010` |
 | 1, `scripts/` | `python3 -m pytest scripts/tests -k check_1010` |
+| 1, `raceline/` | `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests -k raceline_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
 | 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
@@ -108,7 +109,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **77 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **84 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -120,6 +121,7 @@ and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
 The nightly-flake work added tier 1 `EVAL-1060`.
 The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
+The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
 
 ## The tests that matter most
 
