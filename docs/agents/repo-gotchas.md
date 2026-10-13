@@ -163,5 +163,5 @@ Traps any task in this repository can hit. Each one cost real time at least once
     `raceline/` run without `env -u PYTHONPATH` can import `rclpy` and `racing_common` (ADR 0003's
     no-ROS rule broken, no error) and pytest itself may die loading ROS's launch plugin. Run raceline
     code as `env -u PYTHONPATH uv run --project raceline --locked ...`. Guard: RACELINE-1020. The
-    TUM optimizer runs in `raceline/tum_env/` (Python 3.8, original pins), reached as a subprocess
+    TUM optimizer runs in `raceline/tum_env/` (Python 3.8, original pins with two bumped: tph 0.78, quadprog 0.1.12; see the README), reached as a subprocess
     by `raceline.tum` (README there); never import it into the 3.12 env.
