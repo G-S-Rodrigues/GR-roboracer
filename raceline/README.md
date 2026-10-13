@@ -16,6 +16,10 @@ docker exec gr-roboracer-dev bash -lc 'cd /ws && env -u PYTHONPATH uv run --proj
 `PYTHONPATH` sits ahead of a venv's site-packages, so without it `rclpy` imports
 silently (RACELINE-1020, repo-gotchas #24).
 
+`raceline/bench/upstream_baseline.py` measures unmodified upstream map
+extraction beside ours (below). The gate never runs it, pytest does not collect
+it, and it needs the network.
+
 Two projects live here:
 
 - `raceline/` (Python 3.12, numpy 2): our code. `raceline.tum` is the seam.
@@ -136,6 +140,52 @@ distance to the committed centerline, medial axis alone -> shipped:
 "Corner" is the committed track's |kappa| >= 0.1 (about 500 of 3400 points).
 The remaining max is the 0.165 m hairpin near (-75.4, 52.3); the survey's corner
 p95 is its top-left leak. The length ceiling went 1.5 % -> 0.3 %.
+
+**Against unmodified upstream (part 2.2).** The same metrics as RACELINE-1110
+to 1130, run on ForzaETH's `extract_centerline` / `smooth_centerline` /
+`extract_track_bounds` at `202450f` by `raceline/bench/upstream_baseline.py`
+(2026-10-13; numpy 2.5, OpenCV 4.14, scikit-image 0.26 from `uv.lock`). Lateral
+and length columns are the centerline vs the committed one; bound columns are
+the bounds vs the gym PNG's own free-cell edges (survey: coverage within 0.15 m
+instead of edge to bound). Re-run it, and refresh this table, whenever the
+extractor changes.
+
+| map | extractor | lap p95 | corner p95 | lateral max | length ratio | bound->edge max (L / R) | edge->bound max (gym) or coverage within 0.15 m (survey) (L / R) | bound on frame (L / R) | side share left (L / R) | s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| gym | part 2 | 0.081 | 0.082 | 0.622 | 0.9986 | 0.034 / 0.000 | 0.049 / 0.000 | 0.000 / 0.000 | 1.000 / 0.000 | 0.63 |
+| gym | upstream @202450f K=9 | 0.303 | 0.676 | 0.881 | 0.9873 | 0.100 / 0.494 | 0.100 / 0.126 | 0.000 / 0.000 | 1.000 / 0.000 | 0.32 |
+| gym | upstream @202450f K=3 | 0.303 | 0.676 | 0.881 | 0.9873 | failed [1] | failed [1] | failed [1] | failed [1] | 0.33 |
+| survey | part 2 | 0.053 | 0.413 | 0.705 | 1.0017 | 0.129 / 0.113 | 0.980 / 1.000 | 0.060 / 0.000 | 1.000 / 0.000 | 0.64 |
+| survey | upstream @202450f K=9 | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | 0.20 |
+| survey | upstream @202450f K=3 | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | failed [2] | 0.30 |
+
+[1] upstream raised OSError: More than two track bounds detected! Check input
+
+[2] upstream raised ValueError: Only invalid closed contour line lengths
+
+Reading it:
+
+- `cent_length` is the committed Spielberg centerline length, which **favours
+  upstream**: it gets the true lap length, part 2 gets only `start_pose`.
+- Upstream is run twice: `K=9`, the opening kernel its shipped stack config sets
+  (`global_planner_params.yaml:8`), and `K=3`, the class default that part 2
+  ported. Part 2 opens 3x3.
+- Upstream's bounds are in its cell-corner convention (`px * res + origin`), so
+  up to half a cell (0.025 m per axis) of its bound error is that convention.
+- Upstream raised where a cell reads `failed`. On the gym map with `K=3` it
+  still produced a centerline (those columns are filled) but its bounds step
+  found more than two closed contours. On the survey it produced nothing:
+  upstream does not produce a track from the survey, `K=9` or `K=3`.
+- Not compared: width medians (upstream's `dist_to_bounds` needs TUM's LGPL
+  `interp_track`), the start-pose and heading checks (upstream orients its
+  centerline later), curvature (upstream computes none in these functions).
+- Part 2's rows reproduce the tables above to 3 decimals, except the survey
+  right bound's 0.1135 m (printed 0.113; the table above rounds it 0.114).
+- Stand-ins: `ament_index_python`, `matplotlib`, `trajectory_planning_helpers`,
+  `global_racetrajectory_optimization`, `geometry_msgs`, `f110_msgs`,
+  `visualization_msgs`; each raises if upstream calls it. The only argument
+  preparation is the skeleton cast from bool to uint8 0/255. Upstream's source
+  is fetched at the pinned SHA and its sha256 checked; nothing is edited.
 
 **Finer cells (scratch study, owner ask).** The gym PNG regenerated at finer
 resolution with `sim/track_importer.py` (not committed):
