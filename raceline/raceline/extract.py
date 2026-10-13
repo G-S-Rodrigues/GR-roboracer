@@ -108,7 +108,8 @@ def _fill_patches(bw: np.ndarray, area_m2: float, res: float) -> None:
 
 def _binarize(grid: OccupancyGrid) -> np.ndarray:
     # filter_map_occupancy_grid (:508-530): unknown counts as occupied,
-    # then a 3x3 morphological opening, 2 iterations. Not upstream: the
+    # then a 3x3 morphological opening, 2 iterations (its class default; its
+    # shipped config uses 9x9, see NOTICE.md). Not upstream: the
     # clean-up before it. The opening would otherwise sever the thin free
     # strips around stray walls and survey patches and open the loop.
     bw = np.where(grid.data == 0, 255, 0).astype(np.uint8)

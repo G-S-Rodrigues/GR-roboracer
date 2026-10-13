@@ -91,7 +91,7 @@ turns an occupancy grid (`load_map` reads a map_server YAML + PNG) into a
 computed from the path (never copied). It is a port of ForzaETH's map to
 centerline code (`NOTICE.md`), plus a clean-up pre-pass the committed maps
 needed: stray wall islands and corridor patches are filled, free space is
-closed 5x5 before upstream's 3x3 opening, skeleton spurs are pruned, and the
+closed 5x5 before upstream's class-default 3x3 opening (its shipped config uses 9x9; `NOTICE.md`), skeleton spurs are pruned, and the
 loop is the closed skeleton contour near `start_pose` that encloses the largest
 area. `start_pose.yaw` is the gym/ROS yaw (0 = +x), not TUM's psi. Per the
 spec, part 4's runner takes its input from `extract_track` on the map; the

@@ -8,6 +8,7 @@ module to the committed ``config/tracks/spielberg.yaml``.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,7 +77,7 @@ def write_track(track: Track, path: Path, source: str = "") -> Path:
     lines += [
         "format_version: 1",
         "metadata:",
-        f"  name: {track.name}",
+        f"  name: {json.dumps(str(track.name))}",
         "  closed: true",
         "  units: meters",
         "centerline:",

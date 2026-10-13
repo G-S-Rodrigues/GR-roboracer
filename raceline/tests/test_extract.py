@@ -48,6 +48,13 @@ def test_raceline_1100_track_yaml_matches_the_committed_format(tmp_path):
     assert not np.allclose(back.w_left, back.w_right)
     assert out.read_text().startswith("# unit test")
 
+    # a name YAML would read as something else, or fail on, round-trips
+    from dataclasses import replace as _replace
+
+    for odd in ("yes", "1.0", "a: b", "#x"):
+        p = write_track(_replace(track, name=odd), tmp_path / "n.yaml")
+        assert load_track(p).name == odd
+
     # rejected, as racing_common's track.cpp rejects them
     from dataclasses import replace
 
