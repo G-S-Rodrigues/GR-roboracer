@@ -33,6 +33,12 @@ neutral_paths:
   # raceline/ is offline: its output reaches a lap only through files committed
   # under config/racelines/ (config/ is whole tree; part 6 maps it).
   - raceline/*
+  # No gate test launches the gym-limits vehicle (owner ruling 2026-10-11: it
+  # runs nightly only) and only raceline/ reads the GGV tables. The default
+  # vehicle's yaml is not matched (the patterns need the "/" or "_limits"),
+  # so editing it stays whole tree.
+  - config/vehicles/f1tenth_gym_limits*
+  - config/vehicles/f1tenth_default/*
 roles:
   simulator:
     implementation: f1tenth_gym_jax

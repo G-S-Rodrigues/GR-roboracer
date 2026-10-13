@@ -56,6 +56,9 @@ Headless, printing the run's metrics — this is what the nightly sweep drives:
 ./scripts/run_scenario.py --seed 42
 ```
 
+Add `--vehicle config/vehicles/f1tenth_gym_limits.yaml` to run another vehicle file (the launch's
+`vehicle:=`; default `config/vehicles/f1tenth_default.yaml`).
+
 Compare any two metrics records field by field, with the tolerances the tests use:
 
 ```bash

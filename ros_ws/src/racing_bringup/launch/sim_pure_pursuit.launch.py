@@ -50,6 +50,11 @@ INITIAL_POSE_TOPIC = "/initialpose"
 
 
 def _launch_nodes(context, robot_description: str, rviz_config: str):
+    # Which vehicle file every vehicle-taking node reads. Checked first, so
+    # a wrong path is the error raised whatever the other arguments hold.
+    vehicle = LaunchConfiguration("vehicle").perform(context)
+    if not Path(vehicle).is_file():
+        raise RuntimeError(f"vehicle file not found: {vehicle}")
     scenario = LaunchConfiguration("scenario")
     seed = LaunchConfiguration("seed")
     recording_path = LaunchConfiguration("recording_path")
@@ -90,7 +95,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         # The vehicle file carries the laser mount /scan is cast from
         # (BRINGUP-1050).
         parameters=[
-            VEHICLE_CONFIG,
+            vehicle,
             {
                 "scenario_path": scenario,
                 "seed": seed,
@@ -103,7 +108,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         package="racing_bringup",
         executable="racing_bringup_support",
         parameters=[
-            VEHICLE_CONFIG,
+            vehicle,
             tracks["racing_bringup_support"],
             {
                 "use_sim_time": True,
@@ -121,7 +126,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     controller_node = Node(
         package="racing_controller_baseline",
         executable="racing_controller_baseline_node",
-        parameters=[VEHICLE_CONFIG, {"use_sim_time": True}],
+        parameters=[vehicle, {"use_sim_time": True}],
         # The pose the controller drives on is selected here rather than in
         # its C++, which keeps the standard /odom: this remap is the seam
         # pose_source moves. Its default stays ground truth - driving on
@@ -134,7 +139,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         package="racing_safety_supervisor",
         executable="racing_safety_supervisor_node",
         parameters=[
-            VEHICLE_CONFIG,
+            vehicle,
             tracks["racing_safety_supervisor"],
             {"use_sim_time": True},
         ],
@@ -143,7 +148,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         package="racing_metrics",
         executable="racing_metrics_node",
         parameters=[
-            VEHICLE_CONFIG,
+            vehicle,
             tracks["racing_metrics"],
             {"seed": seed, "use_sim_time": True},
         ],
@@ -163,7 +168,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         package="racing_recording",
         executable="racing_recording_node",
         parameters=[
-            VEHICLE_CONFIG,
+            vehicle,
             tracks["racing_recording"],
             {
                 "seed": seed,
@@ -225,11 +230,13 @@ def generate_launch_description() -> LaunchDescription:
     )
     rviz_config = str(description_share / "rviz" / "sim_pure_pursuit.rviz")
 
-    # Launch-time controls: which scenario runs, its seed, where the replay
+    # Launch-time controls: which scenario runs, which vehicle file it runs
+    # with, its seed, where the replay
     # log lands, whether RViz starts alongside the graph, how fast
     # simulated time advances relative to wall clock (ADR 0006), and which
     # pose racing_evaluation scores.
     scenario_arg = DeclareLaunchArgument("scenario", default_value=SCENARIO)
+    vehicle_arg = DeclareLaunchArgument("vehicle", default_value=VEHICLE_CONFIG)
     seed_arg = DeclareLaunchArgument("seed", default_value="0")
     rec_arg = DeclareLaunchArgument("recording_path", default_value=REC_DEFAULT)
     use_rviz_arg = DeclareLaunchArgument("use_rviz", default_value="true")
@@ -248,6 +255,7 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             scenario_arg,
+            vehicle_arg,
             seed_arg,
             rec_arg,
             use_rviz_arg,
