@@ -88,14 +88,19 @@ def test_raceline_1100_track_yaml_matches_the_committed_format(tmp_path):
 # ---- synthetic grids -------------------------------------------------------
 
 RES = 0.05
-# Measured on the annulus (R 5, widths 1, 0.05 m cells), 2026-10-13: the
-# skeleton of a rasterized ring wobbles by about a cell, so the centerline
-# radius is off by up to 0.0706 m (mean 0.024), the widths by up to 0.0874 m,
-# and kappa * R spans 0.86..1.18 around a mean of 1.0096.
-RADIUS_TOL = 0.075
-WIDTH_TOL = 0.10
-KAPPA_MAX_REL = 0.20
-KAPPA_MEAN_REL = 0.02
+# Measured on the annulus (R 5, widths 1, 0.05 m cells) at 44b2942, after the
+# corners were re-centred (the 2026-10-13 numbers, radius off 0.0706, widths
+# 0.0874, kappa * R 0.86..1.18, no longer hold). The extractor is
+# deterministic, so each tolerance is the measurement plus a margin of about
+# a third of a cell:
+#   centerline radius off by up to 0.0145 m (mean 0.0089)   -> RADIUS_TOL 0.02
+#   widths off by up to 0.0191 (left) / 0.0313 (right)      -> WIDTH_TOL 0.04
+#   kappa * R spans 0.958..1.050, mean 1.0032: max deviation 0.0498
+#                                       -> KAPPA_MAX_REL 0.07, MEAN_REL 0.01
+RADIUS_TOL = 0.02
+WIDTH_TOL = 0.04
+KAPPA_MAX_REL = 0.07
+KAPPA_MEAN_REL = 0.01
 
 
 def _grid(data, origin=(-7.0, -7.0)):
@@ -288,6 +293,14 @@ SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
 #     0.15 m. The rest is a leak: the survey's free space runs past the wall at
 #     the top-left hairpin out to the map frame (up to 0.96 m), which no
 #     extractor can know                                  -> SLAM_EDGE_TOL 0.15
+#     The leak is pinned, not just tolerated (measured at 44b2942):
+#       edge -> bound coverage within 0.15 m: 98.02 %    -> SLAM_MIN_COVERAGE
+#                                                           0.975
+#       share of the left bound on the map frame: 6.03 % -> SLAM_MAX_FRAME_SHARE
+#                                                           0.07
+#       largest total width (left + right) on the survey: 3.158 m against the
+#       committed 2.2, at (-75.6, 53.3)                  -> SLAM_MAX_TOTAL_WIDTH
+#                                                           3.2
 #   centerline length / committed length: 0.9863 (gym), 0.9882 (survey), and
 #     0.9859 / 0.9858 at 0.025 / 0.0125 m cells. The medial axis cuts the
 #     hairpins whatever the resolution; the owner allowed a modest increase of
@@ -295,14 +308,16 @@ SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
 #     corner clean-up of 2026-10-13) lifted it to 0.9986 (gym) / 1.0017
 #     (survey)                                            -> LENGTH_RTOL 0.003
 #   mean bound length / mean PNG edge length: 0.004 %    -> BOUND_LEN_RTOL 0.001
-#   median |width - 1.1|: 0.012 / 0.003 m (gym), 0.017 / 0.009 (survey)
+#   median |width - 1.1| (left / right): 0.0083 / 0.0062 m (gym), 0.0186 /
+#     0.0144 (survey), at 44b2942                   -> WIDTH_MEDIAN_TOL 0.03
 GYM_EDGE_TOL = 0.05
 SLAM_EDGE_TOL = 0.15
-SLAM_MIN_COVERAGE = 0.97
-SLAM_MAX_FRAME_SHARE = 0.10  # measured 0.0603 of the left bound
+SLAM_MIN_COVERAGE = 0.975
+SLAM_MAX_FRAME_SHARE = 0.07
+SLAM_MAX_TOTAL_WIDTH = 3.2
 LENGTH_RTOL = 0.003
 BOUND_LEN_RTOL = 0.001
-WIDTH_MEDIAN_TOL = 0.05
+WIDTH_MEDIAN_TOL = 0.03
 FRAME_CELLS = 2  # bound points this close to the map frame are not walls
 MIN_WALL_M2 = 0.5  # the test's own island fill, independent of the extractor
 
@@ -467,7 +482,7 @@ def _common_checks(maps, grid, result):
     # left and right are the committed track's left and right
     assert _side_fraction(left, committed) >= 0.99
     assert _side_fraction(right, committed) <= 0.01
-    # the length shortfall is the medial axis at hairpins, never longer
+    # the length is within LENGTH_RTOL of the committed track's, either way
     ratio = _polyline_length(track.xy) / _polyline_length(committed.xy)
     assert 1.0 - LENGTH_RTOL <= ratio <= 1.0 + LENGTH_RTOL
     assert abs(np.median(track.w_left) - 1.1) <= WIDTH_MEDIAN_TOL
@@ -515,6 +530,8 @@ def test_raceline_1120_survey_walls_match_the_gym_walls(spielberg_maps):
             _coverage(grid, bound, maps["gym_edges"], SLAM_EDGE_TOL)
             >= SLAM_MIN_COVERAGE
         )
+    # the leak's size, in the gate: the committed track is 2.2 m wide
+    assert (track.w_left + track.w_right).max() <= SLAM_MAX_TOTAL_WIDTH
 
 
 # Lateral distance of the extracted centerline from the committed one, in the
