@@ -344,6 +344,40 @@ def _recentre(
     return _resample_closed(mixed)
 
 
+def _check_inside(
+    xy: np.ndarray,
+    binary: np.ndarray,
+    grid: OccupancyGrid,
+    right: np.ndarray,
+    left: np.ndarray,
+) -> None:
+    # Not upstream. _recentre assumes one half-width for the whole lap; where
+    # the corridor is narrower at a corner the line crosses the inner wall,
+    # and the (unsigned) widths would still look fine. Fail closed: every
+    # point must be on free cells and on the right side of both bounds.
+    col = np.floor((xy[:, 0] - grid.origin.x) / grid.resolution).astype(int)
+    row = np.floor((xy[:, 1] - grid.origin.y) / grid.resolution).astype(int)
+    h, w = binary.shape
+    on_map = (col >= 0) & (col < w) & (row >= 0) & (row < h)
+    free = np.zeros(len(xy), dtype=bool)
+    free[on_map] = binary[row[on_map], col[on_map]] > 0
+    tan = _tangents(xy)
+    bad_side = np.zeros(len(xy), dtype=bool)
+    for bound, sign in ((left, 1.0), (right, -1.0)):
+        b = _resample_closed(bound)
+        d = b[cKDTree(b).query(xy)[1]] - xy
+        cross = tan[:, 0] * d[:, 1] - tan[:, 1] * d[:, 0]
+        bad_side |= sign * cross <= 0
+    bad = ~free | bad_side
+    if bad.any():
+        raise ValueError(
+            f"the centerline leaves the corridor at {int(bad.sum())} of "
+            f"{len(xy)} points (first near {xy[bad][0].round(2).tolist()}): "
+            "the corridor narrows where the re-centring assumes a constant "
+            "half-width"
+        )
+
+
 def _check_args(grid, resolution, origin):
     if not np.isclose(resolution, grid.resolution):
         raise ValueError(
@@ -426,6 +460,7 @@ def extract_track(
         )
     right, left = _classify_bounds(xy, _bound_contours(grid, binary, xy))
     xy = _recentre(xy, right, left)
+    _check_inside(xy, binary, grid, right, left)
     return Track(
         name=name,
         xy=xy,

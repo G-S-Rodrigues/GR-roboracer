@@ -124,6 +124,21 @@ def _annulus(r_in=4.0, r_out=6.0, half=7.0, gap_deg=0.0):
     return _grid(np.where(free, 0, data))
 
 
+def _varying_ring(r_in=4.0, base=5.8, amp=1.0, half=8.0):
+    """Free ring whose outer wall is r_in + (base - r_in) + amp*cos(theta):
+    the corridor narrows to ``base - amp - r_in`` m on one side."""
+    n = int(round(2 * half / RES))
+    c = (np.arange(n) + 0.5) * RES - half
+    x, y = np.meshgrid(c, c)
+    r = np.hypot(x, y)
+    r_out = base + amp * np.cos(np.arctan2(y, x))
+    free = (r > r_in) & (r < r_out)
+    data = np.full((n, n), -1, dtype=np.int8)
+    data[free] = 0
+    data[(np.abs(r - r_in) <= RES) | (np.abs(r - r_out) <= RES)] = 100
+    return _grid(np.where(free, 0, data), origin=(-half, -half))
+
+
 def _extract(grid, start, direction="ccw"):
     from raceline.extract import extract_track
 
@@ -217,6 +232,19 @@ def test_raceline_1080_start_direction_and_bound_sides():
 
     with pytest.raises(ValueError):
         extract_track(grid, 0.1, grid.origin, Pose2D(0.0, -5.0, 0.0), "ccw")
+
+
+def test_raceline_1085_a_centerline_outside_the_corridor_raises():
+    """RACELINE-1085: a corridor that narrows at a corner (0.8..2.8 m) puts
+    the re-centred line across the inner wall; that is an error, never a
+    plausible track."""
+    from raceline.extract import Pose2D
+
+    with pytest.raises(ValueError, match="centerline"):
+        _extract(_varying_ring(), Pose2D(0.0, -4.9, 0.0))
+    # a gentle taper (1.5..2.5 m) stays inside, and still extracts
+    track = _extract(_varying_ring(base=5.5, amp=0.5), Pose2D(0.0, -4.75, 0.0))
+    assert track.w_left.min() > 0.0 and track.w_right.min() > 0.0
 
 
 def test_raceline_1090_no_usable_loop_raises_and_noise_is_cleaned():
