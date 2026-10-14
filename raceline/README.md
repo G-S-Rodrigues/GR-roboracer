@@ -117,7 +117,8 @@ committed track has a 0.165 m radius at the top-left corner), so a first
 measurement against it failed (lateral max 0.89 m, length 1.3 % short, owner
 ruling 2026-10-13). RACELINE-1110 judges the extracted left and right bounds
 against the gym PNG's own free-cell wall edges, and RACELINE-1120 judges the
-survey's against the same edges. Measured (2026-10-13, 0.05 m cells):
+survey's against the same edges. Measured (2026-10-13, 0.05 m cells; the gym column
+is before part 2.1 redrew the PNG, see the note under the table):
 
 | | gym PNG | survey |
 |---|---|---|
@@ -126,6 +127,11 @@ survey's against the same edges. Measured (2026-10-13, 0.05 m cells):
 | centerline / committed length (medial axis alone) | 0.9863 | 0.9882 |
 | centerline / committed length (shipped, re-centred) | 0.9986 | 1.0017 |
 | tolerance | 0.05 m | 0.15 m, 97 % coverage, <= 10 % of the bound on the frame |
+
+After part 2.1 (2026-10-14, gym PNG redrawn in the ROS convention): gym bound to
+own edge 0.036 (left) / 0.000 (right), edge to bound 0.049 / 0.000, length
+0.9981; survey bound to edge 0.090 / 0.092 against the new edges, left
+coverage 97.85 % within 0.15 m, length 1.0017.
 
 The survey's free space leaks past the wall at the top-left hairpin out to the
 map frame (up to 0.96 m beyond the true wall); a bound on the frame is not a
@@ -193,6 +199,8 @@ Reading it:
 **Finer cells (scratch study, owner ask).** The gym PNG regenerated at finer
 resolution with `sim/track_importer.py` (not committed):
 
+Measured before part 2.1 (2026-10-14) fixed the importer's convention; the shift column is historical.
+
 | cell | bound to own edge, max (left) | time | length ratio | shift of the PNG vs the committed walls |
 |---|---|---|---|---|
 | 0.05 m | 0.050 | 0.36 s | 0.9863 | (-0.02, +0.05) m |
@@ -200,10 +208,10 @@ resolution with `sim/track_importer.py` (not committed):
 | 0.0125 m | 0.010 | 11 s | 0.9858 | (+0.00, +0.015) m |
 
 Errors scale with the cell; the length shortfall does not. The PNG's offset from
-the committed walls is `sim/track_importer.py`'s pixel convention (open topic
-`2026-10-13-gym-png-importer-offset`). Part 4's verifier checks a line against
-extracted walls while the gym collides with the committed ones: add that shift
-(and the survey's 0.15 m) to its margin.
+the committed walls was `sim/track_importer.py`'s pixel convention, fixed by
+part 2.1 (SIM-1030): the importer now fills cells by their ROS-convention
+centres, so the gym collides with the committed walls to within a cell. Part 4's
+verifier still adds the survey's 0.15 m to its margin.
 
 Cost: `extract_track` takes ~0.4 s per Spielberg map at 0.05 m. The three new
 dependencies add ~116 MB of wheels to a cold `uv sync` (331 MB installed).

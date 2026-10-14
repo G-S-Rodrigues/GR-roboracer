@@ -106,6 +106,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
     declares the gym's spacing (SIMJAX-1100). Never compare two scans beam-by-index: read both at
     their declared angles. Plan D6 has the measurements.
 
+25. **A map PNG's pixel is a cell, and PIL's polygon fill is not.** Row 0 is the bottom and cell (i, j) is
+    centred at `origin + (j+0.5, i+0.5)*res`. PIL's `ImageDraw.polygon` centres pixels on integer
+    coordinates and paints the outline. Until part 2.1 the importer drew the gym's walls up to 0.078 m
+    off the committed track with no error (SIM-1030).
+
 ## Visualization
 
 16. **A missing mesh is invisible, not an error.** `robot_state_publisher` never loads geometry, so a
