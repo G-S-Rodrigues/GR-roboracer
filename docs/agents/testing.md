@@ -31,10 +31,12 @@ belongs there when its cost is laps rather than seconds and what it catches is a
 combination shows.
 
 A red nightly leaves evidence: node logs and Robot output (`logs-seed-<n>`, failed legs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), and, when a tier-4 lap
-times out, a `verdict=` in the `TimeoutError` text (`supervisor-lag` or `controller-silent`, scenario_runner's
-`_HangObserver`). A passing run prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 bounds the median and the maximum of its ten
-runs, not their max-min spread (one tail run sets the spread; the samples behind the bound are in the test).
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), and, when a
+`run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
+(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). A passing run
+prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 bounds the median and
+the maximum of its ten runs, not their max-min spread (one tail run sets the spread; the samples behind the
+bound are in the test).
 
 ## Running them
 

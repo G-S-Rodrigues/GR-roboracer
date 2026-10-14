@@ -10,10 +10,11 @@ run.
 
 Tier 5 because that is what it costs: RUN_COUNT Spielberg laps at 5x is
 ~25 minutes, which belongs in `--nightly` and not in the gate (ADR 0005).
-What it buys nightly is that a regression in AMCL's *stability* - a
-configuration change that leaves the mean untouched and doubles the
-spread - is visible rather than inferred from a tier-3 test that happens
-to still pass.
+What it buys nightly is that a shift in AMCL's typical error (the median
+of the runs) or a single-run blow-up (the maximum) is visible rather than
+inferred from a tier-3 test that happens to still pass. It does not see
+a wider spread or more frequent tail runs around an unchanged median;
+the bound comment below says what that costs.
 
 Spielberg, never analytic_circle: a rotationally symmetric track leaves
 position along the centerline unobservable, and every number here would be
@@ -100,6 +101,13 @@ RUN_COUNT = 10
 # maximum stays under 0.65. A maximum bound alone would miss that shift;
 # the median bound is what makes the test see a worse filter. The
 # per-run 0.65 stays: the observed single-run tail tops out at 0.570.
+# What the median gives up: a wider spread or more frequent tail runs
+# around an unchanged median. Bootstrapped over the 80 pooled CI runs
+# (10-run draws), old spread bound vs this one: false red 21 % vs 0.01 %;
+# spread doubled 82 % vs 32 %; tail rate 5 -> 20 % 71 % vs 3 %; whole
+# distribution x1.5 44 % vs 45 %; x2 91 % vs 99 %. Fewer false reds and a
+# better view of a worse typical error, bought with near-blindness to a
+# fatter tail.
 # A bound that has to be widened is a regression to explain, never a
 # number to raise (repo-gotchas #14).
 ATE_RMSE_MAXIMUM = 0.65  # sample maximum 0.570 (red nightly), 0.541 (CI)
