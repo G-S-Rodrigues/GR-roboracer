@@ -93,6 +93,7 @@ jobs:
             --volume "$PWD:/ws" \
             --workdir /ws \
             --env ROS_DOMAIN_ID=42 \
+            --env ROS_LOG_DIR=/ws/log/ros \
             gr-roboracer:dev ./scripts/check.sh --full
 
       # Tier 5 on one leg only, and as a replacement for --full on that leg
@@ -109,7 +110,42 @@ jobs:
             --volume "$PWD:/ws" \
             --workdir /ws \
             --env ROS_DOMAIN_ID=42 \
+            --env ROS_LOG_DIR=/ws/log/ros \
             gr-roboracer:dev ./scripts/check.sh --nightly
+
+      - name: Upload SIM-5030's sample
+        if: always() && matrix.seed == 42
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-5030
+          path: |
+            log/sim-5030.json
+            log/sim-5030-max.jsonl
+          if-no-files-found: ignore
+
+      - name: One seeded lap on this matrix seed
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            --env ROS_LOG_DIR=/ws/log/ros \
+            gr-roboracer:dev ./scripts/run_scenario.py \
+              --seed ${{ matrix.seed }} \
+              --output log/scenario-seed-${{ matrix.seed }}.json
+
+      # Node logs and Robot Framework output, kept only for a red leg. The CI
+      # log carries no node output, so a latched stop on a runner left no
+      # evidence beyond the observer's one-line description.
+      - name: Upload the failed run's node and Robot logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-seed-${{ matrix.seed }}
+          path: |
+            log/ros/
+            log/robot/
+          if-no-files-found: warn
 
       - name: Upload the run's metrics
         if: always()
@@ -118,13 +154,3 @@ jobs:
           name: scenario-seed-${{ matrix.seed }}
           path: log/scenario-seed-${{ matrix.seed }}.json
           if-no-files-found: warn
-
-      - name: One seeded lap on this matrix seed
-        run: |
-          docker run --rm \
-            --volume "$PWD:/ws" \
-            --workdir /ws \
-            --env ROS_DOMAIN_ID=42 \
-            gr-roboracer:dev ./scripts/run_scenario.py \
-              --seed ${{ matrix.seed }} \
-              --output log/scenario-seed-${{ matrix.seed }}.json
