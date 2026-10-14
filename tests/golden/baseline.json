@@ -1,5 +1,5 @@
 {
-  "code_revision": "cf8fc4c8a6ad7fe66781b88d53e65181b8c103c9",
+  "code_revision": "7ac370754727d0522153bf2e2b1a41d02de89555",
   "collision_count": 0,
   "container_image_digest": "sha256:63dd52cffb3915d0e6c11e57fefe0dbfd7647689cb200d077e90e85b97e6f9c3",
   "control_saturation_events": 0,
@@ -13,7 +13,7 @@
   "lap_completed": true,
   "lap_time": 22.81,
   "maximum_tracking_error": 0.353077505925579,
-  "minimum_wall_clearance": 1.7234395742416382,
+  "minimum_wall_clearance": 1.8067070245742798,
   "p95_tracking_error": 0.13893469627785066,
   "platform": {
     "jax_backend": "gpu",

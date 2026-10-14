@@ -292,22 +292,32 @@ MAPS = REPO / "config" / "scenarios" / "maps" / "Spielberg"
 GYM_MAP = MAPS / "Spielberg.yaml"
 SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
 # Tolerances, from the measurements of 2026-10-13 (raceline/README.md has the
-# table). Lateral ceilings are one cell on the gym map and three on the survey.
+# table). 2026-10-14: part 2.1 redrew the gym PNG in the ROS cell-centre
+# convention (SIM-1030), moving its walls up to 0.078 m. The gym-case figures
+# below that part 2.1 changed are re-measured and dated; the survey is
+# unchanged, so its figures are too. Lateral ceilings are one cell on the gym
+# map and three on the survey.
 #   gym PNG vs its own free-cell edges, both ways: max 0.0344 / 0.0493 m
 #     (left), 0.0000 (right)                              -> GYM_EDGE_TOL 0.05
+#     (2026-10-14, after part 2.1: 0.0357 / 0.0494 m left, 0.0000 right)
 #   survey vs the gym PNG's edges, extracted bound -> edge: max 0.1293 (left),
 #     0.1135 (right); edge -> bound (left): 98.0 % of the edge points within
-#     0.15 m. The rest is a leak: the survey's free space runs past the wall at
-#     the top-left hairpin out to the map frame (up to 0.96 m), which no
-#     extractor can know                                  -> SLAM_EDGE_TOL 0.15
+#     0.15 m. (2026-10-14, against the part 2.1 PNG: 0.0900 / 0.0915 m, and
+#     97.85 % within 0.15 m.) The rest is a leak: the survey's free space
+#     runs past the wall at the top-left hairpin out to the map frame (up to
+#     0.96 m), which no extractor can know
+#                                                         -> SLAM_EDGE_TOL 0.15
 #     The leak is pinned, not just tolerated (measured at 44b2942):
 #       edge -> bound coverage within 0.15 m: 98.02 %    -> SLAM_MIN_COVERAGE
 #                                                           0.975
+#         (2026-10-14, part 2.1 PNG: 97.85 %)
 #       share of the left bound on the map frame: 6.03 % -> SLAM_MAX_FRAME_SHARE
 #                                                           0.07
 #       largest total width (left + right) on the survey: 3.158 m against the
 #       committed 2.2, at (-75.6, 53.3)                  -> SLAM_MAX_TOTAL_WIDTH
 #                                                           3.2
+#   (2026-10-14, part 2.1 PNG: length ratio 0.9981 gym, 1.0017 survey; the
+#   figures below are the pre-2.1 measurements)
 #   centerline length / committed length: 0.9863 (gym), 0.9882 (survey), and
 #     0.9859 / 0.9858 at 0.025 / 0.0125 m cells. The medial axis cuts the
 #     hairpins whatever the resolution; the owner allowed a modest increase of
@@ -315,8 +325,10 @@ SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
 #     corner clean-up of 2026-10-13) lifted it to 0.9986 (gym) / 1.0017
 #     (survey)                                            -> LENGTH_RTOL 0.003
 #   mean bound length / mean PNG edge length: 0.004 %    -> BOUND_LEN_RTOL 0.001
+#     (2026-10-14, part 2.1 PNG: 0.0050 %)
 #   median |width - 1.1| (left / right): 0.0083 / 0.0062 m (gym), 0.0186 /
 #     0.0144 (survey), at 44b2942                   -> WIDTH_MEDIAN_TOL 0.03
+#     (2026-10-14, part 2.1 PNG: 0.0079 / 0.0054 m gym; survey unchanged)
 GYM_EDGE_TOL = 0.05
 SLAM_EDGE_TOL = 0.15
 SLAM_MIN_COVERAGE = 0.975
@@ -551,10 +563,18 @@ def test_raceline_1120_survey_walls_match_the_gym_walls(spielberg_maps):
 #   survey: lap p95 0.053  corner p95 0.413  max 0.705  length 1.0017
 # The max is the 0.165 m hairpin at (-75.4, 52.3), whose drawn centerline no
 # bound reveals; the survey's corner p95 is its top-left leak (45 points).
+# 2026-10-14, after part 2.1 redrew the gym PNG in the ROS cell-centre
+# convention (SIM-1030; the walls moved by up to 0.078 m), the gym case
+# measures: lap p95 0.016  corner p95 0.022  max 0.709  length 0.9981. The
+# survey case is unchanged. The owner's ruling re-derived the gym ceilings:
+# lap p95 0.10 -> 0.02 and corner p95 0.10 -> 0.03 (the measurement plus a
+# margin), and the lateral max 0.70 -> 0.75, the one widening: 0.709 m is the
+# hairpin near (-75.4, 52.3), which the corrected walls moved by +0.087 m
+# (0.622 m before).
 CORNER_KAPPA = 0.1
-LAP_P95_TOL = {"gym": 0.10, "survey": 0.07}
-CORNER_P95_TOL = {"gym": 0.10, "survey": 0.50}
-LATERAL_MAX_TOL = {"gym": 0.70, "survey": 0.80}
+LAP_P95_TOL = {"gym": 0.02, "survey": 0.07}
+CORNER_P95_TOL = {"gym": 0.03, "survey": 0.50}
+LATERAL_MAX_TOL = {"gym": 0.75, "survey": 0.80}
 
 
 def _lateral_to_committed(committed, xy):

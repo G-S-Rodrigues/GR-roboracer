@@ -117,7 +117,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **104 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **105 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -134,6 +134,7 @@ The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130` (nine IDs
 `raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.
 The vehicle-limits work added tier 1 `RACELINE-1210..1250`, `SIMJAX-1120/1130`, `BRINGUP-1090/1100`,
 `CHECK-1310/1320`.
+The importer-convention work added tier 1 `SIM-1030`.
 
 ## The tests that matter most
 
