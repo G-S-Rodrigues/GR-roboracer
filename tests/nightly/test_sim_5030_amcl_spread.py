@@ -31,7 +31,9 @@ The sample, from this test's own first full execution (9 min 43 s):
 The spread is narrow - the plan's first branch - so SIM-3080 gets a real
 error bound rather than a convergence-only assertion. The tails are what
 the bounds here have to survive: the distribution is not symmetric, and
-two of ten runs sit ~40 % above the median.
+two of ten runs sit ~40 % above the median. The bound is therefore on the
+median and on each run's maximum, never on max-min of ten (see the
+constants below, which carry every sample).
 """
 
 import json
@@ -64,14 +66,59 @@ TIMEOUT_SECONDS = 400.0
 # bound, few enough that the suite stays inside a nightly window.
 RUN_COUNT = 10
 
-# Measured: the sample in this module's docstring. Each bound is ~1.5x
-# the sample's own worst value - more headroom than SIM-3070's 1.4x,
-# because what varies here is a particle filter's unseeded RNG and ten
-# draws do not bound its tail. A bound that has to be widened is a
-# regression to explain, never a number to raise (repo-gotchas #14).
-ATE_RMSE_MAXIMUM = 0.65  # sample maximum 0.437
-ATE_RMSE_SPREAD_MAXIMUM = 0.35  # sample spread 0.223
+# Measured, in three steps. (1) The docstring sample above: maximum 0.437,
+# median 0.3035. Each bound was first set ~1.5x the sample's worst, with a
+# max-min spread bound of 0.35 (sample 0.223). (2) That spread bound failed
+# the nightly 38381183034 on a healthy filter (rmse 0.172 .. 0.570, spread
+# 0.398, median 0.2345, availability 1.0), and the N1 investigation drew 70
+# more runs on CI: the spread of ten is set by ONE run in the heavy upper
+# tail (single runs of 0.476, 0.497, 0.541, 0.570 in ~80 CI runs, about 5 %),
+# so it passes only ~85-90 % of the time and is not a stability measure.
+# (3) The statistic was changed, not the number. Per-sample medians over
+# the 10 runs, every sample we hold:
+#
+#     docstring (dev host)     median 0.3035  IQR 0.043  max 0.437
+#     red nightly 38381183034  median 0.2345  IQR 0.117  max 0.570
+#     CI 38616809490 leg 1/2/3 median 0.234 / 0.285 / 0.253
+#                              IQR    0.164 / 0.113 / 0.076
+#                              max    0.410 / 0.407 / 0.369
+#     CI 38618967101 leg 1-4   median 0.251 / 0.275 / 0.217 / 0.220
+#                              IQR    0.046 / 0.066 / 0.109 / 0.078
+#                              max    0.541 / 0.497 / 0.362 / 0.289
+#     (local dev run of this branch: median in the 0.23-0.28 band, max
+#     0.364; per-run values not kept. One CI leg aborted at run 5 on a
+#     startup failure, not a spread: not a sample.)
+#
+# The median spans 0.217 .. 0.3035 over those nine samples (0.09 wide);
+# the IQR spans 0.043 .. 0.164 (nearly 4x wide), because one or two tail
+# runs landing inside the quartiles move it. The median is the statistic
+# the data separates: it ignores a one-off tail run (changing one of ten
+# runs cannot move it past its neighbours) and moves when the typical
+# error does. The bound is 0.40: 1.3x the highest observed median
+# (0.3035) and ~1.6x the typical 0.25, which a shift of the typical
+# error to 0.425 crosses (tested below on a constructed sample) while its
+# maximum stays under 0.65. A maximum bound alone would miss that shift;
+# the median bound is what makes the test see a worse filter. The
+# per-run 0.65 stays: the observed single-run tail tops out at 0.570.
+# A bound that has to be widened is a regression to explain, never a
+# number to raise (repo-gotchas #14).
+ATE_RMSE_MAXIMUM = 0.65  # sample maximum 0.570 (red nightly), 0.541 (CI)
+ATE_RMSE_MEDIAN_MAXIMUM = 0.40  # highest sample median 0.3035
 AVAILABILITY_MINIMUM = 0.99  # sample minimum 0.99411
+
+
+def amcl_violations(
+    rmses: list[float], availabilities: list[float]
+) -> list[str]:
+    """Names of the bounds this sample of N runs breaks, in order."""
+    violated = []
+    if min(availabilities) < AVAILABILITY_MINIMUM:
+        violated.append("availability")
+    if max(rmses) > ATE_RMSE_MAXIMUM:
+        violated.append("maximum")
+    if statistics.median(rmses) > ATE_RMSE_MEDIAN_MAXIMUM:
+        violated.append("median")
+    return violated
 
 
 def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
@@ -104,9 +151,11 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
     rmses = [score["ate_rmse"] for score in scores]
     availabilities = [score["availability"] for score in scores]
     spread = max(rmses) - min(rmses)
+    median = statistics.median(rmses)
     print(
         f"SIM-5030 ate_rmse: {sorted(round(value, 3) for value in rmses)} "
         f"spread {spread:.3f} "
+        f"median {median:.3f} "
         f"mean {statistics.fmean(rmses):.3f} "
         f"availability min {min(availabilities):.5f}"
     )
@@ -122,6 +171,7 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
                 "scores": scores,
                 "ate_rmse_sorted": sorted(rmses),
                 "spread": spread,
+                "median": median,
                 "mean": statistics.fmean(rmses),
                 "availability_min": min(availabilities),
                 "wall_seconds": time.monotonic() - started,
@@ -130,16 +180,59 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
             indent=2,
         )
     )
-    if (
-        min(availabilities) < AVAILABILITY_MINIMUM
-        or max(rmses) > ATE_RMSE_MAXIMUM
-        or spread > ATE_RMSE_SPREAD_MAXIMUM
-    ):
+    violated = amcl_violations(rmses, availabilities)
+    if violated:
         worst = rmses.index(max(rmses))
         shutil.copyfile(
             tmp_path / f"amcl-{worst}.jsonl", log_dir / "sim-5030-max.jsonl"
         )
 
-    assert min(availabilities) >= AVAILABILITY_MINIMUM, availabilities
-    assert max(rmses) <= ATE_RMSE_MAXIMUM, rmses
-    assert spread <= ATE_RMSE_SPREAD_MAXIMUM, rmses
+    assert not violated, (violated, sorted(rmses), availabilities)
+
+
+# The red nightly 38381183034's own ten (sorted), and the ten of the
+# original docstring sample: the bound must pass both and reject a shift.
+RED_NIGHTLY_SAMPLE = [
+    0.172,
+    0.178,
+    0.191,
+    0.232,
+    0.234,
+    0.235,
+    0.268,
+    0.335,
+    0.385,
+    0.570,
+]
+DOCSTRING_SAMPLE = [
+    0.215,
+    0.246,
+    0.275,
+    0.289,
+    0.301,
+    0.306,
+    0.316,
+    0.323,
+    0.429,
+    0.437,
+]
+AVAILABLE = [1.0] * RUN_COUNT
+
+
+def test_sim_5030_bound_passes_the_red_nightly_sample() -> None:
+    assert amcl_violations(RED_NIGHTLY_SAMPLE, AVAILABLE) == []
+    assert amcl_violations(DOCSTRING_SAMPLE, AVAILABLE) == []
+
+
+def test_sim_5030_bound_rejects_a_shifted_median() -> None:
+    # Typical error ~1.7x the red nightly's (median 0.425 against 0.2345)
+    # with no run above 0.65: the old max-min spread (0.25) passes it too.
+    shifted = [0.35, 0.38, 0.40, 0.41, 0.42, 0.43, 0.45, 0.48, 0.52, 0.60]
+    assert max(shifted) <= ATE_RMSE_MAXIMUM
+    assert amcl_violations(shifted, AVAILABLE) == ["median"]
+
+
+def test_sim_5030_bound_rejects_a_single_run_past_the_maximum() -> None:
+    assert amcl_violations([*RED_NIGHTLY_SAMPLE[:-1], 0.66], AVAILABLE) == [
+        "maximum"
+    ]
