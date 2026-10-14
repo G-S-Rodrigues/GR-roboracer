@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import yaml
-from PIL import Image, ImageDraw
+from PIL import Image
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,58 @@ def _geometry(
     return xy, left, right, yaws
 
 
+def _inside_ring(
+    ring: np.ndarray,
+    origin: np.ndarray,
+    resolution: float,
+    width: int,
+    height: int,
+) -> np.ndarray:
+    """Even-odd fill of one ring at cell centres, one scanline per row."""
+    row_y = origin[1] + (np.arange(height) + 0.5) * resolution
+    crossings = np.zeros((height, width + 1), dtype=np.int32)
+    per_row = np.zeros(height, dtype=np.int32)
+    for start, end in zip(ring, np.roll(ring, -1, axis=0), strict=True):
+        # Half-open straddle test: a vertex on a row centre counts once.
+        straddles = (start[1] > row_y) != (end[1] > row_y)
+        rows = np.flatnonzero(straddles)
+        if rows.size == 0:
+            continue
+        x_at = start[0] + (row_y[rows] - start[1]) * (end[0] - start[0]) / (
+            end[1] - start[1]
+        )
+        # Cells whose centre lies left of the crossing: columns [0, first).
+        first = np.clip(
+            np.ceil((x_at - origin[0]) / resolution - 0.5), 0, width
+        ).astype(np.int64)
+        np.add.at(crossings, (rows, first), 1)
+        np.add.at(per_row, rows, 1)
+    # A cell is inside when an odd number of crossings lie to its right.
+    left_or_at = np.cumsum(crossings, axis=1)[:, :width]
+    return (per_row[:, None] - left_or_at) % 2 == 1
+
+
+def _rasterise_corridor(
+    outer: np.ndarray,
+    inner: np.ndarray,
+    origin: np.ndarray,
+    resolution: float,
+    width: int,
+    height: int,
+) -> np.ndarray:
+    """Free iff the cell centre is inside `outer` and outside `inner`.
+
+    The ROS map convention every reader uses (map_server, the gym's
+    FLIP_TOP_BOTTOM + truncated-cell lookup, jax_pf): row 0 is the bottom
+    row and cell (i, j) is centred at origin + ((j + 0.5), (i + 0.5)) * res.
+    PIL's polygon fill is neither: it centres pixels on integer coordinates
+    and paints the outline, which put the walls up to 0.078 m off (SIM-1030).
+    """
+    return _inside_ring(outer, origin, resolution, width, height) & ~(
+        _inside_ring(inner, origin, resolution, width, height)
+    )
+
+
 def _write_image(
     path: Path,
     left: np.ndarray,
@@ -86,19 +138,12 @@ def _write_image(
     # canonical centerline runs clockwise or counter-clockwise.
     outer, inner = (left, right) if area(left) > area(right) else (right, left)
 
-    def pixels(polygon: np.ndarray) -> list[tuple[float, float]]:
-        return [
-            (
-                (float(x) - origin[0]) / resolution,
-                height - 1 - (float(y) - origin[1]) / resolution,
-            )
-            for x, y in polygon
-        ]
-
-    image = Image.new("L", (int(width), int(height)), color=0)
-    draw = ImageDraw.Draw(image)
-    draw.polygon(pixels(outer), fill=255)
-    draw.polygon(pixels(inner), fill=0)
+    free = _rasterise_corridor(
+        outer, inner, origin, resolution, int(width), int(height)
+    )
+    # Row 0 of the array is the bottom row; the file stores the top row first
+    # and the gym flips it back (FLIP_TOP_BOTTOM).
+    image = Image.fromarray(np.where(free[::-1], 255, 0).astype(np.uint8))
     image.save(path)
     return float(origin[0]), float(origin[1])
 
