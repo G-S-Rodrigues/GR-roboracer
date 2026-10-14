@@ -34,10 +34,18 @@ the bounds here have to survive: the distribution is not symmetric, and
 two of ten runs sit ~40 % above the median.
 """
 
+import json
+import shutil
 import statistics
+import time
 from pathlib import Path
 
-from racing_test_keywords.scenario_runner import run_scenario
+from racing_test_keywords.scenario_runner import (
+    REPOSITORY_ROOT,
+    host_load_delta,
+    read_host_load,
+    run_scenario,
+)
 
 from scripts.compare_localization import (
     read_recording,
@@ -68,6 +76,8 @@ AVAILABILITY_MINIMUM = 0.99  # sample minimum 0.99411
 
 def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
     scores = []
+    load_before = read_host_load()
+    started = time.monotonic()
     for run in range(RUN_COUNT):
         recording = tmp_path / f"amcl-{run}.jsonl"
         metrics = run_scenario(
@@ -100,6 +110,35 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
         f"mean {statistics.fmean(rmses):.3f} "
         f"availability min {min(availabilities):.5f}"
     )
+
+    # Written before the asserts, so a red run keeps its sample (and the
+    # worst run's recording): a passing run prints nothing, and until this
+    # existed no distribution of the spread had ever been kept.
+    log_dir = REPOSITORY_ROOT / "log"
+    log_dir.mkdir(exist_ok=True)
+    (log_dir / "sim-5030.json").write_text(
+        json.dumps(
+            {
+                "scores": scores,
+                "ate_rmse_sorted": sorted(rmses),
+                "spread": spread,
+                "mean": statistics.fmean(rmses),
+                "availability_min": min(availabilities),
+                "wall_seconds": time.monotonic() - started,
+                "host_load": host_load_delta(load_before, read_host_load()),
+            },
+            indent=2,
+        )
+    )
+    if (
+        min(availabilities) < AVAILABILITY_MINIMUM
+        or max(rmses) > ATE_RMSE_MAXIMUM
+        or spread > ATE_RMSE_SPREAD_MAXIMUM
+    ):
+        worst = rmses.index(max(rmses))
+        shutil.copyfile(
+            tmp_path / f"amcl-{worst}.jsonl", log_dir / "sim-5030-max.jsonl"
+        )
 
     assert min(availabilities) >= AVAILABILITY_MINIMUM, availabilities
     assert max(rmses) <= ATE_RMSE_MAXIMUM, rmses

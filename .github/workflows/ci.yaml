@@ -132,6 +132,16 @@ jobs:
             log/robot/
           if-no-files-found: warn
 
+      - name: Upload SIM-5030's sample
+        if: always() && matrix.seed == 42
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-5030
+          path: |
+            log/sim-5030.json
+            log/sim-5030-max.jsonl
+          if-no-files-found: ignore
+
       - name: Upload the run's metrics
         if: always()
         uses: actions/upload-artifact@v4
