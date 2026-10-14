@@ -304,8 +304,9 @@ SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
 #     0.1135 (right); edge -> bound (left): 98.0 % of the edge points within
 #     0.15 m. (2026-10-14, against the part 2.1 PNG: 0.0900 / 0.0915 m, and
 #     97.85 % within 0.15 m.) The rest is a leak: the survey's free space
-#     runs past the wall at the top-left hairpin out to the map frame (up to 0.96 m), which no
-#     extractor can know                                  -> SLAM_EDGE_TOL 0.15
+#     runs past the wall at the top-left hairpin out to the map frame (up to
+#     0.96 m), which no extractor can know
+#                                                         -> SLAM_EDGE_TOL 0.15
 #     The leak is pinned, not just tolerated (measured at 44b2942):
 #       edge -> bound coverage within 0.15 m: 98.02 %    -> SLAM_MIN_COVERAGE
 #                                                           0.975
