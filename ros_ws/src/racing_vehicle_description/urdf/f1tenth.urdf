@@ -7,8 +7,13 @@
 
   Joint offsets are the source of truth for vehicle geometry and MUST stay put:
   wheelbase 0.33 m (config wheelbase), track 0.236 m (0.118 m each side),
-  wheel radius 0.058 m; base_link is the rear axle of this drawing only (the
-  sim's pose reference is the centre of gravity, not the axle). All meshes are cosmetic
+  wheel radius 0.058 m. base_link is the rear axle here and in the sim: the
+  sim publishes its pose there. cog_link is the gym's state reference point
+  (its centre of gravity, lr = 0.17145 m ahead of the rear axle, h = 0.074 m
+  up), pinned to the gym's Param by SIMJAX-1150; the sim's ground-truth scan
+  and Frenet state are of it. The gym's own front axle sits lf = 0.15875 m
+  ahead of cog_link (wheelbase 0.3302), the front axle here stays at 0.33.
+  All meshes are cosmetic
   and are authored in base_link coordinates
   (see scripts/generate_f1tenth_meshes.py), so each new link's joint origin is
   identity and the mesh renders exactly where it was generated.
@@ -370,6 +375,13 @@
     <parent link="base_link"/>
     <child link="laser"/>
     <origin xyz="0.275 0.0 0.105" rpy="0 0 0"/>
+  </joint>
+
+  <link name="cog_link"/>
+  <joint name="base_link_to_cog_link" type="fixed">
+    <parent link="base_link"/>
+    <child link="cog_link"/>
+    <origin xyz="0.17145 0.0 0.074" rpy="0 0 0"/>
   </joint>
 
 </robot>
