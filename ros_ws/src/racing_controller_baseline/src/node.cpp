@@ -31,8 +31,7 @@ class PurePursuitNode : public rclcpp::Node {
         // base_link. A parameter, not a TF lookup: no startup wait
         // (repo-gotchas #19). Required, no default: the launch owns the
         // default, so a hand-run node cannot silently steer the rear axle.
-        declare_parameter("reference_offset",
-                          rclcpp::PARAMETER_DOUBLE);
+        declare_parameter("reference_offset", rclcpp::PARAMETER_DOUBLE);
         try {
             reference_offset_ = get_parameter("reference_offset").as_double();
         } catch (const rclcpp::exceptions::ParameterUninitializedException &) {
