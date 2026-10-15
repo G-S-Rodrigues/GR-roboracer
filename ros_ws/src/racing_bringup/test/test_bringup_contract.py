@@ -593,3 +593,72 @@ def test_bringup_1110_pure_pursuit_reference_is_a_launch_argument() -> None:
     assert offset("base_link", urdf) == 0.0
     with pytest.raises(RuntimeError, match="front_axle"):
         offset("front_axle", urdf)
+
+
+def _module_constant(path: Path, name: str):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return next(
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == name
+    )
+
+
+def test_bringup_1120_launch_and_rollout_name_the_same_references() -> None:
+    """BRINGUP-1120: the launch's PURE_PURSUIT_REFERENCES equals the golden
+    generator's REFERENCES.
+
+    Two hand-kept copies, one per tree (ADR 0003 forbids importing across
+    sim/ and ros_ws/), read by AST. A reference added to one and not the
+    other makes the goldens and the live graph select different points.
+    """
+    assert _module_constant(
+        LAUNCH_FILE, "PURE_PURSUIT_REFERENCES"
+    ) == _module_constant(REPOSITORY_ROOT / "sim" / "rollout.py", "REFERENCES")
+
+
+def test_bringup_1130_controller_node_requires_reference_offset() -> None:
+    """BRINGUP-1130: the Pure Pursuit node started without `reference_offset`
+    exits non-zero and names the parameter.
+
+    The launch owns the default (cog_link). A node default of 0.0 would make
+    a hand-run `ros2 run` steer the rear axle, a plausible lap +0.4 s slower.
+    """
+    import subprocess
+
+    from ament_index_python.packages import get_package_prefix
+
+    executable = (
+        Path(get_package_prefix("racing_controller_baseline"))
+        / "lib"
+        / "racing_controller_baseline"
+        / "racing_controller_baseline_node"
+    )
+    result = subprocess.run(
+        [str(executable)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "reference_offset" in result.stderr + result.stdout
+
+
+def test_bringup_1140_missing_cog_joint_is_a_named_error() -> None:
+    """BRINGUP-1140: a URDF without `base_link_to_cog_link` raises a
+    RuntimeError naming the joint, not a bare StopIteration."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "racing_sim_pure_pursuit_launch_1140", LAUNCH_FILE
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    urdf = '<robot name="r"><joint name="other" type="fixed"/></robot>'
+    with pytest.raises(RuntimeError, match="base_link_to_cog_link"):
+        module._pure_pursuit_reference_offset("cog_link", urdf)
+    assert module._pure_pursuit_reference_offset("base_link", urdf) == 0.0
