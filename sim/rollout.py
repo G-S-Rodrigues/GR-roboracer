@@ -94,7 +94,7 @@ def pure_pursuit_action_provider(
     canonical_track: Path,
     *,
     reference: str = "cog_link",
-    cog_to_rear_axle: float = 0.0,
+    cog_to_rear_axle: float | None = None,
     lookahead_distance: float,
     wheelbase: float,
     minimum_speed: float,
@@ -105,6 +105,11 @@ def pure_pursuit_action_provider(
     import racing_controller_baseline
     import yaml
 
+    if reference == "base_link" and not cog_to_rear_axle:
+        raise ValueError(
+            "reference='base_link' needs cog_to_rear_axle: without it the "
+            "rear axle is the CoG and the car is steered from the wrong point"
+        )
     document = yaml.safe_load(canonical_track.read_text(encoding="utf-8"))
     trajectory = [
         racing_controller_baseline.TrajectoryPoint(float(row[0]), float(row[1]))

@@ -89,3 +89,28 @@ def test_sim_1020_provider_steers_the_selected_point():
         float(command.steering_angle),
         float(command.speed),
     )
+
+
+@pytest.mark.parametrize("missing", [None, 0.0])
+def test_sim_1020_base_link_without_an_offset_is_refused(missing):
+    """SIM-1020: `base_link` with no `cog_to_rear_axle` raises.
+
+    Without the offset the rear axle is the CoG, so a caller who forgot it
+    would get a plausible lap steered from the wrong point.
+    """
+    kwargs = dict(
+        lookahead_distance=1.5,
+        wheelbase=0.33,
+        minimum_speed=1.0,
+        maximum_speed=3.0,
+        curvature_speed_gain=5.0,
+    )
+    with pytest.raises(ValueError, match="cog_to_rear_axle"):
+        pure_pursuit_action_provider(
+            CIRCLE,
+            reference="base_link",
+            cog_to_rear_axle=missing,
+            **kwargs,
+        )
+    with pytest.raises(ValueError, match="cog_to_rear_axle"):
+        pure_pursuit_action_provider(CIRCLE, reference="base_link", **kwargs)
