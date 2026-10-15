@@ -4,6 +4,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <racing_interfaces/msg/trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <stdexcept>
 #include <utility>
 
 #include "racing_common/track.hpp"
@@ -28,8 +29,17 @@ class PurePursuitNode : public rclcpp::Node {
         // rear axle) to the point the law steers. The launch sets it from
         // pure_pursuit_reference: the URDF's cog_link x by default, 0 for
         // base_link. A parameter, not a TF lookup: no startup wait
-        // (repo-gotchas #19).
-        reference_offset_ = declare_parameter("reference_offset", 0.0);
+        // (repo-gotchas #19). Required, no default: the launch owns the
+        // default, so a hand-run node cannot silently steer the rear axle.
+        declare_parameter("reference_offset",
+                          rclcpp::PARAMETER_DOUBLE);
+        try {
+            reference_offset_ = get_parameter("reference_offset").as_double();
+        } catch (const rclcpp::exceptions::ParameterUninitializedException &) {
+            throw std::runtime_error(
+                "required parameter 'reference_offset' (metres along the "
+                "heading from base_link to the steered point) is not set");
+        }
 
         command_publisher_ =
             create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(
