@@ -65,9 +65,36 @@ class CenterlineLap:
         return self.completed
 
 
+REFERENCES = ("cog_link", "base_link")
+
+
+def reference_pose(
+    cartesian: Any, reference: str, cog_to_rear_axle: float
+) -> Any:
+    """The pose Pure Pursuit steers: the gym's state is the centre of
+    gravity (`cog_link`); `base_link` is the rear axle, `cog_to_rear_axle`
+    behind it (part 3.1). Mirrors the launch's `pure_pursuit_reference`.
+
+    `cog_link` does no arithmetic: the golden default must be the gym's
+    floats untouched.
+    """
+    import racing_common
+
+    cog = racing_common.CartesianPose(
+        float(cartesian[0]), float(cartesian[1]), float(cartesian[4])
+    )
+    if reference == "cog_link":
+        return cog
+    if reference == "base_link":
+        return racing_common.translate_along_heading(cog, -cog_to_rear_axle)
+    raise ValueError(f"unknown pure_pursuit_reference: {reference}")
+
+
 def pure_pursuit_action_provider(
     canonical_track: Path,
     *,
+    reference: str = "cog_link",
+    cog_to_rear_axle: float = 0.0,
     lookahead_distance: float,
     wheelbase: float,
     minimum_speed: float,
@@ -95,8 +122,9 @@ def pure_pursuit_action_provider(
         _observation: Mapping[str, Any], state: Any
     ) -> tuple[float, float]:
         cartesian = np.asarray(state.cartesian_states)[0]
+        pose = reference_pose(cartesian, reference, cog_to_rear_axle)
         vehicle = racing_controller_baseline.VehicleState(
-            float(cartesian[0]), float(cartesian[1]), float(cartesian[4])
+            pose.x, pose.y, pose.psi
         )
         command = racing_controller_baseline.PurePursuit.compute(
             vehicle, trajectory, params
@@ -141,6 +169,7 @@ def run_seeded_scenario(
     image_digest: str,
     vehicle_parameter_version: str,
     action_provider: ActionProvider,
+    cog_to_rear_axle: float | None = None,
 ) -> dict[str, Any]:
     """Run one unbatched episode and return ScenarioMetrics-compatible JSON."""
     if not image_digest:
@@ -164,6 +193,14 @@ def run_seeded_scenario(
         f"velocity+steeringangle_{timestep_ratio}_{max_steps}_v0"
     )
     env = f1tenth_gym_jax.make(env_id)
+    # The provider is built before `env` exists; when it converts to the
+    # rear axle, its lr must be the env's own (one source, gotcha #15).
+    if cog_to_rear_axle is not None and (
+        float(env.params.lr) != cog_to_rear_axle
+    ):
+        raise ValueError(
+            f"provider lr {cog_to_rear_axle} != env lr {float(env.params.lr)}"
+        )
     shared_track = racing_common.Track.from_yaml(canonical_track)
 
     key = jax.random.PRNGKey(seed)
@@ -268,9 +305,20 @@ def main() -> int:
     parser.add_argument("--minimum-speed", type=float, default=1.0)
     parser.add_argument("--maximum-speed", type=float, default=3.0)
     parser.add_argument("--curvature-speed-gain", type=float, default=5.0)
+    parser.add_argument(
+        "--pure-pursuit-reference",
+        choices=REFERENCES,
+        default="cog_link",
+        help="point Pure Pursuit steers; base_link is a comparison run "
+        "and is never written over a committed golden",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
+    from f1tenth_gym_jax.envs.utils import Param
+
+    rear_axle = args.pure_pursuit_reference == "base_link"
+    cog_to_rear_axle = float(Param().lr) if rear_axle else None
     metrics = run_seeded_scenario(
         args.track,
         args.maps_root,
@@ -280,8 +328,11 @@ def main() -> int:
         max_steps=args.max_steps,
         image_digest=args.image_digest,
         vehicle_parameter_version=args.vehicle_parameter_version,
+        cog_to_rear_axle=cog_to_rear_axle,
         action_provider=pure_pursuit_action_provider(
             args.track,
+            reference=args.pure_pursuit_reference,
+            cog_to_rear_axle=cog_to_rear_axle or 0.0,
             lookahead_distance=args.lookahead_distance,
             wheelbase=args.wheelbase,
             minimum_speed=args.minimum_speed,
