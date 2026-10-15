@@ -62,6 +62,27 @@ TEST(TrackTest, Common1040LoadsAndValidatesCanonicalYaml) {
                  std::runtime_error);
 }
 
+TEST(TrackTest, Common1080TranslateAlongHeadingMovesAlongTheHeading) {
+    constexpr double kPi = 3.14159265358979323846;
+    const auto up =
+        racing_common::translate_along_heading({1.0, 2.0, kPi / 2}, -0.17145);
+    EXPECT_NEAR(up.x, 1.0, 1e-12);
+    EXPECT_NEAR(up.y, 1.82855, 1e-12);
+    EXPECT_DOUBLE_EQ(up.psi, kPi / 2);
+
+    const auto ahead =
+        racing_common::translate_along_heading({0.0, 0.0, 0.0}, 0.3);
+    EXPECT_NEAR(ahead.x, 0.3, 1e-12);
+    EXPECT_NEAR(ahead.y, 0.0, 1e-12);
+
+    const racing_common::CartesianPose start{-3.0, 4.0, -3 * kPi / 4};
+    const auto there = racing_common::translate_along_heading(start, 0.17145);
+    const auto back = racing_common::translate_along_heading(there, -0.17145);
+    EXPECT_NEAR(back.x, start.x, 1e-12);
+    EXPECT_NEAR(back.y, start.y, 1e-12);
+    EXPECT_DOUBLE_EQ(back.psi, start.psi);
+}
+
 TEST(TrackTest, Common1070SpielbergLengthMatchesItsCenterline) {
     // repo-gotchas #15's guard for the league track: a lap is as long as the
     // centerline the track model integrates. 343.3226169 m is the closed

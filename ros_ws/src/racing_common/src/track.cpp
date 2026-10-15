@@ -27,6 +27,12 @@ double interpolate(double start, double end, double ratio) {
 
 }  // namespace
 
+CartesianPose translate_along_heading(const CartesianPose &pose,
+                                      double distance) {
+    return {pose.x + distance * std::cos(pose.psi),
+            pose.y + distance * std::sin(pose.psi), pose.psi};
+}
+
 struct Track::Data {
     struct Point {
         double x;

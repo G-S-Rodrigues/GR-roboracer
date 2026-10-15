@@ -11,6 +11,13 @@ struct CartesianPose {
     double psi{};
 };
 
+// Moves a pose `distance` metres along its own heading; yaw is unchanged.
+// The gym's state is the centre of gravity (cog_link); base_link is the rear
+// axle, lr behind it. So base_link = translate_along_heading(cog, -lr) and
+// cog_link = translate_along_heading(base_link, +lr) (part 3.1).
+CartesianPose translate_along_heading(const CartesianPose &pose,
+                                      double distance);
+
 struct FrenetPoint {
     double s{};
     double d{};

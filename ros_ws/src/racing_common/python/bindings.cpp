@@ -46,6 +46,10 @@ PYBIND11_MODULE(racing_common, module) {
         .def_readwrite("y", &racing_common::CartesianPose::y)
         .def_readwrite("psi", &racing_common::CartesianPose::psi);
 
+    module.def("translate_along_heading",
+               &racing_common::translate_along_heading, py::arg("pose"),
+               py::arg("distance"));
+
     py::class_<racing_common::FrenetPoint>(module, "FrenetPoint")
         .def(py::init<double, double, double>(), py::arg("s") = 0.0,
              py::arg("d") = 0.0, py::arg("heading_error") = 0.0)
