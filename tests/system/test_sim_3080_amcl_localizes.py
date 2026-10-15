@@ -50,7 +50,9 @@ SIM_5030_MEASUREMENT = (
     "0.215-0.437 m (spread 0.223, mean 0.314), ate_maximum 0.736-1.834 m, "
     "availability 0.99411-0.99900; bounds at ~1.5x the sample's worst"
 )
-POSITION_RMSE_MAXIMUM = 0.65  # SIM-5030's worst of ten: 0.437
+# SIM-5030's worst of ten was 0.437 in the original sample; the N1 CI
+# samples' worst single run is 0.570, so this bound's headroom is 1.14x.
+POSITION_RMSE_MAXIMUM = 0.65
 POSITION_MAXIMUM = 2.6  # SIM-5030's worst of ten: 1.834
 AVAILABILITY_MINIMUM = 0.99  # SIM-5030's worst of ten: 0.99411
 OFFLINE_BOUNDS = {

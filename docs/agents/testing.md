@@ -30,6 +30,14 @@ and the scheduled CI job runs it on one seed leg. Nothing in tier 5 is part of "
 belongs there when its cost is laps rather than seconds and what it catches is a regression only a
 combination shows.
 
+A red nightly leaves evidence: node logs and Robot output (`logs-seed-<n>`, failed legs only), SIM-5030's sample
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), and, when a
+`run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
+(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). A passing run
+prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 bounds the median and
+the maximum of its ten runs, not their max-min spread (one tail run sets the spread; the samples behind the
+bound are in the test).
+
 ## Running them
 
 ```bash
@@ -109,7 +117,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **109 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **110 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -128,6 +136,7 @@ The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130` (nine IDs
 `raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.
 The vehicle-limits work added tier 1 `RACELINE-1210..1250`, `SIMJAX-1120/1130`, `BRINGUP-1090/1100`,
 `CHECK-1310/1320`.
+The importer-convention work added tier 1 `SIM-1030`.
 
 ## The tests that matter most
 
