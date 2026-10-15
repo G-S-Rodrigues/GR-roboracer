@@ -291,10 +291,11 @@ class RacingSimNode(Node):
         self._clock_publisher.publish(clock_message)
 
         # Each scan is labelled with the frame it was cast from: the exact
-        # one from base_link (racing_metrics' clearance is measured from
-        # there), the noisy one from the laser mount, as a real lidar.
+        # one from cog_link, the gym's own reference point (racing_metrics'
+        # clearance is measured from there), the noisy one from the laser
+        # mount, as a real lidar.
         ground_truth_scan = self._scan_message(
-            stamp, "base_link", snapshot.scan, gym_angle_increment
+            stamp, "cog_link", snapshot.scan, gym_angle_increment
         )
         self._ground_truth_scan_publisher.publish(ground_truth_scan)
         self._scan_publisher.publish(
@@ -348,6 +349,9 @@ class RacingSimNode(Node):
         imu.angular_velocity.z = snapshot.yaw_rate
         self._imu_publisher.publish(imu)
 
+        # s, d, v_s, v_d are of cog_link - racing_metrics' tracking and lap
+        # point, and every golden's (part 3.1). The header frame stays `map`:
+        # the frame the Frenet coordinates are expressed in, not the point.
         relative = TrackRelativeState()
         relative.header.stamp = stamp
         relative.header.frame_id = "map"

@@ -22,7 +22,8 @@ from .laser import (
 )
 from .scenario import Scenario
 
-# The default mount: /scan is cast from base_link, at the declared angles.
+# The default mount: /scan is cast from base_link (the rear axle), at the
+# declared angles.
 BASE_LINK = LaserMount()
 
 
@@ -36,13 +37,17 @@ class DriveCommand:
 
 @dataclass(frozen=True)
 class Snapshot:
+    # x, y, yaw are base_link, the rear axle: the gym's centre-of-gravity
+    # state converted by racing_common.translate_along_heading. The scan and
+    # s, d, heading_error, v_s, v_d are of cog_link, the gym's own reference
+    # point (part 3.1).
     x: float
     y: float
     steering_angle: float
     speed: float
     yaw: float
     yaw_rate: float
-    # Ray-marched from base_link: /ground_truth/scan, what racing_metrics'
+    # Ray-marched from cog_link: /ground_truth/scan, what racing_metrics'
     # clearance and collisions read.
     scan: np.ndarray
     s: float
@@ -75,6 +80,16 @@ class GymBackend:
             float(self._env.fov), int(self._env.num_beams)
         )
         self._track = racing_common.Track.from_yaml(scenario.track_path)
+        # The gym's state is the centre of gravity, lr ahead of the rear
+        # axle (base_link). The pose is converted on the way out, and the
+        # mount (given from base_link) is re-expressed from the CoG, where
+        # laser_poses is applied. One source: the env's own Param.lr.
+        self._cog_to_rear_axle = float(self._env.params.lr)
+        self._cast_mount = LaserMount(
+            laser_mount.x - self._cog_to_rear_axle,
+            laser_mount.y,
+            laser_mount.yaw,
+        )
         self._command = DriveCommand()
         self._action_spec = racing_common.EnvActionSpec(
             getattr(
@@ -167,7 +182,7 @@ class GymBackend:
         is untouched, and so is the run's key chain.
         """
         poses = laser_poses(
-            state.cartesian_states[:, [0, 1, 4]], self._laser_mount
+            state.cartesian_states[:, [0, 1, 4]], self._cast_mount
         )
         return jax.vmap(
             lambda pose: cast_scan(self._grid, pose, self._beam_angles)
@@ -180,10 +195,15 @@ class GymBackend:
         """
         cartesian = np.asarray(self._state.cartesian_states[0])
         scan = np.asarray(self._state.scans[0], dtype=float)
-        pose = racing_common.CartesianPose(
+        cog_pose = racing_common.CartesianPose(
             float(cartesian[0]), float(cartesian[1]), float(cartesian[4])
         )
-        frenet = self._track.to_frenet(pose)
+        # Frenet stays the CoG's: racing_metrics' tracking and lap point,
+        # and every golden's.
+        frenet = self._track.to_frenet(cog_pose)
+        pose = racing_common.translate_along_heading(
+            cog_pose, -self._cog_to_rear_axle
+        )
         speed = float(cartesian[3])
         return Snapshot(
             x=pose.x,

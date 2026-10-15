@@ -18,6 +18,7 @@ import launch_testing.actions
 import pytest
 import rclpy
 import yaml
+from f1tenth_gym_jax.envs.utils import Param
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -99,16 +100,18 @@ class TestAdapterLaserOrigin(unittest.TestCase):
 
     def test_adapt_2120_scan_is_cast_from_the_laser_mount(self):
         """ADAPT-2120: straight ahead, /scan reads the laser mount's
-        forward offset less than /ground_truth/scan.
+        forward offset from the CoG less than /ground_truth/scan.
 
         Held, the vehicle sits at one pose, and the laser lies on the
-        forward ray 0.275 m ahead of base_link, so both rays hit the same
-        wall point and the ranges differ by exactly the mount offset. A scan
-        cast from base_link but stamped `laser` would read the same range as
-        ground truth - and TF would place every point 0.275 m too far
-        forward. /ground_truth/scan stays cast from base_link: it is what
-        racing_metrics' clearance and collisions read, and the goldens
-        depend on it. The median over held samples removes /scan's noise.
+        forward ray 0.275 m ahead of base_link (the rear axle), i.e.
+        0.275 - lr ahead of the centre of gravity, where /ground_truth/scan
+        is cast from. Both rays hit the same wall point, so the ranges
+        differ by exactly that. A scan cast from the CoG but stamped `laser`
+        would read the same range as ground truth - and TF would place every
+        point too far forward. /ground_truth/scan is labelled `cog_link`: it
+        is what racing_metrics' clearance and collisions read, and the
+        goldens depend on it (part 3.1). The median over held samples
+        removes /scan's noise.
 
         Measured at the held contract_test pose, each scan read at angle 0
         by its own declared angles: 0.2713 m (the map is a raster); cast
@@ -121,12 +124,12 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         noisy = self._collect("/scan")
         self.assertEqual(noisy[0].header.frame_id, "laser")
         # Labelled where it was cast from, so the label is honest.
-        self.assertEqual(truth[0].header.frame_id, "base_link")
+        self.assertEqual(truth[0].header.frame_id, "cog_link")
 
         truth_range = statistics.median(_forward_range(m) for m in truth)
         laser_range = statistics.median(_forward_range(m) for m in noisy)
 
         self.assertTrue(math.isfinite(truth_range))
         self.assertAlmostEqual(
-            truth_range - laser_range, _mount_x(), delta=0.05
+            truth_range - laser_range, _mount_x() - Param().lr, delta=0.05
         )
