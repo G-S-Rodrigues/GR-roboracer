@@ -65,10 +65,18 @@ def _pure_pursuit_reference_offset(
     if reference == "base_link":
         return 0.0
     joint = next(
-        j
-        for j in ET.fromstring(robot_description).findall("joint")
-        if j.get("name") == "base_link_to_cog_link"
+        (
+            j
+            for j in ET.fromstring(robot_description).findall("joint")
+            if j.get("name") == "base_link_to_cog_link"
+        ),
+        None,
     )
+    if joint is None:
+        raise RuntimeError(
+            "the URDF has no joint base_link_to_cog_link, so the "
+            "cog_link reference offset cannot be read"
+        )
     origin = joint.find("origin")
     x, y, z = (float(v) for v in origin.get("xyz").split())
     rpy = [float(v) for v in origin.get("rpy", "0 0 0").split()]
