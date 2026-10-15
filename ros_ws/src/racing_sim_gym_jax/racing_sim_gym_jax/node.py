@@ -317,6 +317,7 @@ class RacingSimNode(Node):
             OdometryState(snapshot.x, snapshot.y, snapshot.yaw),
             snapshot.speed,
             snapshot.yaw_rate,
+            self._backend.cog_height,
         )
         self._ground_truth_odometry_publisher.publish(ground_truth)
 
@@ -327,6 +328,7 @@ class RacingSimNode(Node):
             self._advance_dead_reckoning(snapshot),
             snapshot.speed * (1.0 + calibration.distance_scale_error),
             snapshot.yaw_rate * (1.0 + calibration.yaw_scale_error),
+            self._backend.cog_height,
         )
         self._odometry_publisher.publish(odometry)
 
@@ -338,6 +340,7 @@ class RacingSimNode(Node):
         transform.child_frame_id = odometry.child_frame_id
         transform.transform.translation.x = odometry.pose.pose.position.x
         transform.transform.translation.y = odometry.pose.pose.position.y
+        transform.transform.translation.z = odometry.pose.pose.position.z
         transform.transform.rotation = odometry.pose.pose.orientation
         self._tf_broadcaster.sendTransform(transform)
 
@@ -385,14 +388,22 @@ class RacingSimNode(Node):
 
     @staticmethod
     def _odometry_message(
-        stamp, frame_id: str, pose: OdometryState, speed: float, yaw_rate: float
+        stamp,
+        frame_id: str,
+        pose: OdometryState,
+        speed: float,
+        yaw_rate: float,
+        z: float,
     ) -> Odometry:
+        # The car is planar, so z is the constant height of the centre of
+        # gravity (base_link); dead reckoning has no z to drift.
         odometry = Odometry()
         odometry.header.stamp = stamp
         odometry.header.frame_id = frame_id
         odometry.child_frame_id = "base_link"
         odometry.pose.pose.position.x = pose.x
         odometry.pose.pose.position.y = pose.y
+        odometry.pose.pose.position.z = z
         odometry.pose.pose.orientation.z = math.sin(pose.yaw / 2.0)
         odometry.pose.pose.orientation.w = math.cos(pose.yaw / 2.0)
         odometry.twist.twist.linear.x = speed

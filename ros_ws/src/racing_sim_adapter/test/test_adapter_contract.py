@@ -11,6 +11,7 @@ import launch_testing.actions
 import pytest
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
+from f1tenth_gym_jax.envs.utils import Param
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset
 from rclpy.parameter import Parameter
@@ -24,6 +25,7 @@ from rclpy.qos import (
 )
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, LaserScan
+from tf2_msgs.msg import TFMessage
 
 ADAPTER_NODE = "racing_sim"
 SCAN_TOPIC = "/scan"
@@ -157,6 +159,33 @@ class TestAdapterContract(unittest.TestCase):
         self.assertEqual(odometry.header.frame_id, "odom")
         self.assertEqual(odometry.child_frame_id, "base_link")
         self.assertEqual(imu.header.frame_id, "base_link")
+
+    def test_adapt_2130_base_link_is_published_at_the_cog_height(self):
+        """ADAPT-2130: base_link is the centre of gravity, at height h.
+
+        `/odom`, `/ground_truth/odom` and TF odom -> base_link all carry
+        z = the gym's `Param.h`. The car is planar, so z is that constant;
+        without it RViz draws the URDF's base_link on the ground and the
+        wheels sink 0.074 m into the map plane.
+        """
+        self._require_adapter()
+        height = Param().h
+        odometry = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
+        truth = self._collect(
+            Odometry, GROUND_TRUTH_ODOMETRY_TOPIC, STATE_QOS, 1
+        )[0]
+        transforms = [
+            transform
+            for message in self._collect(TFMessage, "/tf", STATE_QOS, 1)
+            for transform in message.transforms
+            if transform.header.frame_id == "odom"
+            and transform.child_frame_id == "base_link"
+        ]
+        self.assertTrue(transforms, "no odom -> base_link transform on /tf")
+        self.assertAlmostEqual(odometry.pose.pose.position.z, height)
+        self.assertAlmostEqual(truth.pose.pose.position.z, height)
+        for transform in transforms:
+            self.assertAlmostEqual(transform.transform.translation.z, height)
 
     def test_adapt_2110_dead_reckoning_and_ground_truth_differ(self):
         """ADAPT-2110: /odom is dead reckoning in `odom`, /ground_truth/odom

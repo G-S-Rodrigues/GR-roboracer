@@ -127,6 +127,11 @@ class GymBackend:
         self.reset(seed)
         return latency
 
+    @property
+    def cog_height(self) -> float:
+        """The centre of gravity's height, m: the z of base_link."""
+        return float(self._env.params.h)
+
     def set_command(self, command: DriveCommand) -> None:
         self._command = command
 
