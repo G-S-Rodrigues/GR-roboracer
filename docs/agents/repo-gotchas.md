@@ -165,3 +165,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
     code as `env -u PYTHONPATH uv run --project raceline --locked ...`. Guard: RACELINE-1020. The
     TUM optimizer runs in `raceline/tum_env/` (Python 3.8, original pins with two bumped: tph 0.78, quadprog 0.1.12; see the README), reached as a subprocess
     by `raceline.tum` (README there); never import it into the 3.12 env.
+
+26. **The gym's pose is the centre of gravity; base_link is the rear axle.** `/ground_truth/odom`, TF
+    and `/scan`'s mount are base_link; `/ground_truth/scan` and `/ground_truth/track_relative_state`
+    are `cog_link`, the metrics' point. Pure Pursuit steers `cog_link` by default
+    (`pure_pursuit_reference`). Never feed `cartesian_states` x, y to a base_link consumer, and never
+    move the metrics' point to make a reference-point comparison look better: every golden is measured
+    at the CoG. Nothing errors: until part 3.1 the sim labelled the CoG base_link, and RViz drew the
+    car 0.171 m ahead of itself.

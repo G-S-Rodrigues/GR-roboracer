@@ -87,6 +87,10 @@ fails with `ModuleNotFoundError: sim`, so run it as a module. It regenerates the
 under `config/scenarios/maps` from the canonical track, byte-identically. The live scenario must
 not set physics parameters the rollout does not (SIMJAX-1060).
 
+`--pure-pursuit-reference base_link` (live: `pure_pursuit_reference:=base_link`) runs the
+rear-axle comparison instead of the default `cog_link`; its output goes to `out/`, never over
+`baseline.json` or `spielberg_baseline.json`.
+
 ## When a run misbehaves
 
 - **The vehicle sits still with `active_clamps=64`.** That is a latched emergency stop: the command
