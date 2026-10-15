@@ -7,6 +7,7 @@ find_package(ackermann_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 REQUIRED)
+find_package(racing_common REQUIRED)
 find_package(racing_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 
@@ -27,7 +28,8 @@ ament_get_python_install_dir(PYTHON_INSTALL_DIR)
 
 add_executable(${PROJECT_NAME}_node src/node.cpp)
 target_compile_features(${PROJECT_NAME}_node PUBLIC cxx_std_17)
-target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME}
+  racing_common::racing_common)
 ament_target_dependencies(${PROJECT_NAME}_node
   ackermann_msgs nav_msgs racing_interfaces rclcpp
 )

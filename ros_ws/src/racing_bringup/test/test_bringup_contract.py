@@ -253,6 +253,17 @@ def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
     source = LAUNCH_FILE.read_text(encoding="utf-8")
     assert 'remappings=[("/odom", GROUND_TRUTH_POSE)]' in source
     assert '"estimate_topic", default_value=GROUND_TRUTH_POSE' in source
+    # The reference point Pure Pursuit steers is part of the stack too
+    # (part 3.1): the default every golden is measured with.
+    assert (
+        roles["controller"]["reference_point"]
+        == "cog_link"
+        == constants["PURE_PURSUIT_REFERENCE"]
+    )
+    assert (
+        '"pure_pursuit_reference", default_value=PURE_PURSUIT_REFERENCE'
+        in source
+    )
 
 
 def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
@@ -494,3 +505,91 @@ def test_bringup_1060_the_scenario_selects_the_occupancy_grid() -> None:
     )
     assert spielberg["map_server"]["yaml_filename"] == str(grid)
     assert grid.is_file(), "the committed occupancy grid is missing"
+
+
+def test_bringup_1110_pure_pursuit_reference_is_a_launch_argument() -> None:
+    """BRINGUP-1110: `pure_pursuit_reference:=` selects the point Pure Pursuit
+    steers, defaults to the CoG (today's behaviour, every golden's), and
+    reaches the controller node as `reference_offset`.
+
+    Selection is a launch argument with a default (ADR 0005). The offset is
+    base_link -> the chosen point along the heading: the URDF's cog_link x
+    for `cog_link`, 0 for `base_link`. A wrong default or a dropped
+    parameter reads as a plausible lap, +0.4 s slower.
+    """
+    import importlib.util
+    import xml.etree.ElementTree as ET
+
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    constants = {
+        node.targets[0].id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+    }
+    assert constants["PURE_PURSUIT_REFERENCE"] == "cog_link"
+    declared = {
+        call.args[0].value: call
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "DeclareLaunchArgument"
+    }
+    default = next(
+        keyword.value
+        for keyword in declared["pure_pursuit_reference"].keywords
+        if keyword.arg == "default_value"
+    )
+    assert isinstance(default, ast.Name)
+    assert default.id == "PURE_PURSUIT_REFERENCE"
+
+    # The controller Node hands the node `reference_offset`.
+    controller = next(
+        call
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and getattr(call.func, "id", "") == "Node"
+        and _literal_keyword(call, "package") == "racing_controller_baseline"
+    )
+    parameters = next(
+        keyword.value
+        for keyword in controller.keywords
+        if keyword.arg == "parameters"
+    )
+    assert any(
+        isinstance(element, ast.Dict)
+        and any(
+            isinstance(key, ast.Constant) and key.value == "reference_offset"
+            for key in element.keys
+        )
+        for element in parameters.elts
+    )
+
+    urdf = (
+        REPOSITORY_ROOT
+        / "ros_ws"
+        / "src"
+        / "racing_vehicle_description"
+        / "urdf"
+        / "f1tenth.urdf"
+    ).read_text(encoding="utf-8")
+    joint = next(
+        j
+        for j in ET.fromstring(urdf).findall("joint")
+        if j.get("name") == "base_link_to_cog_link"
+    )
+    cog_x = float(joint.find("origin").get("xyz").split()[0])
+    assert cog_x == pytest.approx(0.17145)
+
+    spec = importlib.util.spec_from_file_location(
+        "racing_sim_pure_pursuit_launch", LAUNCH_FILE
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    offset = module._pure_pursuit_reference_offset
+    assert offset("cog_link", urdf) == pytest.approx(cog_x)
+    assert offset("base_link", urdf) == 0.0
+    with pytest.raises(RuntimeError, match="front_axle"):
+        offset("front_axle", urdf)

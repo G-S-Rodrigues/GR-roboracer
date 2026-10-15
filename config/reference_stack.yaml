@@ -95,6 +95,11 @@ roles:
   controller:
     implementation: pure_pursuit
     package: racing_controller_baseline
+    # Pure Pursuit's reference point, `pure_pursuit_reference:=` on the
+    # launch; the default every golden is measured with. base_link (the rear
+    # axle) stays selectable (ADR 0005); its verification and its claim are
+    # below (part 3.1).
+    reference_point: cog_link
     paths:
       - ros_ws/src/racing_controller_baseline/*
     verified_by:

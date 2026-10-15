@@ -7,6 +7,7 @@ and the nodes it starts both use (``config/vehicles/...``, the launch
 arguments below) resolve the same way ``scripts/check.sh`` resolves them.
 """
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -21,6 +22,11 @@ from racing_bringup.scenario_parameters import track_parameters
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
 REC_DEFAULT = "log/recording.jsonl"
+# Which point of the car Pure Pursuit steers: base_link is the rear axle,
+# cog_link the gym's centre of gravity, today's behaviour and every golden's
+# (part 3.1). config/reference_stack.yaml names the default.
+PURE_PURSUIT_REFERENCES = ("cog_link", "base_link")
+PURE_PURSUIT_REFERENCE = "cog_link"
 # The pose the controller drives on, and so the estimate racing_evaluation
 # scores by default: ground truth, the reference stack's pose source
 # (config/reference_stack.yaml).
@@ -49,12 +55,40 @@ POSE_SOURCE_CONFIGS = {
 INITIAL_POSE_TOPIC = "/initialpose"
 
 
+def _pure_pursuit_reference_offset(
+    reference: str, robot_description: str
+) -> float:
+    """Metres along the heading from base_link to the point Pure Pursuit
+    steers: 0 for base_link, the URDF's cog_link x for cog_link."""
+    if reference not in PURE_PURSUIT_REFERENCES:
+        raise RuntimeError(f"unknown pure_pursuit_reference: {reference}")
+    if reference == "base_link":
+        return 0.0
+    joint = next(
+        j
+        for j in ET.fromstring(robot_description).findall("joint")
+        if j.get("name") == "base_link_to_cog_link"
+    )
+    origin = joint.find("origin")
+    x, y, z = (float(v) for v in origin.get("xyz").split())
+    rpy = [float(v) for v in origin.get("rpy", "0 0 0").split()]
+    if y != 0.0 or any(rpy):
+        # The node moves the pose along its heading only.
+        raise RuntimeError("cog_link must sit on base_link's x axis, unrotated")
+    return x
+
+
 def _launch_nodes(context, robot_description: str, rviz_config: str):
     # Which vehicle file every vehicle-taking node reads. Checked first, so
     # a wrong path is the error raised whatever the other arguments hold.
     vehicle = LaunchConfiguration("vehicle").perform(context)
     if not Path(vehicle).is_file():
         raise RuntimeError(f"vehicle file not found: {vehicle}")
+    # Validated after the vehicle check, so the vehicle error stays first.
+    reference_offset = _pure_pursuit_reference_offset(
+        LaunchConfiguration("pure_pursuit_reference").perform(context),
+        robot_description,
+    )
     scenario = LaunchConfiguration("scenario")
     seed = LaunchConfiguration("seed")
     recording_path = LaunchConfiguration("recording_path")
@@ -126,7 +160,10 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     controller_node = Node(
         package="racing_controller_baseline",
         executable="racing_controller_baseline_node",
-        parameters=[vehicle, {"use_sim_time": True}],
+        parameters=[
+            vehicle,
+            {"use_sim_time": True, "reference_offset": reference_offset},
+        ],
         # The pose the controller drives on is selected here rather than in
         # its C++, which keeps the standard /odom: this remap is the seam
         # pose_source moves. Its default stays ground truth - driving on
@@ -248,6 +285,9 @@ def generate_launch_description() -> LaunchDescription:
     pose_source_arg = DeclareLaunchArgument(
         "pose_source", default_value="ground_truth"
     )
+    pure_pursuit_reference_arg = DeclareLaunchArgument(
+        "pure_pursuit_reference", default_value=PURE_PURSUIT_REFERENCE
+    )
     drive_on_estimate_arg = DeclareLaunchArgument(
         "drive_on_estimate", default_value="true"
     )
@@ -263,6 +303,7 @@ def generate_launch_description() -> LaunchDescription:
             start_held_arg,
             estimate_topic_arg,
             pose_source_arg,
+            pure_pursuit_reference_arg,
             drive_on_estimate_arg,
             OpaqueFunction(
                 function=_launch_nodes,

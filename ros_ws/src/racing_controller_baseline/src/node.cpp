@@ -6,6 +6,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <utility>
 
+#include "racing_common/track.hpp"
 #include "racing_controller_baseline/pure_pursuit.hpp"
 
 namespace racing_controller_baseline {
@@ -23,6 +24,13 @@ class PurePursuitNode : public rclcpp::Node {
         params_.closed_trajectory =
             declare_parameter("closed_trajectory", true);
 
+        // Metres along the heading from the pose on /odom (base_link, the
+        // rear axle) to the point the law steers. The launch sets it from
+        // pure_pursuit_reference: the URDF's cog_link x by default, 0 for
+        // base_link. A parameter, not a TF lookup: no startup wait
+        // (repo-gotchas #19).
+        reference_offset_ = declare_parameter("reference_offset", 0.0);
+
         command_publisher_ =
             create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(
                 "/controller/drive", rclcpp::QoS(10).reliable());
@@ -35,9 +43,12 @@ class PurePursuitNode : public rclcpp::Node {
                 const auto cos_yaw =
                     1.0 - 2.0 * (orientation.y * orientation.y +
                                  orientation.z * orientation.z);
-                state_ = {message->pose.pose.position.x,
-                          message->pose.pose.position.y,
-                          std::atan2(sin_yaw, cos_yaw)};
+                const auto reference = racing_common::translate_along_heading(
+                    {message->pose.pose.position.x,
+                     message->pose.pose.position.y,
+                     std::atan2(sin_yaw, cos_yaw)},
+                    reference_offset_);
+                state_ = {reference.x, reference.y, reference.psi};
                 stamp_ = message->header.stamp;
                 has_state_ = true;
                 publish_if_ready();
@@ -78,6 +89,7 @@ class PurePursuitNode : public rclcpp::Node {
     }
 
     ControllerParams params_;
+    double reference_offset_{0.0};
     VehicleState state_;
     Trajectory trajectory_;
     builtin_interfaces::msg::Time stamp_;

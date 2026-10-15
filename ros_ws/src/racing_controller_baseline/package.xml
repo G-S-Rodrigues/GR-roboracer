@@ -13,6 +13,7 @@
 
   <depend>ackermann_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>racing_common</depend>
   <depend>racing_interfaces</depend>
   <depend>rclcpp</depend>
 
