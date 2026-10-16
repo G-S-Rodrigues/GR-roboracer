@@ -84,9 +84,10 @@ class RacingSimNode(Node):
         # consumer to be discovered and then define t=0 without rewinding a
         # clock they already followed.
         self.declare_parameter("start_held", False)
-        # base_link -> laser, planar: /scan is ray-marched from there. The
-        # vehicle file states it from the URDF (BRINGUP-1050); the default
-        # casts from base_link.
+        # rear_axle -> laser, planar: /scan is ray-marched from there (the
+        # sim converts to the CoG by the gym's lr). The vehicle file states
+        # it from the URDF (BRINGUP-1050); the default casts from the rear
+        # axle.
         for name in ("laser_x", "laser_y", "laser_yaw"):
             self.declare_parameter(name, 0.0)
         scenario_path = Path(
