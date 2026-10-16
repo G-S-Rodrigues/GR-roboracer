@@ -17,7 +17,9 @@ import struct
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Vehicle constants (must match URDF joint offsets exactly)
+# Vehicle constants (must match URDF joint offsets exactly). Meshes are
+# authored in `rear_axle` coordinates (origin at the rear axle's ground point);
+# the URDF's base_link is the centre of gravity, a parent of `rear_axle`.
 # ---------------------------------------------------------------------------
 WHEELBASE = 0.33
 TRACK = 0.236

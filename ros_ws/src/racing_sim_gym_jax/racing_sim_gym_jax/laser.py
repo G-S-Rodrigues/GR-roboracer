@@ -1,11 +1,13 @@
 """ROS-free placement of the laser on the vehicle.
 
-The gym ray-marches its scan from the vehicle reference point (base_link),
-but a real car's lidar sits on a mount ahead of it, and /scan is stamped in
-frame `laser`. Every estimator places each beam through TF base_link ->
-laser, so a scan cast from base_link but labelled `laser` lands the whole
-scan one mount offset away from where it was cast. The sim therefore casts
-/scan from the laser's pose, which this module computes.
+The gym ray-marches its scan from the vehicle reference point (base_link, the
+centre of gravity), but a real car's lidar sits on a mount ahead of the rear
+axle, and /scan is stamped in frame `laser`. Every estimator places each beam
+through TF base_link -> rear_axle -> laser, so a scan cast from base_link but
+labelled `laser` lands the whole scan one mount offset away from where it was
+cast. The mount is given from the rear axle (as every source measures it) and
+the backend converts it to the CoG by lr; this module casts from the pose it
+is handed.
 """
 
 from __future__ import annotations
