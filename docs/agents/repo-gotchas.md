@@ -179,4 +179,6 @@ Traps any task in this repository can hit. Each one cost real time at least once
     steering-angle bias). **A pose measured at the rear axle (AutoDRIVE's `roboracer_1`, a real car's
     wheel odometry) must be moved lr along heading and given z = h before it is published as
     `base_link`.** Under an estimator, `map -> base_link` z may be 0 and `map -> odom` carry -h (measured
-    under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz.
+    under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
+    `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
+    the axle centre (a wheel radius higher), because every mesh is authored there.

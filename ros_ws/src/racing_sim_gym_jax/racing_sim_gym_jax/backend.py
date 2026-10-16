@@ -24,7 +24,7 @@ from .scenario import Scenario
 
 # The default mount: /scan is cast from the rear axle (lr behind base_link,
 # the CoG), at the declared angles. The mount is given from the rear axle.
-BASE_LINK = LaserMount()
+REAR_AXLE = LaserMount()
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class GymBackend:
         self,
         scenario: Scenario,
         seed: int = 0,
-        laser_mount: LaserMount = BASE_LINK,
+        laser_mount: LaserMount = REAR_AXLE,
     ):
         self.scenario = scenario
         self._laser_mount = laser_mount

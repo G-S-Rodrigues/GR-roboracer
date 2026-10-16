@@ -20,8 +20,9 @@ import jax.numpy as jnp
 
 @dataclass(frozen=True)
 class LaserMount:
-    """The planar base_link -> laser transform: the URDF joint
-    `base_link_to_laser`, as the vehicle file states it (BRINGUP-1050)."""
+    """The planar rear_axle -> laser transform: the URDF joint
+    `rear_axle_to_laser`, as the vehicle file states it (BRINGUP-1050).
+    The backend converts it to a base_link (CoG) offset by lr."""
 
     x: float = 0.0
     y: float = 0.0

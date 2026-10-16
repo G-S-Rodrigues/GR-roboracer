@@ -80,9 +80,9 @@ def test_desc_1020_the_drawing_is_authored_in_the_rear_axle_frame() -> None:
     Every mesh was generated in rear-axle coordinates with an identity
     joint, so moving base_link to the centre of gravity must not move one
     of them: base_link carries no visual, and each mesh-bearing link except
-    the laser, the wheels and the steering hinges composes to rear_axle as
-    the identity. The rear wheels' midpoint is the axle, one wheel radius
-    above the ground point rear_axle names.
+    the laser and the wheels composes to rear_axle as the identity (the
+    steering hinges carry no visual). The rear wheels' midpoint is the axle,
+    one wheel radius above the ground point rear_axle names.
     """
     root = ET.parse(URDF_PATH).getroot()
     links = {link.attrib["name"]: link for link in root.findall("link")}
