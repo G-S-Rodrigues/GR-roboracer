@@ -87,6 +87,10 @@ These are the corrections the plan did not anticipate; each is also recorded as 
   `serial_driver`. `vesc_driver` fails to configure without an explicit apt install.
 - **Pinning the gym SHA does not pin the dependency tree.** `f1tenth_gym_jax` declares `jax-pf` with
   no rev, and `jax_pf` supplies the ray marching behind `/scan`.
+- **A top-level pin does not pin a pip tool's tree either.** `pre-commit` pulls `virtualenv`, whose
+  new floor `packaging>=26.3` collides with Debian's apt-owned `packaging 24.0`, and the dev image
+  stopped building. The dev tools are installed `--no-deps` from a full pinned closure
+  (`docker/dev-tools-requirements.txt`), followed by `pip3 check`.
 - **Upstream's `[tool.uv] override-dependencies` does not apply to consumers.** `jax_pf` declares
   `jax[cuda12]>=0.6.1,<0.7`, unsatisfiable against the gym's `jax>=0.7.2,<0.8`; upstream resolves it
   with a pyproject override that only takes effect when uv operates *on that project*. Installing the
