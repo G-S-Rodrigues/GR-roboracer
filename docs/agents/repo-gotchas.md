@@ -43,6 +43,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     `colcon build` fails with `No rule to make target '/opt/ros/jazzy/lib/libfastcdr.so.2.2.7'`.
     After any image rebuild, `rm -rf build/* install/*` inside `dev` before building.
 
+27. **An unpinned install in the image is latent until the layer cache misses.** CI's gha cache
+    replays a resolve from whenever the layer last ran (here 2026-10-02), so drift surfaces only when
+    the upstream base tag moves, and then on every leg and every PR at once. Seen: the unpinned
+    `pip3 install pre-commit` resolved `virtualenv 21.14.11`, which needs `packaging>=26.3`, and pip
+    could not replace Debian's `packaging 24.0` (no RECORD file); three nightlies failed at "Build the
+    dev image" before any test ran. Symptom: a Dockerfile untouched for weeks fails to build. Remedy:
+    the dev tools are a full closure in `docker/dev-tools-requirements.txt`, installed `--no-deps`,
+    then `pip3 check`; CHECK-1330/1340 guard it. Bumps are reviewed diffs.
+
 ## ROS
 
 6. **QoS mismatch looks like absent data, not an error.** A reliable subscriber never hears a
