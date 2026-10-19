@@ -179,3 +179,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     code as `env -u PYTHONPATH uv run --project raceline --locked ...`. Guard: RACELINE-1020. The
     TUM optimizer runs in `raceline/tum_env/` (Python 3.8, original pins with two bumped: tph 0.78, quadprog 0.1.12; see the README), reached as a subprocess
     by `raceline.tum` (README there); never import it into the 3.12 env.
+
+26. **`base_link` is the centre of gravity, not the rear axle.** The gym state, every published pose,
+    z = h (0.074 m), and the supervisor/metrics point are the CoG; the URDF drawing and `laser_x` are
+    authored in `rear_axle`, its TF child lr = 0.17145 m behind, and the sim converts the mount by lr.
+    Reading 0.275 as CoG-relative put the beams 0.171 m ahead of the real lidar and nothing errored.
+    Pure Pursuit's law is exact only at the rear axle and runs on the CoG by owner ruling (a small
+    steering-angle bias). **A pose measured at the rear axle (AutoDRIVE's `roboracer_1`, a real car's
+    wheel odometry) must be moved lr along heading and given z = h before it is published as
+    `base_link`.** Under an estimator, `map -> base_link` z may be 0 and `map -> odom` carry -h (measured
+    under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
+    `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
+    the axle centre (a wheel radius higher), because every mesh is authored there.

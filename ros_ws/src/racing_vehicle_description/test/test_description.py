@@ -9,15 +9,15 @@ RVIZ_PATH = PACKAGE_ROOT / "rviz" / "sim_pure_pursuit.rviz"
 
 
 def test_urdf_has_canonical_vehicle_and_laser_frames() -> None:
-    """The description connects laser to base_link with a fixed joint."""
+    """The description connects laser to rear_axle with a fixed joint."""
     root = ET.parse(URDF_PATH).getroot()
     links = {link.attrib["name"] for link in root.findall("link")}
     assert {"base_link", "laser"}.issubset(links)
 
-    laser_joint = root.find("./joint[@name='base_link_to_laser']")
+    laser_joint = root.find("./joint[@name='rear_axle_to_laser']")
     assert laser_joint is not None
     assert laser_joint.attrib["type"] == "fixed"
-    assert laser_joint.find("parent").attrib["link"] == "base_link"
+    assert laser_joint.find("parent").attrib["link"] == "rear_axle"
     assert laser_joint.find("child").attrib["link"] == "laser"
 
 

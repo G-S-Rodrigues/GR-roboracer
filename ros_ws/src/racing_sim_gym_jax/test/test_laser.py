@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from f1tenth_gym_jax.envs.utils import Param
 from racing_sim_gym_jax.laser import LaserMount, laser_poses
 
 # SIMJAX-1090: the float32 cast against the float64 reference measured a
@@ -149,7 +150,8 @@ def test_simjax_1090_scan_beams_lie_where_the_laser_scan_declares(
             snapshot = backend.step()
         ((lx, ly, lyaw),) = np.asarray(
             laser_poses(
-                np.array([[snapshot.x, snapshot.y, snapshot.yaw]]), MOUNT
+                np.array([[snapshot.x, snapshot.y, snapshot.yaw]]),
+                LaserMount(MOUNT.x - Param().lr, MOUNT.y, MOUNT.yaw),
             ),
             dtype=float,
         )

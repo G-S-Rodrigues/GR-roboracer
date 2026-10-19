@@ -386,6 +386,11 @@ class SupportNode(Node):
         composed.child_frame_id = dead_reckoning.child_frame_id
         composed.pose.pose.position.x = x
         composed.pose.pose.position.y = y
+        # map -> odom is a rotation about z, so heights add. Keeping z makes
+        # this pose equal TF map -> base_link, which the docstring promises.
+        composed.pose.pose.position.z = (
+            translation.z + dead_reckoning.pose.pose.position.z
+        )
         composed.pose.pose.orientation.z = math.sin(heading / 2.0)
         composed.pose.pose.orientation.w = math.cos(heading / 2.0)
         # The twist is in the body frame, which map -> odom does not move.
@@ -402,6 +407,10 @@ class SupportNode(Node):
         it on the drifting estimate. Both are invisible to every numeric
         test (repo-gotchas #16). The two poses are paired by stamp, so the
         composed map -> base_link is exactly the ground-truth pose.
+
+        Truth and dead reckoning both carry z = h (the sim publishes
+        base_link at the centre of gravity's height), so the correction's z
+        is 0 by construction and is not set.
         """
         if not self._publish_map_to_odom:
             return

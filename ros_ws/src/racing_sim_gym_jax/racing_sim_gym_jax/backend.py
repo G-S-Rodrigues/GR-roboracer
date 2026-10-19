@@ -22,8 +22,9 @@ from .laser import (
 )
 from .scenario import Scenario
 
-# The default mount: /scan is cast from base_link, at the declared angles.
-BASE_LINK = LaserMount()
+# The default mount: /scan is cast from the rear axle (lr behind base_link,
+# the CoG), at the declared angles. The mount is given from the rear axle.
+REAR_AXLE = LaserMount()
 
 
 @dataclass(frozen=True)
@@ -53,7 +54,8 @@ class Snapshot:
     collision: bool
     done: bool
     # Ray-marched from the laser mount: /scan, what an estimator reads in
-    # frame `laser`. The same array as `scan` when the mount is base_link.
+    # frame `laser`. The same array as `scan` when laser_x == lr (the laser at
+    # base_link).
     laser_scan: np.ndarray
 
 
@@ -64,12 +66,19 @@ class GymBackend:
         self,
         scenario: Scenario,
         seed: int = 0,
-        laser_mount: LaserMount = BASE_LINK,
+        laser_mount: LaserMount = REAR_AXLE,
     ):
         self.scenario = scenario
         self._laser_mount = laser_mount
         os.environ["F1TENTH_GYM_JAX_MAP_DIR"] = str(scenario.map_directory)
         self._env = make(scenario.env_id, **scenario.parameters)
+        # The mount is stated from the rear axle (BRINGUP-1050); the gym's
+        # state, and so the cast's origin, is the CoG, lr ahead of it.
+        self._cast_mount = LaserMount(
+            laser_mount.x - float(self._env.params.lr),
+            laser_mount.y,
+            laser_mount.yaw,
+        )
         self._grid = DistanceGrid.of_env(self._env)
         self._beam_angles = declared_beam_angles(
             float(self._env.fov), int(self._env.num_beams)
@@ -127,6 +136,11 @@ class GymBackend:
         self.reset(seed)
         return latency
 
+    @property
+    def cog_height(self) -> float:
+        """The centre of gravity's height, m: the z of base_link."""
+        return float(self._env.params.h)
+
     def set_command(self, command: DriveCommand) -> None:
         self._command = command
 
@@ -167,7 +181,7 @@ class GymBackend:
         is untouched, and so is the run's key chain.
         """
         poses = laser_poses(
-            state.cartesian_states[:, [0, 1, 4]], self._laser_mount
+            state.cartesian_states[:, [0, 1, 4]], self._cast_mount
         )
         return jax.vmap(
             lambda pose: cast_scan(self._grid, pose, self._beam_angles)
