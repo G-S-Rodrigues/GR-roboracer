@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -1233,3 +1234,51 @@ def test_check_1380_a_stale_local_main_does_not_widen_the_changed_set(
     run_git, _loc = make_run_git(wt, env)
 
     assert changed_paths(run_git) == ["docs/c.md"]
+
+
+# --- the reason line names the base (CHECK-1390) --------------------------
+
+
+def test_check_1390_the_cli_in_a_host_worktree_names_base_and_git_dir(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1390: the CLI, run in a moved host-style worktree, is scoped,
+    its reason names the base, and stderr names the located git dir."""
+    ws, wt, env = _git_layout(tmp_path)
+    _git(ws, env, "update-ref", "refs/remotes/origin/main", "main")
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "changed_scope.py")],
+        cwd=wt,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    assert _eval_shell(out, 'echo "$scope_whole_tree"').strip() == "0"
+    assert "base origin/main" in _eval_shell(out, 'echo "$scope_reason"')
+    assert "git dir" in result.stderr
+    assert "worktrees/wt" in result.stderr
+
+
+def test_check_1390_ready_line_appends_the_base() -> None:
+    """CHECK-1390: render_ready_shell appends `; base ...` on scoped and
+    whole-by-rule lines, and nothing when the base is empty."""
+    stack = stack_from_dict(SELECT_MAP, SELECT_SYSTEM, SELECT_TAGS)
+    scoped = select_ready(
+        ["config/loc/amcl.yaml"], stack, {"pkg_sim": {"pkg_pp"}}
+    )
+    whole = select_ready([], stack, {})
+
+    def line(scope: ReadyScope) -> str:
+        rendered = render_ready_shell(scope, stack)
+        return _eval_shell(rendered, 'echo "$ready_line"').strip()
+
+    base = "origin/main abc"
+    assert line(replace(scoped, base=base)).endswith(f"; base {base}")
+    assert line(replace(whole, base=base)).endswith(f"; base {base})")
+    assert line(scoped) == line(replace(scoped, base=""))
+    assert "base" not in line(scoped).split("because")[-1]
+    assert "base" not in line(whole)

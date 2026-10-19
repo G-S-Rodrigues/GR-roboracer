@@ -18,7 +18,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 # The extensions scripts/check.sh hands to clang-format and clang-tidy.
@@ -318,6 +318,7 @@ class ReadyScope:
     implementations: tuple[str, ...]
     tests: tuple[str, ...]
     why: tuple[str, ...]
+    base: str = ""
 
 
 def _whole(reason: str) -> ReadyScope:
@@ -462,16 +463,18 @@ def resolve(
         )
 
     try:
-        changed = changed_paths(run_git)
+        label, sha = merge_base(run_git)
+        changed = _changed_since(run_git, sha)
     except subprocess.CalledProcessError as exc:
         return (
             Scope(whole_tree=True, packages=frozenset(), cpp=(), py=()),
             f"git failed: {exc}",
         )
 
+    base = f"base {label} {sha[:9]}"
     scope = scope_for(changed)
     if scope.whole_tree:
-        return scope, "whole-tree trigger in changed set"
+        return scope, f"whole-tree trigger in changed set; {base}"
 
     scope = Scope(
         whole_tree=False,
@@ -479,7 +482,7 @@ def resolve(
         cpp=tuple(p for p in scope.cpp if exists(p)),
         py=tuple(p for p in scope.py if exists(p)),
     )
-    return scope, "scoped to changed packages"
+    return scope, f"scoped to changed packages; {base}"
 
 
 def render_shell(scope: Scope, reason: str) -> str:
@@ -519,14 +522,21 @@ def resolve_ready(
     if env.get("CHECK_SCOPE") == "all":
         return _whole("CHECK_SCOPE=all"), None
     try:
-        changed = changed_paths(run_git)
+        label, sha = merge_base(run_git)
+        changed = _changed_since(run_git, sha)
     except subprocess.CalledProcessError as exc:
         return _whole(f"git failed: {exc}"), None
     try:
         stack, deps = load()
     except Exception as exc:  # yaml, robot import, missing file, ValueError
         return _whole(f"reference_stack.yaml unreadable: {exc}"), None
-    return select_ready(changed, stack, deps), stack
+    return (
+        replace(
+            select_ready(changed, stack, deps),
+            base=f"{label} {sha[:9]}",
+        ),
+        stack,
+    )
 
 
 def render_ready_shell(scope: ReadyScope, stack: StackMap | None) -> str:
@@ -550,8 +560,11 @@ def render_ready_shell(scope: ReadyScope, stack: StackMap | None) -> str:
             f"tests {', '.join(scope.tests)}; "
             f"because {'; '.join(scope.why) or 'no mapped path'}"
         )
+        if scope.base:
+            line += f"; base {scope.base}"
     else:
-        line = f"whole tree ({scope.reason})"
+        suffix = f"; base {scope.base}" if scope.base else ""
+        line = f"whole tree ({scope.reason}{suffix})"
     return (
         "\n".join(
             [
