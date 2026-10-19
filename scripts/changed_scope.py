@@ -591,6 +591,17 @@ class GitDirLocation:
     gitfile_target: str
 
 
+# Variables by which a caller has already chosen where git looks; they
+# would override at run time what the trust gate validated.
+_CALLER_CHOSEN = (
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+)
+
+
 def _default_owner(path: Path) -> int:
     return path.stat().st_uid
 
@@ -609,7 +620,7 @@ def locate_git_dir(
     nested inside it: `A/.git/worktrees/<name>` whose back-pointer names this
     worktree at the same position under `A`. Anything else is None, and the
     caller runs plain git (which fails closed to whole tree)."""
-    if "GIT_DIR" in env:
+    if any(name in env for name in _CALLER_CHOSEN):
         return None
     try:
         start = start.absolute()
@@ -624,6 +635,8 @@ def locate_git_dir(
             return None
         target = first[0][len("gitdir: ") :].strip()
         name = PurePosixPath(target).name
+        if name in ("", ".", ".."):
+            return None
         target_abs = (
             Path(target) if Path(target).is_absolute() else work / target
         )
@@ -671,16 +684,24 @@ def locate_git_dir(
         return GitDirLocation(
             git_dir=cand, work_tree=work, gitfile_target=target
         )
-    except (OSError, ValueError, UnicodeDecodeError):
+    except (OSError, ValueError, UnicodeDecodeError, RuntimeError):
         return None
 
 
 def make_run_git(
     cwd: Path, env: Mapping[str, str]
 ) -> tuple[RunGit, GitDirLocation | None]:
-    """The `run_git` for this process, and where it found the git dir when
-    the worktree's own `.git` file could not be followed (else None)."""
-    location = locate_git_dir(cwd, env)
+    """The `run_git` for this process. Plain git first; only when it cannot
+    open `cwd` is the git dir located by `locate_git_dir`, and where it was
+    found is returned (else None), so a healthy checkout never bypasses
+    git's ownership check."""
+    plain = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=cwd,
+        env=dict(env),
+        capture_output=True,
+    )
+    location = locate_git_dir(cwd, env) if plain.returncode != 0 else None
     git_env = dict(env)
     if location is not None:
         git_env["GIT_DIR"] = str(location.git_dir)
@@ -711,13 +732,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
 
-    run_git, location = make_run_git(Path.cwd(), os.environ)
-    if location is not None:
-        sys.stderr.write(
-            f"changed_scope: git dir {location.git_dir} "
-            f"(the worktree's .git names {location.gitfile_target})\n"
-        )
-
     if args.owners is not None:
         owners = owners_of(args.owners, load_stack(root))
         if not owners:
@@ -725,6 +739,13 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         sys.stdout.write("\n".join(owners) + "\n")
         return 0
+
+    run_git, location = make_run_git(Path.cwd(), os.environ)
+    if location is not None:
+        sys.stderr.write(
+            f"changed_scope: git dir {location.git_dir} "
+            f"(the worktree's .git names {location.gitfile_target})\n"
+        )
 
     if args.ready:
 

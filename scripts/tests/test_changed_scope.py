@@ -1050,7 +1050,7 @@ def test_check_1360_a_dev_side_worktree_and_the_main_checkout(
     assert loc.work_tree == wt
 
     run_git, got = make_run_git(wt, env)
-    assert got is not None
+    assert got is None  # plain git works here, so nothing is located
     scope, _ = resolve(env, run_git, exists=lambda p: (wt / p).exists())
     assert scope.packages == frozenset({"racing_common"})
 
@@ -1119,17 +1119,167 @@ def test_check_1370_a_commondir_outside_the_common_repo(
     assert not marker.exists()
 
 
-def test_check_1370_a_uid_mismatch_is_refused(tmp_path: Path) -> None:
-    """CHECK-1370: metadata not owned by the owner of A/.git is refused."""
-    _ws, wt, env = _git_layout(tmp_path)
+@pytest.mark.parametrize(
+    "which", ["metadata", "commondir", "gitdir", "gitfile"]
+)
+def test_check_1370_a_uid_mismatch_is_refused(
+    tmp_path: Path, which: str
+) -> None:
+    """CHECK-1370: any of the four checked paths not owned by the owner of
+    A/.git is refused; without the injection the same layout is located."""
+    from scripts.changed_scope import locate_git_dir
+
+    ws, wt, env = _git_layout(tmp_path)
+    meta = ws / ".git" / "worktrees" / "wt"
+    odd = {
+        "metadata": meta,
+        "commondir": meta / "commondir",
+        "gitdir": meta / "gitdir",
+        "gitfile": wt / ".git",
+    }[which]
 
     def owner(p: Path) -> int:
         uid = p.stat().st_uid
-        return uid + 1 if p.name == "gitdir" else uid
+        return uid + 1 if p == odd else uid
+
+    assert locate_git_dir(wt, env) is not None  # the positive control
+    assert locate_git_dir(wt, env, owner=owner) is None
+
+
+def test_check_1370_a_fake_common_dir_without_head_is_not_trusted(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: `ws/sub/.git` with no HEAD is not a repo, so git's probe
+    answers with the parent's; the answer must equal A/.git, or a fake A whose
+    commondir is `../..` would run its own core.fsmonitor."""
+    ws, _wt, env = _git_layout(tmp_path)
+    _foreign, marker = _foreign_repo(tmp_path, env)
+    fake_git = ws / "sub" / ".git"
+    (fake_git / "objects").mkdir(parents=True)
+    (fake_git / "refs").mkdir()
+    (fake_git / "config").write_text(
+        f"[core]\n\tfsmonitor = {tmp_path / 'hook.sh'}\n"
+    )
+    meta = fake_git / "worktrees" / "wt2"
+    meta.mkdir(parents=True)
+    fake = ws / "sub" / ".scratch" / "wt2"
+    fake.mkdir(parents=True)
+    (meta / "HEAD").write_text("ref: refs/heads/main\n")
+    (meta / "gitdir").write_text(f"{fake}/.git\n")
+    (meta / "commondir").write_text("../..\n")
+    (fake / ".git").write_text("gitdir: /nowhere/.git/worktrees/wt2\n")
+
+    _assert_no_location_and_whole_tree(fake, env)
+
+    assert not marker.exists()
+
+
+def test_check_1370_a_commondir_symlink_loop_is_refused(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a commondir naming a symlink loop gives no location, not
+    a RuntimeError traceback."""
+    ws, wt, env = _git_layout(tmp_path)
+    meta = ws / ".git" / "worktrees" / "wt"
+    (meta / "loop").symlink_to(meta / "loop")
+    (meta / "commondir").write_text("loop\n")
+
+    _assert_no_location_and_whole_tree(wt, env)
+
+
+@pytest.mark.parametrize("target_name", ["..", ".", ""])
+def test_check_1370_a_gitfile_ending_in_a_dot_name_is_refused(
+    tmp_path: Path, target_name: str
+) -> None:
+    """CHECK-1370: a gitdir ending in `..`, `.` or nothing would make the
+    'metadata dir' A/.git or worktrees/ itself; no location."""
+    import os
+
+    ws, _wt, env = _git_layout(tmp_path)
+    fake = ws / ".scratch" / "wt2"
+    fake.mkdir()
+    (fake / ".git").write_text(
+        f"gitdir: /nowhere/.git/worktrees/{target_name}\n"
+    )
+    cand = ws / ".git" / "worktrees" / target_name
+    (cand / "gitdir").write_text(f"{fake}/.git\n")
+    rel = os.path.relpath(ws / ".git", cand)
+    (cand / "commondir").write_text(rel + "\n")
 
     from scripts.changed_scope import locate_git_dir
 
-    assert locate_git_dir(wt, env, owner=owner) is None
+    assert locate_git_dir(fake, env) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    ],
+)
+def test_check_1370_an_inherited_git_location_variable_disables_it(
+    tmp_path: Path, name: str
+) -> None:
+    """CHECK-1370: like GIT_DIR, these mean the caller already chose where
+    git looks, and would override what the gate validated."""
+    from scripts.changed_scope import locate_git_dir
+
+    ws, wt, env = _git_layout(tmp_path)
+    assert locate_git_dir(wt, env) is not None  # the positive control
+    value = str(ws / ".git") if name == "GIT_COMMON_DIR" else str(tmp_path)
+    assert locate_git_dir(wt, env | {name: value}) is None
+
+
+def test_check_1370_the_locator_is_not_consulted_on_a_healthy_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CHECK-1370: when plain git opens the checkout, the ownership bypass is
+    never run and the CLI prints no `git dir` line."""
+    import scripts.changed_scope as module
+
+    _ws, wt, env = _git_layout(tmp_path, move=False)
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("locate_git_dir consulted on a healthy repo")
+
+    monkeypatch.setattr(module, "locate_git_dir", boom)
+    run_git, loc = module.make_run_git(wt, env)
+    assert loc is None
+    assert run_git(["rev-parse", "--is-inside-work-tree"]).strip() == "true"
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "changed_scope.py")],
+        cwd=wt,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0 and "git dir" not in result.stderr
+
+
+def test_check_1370_owners_does_not_probe_git(tmp_path: Path) -> None:
+    """CHECK-1370: `--owners` neither spawns the git probe nor prints the
+    located-git-dir line, even where the locator would fire."""
+    _ws, wt, env = _git_layout(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "changed_scope.py"),
+            "--owners",
+            "SIM-3080",
+        ],
+        cwd=wt,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "git dir" not in result.stderr
 
 
 def test_check_1370_unmatched_metadata_is_refused(tmp_path: Path) -> None:

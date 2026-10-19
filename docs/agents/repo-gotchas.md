@@ -177,7 +177,7 @@ Traps any task in this repository can hit. Each one cost real time at least once
     on the scope and ready lines so a stale one shows. In `dev`, git fails twice over on a worktree made
     on the host: its `.git` file names a host path that does not exist (`not a git repository`), or, with
     a hand-rewritten relative path, root-vs-UID-1000 ownership that `safe.directory=/ws` does not cover
-    (`dubious ownership`). `changed_scope.py` therefore locates the git dir itself behind a trust gate
+    (`dubious ownership`). `changed_scope.py` therefore, only when plain git fails, locates the git dir itself behind a trust gate
     (CHECK-1350..1370) and runs git with `GIT_DIR`/`GIT_WORK_TREE`; it logs `changed_scope: git dir ...`
     on stderr. Any other git in `dev` on a host worktree still needs the hand rewrite and a
     `safe.directory`. Never `git worktree prune/repair` in `dev`: it rewrites the host's back-pointers.
