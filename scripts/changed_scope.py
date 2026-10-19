@@ -551,6 +551,33 @@ def render_ready_shell(scope: ReadyScope, stack: StackMap | None) -> str:
     )
 
 
+@dataclass(frozen=True)
+class GitDirLocation:
+    """A worktree's git dir found by `locate_git_dir`."""
+
+    git_dir: Path
+    work_tree: Path
+    gitfile_target: str
+
+
+def make_run_git(
+    cwd: Path, env: Mapping[str, str]
+) -> tuple[RunGit, GitDirLocation | None]:
+    """The `run_git` for this process, and where it found the git dir when
+    the worktree's own `.git` file could not be followed (else None)."""
+
+    def run_git(git_args: list[str]) -> str:
+        return subprocess.run(
+            ["git", *git_args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    return run_git, None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
@@ -563,14 +590,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
 
-    def run_git(git_args: list[str]) -> str:
-        return subprocess.run(
-            ["git", *git_args],
-            cwd=os.getcwd(),
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
+    run_git, _location = make_run_git(Path.cwd(), os.environ)
 
     if args.owners is not None:
         owners = owners_of(args.owners, load_stack(root))
