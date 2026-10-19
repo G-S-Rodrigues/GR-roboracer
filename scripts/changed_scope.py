@@ -408,16 +408,28 @@ def owners_of(test_id: str, stack: StackMap) -> list[str]:
 
 
 RunGit = Callable[[list[str]], str]
+ORIGIN_MAIN = "refs/remotes/origin/main"
 
 
 def _lines(output: str) -> list[str]:
     return [line for line in output.splitlines() if line]
 
 
-def changed_paths(run_git: RunGit) -> list[str]:
-    """The branch's changed set: merge-base diff, staged diff and
-    untracked new files, deduplicated. `run_git` raises on failure."""
-    base = run_git(["merge-base", "main", "HEAD"]).strip()
+def merge_base(run_git: RunGit) -> tuple[str, str]:
+    """(label, sha) of the branch's base. `origin/main` when it exists, and a
+    failure against it raises; local `main` only when `origin/main` is truly
+    absent (the lookup exits 1). Never fetches. Raises on any failure."""
+    try:
+        run_git(["show-ref", "--verify", "--quiet", ORIGIN_MAIN])
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode != 1:
+            raise
+        sha = run_git(["merge-base", "main", "HEAD"]).strip()
+        return "main (no origin/main)", sha
+    return "origin/main", run_git(["merge-base", ORIGIN_MAIN, "HEAD"]).strip()
+
+
+def _changed_since(run_git: RunGit, base: str) -> list[str]:
     paths: set[str] = set()
     paths.update(_lines(run_git(["diff", "--name-only", "--no-renames", base])))
     paths.update(
@@ -429,6 +441,12 @@ def changed_paths(run_git: RunGit) -> list[str]:
         _lines(run_git(["ls-files", "--others", "--exclude-standard"]))
     )
     return sorted(paths)
+
+
+def changed_paths(run_git: RunGit) -> list[str]:
+    """The branch's changed set: merge-base diff, staged diff and
+    untracked new files, deduplicated. `run_git` raises on failure."""
+    return _changed_since(run_git, merge_base(run_git)[1])
 
 
 def resolve(

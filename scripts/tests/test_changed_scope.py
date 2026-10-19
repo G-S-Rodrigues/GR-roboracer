@@ -143,10 +143,24 @@ def test_check_1290_raceline_python_is_linted_with_no_package() -> None:
     )
 
 
-def _fake_run_git(calls: dict[tuple[str, ...], str]):
-    def run_git(args: list[str]) -> str:
-        return calls[tuple(args)]
+_ABSENT = object()  # a git call that exits 1 (e.g. a missing ref)
+_FAILED = object()  # a git call that exits 128
+_PROBE = ("show-ref", "--verify", "--quiet", "refs/remotes/origin/main")
 
+
+def _fake_run_git(calls: dict[tuple[str, ...], object]):
+    seen: list[tuple[str, ...]] = []
+
+    def run_git(args: list[str]) -> str:
+        seen.append(tuple(args))
+        value = calls[tuple(args)]
+        if value is _ABSENT:
+            raise subprocess.CalledProcessError(1, args)
+        if value is _FAILED:
+            raise subprocess.CalledProcessError(128, args)
+        return value  # type: ignore[return-value]
+
+    run_git.seen = seen  # type: ignore[attr-defined]
     return run_git
 
 
@@ -157,6 +171,7 @@ def test_check_1080_changed_paths_is_deduplicated_union() -> None:
     base = "abc123"
     run_git = _fake_run_git(
         {
+            _PROBE: _ABSENT,
             ("merge-base", "main", "HEAD"): base + "\n",
             ("diff", "--name-only", "--no-renames", base): "a.py\nshared.py\n",
             (
@@ -177,6 +192,7 @@ def test_check_1080_changed_paths_is_deduplicated_union() -> None:
     missing_cpp = "ros_ws/src/racing_metrics/src/gone.cpp"
     run_git2 = _fake_run_git(
         {
+            _PROBE: _ABSENT,
             ("merge-base", "main", "HEAD"): base + "\n",
             ("diff", "--name-only", "--no-renames", base): missing_cpp,
             ("diff", "--name-only", "--no-renames", "--cached", base): "",
@@ -774,6 +790,7 @@ def _git_returning(paths: str):
     base = "abc"
     return _fake_run_git(
         {
+            _PROBE: _ABSENT,
             ("merge-base", "main", "HEAD"): base,
             ("diff", "--name-only", "--no-renames", base): paths,
             ("diff", "--name-only", "--no-renames", "--cached", base): "",
@@ -1149,3 +1166,70 @@ def test_check_1370_an_untrusted_common_repo_is_refused(
     scope, _ = resolve_ready(env, run_git, load)
     assert scope.whole_tree is True
     assert "git failed" in scope.reason
+
+
+# --- the base is origin/main (CHECK-1380) --------------------------------
+
+_ORIGIN_MB = ("merge-base", "refs/remotes/origin/main", "HEAD")
+_MAIN_MB = ("merge-base", "main", "HEAD")
+
+
+def test_check_1380_origin_main_is_the_base_when_it_exists() -> None:
+    """CHECK-1380: origin/main wins; local main only when the lookup exits 1,
+    and then the label says so."""
+    from scripts.changed_scope import merge_base
+
+    run_git = _fake_run_git({_PROBE: "", _ORIGIN_MB: "abc\n"})
+    assert merge_base(run_git) == ("origin/main", "abc")
+
+    run_git = _fake_run_git({_PROBE: _ABSENT, _MAIN_MB: "def\n"})
+    assert merge_base(run_git) == ("main (no origin/main)", "def")
+
+
+def test_check_1380_a_failed_base_is_whole_tree_without_fallback() -> None:
+    """CHECK-1380: origin/main present but its merge-base failing, or the
+    lookup itself failing (not 'absent'), is whole tree and never retries
+    against local main."""
+
+    def load():
+        raise AssertionError("the map is not read when git fails")
+
+    for calls in (
+        {_PROBE: "", _ORIGIN_MB: _ABSENT},
+        {_PROBE: _FAILED},
+    ):
+        run_git = _fake_run_git(calls)
+        scope, reason = resolve({}, run_git, exists=lambda p: True)
+        assert scope.whole_tree and "git failed" in reason
+        assert _MAIN_MB not in run_git.seen  # type: ignore[attr-defined]
+
+        run_git = _fake_run_git(calls)
+        ready, _ = resolve_ready({}, run_git, load)
+        assert ready.whole_tree and "git failed" in ready.reason
+        assert _MAIN_MB not in run_git.seen  # type: ignore[attr-defined]
+
+
+def test_check_1380_a_stale_local_main_does_not_widen_the_changed_set(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1380: with local main two commits behind origin/main, those two
+    commits' files are not in the branch's changed set."""
+    from scripts.changed_scope import make_run_git
+
+    ws, wt, env = _git_layout(tmp_path, move=False)
+    for name in ("a", "b"):
+        (ws / "docs").mkdir(exist_ok=True)
+        (ws / "docs" / f"{name}.md").write_text(name)
+        _git(ws, env, "add", ".")
+        _git(ws, env, "commit", "-q", "-m", name)
+    tip = _git(ws, env, "rev-parse", "HEAD").strip()
+    _git(ws, env, "update-ref", "refs/remotes/origin/main", tip)
+    _git(ws, env, "reset", "-q", "--hard", "HEAD~2")
+    _git(wt, env, "checkout", "-q", "-b", "feat2", "refs/remotes/origin/main")
+    (wt / "docs" / "c.md").write_text("c")
+    _git(wt, env, "add", ".")
+    _git(wt, env, "commit", "-q", "-m", "c")
+
+    run_git, _loc = make_run_git(wt, env)
+
+    assert changed_paths(run_git) == ["docs/c.md"]
