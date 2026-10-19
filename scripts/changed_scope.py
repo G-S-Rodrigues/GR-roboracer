@@ -19,7 +19,7 @@ import sys
 import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # The extensions scripts/check.sh hands to clang-format and clang-tidy.
 CPP_EXTENSIONS = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx")
@@ -560,22 +560,112 @@ class GitDirLocation:
     gitfile_target: str
 
 
+def _default_owner(path: Path) -> int:
+    return path.stat().st_uid
+
+
+def locate_git_dir(
+    start: Path,
+    env: Mapping[str, str],
+    *,
+    owner: Callable[[Path], int] = _default_owner,
+) -> GitDirLocation | None:
+    """Find the git dir of the worktree holding `start` when its `.git` file
+    cannot be followed (it names a host path, or git distrusts the owner).
+
+    Explicit `GIT_DIR` skips git's ownership check, so trust is only
+    extended from a common repo `A` that git itself opens, to a worktree
+    nested inside it: `A/.git/worktrees/<name>` whose back-pointer names this
+    worktree at the same position under `A`. Anything else is None, and the
+    caller runs plain git (which fails closed to whole tree)."""
+    if "GIT_DIR" in env:
+        return None
+    try:
+        start = start.absolute()
+        work = next(
+            (d for d in (start, *start.parents) if (d / ".git").exists()),
+            None,
+        )
+        if work is None or (work / ".git").is_dir():
+            return None
+        first = (work / ".git").read_text().splitlines()[:1]
+        if not first or not first[0].startswith("gitdir: "):
+            return None
+        target = first[0][len("gitdir: ") :].strip()
+        name = PurePosixPath(target).name
+        target_abs = (
+            Path(target) if Path(target).is_absolute() else work / target
+        )
+        found = None
+        for common in work.parents:
+            cand = common / ".git" / "worktrees" / name
+            if not (cand.is_dir() and (cand / "gitdir").is_file()):
+                continue
+            back = PurePosixPath((cand / "gitdir").read_text().strip())
+            rel = work.relative_to(common).parts
+            if back.parts[-len(rel) - 1 :] == (*rel, ".git"):
+                found = (common, cand)
+                break
+        if found is None:
+            return None
+        common, cand = found
+        if target_abs.exists() and target_abs.resolve() != cand.resolve():
+            return None
+        # Trust gate: all of it before any git runs with GIT_DIR.
+        common_git = (common / ".git").resolve()
+        probe = subprocess.run(
+            ["git", "-C", str(common), "rev-parse", "--absolute-git-dir"],
+            env=dict(env),
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode != 0:
+            return None
+        if Path(probe.stdout.strip()).resolve() != common_git:
+            return None
+        if not (cand / "commondir").is_file():
+            return None
+        pointed = (cand / (cand / "commondir").read_text().strip()).resolve()
+        if pointed != common_git:
+            return None
+        want = owner(common / ".git")
+        for path in (
+            cand,
+            cand / "commondir",
+            cand / "gitdir",
+            work / ".git",
+        ):
+            if owner(path) != want:
+                return None
+        return GitDirLocation(
+            git_dir=cand, work_tree=work, gitfile_target=target
+        )
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+
+
 def make_run_git(
     cwd: Path, env: Mapping[str, str]
 ) -> tuple[RunGit, GitDirLocation | None]:
     """The `run_git` for this process, and where it found the git dir when
     the worktree's own `.git` file could not be followed (else None)."""
+    location = locate_git_dir(cwd, env)
+    git_env = dict(env)
+    if location is not None:
+        git_env["GIT_DIR"] = str(location.git_dir)
+        git_env["GIT_WORK_TREE"] = str(location.work_tree)
 
     def run_git(git_args: list[str]) -> str:
         return subprocess.run(
             ["git", *git_args],
             cwd=cwd,
+            env=git_env,
             check=True,
             capture_output=True,
             text=True,
         ).stdout
 
-    return run_git, None
+    return run_git, location
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -590,7 +680,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
 
-    run_git, _location = make_run_git(Path.cwd(), os.environ)
+    run_git, location = make_run_git(Path.cwd(), os.environ)
+    if location is not None:
+        sys.stderr.write(
+            f"changed_scope: git dir {location.git_dir} "
+            f"(the worktree's .git names {location.gitfile_target})\n"
+        )
 
     if args.owners is not None:
         owners = owners_of(args.owners, load_stack(root))

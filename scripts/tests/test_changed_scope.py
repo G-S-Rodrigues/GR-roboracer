@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -909,3 +910,242 @@ def test_check_1270_real_map_owners_of_amcl_localizing() -> None:
 
     assert result.returncode == 0
     assert result.stdout == "pose_source=amcl\n"
+
+
+# --- worktrees seen through a different mount (CHECK-1350..1390) ----------
+
+_PKG_FILE = "ros_ws/src/racing_common/racing_common/x.py"
+
+
+def _git(cwd: Path, env: dict[str, str], *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", *args],
+        cwd=cwd,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def _git_layout(
+    tmp_path: Path,
+    *,
+    gitfile: str = "absolute",
+    move: bool = True,
+    foreign_owner: bool = False,
+    trust_common: bool = True,
+) -> tuple[Path, Path, dict[str, str]]:
+    """A real repo with a worktree made under `host/repo`; `move` renames the
+    repo to `ws` (the container's mount path). Returns (repo, worktree, env)
+    where `env` is what changed_scope would inherit in the container."""
+    base = {
+        k: v for k, v in os.environ.items() if k in {"PATH", "LANG", "LC_ALL"}
+    }
+    base |= {
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.com",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+    repo = tmp_path / "host" / "repo"
+    repo.mkdir(parents=True)
+    _git(repo, base, "init", "-q", "-b", "main")
+    (repo / "README.md").write_text("x\n")
+    (repo / ".gitignore").write_text(".scratch/\n")
+    _git(repo, base, "add", ".")
+    _git(repo, base, "commit", "-q", "-m", "init")
+    _git(repo, base, "worktree", "add", "-q", ".scratch/wt", "-b", "feat")
+    wt = repo / ".scratch" / "wt"
+    (wt / _PKG_FILE).parent.mkdir(parents=True)
+    (wt / _PKG_FILE).write_text("x = 1\n")
+    _git(wt, base, "add", ".")
+    _git(wt, base, "commit", "-q", "-m", "feature")
+    if gitfile == "relative":
+        (wt / ".git").write_text("gitdir: ../../.git/worktrees/wt\n")
+    if move:
+        ws = tmp_path / "ws"
+        repo.rename(ws)
+    else:
+        ws = repo
+    env = dict(base)
+    if foreign_owner:
+        env["GIT_TEST_ASSUME_DIFFERENT_OWNER"] = "1"
+    if trust_common:
+        env |= {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(ws),
+        }
+    return ws, ws / ".scratch" / "wt", env
+
+
+def _plain_merge_base(wt: Path, env: dict[str, str]) -> int:
+    return subprocess.run(
+        ["git", "-C", str(wt), "merge-base", "main", "HEAD"],
+        env=env,
+        capture_output=True,
+        text=True,
+    ).returncode
+
+
+@pytest.mark.parametrize(
+    ("gitfile", "foreign_owner"),
+    [("absolute", False), ("relative", True), ("absolute", True)],
+)
+def test_check_1350_a_host_worktree_seen_through_the_mount_is_scoped(
+    tmp_path: Path, gitfile: str, foreign_owner: bool
+) -> None:
+    """CHECK-1350: a worktree made on the host, seen under another path (and
+    maybe another owner), is scoped to its changes, not whole tree."""
+    from scripts.changed_scope import make_run_git
+
+    ws, wt, env = _git_layout(
+        tmp_path, gitfile=gitfile, foreign_owner=foreign_owner
+    )
+    assert _plain_merge_base(wt, env) == 128  # the control: plain git fails
+
+    run_git, loc = make_run_git(wt, env)
+    scope, reason = resolve(env, run_git, exists=lambda p: (wt / p).exists())
+
+    assert scope.whole_tree is False, reason
+    assert scope.packages == frozenset({"racing_common"})
+    assert loc is not None
+    assert loc.git_dir.resolve() == (ws / ".git" / "worktrees" / "wt").resolve()
+
+
+def test_check_1360_a_dev_side_worktree_and_the_main_checkout(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1360: a gitfile naming an existing dir is located to that dir;
+    the main checkout and an inherited GIT_DIR get no location."""
+    from scripts.changed_scope import locate_git_dir, make_run_git
+
+    ws, wt, env = _git_layout(tmp_path, move=False)
+    expected = (ws / ".git" / "worktrees" / "wt").resolve()
+
+    loc = locate_git_dir(wt, env)
+    assert loc is not None and loc.git_dir.resolve() == expected
+    assert loc.work_tree == wt
+
+    run_git, got = make_run_git(wt, env)
+    assert got is not None
+    scope, _ = resolve(env, run_git, exists=lambda p: (wt / p).exists())
+    assert scope.packages == frozenset({"racing_common"})
+
+    assert locate_git_dir(ws, env) is None
+    assert locate_git_dir(wt, env | {"GIT_DIR": str(expected)}) is None
+
+
+def _foreign_repo(tmp_path: Path, env: dict[str, str]) -> tuple[Path, Path]:
+    """A repo whose config runs a script (core.fsmonitor); returns (repo,
+    marker). The marker exists only if that script ran."""
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    _git(foreign, env, "init", "-q", "-b", "main")
+    marker = tmp_path / "marker"
+    hook = tmp_path / "hook.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
+    hook.chmod(0o755)
+    _git(foreign, env, "config", "core.fsmonitor", str(hook))
+    return foreign, marker
+
+
+def _assert_no_location_and_whole_tree(
+    wt: Path, env: dict[str, str], **kwargs: object
+) -> None:
+    from scripts.changed_scope import locate_git_dir, make_run_git
+
+    assert locate_git_dir(wt, env, **kwargs) is None  # type: ignore[arg-type]
+    run_git, loc = make_run_git(wt, env)
+    assert loc is None
+    scope, reason = resolve(env, run_git, exists=lambda p: True)
+    assert scope.whole_tree is True
+    assert "git failed" in reason
+
+
+def test_check_1370_a_fake_nested_common_repo_is_not_trusted(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a fake `A/.git` inside a trusted repo, whose commondir
+    names a foreign repo, gives no location and runs nothing foreign."""
+    ws, _wt, env = _git_layout(tmp_path)
+    foreign, marker = _foreign_repo(tmp_path, env)
+    meta = ws / "sub" / ".git" / "worktrees" / "wt2"
+    meta.mkdir(parents=True)
+    fake = ws / "sub" / ".scratch" / "wt2"
+    fake.mkdir(parents=True)
+    (meta / "gitdir").write_text(f"{fake}/.git\n")
+    (meta / "commondir").write_text(f"{foreign}/.git\n")
+    (fake / ".git").write_text("gitdir: /nowhere/.git/worktrees/wt2\n")
+
+    _assert_no_location_and_whole_tree(fake, env)
+
+    assert not marker.exists()
+
+
+def test_check_1370_a_commondir_outside_the_common_repo(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a commondir that does not resolve to A/.git is refused."""
+    ws, wt, env = _git_layout(tmp_path)
+    foreign, marker = _foreign_repo(tmp_path, env)
+    meta = ws / ".git" / "worktrees" / "wt"
+    (meta / "commondir").write_text(f"{foreign}/.git\n")
+
+    _assert_no_location_and_whole_tree(wt, env)
+
+    assert not marker.exists()
+
+
+def test_check_1370_a_uid_mismatch_is_refused(tmp_path: Path) -> None:
+    """CHECK-1370: metadata not owned by the owner of A/.git is refused."""
+    _ws, wt, env = _git_layout(tmp_path)
+
+    def owner(p: Path) -> int:
+        uid = p.stat().st_uid
+        return uid + 1 if p.name == "gitdir" else uid
+
+    from scripts.changed_scope import locate_git_dir
+
+    assert locate_git_dir(wt, env, owner=owner) is None
+
+
+def test_check_1370_unmatched_metadata_is_refused(tmp_path: Path) -> None:
+    """CHECK-1370: no worktrees/<name> among the ancestors, a back-pointer
+    naming another position, or a malformed gitfile: no location."""
+    ws, wt, env = _git_layout(tmp_path)
+    meta = ws / ".git" / "worktrees" / "wt"
+
+    meta.rename(meta.with_name("renamed"))
+    _assert_no_location_and_whole_tree(wt, env)
+    meta.with_name("renamed").rename(meta)
+
+    (meta / "gitdir").write_text("/elsewhere/.scratch/other/.git\n")
+    _assert_no_location_and_whole_tree(wt, env)
+
+    (wt / ".git").write_text("garbage\n")
+    _assert_no_location_and_whole_tree(wt, env)
+
+
+def test_check_1370_an_untrusted_common_repo_is_refused(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a common repo git itself would not open (foreign owner,
+    no safe.directory) gives no location; --ready is whole tree."""
+    from scripts.changed_scope import locate_git_dir, make_run_git
+
+    _ws, wt, env = _git_layout(tmp_path, foreign_owner=True, trust_common=False)
+    assert locate_git_dir(wt, env) is None
+
+    run_git, _loc = make_run_git(wt, env)
+
+    def load():
+        raise AssertionError("the map is not read when git fails")
+
+    scope, _ = resolve_ready(env, run_git, load)
+    assert scope.whole_tree is True
+    assert "git failed" in scope.reason
