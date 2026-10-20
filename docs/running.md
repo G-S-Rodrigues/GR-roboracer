@@ -2,51 +2,21 @@
 
 ## Host setup
 
-Requirements: WSL2 (Ubuntu 24.04) or plain Linux, Docker with Compose v2, and — for the headless GPU
-simulator only — an NVIDIA GPU with the container toolkit. The ROS side needs no GPU.
-
-**The working tree must live on ext4 inside the distro** (`~/gitroot/GR-roboracer`), never under
-`/mnt/c/`. See `docs/agents/repo-gotchas.md` #1 for what happens otherwise.
-
-```bash
-git clone git@github.com:G-S-Rodrigues/GR-roboracer.git ~/gitroot/GR-roboracer
-cd ~/gitroot/GR-roboracer
-docker compose -f docker/docker-compose.yaml up -d dev
-docker exec -it gr-roboracer-dev bash
-```
-
-The entrypoint sources the ROS distro, the third-party underlay and (once built) the workspace
-overlay for the container's main process only. A shell opened with `docker exec` inherits none of
-it, so source them first with `source /ws/setup.sh`. The devcontainer's VS Code terminal does
-this for you.
-
-```bash
-colcon build --base-paths ros_ws/src --symlink-install
-./scripts/check.sh --ready
-```
-
-Optional, and only if you want the headless GPU simulator:
-
-```bash
-docker compose -f docker/docker-compose.yaml run --rm fast-sim \
-  python -c "import jax; print(jax.devices())"     # must NOT print CpuDevice
-```
+First-run setup, with the clone, image build and launch, is in [Quick Start](quick-start.md). Host
+requirements, GPU and display notes are in [Setup](setup.md#host-requirements).
 
 ## Driving from a Windows shell
 
-Commands wrap as `wsl.exe -d Ubuntu-24.04 -e bash -lc '…'`. Two traps:
-
-- **Do not put `$PATH` inside the inner string.** WSL interop injects the Windows `PATH`, which
-  contains `Program Files (x86)`; the unquoted parentheses are a bash syntax error. Use absolute
-  paths instead.
-- For editing files from Windows tools, the tree is at
-  `\\wsl.localhost\Ubuntu-24.04\home\<user>\gitroot\GR-roboracer`.
+Wrapping commands with `wsl.exe` and its two traps are in
+[Setup](setup.md#driving-from-a-windows-shell).
 
 ## Running a scenario
 
-The full graph, with RViz:
+The full graph, with RViz. Run it from `/ws` inside the container, after the build in
+[Quick Start](quick-start.md):
 
 ```bash
+cd /ws
 ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 ```
 
@@ -92,13 +62,5 @@ not set physics parameters the rollout does not (SIMJAX-1060).
 
 ## When a run misbehaves
 
-- **The vehicle sits still with `active_clamps=64`.** That is a latched emergency stop: the command
-  stream stalled for longer than `stale_input_timeout_ms`. Find the stall; do not widen the timeout
-  (`docs/agents/repo-gotchas.md` #13 is the last thing that caused one).
-- **A topic "isn't publishing".** Compare QoS on both ends before reading any code (#6).
-- **Impossible message rates, or a clamp latched before your run started.** A previous launch's nodes
-  are still alive on the same `ROS_DOMAIN_ID` (#10):
-
-  ```bash
-  pkill -9 -f 'install/racing_'; pkill -9 -f 'ros2 launch'
-  ```
+Symptoms and fixes (latched stop, silent topics, stale launches) are in
+[Setup](setup.md#troubleshooting).
