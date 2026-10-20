@@ -41,17 +41,21 @@ SEED = 42
 TIME_SCALE = 5.0
 TIMEOUT_SECONDS = 400.0
 
-# Measured by SIM-5030, which runs this same lap RUN_COUNT times at this
-# seed and this scale and reports the spread - a particle filter has no
-# seed, so a bound from a single run would be a bound on that run's RNG.
-# SIM_5030_MEASUREMENT below is that sample.
+# This is the SEED-42 bound (D4). SIM-5030 runs this same lap RUNS_PER_SEED
+# times per seed at this scale and reports the spread - a particle filter
+# has no seed, so a bound from a single run would be a bound on that run's
+# RNG. SIM-5030's own multi-seed bounds are wider (it includes the bad
+# odometry-draw seeds 3 and 123) and are not shared with this test.
+# SIM_5030_MEASUREMENT below is the seed-42 sample the 0.65 rests on.
 SIM_5030_MEASUREMENT = (
-    "SIM-5030, 10 runs, seed 42, Spielberg, 5x, open loop: ate_rmse "
-    "0.215-0.437 m (spread 0.223, mean 0.314), ate_maximum 0.736-1.834 m, "
-    "availability 0.99411-0.99900; bounds at ~1.5x the sample's worst"
+    "SIM-5030 seed-42 slice, Spielberg, 5x, open loop: original ten runs "
+    "ate_rmse 0.215-0.437 m (spread 0.223, mean 0.314), ate_maximum "
+    "0.736-1.834 m, availability 0.99411-0.99900; post-3.1b, 5 runs each: "
+    "dev host 0.179-0.306 (median 0.259), CI 39423332965 0.141-0.279 "
+    "(median 0.220), CI 39423349401 0.264-0.356 (median 0.286)"
 )
-# SIM-5030's worst of ten was 0.437 in the original sample; the N1 CI
-# samples' worst single run is 0.570, so this bound's headroom is 1.14x.
+# SIM-5030's worst seed-42 run was 0.437 in the original sample, 0.570 in the
+# N1 CI samples and 0.356 post-3.1b; this bound's headroom is 1.14x at worst.
 POSITION_RMSE_MAXIMUM = 0.65
 POSITION_MAXIMUM = 2.6  # SIM-5030's worst of ten: 1.834
 AVAILABILITY_MINIMUM = 0.99  # SIM-5030's worst of ten: 0.99411

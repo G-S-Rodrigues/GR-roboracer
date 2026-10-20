@@ -53,10 +53,10 @@ TIMEOUT_SECONDS = 400.0
 # point of this row - f110_env.reset draws the start arc length from it.
 SEEDS = (42, 1030)
 # (ate_rmse below, availability above). Each is the bound its own tier-3
-# case already carries - SIM-3080's 0.65 from SIM-5030's ten runs,
-# SIM-3070's 4.0 from three - which is the point: this test asks whether
-# the bound measured at seed 42 survives a second start pose, so it must
-# be the same number and never a looser one.
+# case already carries - SIM-3080's 0.65 (a seed-42 bound, from
+# SIM-5030's seed-42 slice), SIM-3070's 4.0 from three - which is the
+# point: this test asks whether the bound measured at seed 42 survives a
+# second start pose, so it must be the same number and never a looser one.
 BOUNDS = {
     "slam_toolbox": (4.0, 0.99),
     "amcl": (0.65, 0.99),
