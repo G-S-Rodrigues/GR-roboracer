@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -142,10 +144,24 @@ def test_check_1290_raceline_python_is_linted_with_no_package() -> None:
     )
 
 
-def _fake_run_git(calls: dict[tuple[str, ...], str]):
-    def run_git(args: list[str]) -> str:
-        return calls[tuple(args)]
+_ABSENT = object()  # a git call that exits 1 (e.g. a missing ref)
+_FAILED = object()  # a git call that exits 128
+_PROBE = ("show-ref", "--verify", "--quiet", "refs/remotes/origin/main")
 
+
+def _fake_run_git(calls: dict[tuple[str, ...], object]):
+    seen: list[tuple[str, ...]] = []
+
+    def run_git(args: list[str]) -> str:
+        seen.append(tuple(args))
+        value = calls[tuple(args)]
+        if value is _ABSENT:
+            raise subprocess.CalledProcessError(1, args)
+        if value is _FAILED:
+            raise subprocess.CalledProcessError(128, args)
+        return value  # type: ignore[return-value]
+
+    run_git.seen = seen  # type: ignore[attr-defined]
     return run_git
 
 
@@ -156,6 +172,7 @@ def test_check_1080_changed_paths_is_deduplicated_union() -> None:
     base = "abc123"
     run_git = _fake_run_git(
         {
+            _PROBE: _ABSENT,
             ("merge-base", "main", "HEAD"): base + "\n",
             ("diff", "--name-only", "--no-renames", base): "a.py\nshared.py\n",
             (
@@ -176,6 +193,7 @@ def test_check_1080_changed_paths_is_deduplicated_union() -> None:
     missing_cpp = "ros_ws/src/racing_metrics/src/gone.cpp"
     run_git2 = _fake_run_git(
         {
+            _PROBE: _ABSENT,
             ("merge-base", "main", "HEAD"): base + "\n",
             ("diff", "--name-only", "--no-renames", base): missing_cpp,
             ("diff", "--name-only", "--no-renames", "--cached", base): "",
@@ -773,6 +791,7 @@ def _git_returning(paths: str):
     base = "abc"
     return _fake_run_git(
         {
+            _PROBE: _ABSENT,
             ("merge-base", "main", "HEAD"): base,
             ("diff", "--name-only", "--no-renames", base): paths,
             ("diff", "--name-only", "--no-renames", "--cached", base): "",
@@ -909,3 +928,507 @@ def test_check_1270_real_map_owners_of_amcl_localizing() -> None:
 
     assert result.returncode == 0
     assert result.stdout == "pose_source=amcl\n"
+
+
+# --- worktrees seen through a different mount (CHECK-1350..1390) ----------
+
+_PKG_FILE = "ros_ws/src/racing_common/racing_common/x.py"
+
+
+def _git(cwd: Path, env: dict[str, str], *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", *args],
+        cwd=cwd,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def _git_layout(
+    tmp_path: Path,
+    *,
+    gitfile: str = "absolute",
+    move: bool = True,
+    foreign_owner: bool = False,
+    trust_common: bool = True,
+) -> tuple[Path, Path, dict[str, str]]:
+    """A real repo with a worktree made under `host/repo`; `move` renames the
+    repo to `ws` (the container's mount path). Returns (repo, worktree, env)
+    where `env` is what changed_scope would inherit in the container."""
+    base = {
+        k: v for k, v in os.environ.items() if k in {"PATH", "LANG", "LC_ALL"}
+    }
+    base |= {
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.com",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+    repo = tmp_path / "host" / "repo"
+    repo.mkdir(parents=True)
+    _git(repo, base, "init", "-q", "-b", "main")
+    (repo / "README.md").write_text("x\n")
+    (repo / ".gitignore").write_text(".scratch/\n")
+    _git(repo, base, "add", ".")
+    _git(repo, base, "commit", "-q", "-m", "init")
+    _git(repo, base, "worktree", "add", "-q", ".scratch/wt", "-b", "feat")
+    wt = repo / ".scratch" / "wt"
+    (wt / _PKG_FILE).parent.mkdir(parents=True)
+    (wt / _PKG_FILE).write_text("x = 1\n")
+    _git(wt, base, "add", ".")
+    _git(wt, base, "commit", "-q", "-m", "feature")
+    if gitfile == "relative":
+        (wt / ".git").write_text("gitdir: ../../.git/worktrees/wt\n")
+    if move:
+        ws = tmp_path / "ws"
+        repo.rename(ws)
+    else:
+        ws = repo
+    env = dict(base)
+    if foreign_owner:
+        env["GIT_TEST_ASSUME_DIFFERENT_OWNER"] = "1"
+    if trust_common:
+        env |= {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(ws),
+        }
+    return ws, ws / ".scratch" / "wt", env
+
+
+def _plain_merge_base(wt: Path, env: dict[str, str]) -> int:
+    return subprocess.run(
+        ["git", "-C", str(wt), "merge-base", "main", "HEAD"],
+        env=env,
+        capture_output=True,
+        text=True,
+    ).returncode
+
+
+@pytest.mark.parametrize(
+    ("gitfile", "foreign_owner"),
+    [("absolute", False), ("relative", True), ("absolute", True)],
+)
+def test_check_1350_a_host_worktree_seen_through_the_mount_is_scoped(
+    tmp_path: Path, gitfile: str, foreign_owner: bool
+) -> None:
+    """CHECK-1350: a worktree made on the host, seen under another path (and
+    maybe another owner), is scoped to its changes, not whole tree."""
+    from scripts.changed_scope import make_run_git
+
+    ws, wt, env = _git_layout(
+        tmp_path, gitfile=gitfile, foreign_owner=foreign_owner
+    )
+    assert _plain_merge_base(wt, env) == 128  # the control: plain git fails
+
+    run_git, loc = make_run_git(wt, env)
+    scope, reason = resolve(env, run_git, exists=lambda p: (wt / p).exists())
+
+    assert scope.whole_tree is False, reason
+    assert scope.packages == frozenset({"racing_common"})
+    assert loc is not None
+    assert loc.git_dir.resolve() == (ws / ".git" / "worktrees" / "wt").resolve()
+
+
+def test_check_1360_a_dev_side_worktree_and_the_main_checkout(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1360: a gitfile naming an existing dir is located to that dir;
+    the main checkout and an inherited GIT_DIR get no location."""
+    from scripts.changed_scope import locate_git_dir, make_run_git
+
+    ws, wt, env = _git_layout(tmp_path, move=False)
+    expected = (ws / ".git" / "worktrees" / "wt").resolve()
+
+    loc = locate_git_dir(wt, env)
+    assert loc is not None and loc.git_dir.resolve() == expected
+    assert loc.work_tree == wt
+
+    run_git, got = make_run_git(wt, env)
+    assert got is None  # plain git works here, so nothing is located
+    scope, _ = resolve(env, run_git, exists=lambda p: (wt / p).exists())
+    assert scope.packages == frozenset({"racing_common"})
+
+    assert locate_git_dir(ws, env) is None
+    assert locate_git_dir(wt, env | {"GIT_DIR": str(expected)}) is None
+
+
+def _foreign_repo(tmp_path: Path, env: dict[str, str]) -> tuple[Path, Path]:
+    """A repo whose config runs a script (core.fsmonitor); returns (repo,
+    marker). The marker exists only if that script ran."""
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    _git(foreign, env, "init", "-q", "-b", "main")
+    marker = tmp_path / "marker"
+    hook = tmp_path / "hook.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
+    hook.chmod(0o755)
+    _git(foreign, env, "config", "core.fsmonitor", str(hook))
+    return foreign, marker
+
+
+def _assert_no_location_and_whole_tree(
+    wt: Path, env: dict[str, str], **kwargs: object
+) -> None:
+    from scripts.changed_scope import locate_git_dir, make_run_git
+
+    assert locate_git_dir(wt, env, **kwargs) is None  # type: ignore[arg-type]
+    run_git, loc = make_run_git(wt, env)
+    assert loc is None
+    scope, reason = resolve(env, run_git, exists=lambda p: True)
+    assert scope.whole_tree is True
+    assert "git failed" in reason
+
+
+def test_check_1370_a_fake_nested_common_repo_is_not_trusted(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a fake `A/.git` inside a trusted repo, whose commondir
+    names a foreign repo, gives no location and runs nothing foreign."""
+    ws, _wt, env = _git_layout(tmp_path)
+    foreign, marker = _foreign_repo(tmp_path, env)
+    meta = ws / "sub" / ".git" / "worktrees" / "wt2"
+    meta.mkdir(parents=True)
+    fake = ws / "sub" / ".scratch" / "wt2"
+    fake.mkdir(parents=True)
+    (meta / "gitdir").write_text(f"{fake}/.git\n")
+    (meta / "commondir").write_text(f"{foreign}/.git\n")
+    (fake / ".git").write_text("gitdir: /nowhere/.git/worktrees/wt2\n")
+
+    _assert_no_location_and_whole_tree(fake, env)
+
+    assert not marker.exists()
+
+
+def test_check_1370_a_commondir_outside_the_common_repo(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a commondir that does not resolve to A/.git is refused."""
+    ws, wt, env = _git_layout(tmp_path)
+    foreign, marker = _foreign_repo(tmp_path, env)
+    meta = ws / ".git" / "worktrees" / "wt"
+    (meta / "commondir").write_text(f"{foreign}/.git\n")
+
+    _assert_no_location_and_whole_tree(wt, env)
+
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    "which", ["metadata", "commondir", "gitdir", "gitfile"]
+)
+def test_check_1370_a_uid_mismatch_is_refused(
+    tmp_path: Path, which: str
+) -> None:
+    """CHECK-1370: any of the four checked paths not owned by the owner of
+    A/.git is refused; without the injection the same layout is located."""
+    from scripts.changed_scope import locate_git_dir
+
+    ws, wt, env = _git_layout(tmp_path)
+    meta = ws / ".git" / "worktrees" / "wt"
+    odd = {
+        "metadata": meta,
+        "commondir": meta / "commondir",
+        "gitdir": meta / "gitdir",
+        "gitfile": wt / ".git",
+    }[which]
+
+    def owner(p: Path) -> int:
+        uid = p.stat().st_uid
+        return uid + 1 if p == odd else uid
+
+    assert locate_git_dir(wt, env) is not None  # the positive control
+    assert locate_git_dir(wt, env, owner=owner) is None
+
+
+def test_check_1370_a_fake_common_dir_without_head_is_not_trusted(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: `ws/sub/.git` with no HEAD is not a repo, so git's probe
+    answers with the parent's; the answer must equal A/.git, or a fake A whose
+    commondir is `../..` would run its own core.fsmonitor."""
+    ws, _wt, env = _git_layout(tmp_path)
+    _foreign, marker = _foreign_repo(tmp_path, env)
+    fake_git = ws / "sub" / ".git"
+    (fake_git / "objects").mkdir(parents=True)
+    (fake_git / "refs").mkdir()
+    (fake_git / "config").write_text(
+        f"[core]\n\tfsmonitor = {tmp_path / 'hook.sh'}\n"
+    )
+    meta = fake_git / "worktrees" / "wt2"
+    meta.mkdir(parents=True)
+    fake = ws / "sub" / ".scratch" / "wt2"
+    fake.mkdir(parents=True)
+    (meta / "HEAD").write_text("ref: refs/heads/main\n")
+    (meta / "gitdir").write_text(f"{fake}/.git\n")
+    (meta / "commondir").write_text("../..\n")
+    (fake / ".git").write_text("gitdir: /nowhere/.git/worktrees/wt2\n")
+
+    _assert_no_location_and_whole_tree(fake, env)
+
+    assert not marker.exists()
+
+
+def test_check_1370_a_commondir_symlink_loop_is_refused(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a commondir naming a symlink loop gives no location, not
+    a RuntimeError traceback."""
+    ws, wt, env = _git_layout(tmp_path)
+    meta = ws / ".git" / "worktrees" / "wt"
+    (meta / "loop").symlink_to(meta / "loop")
+    (meta / "commondir").write_text("loop\n")
+
+    _assert_no_location_and_whole_tree(wt, env)
+
+
+@pytest.mark.parametrize("target_name", ["..", ".", ""])
+def test_check_1370_a_gitfile_ending_in_a_dot_name_is_refused(
+    tmp_path: Path, target_name: str
+) -> None:
+    """CHECK-1370: a gitdir ending in `..`, `.` or nothing would make the
+    'metadata dir' A/.git or worktrees/ itself; no location."""
+    import os
+
+    ws, _wt, env = _git_layout(tmp_path)
+    fake = ws / ".scratch" / "wt2"
+    fake.mkdir()
+    (fake / ".git").write_text(
+        f"gitdir: /nowhere/.git/worktrees/{target_name}\n"
+    )
+    cand = ws / ".git" / "worktrees" / target_name
+    (cand / "gitdir").write_text(f"{fake}/.git\n")
+    rel = os.path.relpath(ws / ".git", cand)
+    (cand / "commondir").write_text(rel + "\n")
+
+    from scripts.changed_scope import locate_git_dir
+
+    assert locate_git_dir(fake, env) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    ],
+)
+def test_check_1370_an_inherited_git_location_variable_disables_it(
+    tmp_path: Path, name: str
+) -> None:
+    """CHECK-1370: like GIT_DIR, these mean the caller already chose where
+    git looks, and would override what the gate validated."""
+    from scripts.changed_scope import locate_git_dir
+
+    ws, wt, env = _git_layout(tmp_path)
+    assert locate_git_dir(wt, env) is not None  # the positive control
+    value = str(ws / ".git") if name == "GIT_COMMON_DIR" else str(tmp_path)
+    assert locate_git_dir(wt, env | {name: value}) is None
+
+
+def test_check_1370_the_locator_is_not_consulted_on_a_healthy_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CHECK-1370: when plain git opens the checkout, the ownership bypass is
+    never run and the CLI prints no `git dir` line."""
+    import scripts.changed_scope as module
+
+    _ws, wt, env = _git_layout(tmp_path, move=False)
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("locate_git_dir consulted on a healthy repo")
+
+    monkeypatch.setattr(module, "locate_git_dir", boom)
+    run_git, loc = module.make_run_git(wt, env)
+    assert loc is None
+    assert run_git(["rev-parse", "--is-inside-work-tree"]).strip() == "true"
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "changed_scope.py")],
+        cwd=wt,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0 and "git dir" not in result.stderr
+
+
+def test_check_1370_owners_does_not_probe_git(tmp_path: Path) -> None:
+    """CHECK-1370: `--owners` neither spawns the git probe nor prints the
+    located-git-dir line, even where the locator would fire."""
+    _ws, wt, env = _git_layout(tmp_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "changed_scope.py"),
+            "--owners",
+            "SIM-3080",
+        ],
+        cwd=wt,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "git dir" not in result.stderr
+
+
+def test_check_1370_unmatched_metadata_is_refused(tmp_path: Path) -> None:
+    """CHECK-1370: no worktrees/<name> among the ancestors, a back-pointer
+    naming another position, or a malformed gitfile: no location."""
+    ws, wt, env = _git_layout(tmp_path)
+    meta = ws / ".git" / "worktrees" / "wt"
+
+    meta.rename(meta.with_name("renamed"))
+    _assert_no_location_and_whole_tree(wt, env)
+    meta.with_name("renamed").rename(meta)
+
+    (meta / "gitdir").write_text("/elsewhere/.scratch/other/.git\n")
+    _assert_no_location_and_whole_tree(wt, env)
+
+    (wt / ".git").write_text("garbage\n")
+    _assert_no_location_and_whole_tree(wt, env)
+
+
+def test_check_1370_an_untrusted_common_repo_is_refused(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1370: a common repo git itself would not open (foreign owner,
+    no safe.directory) gives no location; --ready is whole tree."""
+    from scripts.changed_scope import locate_git_dir, make_run_git
+
+    _ws, wt, env = _git_layout(tmp_path, foreign_owner=True, trust_common=False)
+    assert locate_git_dir(wt, env) is None
+
+    run_git, _loc = make_run_git(wt, env)
+
+    def load():
+        raise AssertionError("the map is not read when git fails")
+
+    scope, _ = resolve_ready(env, run_git, load)
+    assert scope.whole_tree is True
+    assert "git failed" in scope.reason
+
+
+# --- the base is origin/main (CHECK-1380) --------------------------------
+
+_ORIGIN_MB = ("merge-base", "refs/remotes/origin/main", "HEAD")
+_MAIN_MB = ("merge-base", "main", "HEAD")
+
+
+def test_check_1380_origin_main_is_the_base_when_it_exists() -> None:
+    """CHECK-1380: origin/main wins; local main only when the lookup exits 1,
+    and then the label says so."""
+    from scripts.changed_scope import merge_base
+
+    run_git = _fake_run_git({_PROBE: "", _ORIGIN_MB: "abc\n"})
+    assert merge_base(run_git) == ("origin/main", "abc")
+
+    run_git = _fake_run_git({_PROBE: _ABSENT, _MAIN_MB: "def\n"})
+    assert merge_base(run_git) == ("main (no origin/main)", "def")
+
+
+def test_check_1380_a_failed_base_is_whole_tree_without_fallback() -> None:
+    """CHECK-1380: origin/main present but its merge-base failing, or the
+    lookup itself failing (not 'absent'), is whole tree and never retries
+    against local main."""
+
+    def load():
+        raise AssertionError("the map is not read when git fails")
+
+    for calls in (
+        {_PROBE: "", _ORIGIN_MB: _ABSENT},
+        {_PROBE: _FAILED},
+    ):
+        run_git = _fake_run_git(calls)
+        scope, reason = resolve({}, run_git, exists=lambda p: True)
+        assert scope.whole_tree and "git failed" in reason
+        assert _MAIN_MB not in run_git.seen  # type: ignore[attr-defined]
+
+        run_git = _fake_run_git(calls)
+        ready, _ = resolve_ready({}, run_git, load)
+        assert ready.whole_tree and "git failed" in ready.reason
+        assert _MAIN_MB not in run_git.seen  # type: ignore[attr-defined]
+
+
+def test_check_1380_a_stale_local_main_does_not_widen_the_changed_set(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1380: with local main two commits behind origin/main, those two
+    commits' files are not in the branch's changed set."""
+    from scripts.changed_scope import make_run_git
+
+    ws, wt, env = _git_layout(tmp_path, move=False)
+    for name in ("a", "b"):
+        (ws / "docs").mkdir(exist_ok=True)
+        (ws / "docs" / f"{name}.md").write_text(name)
+        _git(ws, env, "add", ".")
+        _git(ws, env, "commit", "-q", "-m", name)
+    tip = _git(ws, env, "rev-parse", "HEAD").strip()
+    _git(ws, env, "update-ref", "refs/remotes/origin/main", tip)
+    _git(ws, env, "reset", "-q", "--hard", "HEAD~2")
+    _git(wt, env, "checkout", "-q", "-b", "feat2", "refs/remotes/origin/main")
+    (wt / "docs" / "c.md").write_text("c")
+    _git(wt, env, "add", ".")
+    _git(wt, env, "commit", "-q", "-m", "c")
+
+    run_git, _loc = make_run_git(wt, env)
+
+    assert changed_paths(run_git) == ["docs/c.md"]
+
+
+# --- the reason line names the base (CHECK-1390) --------------------------
+
+
+def test_check_1390_the_cli_in_a_host_worktree_names_base_and_git_dir(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1390: the CLI, run in a moved host-style worktree, is scoped,
+    its reason names the base, and stderr names the located git dir."""
+    ws, wt, env = _git_layout(tmp_path)
+    _git(ws, env, "update-ref", "refs/remotes/origin/main", "main")
+
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "changed_scope.py")],
+        cwd=wt,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    assert _eval_shell(out, 'echo "$scope_whole_tree"').strip() == "0"
+    assert "base origin/main" in _eval_shell(out, 'echo "$scope_reason"')
+    assert "git dir" in result.stderr
+    assert "worktrees/wt" in result.stderr
+
+
+def test_check_1390_ready_line_appends_the_base() -> None:
+    """CHECK-1390: render_ready_shell appends `; base ...` on scoped and
+    whole-by-rule lines, and nothing when the base is empty."""
+    stack = stack_from_dict(SELECT_MAP, SELECT_SYSTEM, SELECT_TAGS)
+    scoped = select_ready(
+        ["config/loc/amcl.yaml"], stack, {"pkg_sim": {"pkg_pp"}}
+    )
+    whole = select_ready([], stack, {})
+
+    def line(scope: ReadyScope) -> str:
+        rendered = render_ready_shell(scope, stack)
+        return _eval_shell(rendered, 'echo "$ready_line"').strip()
+
+    base = "origin/main abc"
+    assert line(replace(scoped, base=base)).endswith(f"; base {base}")
+    assert line(replace(whole, base=base)).endswith(f"; base {base})")
+    assert line(scoped) == line(replace(scoped, base=""))
+    assert "base" not in line(scoped).split("because")[-1]
+    assert "base" not in line(whole)

@@ -172,6 +172,16 @@ Traps any task in this repository can hit. Each one cost real time at least once
     tree, so a stale map shows up as a slow `--ready`, never a skipped test. The exception is a path
     assigned to the *wrong* implementation, which nothing catches but review and the nightly.
 
+    The scope's base is `refs/remotes/origin/main` when it exists (local `main` only when it is absent,
+    and the line says `main (no origin/main)`); it is never fetched, and `; base <ref> <sha>` is printed
+    on the scope and ready lines so a stale one shows. In `dev`, git fails twice over on a worktree made
+    on the host: its `.git` file names a host path that does not exist (`not a git repository`), or, with
+    a hand-rewritten relative path, root-vs-UID-1000 ownership that `safe.directory=/ws` does not cover
+    (`dubious ownership`). `changed_scope.py` therefore, only when plain git fails, locates the git dir itself behind a trust gate
+    (CHECK-1350..1370) and runs git with `GIT_DIR`/`GIT_WORK_TREE`; it logs `changed_scope: git dir ...`
+    on stderr. Any other git in `dev` on a host worktree still needs the hand rewrite and a
+    `safe.directory`. Never `git worktree prune/repair` in `dev`: it rewrites the host's back-pointers.
+
 24. **The sourced ROS `PYTHONPATH` leaks into every uv venv run after it.** `check.sh` sources ROS and
     the overlay, and `PYTHONPATH` is honoured inside a uv venv, ahead of its site-packages. A
     `raceline/` run without `env -u PYTHONPATH` can import `rclpy` and `racing_common` (ADR 0003's
