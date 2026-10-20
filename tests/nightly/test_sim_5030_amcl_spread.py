@@ -18,7 +18,7 @@ tier-3 bound SIM-3080 asserts is derived from this, never from a single
 run.
 
 Tier 5 because that is what it costs: SEEDS x RUNS_PER_SEED laps at 5x is
-~33 minutes at 30 laps (66 s each on CI), which belongs in `--nightly` and
+~40 minutes at 35 laps (~68 s each on CI), which belongs in `--nightly` and
 not in the gate (ADR 0005).
 What it buys nightly is that a shift in AMCL's typical error (the median
 of the runs) or a single-run blow-up (the maximum) is visible rather than
@@ -358,8 +358,9 @@ def test_sim_5030_bound_rejects_a_shifted_median() -> None:
 
 
 def test_sim_5030_bound_rejects_a_single_run_past_the_maximum() -> None:
-    # One run just past the maximum bound; the median is untouched.
-    blown = [*CI_SAMPLE_A[:-1], ATE_RMSE_MAXIMUM + 0.01]
+    # One run just past the maximum bound (a literal on purpose: raising
+    # ATE_RMSE_MAXIMUM must mean editing this test); the median is untouched.
+    blown = [*CI_SAMPLE_A[:-1], 2.36]
     assert amcl_violations(blown, AVAILABLE) == ["maximum"]
 
 
