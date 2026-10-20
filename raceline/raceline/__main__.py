@@ -80,6 +80,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--vehicle", type=Path, required=True)
     p.add_argument("--optimizer", required=True, choices=sorted(OPTIMIZERS))
     p.add_argument("--ground-truth-track", type=Path)
+    p.add_argument(
+        "--ground-truth-map",
+        type=Path,
+        help="a map_server YAML whose occupied cells judge a sharp tip (D16)",
+    )
     p.add_argument("--margin", type=float, default=DEFAULT_MARGIN)
     p.add_argument("--passes", type=int, default=2)
     p.add_argument("--name")
@@ -121,6 +126,7 @@ def _verdict_doc(v: verify.Verdict) -> dict:
         "unobserved_share": {
             k: float(x) for k, x in v.unobserved_share.items()
         },
+        "tips": v.tips,
     }
 
 
@@ -131,6 +137,15 @@ def _provenance(args, vehicle, track, line, verdict, argv) -> dict:
         image = yaml.safe_load(Path(args.map).read_text())["image"]
         src["image_sha256"] = _sha256(Path(args.map).parent / image)
     gt = args.ground_truth_track
+    gt_map = args.ground_truth_map
+    gt_map_doc = None
+    if gt_map:
+        image = yaml.safe_load(Path(gt_map).read_text())["image"]
+        gt_map_doc = {
+            "path": str(gt_map),
+            "sha256": _sha256(gt_map),
+            "image_sha256": _sha256(Path(gt_map).parent / image),
+        }
     tables = {
         "ggv_sha256": _sha256(vehicle.ggv_path),
         "ax_max_machines_sha256": _sha256(vehicle.ax_max_machines_path),
@@ -157,6 +172,7 @@ def _provenance(args, vehicle, track, line, verdict, argv) -> dict:
         "ground_truth": (
             {"path": str(gt), "sha256": _sha256(gt)} if gt else None
         ),
+        "ground_truth_map": gt_map_doc,
         "vehicle": {
             "path": str(args.vehicle),
             "sha256": _sha256(args.vehicle),
@@ -179,6 +195,12 @@ def main(argv: list[str] | None = None) -> int:
         args.walls = args.walls or "observed"
     elif args.walls or args.start_pose or args.direction:
         sys.exit("--walls, --start-pose and --direction go with --map")
+    if args.ground_truth_map and not (args.ground_truth_track or args.track):
+        print(
+            "input: --ground-truth-map needs --ground-truth-track or --track",
+            file=sys.stderr,
+        )
+        return 3
     stem = (args.map or args.track).stem.lower()
     name = args.name or stem
     vehicle: VehicleLimits = load_vehicle(args.vehicle)
@@ -192,12 +214,17 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as err:
         print(f"input: {err}", file=sys.stderr)
         return 3
+    cells = None
+    if args.ground_truth_map:
+        cells = verify.observed_cells(
+            load_map(args.ground_truth_map), str(args.ground_truth_map)
+        )
     if args.ground_truth_track:
         truth = verify.track_walls(
-            load_track(args.ground_truth_track), "ground_truth"
+            load_track(args.ground_truth_track), "ground_truth", cells
         )
     elif args.track:
-        truth = verify.track_walls(track, "ground_truth")
+        truth = verify.track_walls(track, "ground_truth", cells)
     else:
         truth = None
         print(

@@ -219,3 +219,51 @@ def test_raceline_1392_a_bad_track_input_exits_3_too(
     assert "input:" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
     assert calls == []
+
+
+def test_raceline_1388_the_ground_truth_map_gives_cells_to_that_set_only(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    recorded = []
+    real = runner.verify.verify
+
+    def recorder(line, vehicle, walls, reference):
+        recorded.extend(walls)
+        return real(line, vehicle, walls, reference)
+
+    monkeypatch.setattr(runner.verify, "verify", recorder)
+    ring, _ = _ring_args(tmp_path)
+    grid = test_extract._ring()
+    oval = _oval_yaml(tmp_path)
+    args = _argv(tmp_path, "--track", str(oval))
+    assert runner.main([*args, "--ground-truth-map", str(ring)]) == 0
+    by_name = {w.name: w for w, _ in recorded}
+    assert by_name["input"].cells is None
+    cells = by_name["ground_truth"].cells
+    assert cells.resolution == grid.resolution
+    assert len(cells.centres) == int((grid.data == 100).sum())
+    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
+    gt_map = doc["ground_truth_map"]
+    assert gt_map["path"] == str(ring)
+    assert gt_map["sha256"] == hashlib.sha256(ring.read_bytes()).hexdigest()
+    png = ring.with_suffix(".png")
+    assert (
+        gt_map["image_sha256"] == hashlib.sha256(png.read_bytes()).hexdigest()
+    )
+    assert doc["verdict"]["tips"]["ground_truth"] == []
+
+
+def test_raceline_1388_a_ground_truth_map_needs_ground_truth_walls(
+    monkeypatch, tmp_path, capsys
+):
+    calls = []
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum(calls))
+    ring, pose = _ring_args(tmp_path)
+    args = _argv(tmp_path, "--map", str(ring), *pose)
+    assert runner.main([*args, "--ground-truth-map", str(ring)]) == 3
+    err = capsys.readouterr().err
+    assert "input:" in err and "--ground-truth-map" in err
+    assert not (tmp_path / "out").exists()
+    assert calls == []
