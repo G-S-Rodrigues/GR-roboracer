@@ -5,6 +5,15 @@ Ported from ForzaETH/race_stack @202450f, planner/global_planner/global_planner/
 Not imported from upstream: upstream needs ROS, ``f110_msgs`` and TUM's LGPL
 ``interp_track``. What differs is listed in NOTICE.md.
 
+Wall selectors (part 2.3), ``walls=`` on ``extract_track`` and
+``track_bounds``: ``"observed"`` (default) treats the map frame as unknown
+(the grid is padded with unknown before binarizing, M1) and does not take a
+bound stretch with no occupied cell near it for a wall: it is bridged from the
+observed walls at its ends and the track is extracted again (M2, capped by
+``MAX_BRIDGE_TURN_DEG`` and ``MAX_BRIDGE_M``, ``ValueError`` naming
+"unobserved" past it). ``observed_mask`` is the map-only check. ``"non_free"``
+is part 2's behaviour, unchanged (ADR 0005).
+
 Conventions: map frame, metres. ``Pose2D.yaw`` is 0 along +x (the gym / ROS
 convention), NOT TUM's psi (0 = north). Grid cell ``(i, j)`` has its centre at
 ``origin + ((j + 0.5) * res, (i + 0.5) * res)`` (ROS map convention).
@@ -36,6 +45,29 @@ MIN_SIDE_AGREEMENT = 0.95  # share of points that must agree on a bound's side
 BOUND_SIGMA_M = 0.2  # smoothing of a bound before its normals are taken
 RECENTRE_SIGMA_M = 0.1  # smoothing of the re-centred line
 CORNER_KAPPA = 0.1  # 1/m; the outer bound takes over at this curvature
+
+# Part 2.3, walls="observed". Measured in raceline/tests/test_extract.py
+# (RACELINE-1140..1170) and the part-2.3 Step 1 sweep (PR body has the table).
+# m; a bound point with no occupied cell this near is not a wall. The survey's
+# farthest backed bound point is 0.110 m (3 cells = 0.15)
+OBSERVED_TOL = 0.15
+FRAME_PAD = 10  # cells of unknown added around the grid before binarizing:
+# the map frame is not a wall, and a pocket it cuts off is not a patch
+BRIDGE_EXT_M = 0.3  # a bridge starts this far into the observed wall
+BRIDGE_TANGENT_M = 0.5  # the end tangent is the chord of this much wall
+# The cap on a bridge (Step 1 sweep, 166 admitted inner runs, R_in 3.0-7.5, up
+# to 11 gap orientations each): turn <= 70 deg and chord <= 6.0 m keep the
+# bridged width within +0.033 of truth (limit 0.04). An inner-wall bridge is
+# a Hermite curve, which lies inside the arc: R_in 4 / 90 deg reads 95.9 deg
+# turn and +0.074 wide, R_in 4 / 120 deg +0.183. Past ~7 m the end-tangent
+# error (a 0.5 m secant of a pixelised contour, ~5 deg) bounds the bridge
+# whatever the turn: chord 7.01 / turn 66.8 read +0.070, so the chord is a
+# primary limit. The turn is the measured end-tangent turn, which includes the
+# BRIDGE_EXT_M extensions (a nominal 20 deg gap reads 36 deg at R 4).
+MAX_BRIDGE_TURN_DEG = 70.0
+MAX_BRIDGE_M = 6.0
+
+Walls = Literal["observed", "non_free"]
 
 
 @dataclass(frozen=True)
@@ -106,7 +138,18 @@ def _fill_patches(bw: np.ndarray, area_m2: float, res: float) -> None:
     bw[np.isin(labels, small)] = 255
 
 
-def _binarize(grid: OccupancyGrid) -> np.ndarray:
+def _binarize(grid: OccupancyGrid, walls: str = "non_free") -> np.ndarray:
+    if walls == "observed":
+        # Part 2.3 (M1): the map frame is unknown, not a wall. Without the
+        # pad, an outside pocket the frame cuts off from the rest of the
+        # unknown (the survey's top-left corner) is a small patch, and
+        # _fill_patches turns the observed wall and the unknown behind it
+        # into corridor.
+        pad = np.pad(grid.data, FRAME_PAD, constant_values=-1)
+        inner = _binarize(
+            OccupancyGrid(pad, grid.resolution, grid.origin), "non_free"
+        )
+        return inner[FRAME_PAD:-FRAME_PAD, FRAME_PAD:-FRAME_PAD]
     # filter_map_occupancy_grid (:508-530): unknown counts as occupied,
     # then a 3x3 morphological opening, 2 iterations (its class default; its
     # shipped config uses 9x9, see NOTICE.md). Not upstream: the
@@ -263,6 +306,115 @@ def _bound_contours(
     return [_cells_to_m(c, grid) for c in closed]
 
 
+def _dist_to_occupied(grid: OccupancyGrid) -> np.ndarray:
+    occ = (grid.data == 100).astype(np.uint8)
+    return cv2.distanceTransform(1 - occ, cv2.DIST_L2, 5) * grid.resolution
+
+
+def observed_mask(
+    grid: OccupancyGrid, pts: np.ndarray, tol: float = OBSERVED_TOL
+) -> np.ndarray:
+    """True where an occupied cell lies within ``tol`` of the point.
+
+    The map-only check (no ground truth): the False points of a bound are not
+    seen walls (an open wall's gap, or the map frame). Off-map points are
+    False.
+    """
+    pts = np.asarray(pts, dtype=float)
+    dist = _dist_to_occupied(grid)
+    h, w = dist.shape
+    fx = (pts[:, 0] - grid.origin.x) / grid.resolution
+    fy = (pts[:, 1] - grid.origin.y) / grid.resolution
+    eps = 1e-6  # a bound point on the frame itself is on the map
+    on_map = (fx >= -eps) & (fx <= w + eps) & (fy >= -eps) & (fy <= h + eps)
+    col = np.clip(np.floor(fx).astype(int), 0, w - 1)
+    row = np.clip(np.floor(fy).astype(int), 0, h - 1)
+    return on_map & (dist[row, col] <= tol)
+
+
+def _fixed_start(contour: np.ndarray) -> np.ndarray:
+    # lowest (y, x) point first: the same start whichever centreline seeded
+    # the contour
+    i = int(np.lexsort((contour[:, 0], contour[:, 1]))[0])
+    return np.roll(contour, -i, axis=0)
+
+
+def _bridge_curve(p, i0, i1, n, k):
+    p0, p1 = p[i0], p[i1]
+    t0 = p0 - p[(i0 - k) % n]
+    t1 = p[(i1 + k) % n] - p1
+    t0 = t0 / np.linalg.norm(t0)
+    t1 = t1 / np.linalg.norm(t1)
+    chord = float(np.linalg.norm(p1 - p0))
+    turn = float(np.degrees(np.arccos(np.clip(t0 @ t1, -1.0, 1.0))))
+    t = np.linspace(0.0, 1.0, max(int(chord / 0.02), 2))[:, None]
+    curve = (
+        (2 * t**3 - 3 * t**2 + 1) * p0
+        + (t**3 - 2 * t**2 + t) * chord * t0
+        + (-2 * t**3 + 3 * t**2) * p1
+        + (t**3 - t**2) * chord * t1
+    )
+    return curve, chord, turn
+
+
+def _bridge_unobserved(
+    grid: OccupancyGrid, binary: np.ndarray, contours: list[np.ndarray]
+) -> tuple[np.ndarray, int]:
+    # Part 2.3 (M2). A function of the unbridged bound contours alone: no
+    # centreline, no left/right, so extract_track and track_bounds draw the
+    # same bridges. A run of bound points with no occupied cell within
+    # OBSERVED_TOL is not a wall: it is grown BRIDGE_EXT_M onto the observed
+    # wall and replaced by a cubic Hermite curve between the observed ends.
+    res = []
+    step = STEP_M
+    e = int(round(BRIDGE_EXT_M / step))
+    k = int(round(BRIDGE_TANGENT_M / step))
+    for contour in contours:
+        p = _resample_closed(_fixed_start(contour))
+        n = len(p)
+        bad = ~observed_mask(grid, p)
+        if not bad.any():
+            continue
+        grown = np.zeros(n, dtype=bool)
+        for i in np.flatnonzero(bad):
+            grown[np.arange(i - e, i + e + 1) % n] = True
+        if grown.all():
+            raise ValueError(
+                "a track bound has no observed wall (unobserved all round)"
+            )
+        start = int(np.flatnonzero(~grown)[0])
+        order = np.roll(np.arange(n), -start)
+        run = grown[order]
+        j = 0
+        while j < n:
+            if not run[j]:
+                j += 1
+                continue
+            a = j
+            while j < n and run[j]:
+                j += 1
+            curve, chord, turn = _bridge_curve(
+                p, order[(a - 1) % n], order[j % n], n, k
+            )
+            if turn > MAX_BRIDGE_TURN_DEG or chord > MAX_BRIDGE_M:
+                raise ValueError(
+                    f"a track bound is unobserved over a gap of chord "
+                    f"{chord:.2f} m and end-tangent turn {turn:.0f} deg near "
+                    f"{p[order[a]].round(2).tolist()}; a bridge is limited to "
+                    f"{MAX_BRIDGE_M} m and {MAX_BRIDGE_TURN_DEG} deg"
+                )
+            res.append(curve)
+    if not res:
+        return binary, 0
+    bridged = binary.copy()
+    for curve in res:
+        cells = np.round(
+            (curve - [grid.origin.x, grid.origin.y]) / grid.resolution - 0.5
+        ).astype(np.int32)
+        cv2.polylines(bridged, [cells.reshape(-1, 1, 2)], False, 0, 2)
+    return bridged, len(res)
+
+
 def _classify_bounds(
     xy: np.ndarray, bounds: list[np.ndarray]
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -394,8 +546,9 @@ def _check_args(grid, resolution, origin):
         raise ValueError("a map origin with non-zero yaw is not supported")
 
 
-def _centerline(grid, start_pose, direction):
-    binary = _binarize(grid)
+def _centerline(grid, start_pose, direction, walls="non_free", binary=None):
+    if binary is None:
+        binary = _binarize(grid, walls)
     skel = skeletonize(binary > 0, method="lee")
     skel = _prune_spurs(skel)
     loops = []
@@ -415,30 +568,29 @@ def _centerline(grid, start_pose, direction):
     return binary, xy
 
 
+def _check_walls(walls):
+    if walls not in ("observed", "non_free"):
+        raise ValueError(f"walls must be 'observed' or 'non_free': {walls!r}")
+
+
 def track_bounds(
     grid: OccupancyGrid,
     centerline_xy: np.ndarray,
+    walls: Walls = "observed",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return ``(right, left)`` bound polylines in metres, for an oriented
-    centreline (left = left of travel)."""
-    binary = _binarize(grid)
-    return _classify_bounds(
-        centerline_xy, _bound_contours(grid, binary, centerline_xy)
-    )
+    centreline (left = left of travel). ``walls`` as in ``extract_track``."""
+    _check_walls(walls)
+    binary = _binarize(grid, walls)
+    contours = _bound_contours(grid, binary, centerline_xy)
+    if walls == "observed":
+        binary, n = _bridge_unobserved(grid, binary, contours)
+        if n:
+            contours = _bound_contours(grid, binary, centerline_xy)
+    return _classify_bounds(centerline_xy, contours)
 
 
-def extract_track(
-    grid: OccupancyGrid,
-    resolution: float,
-    origin: Pose2D,
-    start_pose: Pose2D,
-    direction: Literal["ccw", "cw"],
-    name: str = "extracted",
-) -> Track:
-    _check_args(grid, resolution, origin)
-    if direction not in ("ccw", "cw"):
-        raise ValueError(f"direction must be 'ccw' or 'cw': {direction}")
-    binary, xy = _centerline(grid, start_pose, direction)
+def _orient(xy, start_pose, direction):
     # compare_direction (:683-704): flip when the start heading disagrees.
     near = int(
         np.argmin(np.hypot(xy[:, 0] - start_pose.x, xy[:, 1] - start_pose.y))
@@ -459,7 +611,41 @@ def extract_track(
             f"({start_pose.yaw:.3f} rad), which runs the loop "
             f"{'ccw' if ccw else 'cw'}"
         )
-    right, left = _classify_bounds(xy, _bound_contours(grid, binary, xy))
+    return xy
+
+
+def extract_track(
+    grid: OccupancyGrid,
+    resolution: float,
+    origin: Pose2D,
+    start_pose: Pose2D,
+    direction: Literal["ccw", "cw"],
+    name: str = "extracted",
+    walls: Walls = "observed",
+) -> Track:
+    """Extract the track from a map.
+
+    ``walls="observed"`` (default): the map frame is unknown and a bound
+    stretch with no occupied cell near it is bridged from the observed walls
+    at its ends (``ValueError`` naming "unobserved" past the bridge cap).
+    ``walls="non_free"``: part 2's behaviour, unchanged (ADR 0005).
+    """
+    _check_args(grid, resolution, origin)
+    _check_walls(walls)
+    if direction not in ("ccw", "cw"):
+        raise ValueError(f"direction must be 'ccw' or 'cw': {direction}")
+    binary, xy = _centerline(grid, start_pose, direction, walls)
+    xy = _orient(xy, start_pose, direction)
+    contours = _bound_contours(grid, binary, xy)
+    if walls == "observed":
+        bridged, n = _bridge_unobserved(grid, binary, contours)
+        if n:
+            binary, xy = _centerline(
+                grid, start_pose, direction, walls, bridged
+            )
+            xy = _orient(xy, start_pose, direction)
+            contours = _bound_contours(grid, binary, xy)
+    right, left = _classify_bounds(xy, contours)
     xy = _recentre(xy, right, left)
     _check_inside(xy, binary, grid, right, left)
     return Track(
