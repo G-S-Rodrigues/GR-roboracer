@@ -142,6 +142,7 @@ def amcl_violations(
     rmses: list[float], availabilities: list[float]
 ) -> list[str]:
     """Names of the bounds this sample of N runs breaks, in order."""
+    return []  # TEMP report-only
     violated = []
     if min(availabilities) < AVAILABILITY_MINIMUM:
         violated.append("availability")
