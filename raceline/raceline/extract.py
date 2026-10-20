@@ -37,6 +37,7 @@ from skimage.morphology import skeletonize
 from skimage.segmentation import watershed
 
 from raceline.geometry import (
+    cell_centres,
     nearest_distance,
     resample_closed,
     signed_area,
@@ -189,17 +190,6 @@ def _prune_spurs(skel: np.ndarray) -> np.ndarray:
         skel[ends] = 0
 
 
-def _cells_to_m(cells: np.ndarray, grid: OccupancyGrid) -> np.ndarray:
-    # Cell-centre convention (upstream uses the cell corner).
-    cells = np.asarray(cells, dtype=float)
-    return np.column_stack(
-        [
-            grid.origin.x + (cells[:, 0] + 0.5) * grid.resolution,
-            grid.origin.y + (cells[:, 1] + 0.5) * grid.resolution,
-        ]
-    )
-
-
 def _closed_contours(binary: np.ndarray) -> list[np.ndarray]:
     # extract_centerline (global_planner_utils.py:25-105): RETR_CCOMP, keep the
     # closed contours (those with a parent or a child).
@@ -290,7 +280,7 @@ def _bound_contours(
             f"expected exactly 2 track bounds, found {len(closed)}; "
             "check the map"
         )
-    return [_cells_to_m(c, grid) for c in closed]
+    return [cell_centres(c, grid) for c in closed]
 
 
 def _dist_to_occupied(grid: OccupancyGrid) -> np.ndarray:
@@ -542,7 +532,7 @@ def _centerline(grid, start_pose, direction, walls="non_free", binary=None):
     skel = _prune_spurs(skel)
     loops = []
     for cells in _closed_contours(skel):
-        m = _cells_to_m(cells, grid)
+        m = cell_centres(cells, grid)
         gap = np.hypot(m[:, 0] - start_pose.x, m[:, 1] - start_pose.y).min()
         if gap <= MAX_START_OFFSET:
             loops.append(
@@ -552,7 +542,7 @@ def _centerline(grid, start_pose, direction, walls="non_free", binary=None):
         raise ValueError("no closed track loop near start_pose")
     cells = max(loops, key=lambda t: t[0])[1]
     xy = resample_closed(
-        _cells_to_m(_smooth_closed(cells.astype(float)), grid), STEP_M
+        cell_centres(_smooth_closed(cells.astype(float)), grid), STEP_M
     )
     return binary, xy
 

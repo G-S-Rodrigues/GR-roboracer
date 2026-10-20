@@ -39,6 +39,18 @@ def nearest_distance(
     return d
 
 
+def cell_centres(cells: np.ndarray, grid) -> np.ndarray:
+    """Metres of cells given as (col, row), at their centres (gotcha 25)."""
+    # Cell-centre convention (upstream uses the cell corner).
+    cells = np.asarray(cells, dtype=float)
+    return np.column_stack(
+        [
+            grid.origin.x + (cells[:, 0] + 0.5) * grid.resolution,
+            grid.origin.y + (cells[:, 1] + 0.5) * grid.resolution,
+        ]
+    )
+
+
 def crossings(
     wall: np.ndarray,
 ) -> list[tuple[int, int, np.ndarray]]:
@@ -68,6 +80,20 @@ def crossings(
         if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
             found.append((i, j, start[i] + t * d1))
     return found
+
+
+def remove_folds_cuts(
+    wall: np.ndarray, max_loop: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """STUB (part 4 Step 4b): the clean wall, and no tips yet."""
+    return remove_folds(wall, max_loop), np.zeros((0, 2)), np.zeros(0)
+
+
+def cell_edge_distance(
+    xy: np.ndarray, centres: np.ndarray, resolution: float
+) -> np.ndarray:
+    """STUB (part 4 Step 4b): infinitely far from every cell."""
+    return np.full(len(xy), np.inf)
 
 
 def remove_folds(wall: np.ndarray, max_loop: float) -> np.ndarray:

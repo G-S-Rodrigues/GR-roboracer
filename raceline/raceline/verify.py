@@ -24,6 +24,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from raceline.geometry import (
+    cell_centres,
     crossings,
     remove_folds,
     signed_area,
@@ -50,6 +51,23 @@ MIN_POINTS = 3
 
 
 @dataclass(frozen=True)
+class ObservedCells:
+    """The occupied cells of a map: their centres, cell side and source."""
+
+    centres: np.ndarray  # (M, 2) m
+    resolution: float  # m, the cell side
+    source: str
+
+
+def observed_cells(grid, source: str) -> ObservedCells:
+    """The occupied (value 100) cells of an ``OccupancyGrid``."""
+    rows_cols = np.argwhere(grid.data == 100)
+    return ObservedCells(
+        cell_centres(rows_cols[:, ::-1], grid), grid.resolution, source
+    )
+
+
+@dataclass(frozen=True)
 class WallSet:
     name: str  # "input" | "ground_truth"
     left: np.ndarray  # (N, 2) closed polyline, left of travel
@@ -58,6 +76,11 @@ class WallSet:
     # every point is observed (a committed track's walls).
     left_observed: np.ndarray | None = None
     right_observed: np.ndarray | None = None
+    # Sharp tips of the clean walls (D16) and the observed cells that judge
+    # them; empty / None means the clean polygon governs everywhere.
+    tips: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))
+    tip_reach: np.ndarray = field(default_factory=lambda: np.zeros(0))
+    cells: ObservedCells | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +91,7 @@ class Verdict:
     max_ay_ratio: float = 0.0
     max_ax_ratio: float = 0.0
     unobserved_share: dict[str, float] = field(default_factory=dict)
+    tips: dict[str, list[dict]] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -84,7 +108,9 @@ def offsets(track: Track) -> tuple[np.ndarray, np.ndarray]:
     )
 
 
-def track_walls(track: Track, name: str) -> WallSet:
+def track_walls(
+    track: Track, name: str, cells: ObservedCells | None = None
+) -> WallSet:
     """A committed track's walls as two clean, simple polygons (D13).
 
     Where a width exceeds the inside radius the inner offset folds over
@@ -103,7 +129,10 @@ def track_walls(track: Track, name: str) -> WallSet:
     left, right = offsets(track)
     max_loop = 0.5 * float(np.min(track.w_left + track.w_right))
     return WallSet(
-        name, remove_folds(left, max_loop), remove_folds(right, max_loop)
+        name,
+        remove_folds(left, max_loop),
+        remove_folds(right, max_loop),
+        cells=cells,
     )
 
 
