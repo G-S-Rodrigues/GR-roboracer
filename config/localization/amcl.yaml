@@ -12,8 +12,8 @@
 # versioned output instead of one estimator's private state.
 #
 # AMCL exposes no RNG seed, so no bound on it may be written before its
-# run-to-run spread is measured: SIM-5030 is that measurement and SIM-3080
-# carries it.
+# run-to-run spread is measured: SIM-5030 is that measurement (over a fixed
+# seed list) and SIM-3080 carries its seed-42 slice.
 amcl:
   ros__parameters:
     use_sim_time: true
@@ -77,8 +77,8 @@ amcl:
     # Adaptive particle injection off. It fires on a short-term/long-term
     # likelihood ratio, scattering fresh particles from the map's free
     # space; on a track whose corridor repeats that is a jump, not a
-    # recovery, and it widens the run-to-run spread SIM-5030 measures for
-    # no gain a lap of a known track can use.
+    # recovery, and it widens the run-to-run spread SIM-5030 measures (across
+    # its seed list) for no gain a lap of a known track can use.
     recovery_alpha_slow: 0.0
     recovery_alpha_fast: 0.0
 
