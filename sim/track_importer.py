@@ -59,6 +59,101 @@ def _geometry(
     return xy, left, right, yaws
 
 
+def _first_crossing(
+    ring: np.ndarray,
+) -> tuple[int, int, np.ndarray] | None:
+    """Lowest (i, j) pair of non-adjacent segments that cross, or None."""
+    n = len(ring)
+    start = ring
+    direction = np.roll(ring, -1, axis=0) - ring
+    # Segment i: start[i] + t * direction[i]; segment j: start[j] + u * d[j].
+    delta = start[None, :, :] - start[:, None, :]
+    denominator = (
+        direction[:, None, 0] * direction[None, :, 1]
+        - direction[:, None, 1] * direction[None, :, 0]
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (
+            delta[:, :, 0] * direction[None, :, 1]
+            - delta[:, :, 1] * direction[None, :, 0]
+        ) / denominator
+        u = (
+            delta[:, :, 0] * direction[:, None, 1]
+            - delta[:, :, 1] * direction[:, None, 0]
+        ) / denominator
+    index = np.arange(n)
+    # Non-adjacent only: j > i + 1, and the closing pair (0, n - 1) shares
+    # a vertex.
+    candidate = index[None, :] > index[:, None] + 1
+    candidate[0, n - 1] = False
+    hit = (
+        candidate
+        & np.isfinite(t)
+        & (t >= 0.0)
+        & (t <= 1.0)
+        & (u >= 0.0)
+        & (u <= 1.0)
+    )
+    found = np.argwhere(hit)
+    if found.size == 0:
+        return None
+    i, j = (int(value) for value in found[0])
+    return i, j, ring[i] + t[i, j] * direction[i]
+
+
+def _remove_folds(ring: np.ndarray, max_loop: float) -> np.ndarray:
+    """Cut every self-crossing loop out of a closed ring.
+
+    An offset wall folds where the centerline's radius is under the offset
+    (Spielberg's hairpin: radius 0.64 m against a 1.1 m half-width). The
+    fold is a small swallowtail: two segments cross and the points between
+    them form a loop. Each loop found is replaced by its crossing point:
+    the first pair of non-adjacent segments i < j that cross splits the ring
+    into two loops, and the one with fewer points is the swallowtail.
+    It is cut only when every one of its points lies within ``max_loop`` of
+    the crossing, otherwise the ring does not describe a corridor and
+    ``ValueError`` ("self-intersect") is raised. On Spielberg the one fold
+    is segments 275/282, 7 points, extent 0.326 m against max_loop 1.1 m.
+    """
+    ring = np.asarray(ring, dtype=float)
+    while True:
+        crossing = _first_crossing(ring)
+        if crossing is None:
+            return ring
+        i, j, point = crossing
+        inner = ring[i + 1 : j + 1]
+        outer = np.vstack((ring[j + 1 :], ring[: i + 1]))
+        if len(inner) <= len(outer):
+            loop, kept = inner, np.vstack((ring[: i + 1], point, ring[j + 1 :]))
+        else:
+            loop, kept = outer, np.vstack((point, ring[i + 1 : j + 1]))
+        extent = float(np.max(np.linalg.norm(loop - point, axis=1)))
+        if extent > max_loop:
+            raise ValueError(
+                f"self-intersect: ring segments {i}/{j} cross at "
+                f"({point[0]:.4f}, {point[1]:.4f}); the smaller loop spans "
+                f"{extent:.3f} m > max_loop {max_loop:.3f} m"
+            )
+        ring = kept
+
+
+def _walls(
+    points: Sequence[CenterlinePoint],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """``_geometry`` with the offset walls' folds cut out."""
+    xy, left, right, yaws = _geometry(points)
+    widths = np.asarray(
+        [point.width_left + point.width_right for point in points]
+    )
+    max_loop = 0.5 * float(widths.min())
+    return (
+        xy,
+        _remove_folds(left, max_loop),
+        _remove_folds(right, max_loop),
+        yaws,
+    )
+
+
 def _inside_ring(
     ring: np.ndarray,
     origin: np.ndarray,
@@ -160,7 +255,7 @@ def import_track(
     if resolution <= 0.0:
         raise ValueError("resolution must be positive")
     name, points = _load_points(canonical_yaml)
-    xy, left, right, yaws = _geometry(points)
+    xy, left, right, yaws = _walls(points)
 
     track_dir = output_root / name
     track_dir.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,4 @@
+import filecmp
 import math
 from pathlib import Path
 
@@ -5,8 +6,15 @@ import numpy as np
 import pytest
 import yaml
 from PIL import Image
+from scipy import ndimage
 
-from sim.track_importer import _geometry, _load_points, import_track
+from sim.track_importer import (
+    _geometry,
+    _load_points,
+    _remove_folds,
+    _walls,
+    import_track,
+)
 
 
 def _world_pixel(
@@ -82,9 +90,13 @@ def test_closed_loop_has_no_occupied_closing_seam(tmp_path: Path) -> None:
 
 
 def _rings(source: Path) -> tuple[np.ndarray, np.ndarray]:
-    """The offset rings as (outer, inner), chosen by this file's own area."""
+    """The offset rings as (outer, inner), chosen by this file's own area.
+
+    These are the importer's fold-free walls (`_walls`); SIM-1040 and
+    SIM-1060 guard their geometry.
+    """
     _, points = _load_points(source)
-    _, left, right, _ = _geometry(points)
+    _, left, right, _ = _walls(points)
 
     def area(ring: np.ndarray) -> float:
         nxt = np.roll(ring, -1, axis=0)
@@ -226,3 +238,251 @@ def test_sim_1030_a_cell_is_free_iff_its_centre_is_in_the_corridor(
     )
     assert examined > 1000
     assert mismatches == 0
+
+
+TRACKS = ["analytic_circle", "spielberg"]
+
+
+def _orient(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> np.ndarray:
+    """Twice the signed area of triangle (a, b, c), vectorised over c."""
+    return (b[0] - a[0]) * (c[..., 1] - a[1]) - (b[1] - a[1]) * (
+        c[..., 0] - a[0]
+    )
+
+
+def _crossings(
+    ring: np.ndarray, other: np.ndarray | None = None
+) -> list[tuple[int, int, tuple[float, float]]]:
+    """Proper crossings of a ring with itself (or with another ring).
+
+    Brute force by orientation tests, deliberately not the importer's
+    parametric solve, so the guard does not share the code it checks.
+    Returns (segment i, segment j, (x, y)); for one ring i < j and
+    adjacent segments are excluded.
+    """
+    n = len(ring)
+    starts, ends = ring, np.roll(ring, -1, axis=0)
+    own = other is None
+    other_starts = starts if own else other
+    other_ends = np.roll(other_starts, -1, axis=0)
+    found = []
+    for i in range(n):
+        p, q = starts[i], ends[i]
+        o1 = _orient(p, q, other_starts)
+        o2 = _orient(p, q, other_ends)
+        o3 = np.array(
+            [
+                _orient(c, d, p)
+                for c, d in zip(other_starts, other_ends, strict=True)
+            ]
+        )
+        o4 = np.array(
+            [
+                _orient(c, d, q)
+                for c, d in zip(other_starts, other_ends, strict=True)
+            ]
+        )
+        hit = (o1 * o2 < 0.0) & (o3 * o4 < 0.0)
+        for j in np.flatnonzero(hit):
+            if own and (j <= i + 1 or (i == 0 and j == n - 1)):
+                continue
+            point = p + o3[j] / (o3[j] - o4[j]) * (q - p)
+            found.append((i, int(j), (float(point[0]), float(point[1]))))
+    return found
+
+
+def _describe(name: str, found: list) -> str:
+    return "; ".join(
+        f"{name} crosses at segments {i}/{j} near ({x:.3f}, {y:.3f})"
+        for i, j, (x, y) in found
+    )
+
+
+def _rounded_square(half: float, corner: float, spacing: float) -> np.ndarray:
+    """A counter-clockwise rounded square at even arc-length spacing."""
+    c = half - corner
+    parts = []
+    for centre, start in (
+        ((c, -c), -90.0),
+        ((c, c), 0.0),
+        ((-c, c), 90.0),
+        ((-c, -c), 180.0),
+    ):
+        angle = np.radians(start + np.linspace(0.0, 90.0, 400))
+        parts.append(
+            np.column_stack(
+                (
+                    centre[0] + corner * np.cos(angle),
+                    centre[1] + corner * np.sin(angle),
+                )
+            )
+        )
+    dense = np.vstack(parts)
+    closed = np.vstack((dense, dense[0]))
+    along = np.concatenate(
+        ([0.0], np.cumsum(np.linalg.norm(np.diff(closed, axis=0), axis=1)))
+    )
+    count = int(round(along[-1] / spacing))
+    sample = np.linspace(0.0, along[-1], count, endpoint=False)
+    return np.column_stack(
+        (
+            np.interp(sample, along, closed[:, 0]),
+            np.interp(sample, along, closed[:, 1]),
+        )
+    )
+
+
+def _offset_left(ring: np.ndarray, distance: float) -> np.ndarray:
+    tangents = np.roll(ring, -1, axis=0) - np.roll(ring, 1, axis=0)
+    tangents /= np.linalg.norm(tangents, axis=1)[:, None]
+    return ring + distance * np.column_stack((-tangents[:, 1], tangents[:, 0]))
+
+
+def _circle(radius: float, spacing: float) -> np.ndarray:
+    count = int(round(2.0 * np.pi * radius / spacing))
+    angle = np.linspace(0.0, 2.0 * np.pi, count, endpoint=False)
+    return np.column_stack((radius * np.cos(angle), radius * np.sin(angle)))
+
+
+CURL_POINTS = 80
+CURL_AT = 100
+CURL_THETA = np.linspace(-np.pi, np.pi, CURL_POINTS)
+
+
+def _with_curl(circle: np.ndarray, size: float) -> np.ndarray:
+    """Replace circle[CURL_AT] by a same-winding (counter-clockwise) curl.
+
+    A trochoid whose loop lies on the ring's inside and turns the ring's
+    way, of radius about `size`.
+    """
+    tangent = circle[CURL_AT + 1] - circle[CURL_AT - 1]
+    tangent /= np.linalg.norm(tangent)
+    normal = np.array([-tangent[1], tangent[0]])
+    theta = CURL_THETA
+    u = 0.4 * size * theta - size * np.sin(theta)
+    v = size * np.cos(theta) + size
+    curl = circle[CURL_AT] + np.outer(u, tangent) + np.outer(v, normal)
+    return np.vstack((circle[:CURL_AT], curl, circle[CURL_AT + 1 :]))
+
+
+def _rows_in(rows: np.ndarray, table: np.ndarray) -> np.ndarray:
+    return (rows[:, None, :] == table[None, :, :]).all(axis=2).any(axis=1)
+
+
+def test_sim_1060_remove_folds_cuts_swallowtails_and_curls() -> None:
+    """SIM-1060: a fold is cut at its crossing; a loop wider than max_loop
+    raises; a crossing-free ring is returned untouched."""
+    # (a) the inside offset (0.8) of a rounded square (corner r 0.5) folds
+    # into one swallowtail per corner.
+    square = _rounded_square(5.0, 0.5, 0.1)
+    inner = _offset_left(square, 0.8)
+    assert len(_crossings(inner)) == 4, "the construction must fold 4 times"
+    cut = _remove_folds(inner, 0.8)
+    assert _crossings(cut) == [], _describe("inner", _crossings(cut))
+    assert int(np.sum(~_rows_in(cut, inner))) == 4
+    assert len(cut) < len(inner)
+
+    # (b) a same-winding curl of radius 0.05 on a radius-5 circle.
+    circle = _circle(5.0, 0.1)
+    curled = _with_curl(circle, 0.05)
+    assert len(_crossings(curled)) >= 1, "the curl must cross itself"
+    cut = _remove_folds(curled, 1.0)
+    assert _crossings(cut) == [], _describe("ring", _crossings(cut))
+    assert int(np.sum(~_rows_in(cut, curled))) == 1, "only the crossing is new"
+    curl = curled[CURL_AT : CURL_AT + CURL_POINTS]
+    # The trochoid closes its loop where u(theta) = 0, theta about 2.12;
+    # the lead-in and lead-out outside it are ordinary path and stay.
+    loop = np.abs(CURL_THETA) < 2.10
+    assert not _rows_in(curl[loop], cut).any(), "loop points remain"
+    assert _rows_in(curl[np.abs(CURL_THETA) > 2.14], cut).all()
+    assert _rows_in(np.delete(circle, CURL_AT, axis=0), cut).all()
+
+    # (c) the same curl at radius 1.5 is a loop wider than max_loop.
+    with pytest.raises(ValueError, match="self-intersect"):
+        _remove_folds(_with_curl(circle, 1.5), 1.0)
+
+    # (d) a crossing-free ring comes back equal.
+    assert np.array_equal(_remove_folds(circle, 1.0), circle)
+
+    # (e) the analytic circle's walls need no cutting.
+    _, points = _load_points(Path("config/tracks/analytic_circle.yaml"))
+    _, left, right, _ = _geometry(points)
+    _, walls_left, walls_right, _ = _walls(points)
+    assert np.array_equal(walls_left, left)
+    assert np.array_equal(walls_right, right)
+
+
+@pytest.mark.parametrize("track", TRACKS)
+def test_sim_1040_the_importer_walls_do_not_cross(track: str) -> None:
+    """SIM-1040: neither wall crosses itself or the other.
+
+    2026-10-20: Spielberg's inner wall crossed itself at segments 275/282
+    near (-74.878, 52.090), where the centerline's radius (0.64 m) is under
+    its half-width (1.1 m).
+    """
+    _, points = _load_points(Path(f"config/tracks/{track}.yaml"))
+    _, left, right, _ = _walls(points)
+    found = (
+        [("left wall", *c) for c in _crossings(left)]
+        + [("right wall", *c) for c in _crossings(right)]
+        + [("left x right", *c) for c in _crossings(left, right)]
+    )
+    assert not found, "; ".join(
+        f"{name} crosses itself at segments {i}/{j} near ({x:.3f}, {y:.3f})"
+        for name, i, j, (x, y) in found
+    )
+
+
+@pytest.mark.parametrize("track", TRACKS)
+def test_sim_1050_the_png_has_exactly_two_occupied_components(
+    tmp_path: Path, track: str
+) -> None:
+    """SIM-1050: the outer wall touches the border and the island is
+    enclosed; nothing else is occupied. 2026-10-20: the fold drew an
+    11-cell detached spur."""
+    track_dir = import_track(Path(f"config/tracks/{track}.yaml"), tmp_path)
+    metadata = yaml.safe_load(
+        (track_dir / f"{track_dir.name}.yaml").read_text(encoding="utf-8")
+    )
+    image = np.asarray(Image.open(track_dir / f"{track_dir.name}.png"))
+    labels, count = ndimage.label(image != 255, structure=np.ones((3, 3)))
+    edge = np.concatenate((labels[0], labels[-1], labels[:, 0], labels[:, -1]))
+    border = set(np.unique(edge).tolist()) - {0}
+    resolution = metadata["resolution"]
+    origin_x, origin_y, _ = metadata["origin"]
+    height = image.shape[0]
+    described = []
+    for label in range(1, count + 1):
+        rows, cols = np.nonzero(labels == label)
+        described.append(
+            f"{rows.size} cells, x "
+            f"{origin_x + cols.min() * resolution:.3f}.."
+            f"{origin_x + (cols.max() + 1) * resolution:.3f}, y "
+            f"{origin_y + (height - 1 - rows.max()) * resolution:.3f}.."
+            f"{origin_y + (height - rows.min()) * resolution:.3f}"
+            + (" (border)" if label in border else "")
+        )
+    assert count == 2 and len(border) == 1, (
+        f"{count} occupied components; " + "; ".join(described)
+    )
+
+
+@pytest.mark.parametrize(
+    ("track", "name"),
+    [("analytic_circle", "analytic_circle"), ("spielberg", "Spielberg")],
+)
+def test_sim_1070_the_committed_gym_assets_are_the_importer_output(
+    tmp_path: Path, track: str, name: str
+) -> None:
+    """SIM-1070: no hand edit and no stale redraw of a committed map."""
+    track_dir = import_track(Path(f"config/tracks/{track}.yaml"), tmp_path)
+    committed = Path("config/scenarios/maps") / name
+    files = sorted(path.name for path in track_dir.iterdir())
+    assert len(files) == 4
+    stale = [
+        file
+        for file in files
+        if not (committed / file).is_file()
+        or not filecmp.cmp(track_dir / file, committed / file, shallow=False)
+    ]
+    assert stale == [], f"{name}: committed {stale} differ from the importer"
