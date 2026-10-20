@@ -77,6 +77,11 @@ Changed from upstream, and why:
   the line is the outer bound moved inward by the half-width. It cut corner
   lateral p95 from 0.65 to 0.08 m and the length shortfall from 1.37 % to
   0.14 % on the gym map (`raceline/README.md`). It assumes a constant half-width.
+- Frame padding and unobserved-bound bridging (`walls="observed"`, part 2.3; not
+  upstream): the map frame is unknown, not a wall, and a bound stretch with no
+  occupied cell within 0.15 m is replaced by a Hermite curve between the
+  observed walls at its ends, within a turn and chord cap. `walls="non_free"`
+  keeps the earlier behaviour.
 - The opening kernel: upstream's class default is 3x3 and `raceline/extract.py`
   uses 3x3 (a 9x9 opening is `filter_kernel_size` in upstream's shipped stack config,
   `stack_master/config/global_planner/global_planner_params.yaml:8` at
