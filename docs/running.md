@@ -17,6 +17,7 @@ The full graph, with RViz. Run it from `/ws` inside the container, after the bui
 
 ```bash
 cd /ws
+source /ws/setup.sh
 ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 ```
 
@@ -26,7 +27,7 @@ In RViz, `base_link` is the car's centre of gravity at height h (0.074 m); `rear
 Headless, printing the run's metrics — this is what the nightly sweep drives:
 
 ```bash
-./scripts/run_scenario.py --seed 42
+./scripts/run_scenario.py --seed 42 --output log/scenario-seed-42.json
 ```
 
 Add `--vehicle config/vehicles/f1tenth_gym_limits.yaml` to run another vehicle file (the launch's
@@ -35,7 +36,7 @@ Add `--vehicle config/vehicles/f1tenth_gym_limits.yaml` to run another vehicle f
 Compare any two metrics records field by field, with the tolerances the tests use:
 
 ```bash
-./scripts/compare_metrics.py tests/golden/baseline.json log/scenario-seed-42.json
+python3 scripts/compare_metrics.py tests/golden/baseline.json log/scenario-seed-42.json
 ```
 
 Regenerating the golden baseline is a **reviewed diff**, run in `fast-sim`, and never a response to a

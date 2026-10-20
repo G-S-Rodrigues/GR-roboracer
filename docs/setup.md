@@ -5,8 +5,8 @@ page does not repeat its build and launch sequence.
 
 ## Host requirements
 
-- WSL2 with Ubuntu 24.04, Docker Engine with Compose v2 and its WSL integration enabled for the
-  distro. Check with `docker compose version` from the Ubuntu shell.
+- WSL2 with Ubuntu 24.04, and Docker with Compose v2: Docker Desktop with its WSL integration
+  enabled for the distro, or Docker Engine installed inside the distro. Check with `docker compose version` from the Ubuntu shell.
 - SSH access to GitHub (`ssh -T git@github.com`). Clone with the SSH URL; an HTTPS clone prompts for
   credentials forever.
 - The working tree on ext4 inside the distro, such as `~/gitroot/GR-roboracer`. Under `/mnt/c/` a

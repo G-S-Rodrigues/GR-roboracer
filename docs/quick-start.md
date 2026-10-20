@@ -10,8 +10,8 @@ been validated for the RViz window; see [Native Linux](setup.md#native-linux-gui
 ## Before you start
 
 - A GitHub account with SSH access, and Git.
-- Docker Engine with Compose v2, usable by your user without `sudo`. On WSL2, enable Docker's WSL
-  integration for Ubuntu 24.04.
+- Docker with Compose v2, usable by your user without `sudo`: Docker Desktop with its WSL
+  integration enabled for Ubuntu 24.04, or Docker Engine installed inside the distro.
 - A graphical session: WSLg on Windows 11 (or a current Windows 10 build with WSLg). Check that
   `/mnt/wslg` and `/tmp/.X11-unix` exist in your Ubuntu shell.
 - The repository on ext4 inside the distro (`~/gitroot/...`), never under `/mnt/c/`.
@@ -52,8 +52,8 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 ## What you should see
 
 RViz opens in a Windows window with a Displays panel on the left. In the 3D view you see a small
-car model on a ring-shaped track drawn as polylines (the track boundaries and the planned
-trajectory), with the lidar scan as a red trace around the car. The car drives around the ring at
+car model on a ring-shaped track drawn as polylines (the left boundary in green, the right in red, and the planned
+trajectory in blue), with the lidar scan drawn as points around the car. The car drives around the ring at
 real time. The `Map` display shows a warning, because this track has no saved map; that is expected.
 
 This is the reference stack with the simulator's exact pose (`ground_truth`) on the
