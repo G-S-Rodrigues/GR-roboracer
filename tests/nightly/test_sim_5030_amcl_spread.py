@@ -4,10 +4,9 @@ N2 (2026-10-16) changed this from one seed (42) to SEEDS x RUNS_PER_SEED:
 one integer sets the start pose, the scan noise and the odometry
 calibration, so a single seed samples one start pose and AMCL could look
 stable at it while losing the car at another (seed 3, on the main
-straight, is the case that prompted it). The bounds below are UNCHANGED by
-that restructuring and are still the seed-42 derivation recorded in this
-file; they are re-derived from multi-seed CI data in a later, reviewed
-step. Everything below that says "at one seed" is history of that sample.
+straight, is the case that prompted it). The bounds were then re-derived
+from two 35-run multi-seed CI samples (see the constants below). Everything
+below that says "at one seed" is history of that sample.
 
 
 A particle filter has no seed here: `nav2_amcl` draws its particles from
@@ -132,10 +131,33 @@ RUNS_PER_SEED = 5
 # better view of a worse typical error, bought with near-blindness to a
 # fatter tail.
 # A bound that has to be widened is a regression to explain, never a
-# number to raise (repo-gotchas #14).
-ATE_RMSE_MAXIMUM = 0.65  # sample maximum 0.570 (red nightly), 0.541 (CI)
-ATE_RMSE_MEDIAN_MAXIMUM = 0.40  # highest sample median 0.3035
-AVAILABILITY_MINIMUM = 0.99  # sample minimum 0.99411
+# number to raise (repo-gotchas #14). This one was widened, as a reviewed
+# diff the owner accepted (D5 re-rule, 2026-10-20), because the sample now
+# holds seeds 3 and 123 (D3). The numbers above are the seed-42 history;
+# the bounds below are SIM-5030's own multi-seed bounds. SIM-3080, SIM-5020
+# and ACC-4030 keep 0.65 as a seed-42 bound (D4) and do not share these.
+#
+# Multi-seed samples, 35 runs each (7 seeds x 5), CI, sha 9c8c73b, availability
+# 1.0 on every run, post-3.1b tree, main's alphas (CI_SAMPLE_A / _B below
+# hold every run):
+#     run 39423332965  median 0.2945  mean 0.4198  max 1.569 (seed 3)
+#     run 39423349401  median 0.3384  mean 0.3682  max 0.687 (seed 123)
+# Per-seed medians, run 39423332965 / 39423349401:
+#     42: 0.220 / 0.286   1030: 0.192 / 0.192   1: 0.591 / 0.514
+#     7: 0.236 / 0.227    99: 0.302 / 0.253     123: 0.413 / 0.490
+#     3: 0.532 / 0.546
+# Dev host, same tree, seed 3 x5: 0.477 0.529 0.536 0.612 1.495 (median
+# 0.536). The dev-host runs feed only the per-run maximum, never the median.
+# Median bound: the highest pooled median of a 35-run CI sample, 0.3384,
+# times the ratio the old bound carried over its sample, 0.40 / 0.3035 =
+# 1.318 -> 0.446, rounded up to 0.45 (was 0.40). Maximum bound: the worst
+# single run, 1.569, times the setting ratio 0.65 / 0.437 = 1.487 -> 2.333,
+# rounded up to 2.35 (was 0.65). The bound's margin over the worst run it
+# has seen is 2.35 / 1.569 = 1.50; the old 0.65 had 0.65 / 0.570 = 1.14, so
+# the looser of the two ratios was chosen. Availability stays 0.99.
+ATE_RMSE_MAXIMUM = 2.35  # worst run 1.569 (CI 39423332965, seed 3)
+ATE_RMSE_MEDIAN_MAXIMUM = 0.45  # highest pooled median 0.3384 (CI 39423349401)
+AVAILABILITY_MINIMUM = 0.99  # sample minimum 1.0 (seed-42 history 0.99411)
 
 
 def amcl_violations(
@@ -238,52 +260,107 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
     assert not violated, (violated, sorted(rmses), availabilities)
 
 
-# The red nightly 38381183034's own ten (sorted), and the ten of the
-# original docstring sample: the bound must pass both and reject a shift.
-RED_NIGHTLY_SAMPLE = [
-    0.172,
-    0.178,
-    0.191,
-    0.232,
-    0.234,
+# The two multi-seed CI samples the bounds were derived from (35 runs each,
+# sorted, rounded to 3 places; SEEDS x RUNS_PER_SEED). The bound must pass
+# both and reject a shift. History: the seed-42 ten of nightly 38381183034
+# (0.172 .. 0.570, median 0.2345) and the original docstring ten (0.215 ..
+# 0.437, median 0.3035) bounded the previous 0.40 / 0.65.
+# CI run 39423332965
+CI_SAMPLE_A = [
+    0.141,
+    0.146,
+    0.165,
+    0.192,
+    0.198,
+    0.202,
+    0.206,
+    0.218,
+    0.22,
     0.235,
-    0.268,
-    0.335,
-    0.385,
-    0.570,
-]
-DOCSTRING_SAMPLE = [
-    0.215,
+    0.236,
     0.246,
-    0.275,
-    0.289,
-    0.301,
-    0.306,
-    0.316,
-    0.323,
-    0.429,
-    0.437,
+    0.258,
+    0.272,
+    0.274,
+    0.279,
+    0.291,
+    0.294,
+    0.302,
+    0.319,
+    0.381,
+    0.404,
+    0.413,
+    0.436,
+    0.448,
+    0.45,
+    0.532,
+    0.557,
+    0.591,
+    0.627,
+    0.699,
+    0.712,
+    0.786,
+    1.393,
+    1.569,
 ]
-AVAILABLE = [1.0] * len(RED_NIGHTLY_SAMPLE)
+# CI run 39423349401
+CI_SAMPLE_B = [
+    0.172,
+    0.187,
+    0.19,
+    0.192,
+    0.201,
+    0.206,
+    0.224,
+    0.227,
+    0.233,
+    0.253,
+    0.258,
+    0.264,
+    0.267,
+    0.275,
+    0.284,
+    0.286,
+    0.331,
+    0.338,
+    0.356,
+    0.389,
+    0.402,
+    0.428,
+    0.438,
+    0.446,
+    0.468,
+    0.472,
+    0.49,
+    0.514,
+    0.541,
+    0.546,
+    0.556,
+    0.567,
+    0.582,
+    0.615,
+    0.687,
+]
+AVAILABLE = [1.0] * len(CI_SAMPLE_A)
 
 
-def test_sim_5030_bound_passes_the_red_nightly_sample() -> None:
-    assert amcl_violations(RED_NIGHTLY_SAMPLE, AVAILABLE) == []
-    assert amcl_violations(DOCSTRING_SAMPLE, AVAILABLE) == []
+def test_sim_5030_bound_passes_the_ci_samples() -> None:
+    assert amcl_violations(CI_SAMPLE_A, AVAILABLE) == []
+    assert amcl_violations(CI_SAMPLE_B, AVAILABLE) == []
 
 
 def test_sim_5030_bound_rejects_a_shifted_median() -> None:
-    # Typical error ~1.7x the red nightly's (median 0.425 against 0.2345)
-    # with no run above 0.65: the old max-min spread (0.25) passes it too.
-    shifted = [0.35, 0.38, 0.40, 0.41, 0.42, 0.43, 0.45, 0.48, 0.52, 0.60]
+    # Every run of CI sample B 0.2 m worse (median 0.538 against 0.338) with
+    # no run past the maximum bound: only the median bound sees it.
+    shifted = [value + 0.2 for value in CI_SAMPLE_B]
     assert max(shifted) <= ATE_RMSE_MAXIMUM
     assert amcl_violations(shifted, AVAILABLE) == ["median"]
 
 
 def test_sim_5030_bound_rejects_a_single_run_past_the_maximum() -> None:
-    assert amcl_violations([*RED_NIGHTLY_SAMPLE[:-1], 0.66], AVAILABLE) == [
-        "maximum"
-    ]
+    # One run just past the maximum bound; the median is untouched.
+    blown = [*CI_SAMPLE_A[:-1], ATE_RMSE_MAXIMUM + 0.01]
+    assert amcl_violations(blown, AVAILABLE) == ["maximum"]
 
 
 def test_sim_5030_samples_several_seeds() -> None:
