@@ -108,18 +108,19 @@ RADIUS_TOL = 0.02
 WIDTH_TOL = 0.04
 KAPPA_MAX_REL = 0.07
 KAPPA_MEAN_REL = 0.01
-# Part 2.3, walls="observed" with a bridged gap (Step 1 sweep, 67 admitted
-# rings: R_in 4 and 5.4, gaps 20..90 deg on the outer, inner or both walls, at
-# gap centres 20/50/80 deg, and the fan to the frame). The extractor is
+# Part 2.3, walls="observed" with a bridged gap (C1 sweep: 11,702 runs that
+# MAX_BRIDGE_TURN_DEG / MAX_BRIDGE_M admit, R_in 4.0-6.4, outer / inner / both
+# walls, gaps 16-60 deg, gap centres every 5 deg). The extractor is
 # deterministic; each tolerance is the worst measurement plus about a third of
 # a cell:
-#   a bridged side narrower than truth by up to 0.233 (both walls, 40 deg)
-#                                                    -> BRIDGE_WIDTH_TOL 0.25
-#   centreline radius off by up to 0.106 (both walls, 40 deg)
-#                                                    -> BRIDGE_RADIUS_TOL 0.125
-# Wider than truth never exceeds +0.033 (inner, R_in 5.4); WIDTH_TOL 0.04 holds.
-BRIDGE_WIDTH_TOL = 0.25
-BRIDGE_RADIUS_TOL = 0.125
+#   a bridged side narrower than truth by up to 0.259 (R_in 5.2, both walls,
+#   24 deg, c -60)                                   -> BRIDGE_WIDTH_TOL 0.28
+#   centreline radius off by up to 0.135 (R_in 5.4, outer, 26 deg, c 0)
+#                                                    -> BRIDGE_RADIUS_TOL 0.155
+# Wider than truth never exceeds +0.034 per side (R_in 5.4, inner 38 deg, c 110)
+# or +0.029 total; WIDTH_TOL 0.04 holds unchanged.
+BRIDGE_WIDTH_TOL = 0.28
+BRIDGE_RADIUS_TOL = 0.155
 
 
 def _grid(data, origin=(-7.0, -7.0)):
@@ -203,10 +204,10 @@ def _ring(
     return _grid(data, origin=(-half, -half))
 
 
-def _ring_start():
+def _ring_start(r_in=4.0):
     from raceline.extract import Pose2D
 
-    return Pose2D(0.0, -5.0, 0.0)
+    return Pose2D(0.0, -(r_in + 1.0), 0.0)
 
 
 def _extract(grid, start, direction="ccw", walls="observed"):
@@ -730,9 +731,17 @@ def _widths_of(track):
 
 
 _GAP_CASES = {
-    "outer_fan_6_8": dict(gap=40),
-    "outer_fan_to_frame": dict(gap=40, xmax=6.6, ymax=6.6, fan_out=3.0),
-    "inner_60": dict(gap=60, gap_wall="inner"),
+    "outer_fan_6_8": dict(gap=32),
+    "outer_fan_to_frame": dict(gap=32, xmax=6.6, ymax=6.6, fan_out=3.0),
+    "inner_50": dict(gap=50, gap_wall="inner"),
+    # the worst admitted runs of the C1 sweep, one per tolerance
+    "worst_narrow": dict(
+        r_in=5.2, r_out=7.2, half=8.2, gap=24, gap_wall="both", c_deg=-60
+    ),
+    "worst_radius": dict(r_in=5.4, r_out=7.4, half=8.4, gap=26, c_deg=0),
+    "worst_wide": dict(
+        r_in=5.4, r_out=7.4, half=8.4, gap=38, gap_wall="inner", c_deg=110
+    ),
 }
 
 
@@ -741,39 +750,44 @@ def test_raceline_1150_an_open_wall_is_bridged_not_taken_as_track(name):
     """RACELINE-1150: a gap the lidar saw through. observed bridges it from the
     walls at its ends: nowhere wider than the annulus (WIDTH_TOL), narrower by
     at most BRIDGE_WIDTH_TOL, the centreline within BRIDGE_RADIUS_TOL. non_free
-    takes the free fan for track (total width 2.795 and 4.11 measured)."""
+    takes the free fan for track (total width 2.797 and 3.360 measured)."""
     from raceline.extract import observed_mask, track_bounds
 
-    grid = _ring(**_GAP_CASES[name])
-    track = _extract(grid, _ring_start(), walls="observed")
+    kw = _GAP_CASES[name]
+    r_c = kw.get("r_in", 4.0) + 1.0
+    grid = _ring(**kw)
+    start = _ring_start(kw.get("r_in", 4.0))
+    track = _extract(grid, start, walls="observed")
     assert (track.w_left + track.w_right).max() <= 2.0 + WIDTH_TOL
     for w in (track.w_left, track.w_right):
         assert w.max() <= 1.0 + WIDTH_TOL
         assert w.min() >= 1.0 - BRIDGE_WIDTH_TOL
     r = np.hypot(track.xy[:, 0], track.xy[:, 1])
-    assert np.abs(r - 5.0).max() <= BRIDGE_RADIUS_TOL
+    assert np.abs(r - r_c).max() <= BRIDGE_RADIUS_TOL
     # the bridge is drawn, not seen: some bound points are unobserved
     right, left = track_bounds(grid, track.xy, walls="observed")
     unobserved = sum(
         int((~observed_mask(grid, b)).sum()) for b in (right, left)
     )
     assert unobserved > 0
-    if name.startswith("outer"):
-        loose = _extract(grid, _ring_start(), walls="non_free")
+    if name.startswith("outer_fan"):
+        loose = _extract(grid, start, walls="non_free")
         assert (loose.w_left + loose.w_right).max() > 2.5
 
 
 def test_raceline_1150_a_wall_beyond_the_frame_stays_narrow():
     """RACELINE-1150 (wall_beyond_frame): the outer wall lies off the map over
-    about 42 deg. The frame stays the bound and the track errs narrow (left
-    0.649 against truth 1.0), never wide; observed_mask reports those points."""
+    about 30 deg (chord 3.63 m, under MAX_BRIDGE_M). The frame stays the bound
+    and the track errs narrow (0.815 against truth 1.0), never wide;
+    observed_mask reports those points. Past the cap the same map raises
+    (RACELINE-1155 wall_beyond_frame_past_the_cap)."""
     from raceline.extract import observed_mask, track_bounds
 
-    grid = _ring(xmax=5.6)
+    grid = _ring(xmax=5.8)
     track = _extract(grid, _ring_start(), walls="observed")
     assert track.w_left.max() <= 1.0 + WIDTH_TOL
     assert track.w_right.max() <= 1.0 + WIDTH_TOL
-    assert min(track.w_left.min(), track.w_right.min()) <= 0.7
+    assert min(track.w_left.min(), track.w_right.min()) <= 0.85  # 0.815
     right, left = track_bounds(grid, track.xy, walls="observed")
     assert sum(int((~observed_mask(grid, b)).sum()) for b in (right, left)) > 0
 
@@ -785,33 +799,39 @@ def _no_wall_ring():
 
 
 @pytest.mark.parametrize(
-    "name,make",
+    "name,make,r_in",
     [
-        # R_in 4, 90 deg: end-tangent turn 95.9 deg > MAX_BRIDGE_TURN_DEG
-        ("turn_past_the_cap", lambda: _ring(gap=90, gap_wall="inner")),
-        # R_in 8, 60 deg: turn 66.3 deg but a 8.37 m chord > MAX_BRIDGE_M
+        # R_in 3, inner 70 deg: chord 3.80 m (under the cap) but a 90 deg
+        # end-tangent turn > MAX_BRIDGE_TURN_DEG
+        (
+            "turn_past_the_cap",
+            lambda: _ring(
+                r_in=3.0, r_out=5.0, half=6.0, gap=70, gap_wall="inner"
+            ),
+            3.0,
+        ),
+        # R_in 8, inner 60 deg: turn 66.3 deg but a 8.37 m chord > MAX_BRIDGE_M
         (
             "chord_past_the_cap",
             lambda: _ring(
                 r_in=8.0, r_out=10.0, half=11.0, gap=60, gap_wall="inner"
             ),
+            8.0,
         ),
+        # the outer 40 deg gap: chord 4.55 m, turn 44 deg
+        ("chord_just_past_the_cap", lambda: _ring(gap=40), 4.0),
         # the outer 120 deg gap (chord 9.45 m, turn 109 deg)
-        ("outer_120_deg", lambda: _ring(gap=120)),
-        ("no_observed_wall_at_all", _no_wall_ring),
+        ("outer_120_deg", lambda: _ring(gap=120), 4.0),
+        # the outer wall off the map over ~42 deg: chord 4.73 m > MAX_BRIDGE_M
+        ("wall_beyond_frame_past_the_cap", lambda: _ring(xmax=5.6), 4.0),
+        ("no_observed_wall_at_all", _no_wall_ring, 4.0),
     ],
 )
-def test_raceline_1155_a_gap_past_the_cap_raises_unobserved(name, make):
+def test_raceline_1155_a_gap_past_the_cap_raises_unobserved(name, make, r_in):
     """RACELINE-1155: past the cap the extractor stops with a named error
     instead of returning a plausible wrong track."""
-    grid = make()
-    start = _ring_start()
-    if name == "chord_past_the_cap":
-        from raceline.extract import Pose2D
-
-        start = Pose2D(0.0, -9.0, 0.0)
     with pytest.raises(ValueError, match="unobserved"):
-        _extract(grid, start, walls="observed")
+        _extract(make(), _ring_start(r_in), walls="observed")
 
 
 @pytest.mark.parametrize("walls", ["observed", "non_free"])
@@ -823,7 +843,7 @@ def test_raceline_1160_track_bounds_are_the_walls_extract_track_measured(
     on it)."""
     from raceline.extract import _widths, track_bounds
 
-    grid = _ring(gap=40)
+    grid = _ring(gap=32)
     track = _extract(grid, _ring_start(), walls=walls)
     right, left = track_bounds(grid, track.xy, walls=walls)
     assert np.abs(_widths(track.xy, left) - track.w_left).max() <= 1e-9

@@ -168,15 +168,15 @@ byte, kept as the baseline: ADR 0005).
   occupied cell near them. `observed` finds them (`OBSERVED_TOL` 0.15 m),
   replaces each with a cubic Hermite curve between the observed walls at its
   ends (grown 0.3 m onto solid wall, tangents from the next 0.5 m) and extracts
-  again. Bridged sides come out narrower than truth (down to 0.77 of it for a
-  gap on both walls), never wider by more than 0.033. A Hermite curve lies inside
+  again. Bridged sides come out narrower than truth (down to 0.74 of it for a
+  gap on both walls), never wider by more than 0.034. A Hermite curve lies inside
   the arc it replaces, which on an inner wall is a wider corridor: R_in 4 with a
   90 deg gap reads +0.074 and 120 deg +0.183. So a bridge is capped at an
-  end-tangent turn of 70 deg and a chord of 6.0 m (`MAX_BRIDGE_TURN_DEG`,
+  end-tangent turn of 70 deg and a chord of 4.0 m (`MAX_BRIDGE_TURN_DEG`,
   `MAX_BRIDGE_M`); past either the extractor raises `ValueError` naming
-  "unobserved". The chord is a primary limit: past ~7 m the end-tangent error
-  (a 0.5 m secant of a pixelised contour) gave +0.042..+0.070 inside the turn
-  cap. The measured turn includes the 0.3 m extensions (a nominal 20 deg gap
+  "unobserved". The chord is the primary limit: the end tangents' error grows
+  with the chord, and from 4.38 m a bridged side read up to +0.066 wider than
+  truth (outer and inner gaps, at turns of only 42-67 deg). The measured turn includes the 0.3 m extensions (a nominal 20 deg gap
   reads 36 deg at R 4). A gap on a non-circular wall (straight to arc) is not
   swept; real maps are its check.
 - *No ground truth.* `observed_mask(grid, pts)` says which points of a bound
@@ -186,8 +186,8 @@ byte, kept as the baseline: ADR 0005).
   runs of one track, and counting contacts in simulation, wait for the
   AutoDRIVE map workflow.
 - *The frame.* If the true wall lies beyond the map frame, the frame stays the
-  bound under both selectors and the track errs narrow (left 0.649 against 1.0
-  on a ring cropped at x = 5.6), never wide; `observed_mask` flags those
+  bound under both selectors and the track errs narrow (left 0.815 against 1.0
+  on a ring cropped at x = 5.8; cropped at 5.6, chord 4.73 m, it raises), never wide; `observed_mask` flags those
   points. Padding can also narrow a bound next to the frame, never widen one (a
   frame-touching 0.3 m unknown patch: right width min 0.937 -> 0.621).
 

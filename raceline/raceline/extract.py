@@ -55,17 +55,19 @@ FRAME_PAD = 10  # cells of unknown added around the grid before binarizing:
 # the map frame is not a wall, and a pocket it cuts off is not a patch
 BRIDGE_EXT_M = 0.3  # a bridge starts this far into the observed wall
 BRIDGE_TANGENT_M = 0.5  # the end tangent is the chord of this much wall
-# The cap on a bridge (Step 1 sweep, 166 admitted inner runs, R_in 3.0-7.5, up
-# to 11 gap orientations each): turn <= 70 deg and chord <= 6.0 m keep the
-# bridged width within +0.033 of truth (limit 0.04). An inner-wall bridge is
-# a Hermite curve, which lies inside the arc: R_in 4 / 90 deg reads 95.9 deg
-# turn and +0.074 wide, R_in 4 / 120 deg +0.183. Past ~7 m the end-tangent
-# error (a 0.5 m secant of a pixelised contour, ~5 deg) bounds the bridge
-# whatever the turn: chord 7.01 / turn 66.8 read +0.070, so the chord is a
-# primary limit. The turn is the measured end-tangent turn, which includes the
-# BRIDGE_EXT_M extensions (a nominal 20 deg gap reads 36 deg at R 4).
+# The cap on a bridge (part 2.3 C1 sweep, caps disabled and applied offline:
+# 35,091 runs, R_in 4.0-6.4, outer / inner / both walls, gaps 16-68 deg, gap
+# centres every 5-10 deg). A Hermite bridge's end tangents are 0.5 m secants of
+# a pixelised contour (~+-5 deg), and the error they put into the bridge grows
+# with the chord: from 4.38 m the bridged side read wider than truth by more
+# than WIDTH_TOL (+0.049 at R_in 4 / outer 38 deg; +0.066 at R_in 5.8 / inner
+# 64 deg, chord 6.50). Under chord <= 4.0 m and turn <= 70 deg, 14,979 admitted
+# runs read at most +0.034 per side and +0.029 total, the unbridged ring's own
+# level. The turn cap still refuses short tight gaps (R_in 3 / inner 70 deg:
+# chord 3.80, turn 90). The turn is the measured end-tangent turn, including
+# the BRIDGE_EXT_M extensions (a nominal 20 deg gap reads 36 deg at R 4).
 MAX_BRIDGE_TURN_DEG = 70.0
-MAX_BRIDGE_M = 6.0
+MAX_BRIDGE_M = 4.0
 
 Walls = Literal["observed", "non_free"]
 
