@@ -1,4 +1,13 @@
-"""SIM-5030: `nav2_amcl`'s run-to-run spread at one seed.
+"""SIM-5030: `nav2_amcl`'s run-to-run spread, over a fixed list of seeds.
+
+N2 (2026-10-16) changed this from one seed (42) to SEEDS x RUNS_PER_SEED:
+one integer sets the start pose, the scan noise and the odometry
+calibration, so a single seed samples one start pose and AMCL could look
+stable at it while losing the car at another (seed 3, on the main
+straight, is the case that prompted it). The bounds were then re-derived
+from two 35-run multi-seed CI samples (see the constants below). Everything
+below that says "at one seed" is history of that sample.
+
 
 A particle filter has no seed here: `nav2_amcl` draws its particles from
 its own RNG, and two runs of the same scenario with the same simulator
@@ -8,8 +17,9 @@ one run - so the spread is measured here, over N identical runs, and the
 tier-3 bound SIM-3080 asserts is derived from this, never from a single
 run.
 
-Tier 5 because that is what it costs: RUN_COUNT Spielberg laps at 5x is
-~25 minutes, which belongs in `--nightly` and not in the gate (ADR 0005).
+Tier 5 because that is what it costs: SEEDS x RUNS_PER_SEED laps at 5x is
+~40 minutes at 35 laps (~68 s each on CI), which belongs in `--nightly` and
+not in the gate (ADR 0005).
 What it buys nightly is that a shift in AMCL's typical error (the median
 of the runs) or a single-run blow-up (the maximum) is visible rather than
 inferred from a tier-3 test that happens to still pass. It does not see
@@ -57,15 +67,27 @@ from scripts.compare_localization import (
 
 SCENARIO = "config/scenarios/spielberg.yaml"
 ESTIMATE_TOPIC = "/localization/odom"
-SEED = 42
+# A fixed list, never rotated, so a red night is reproducible. D1 (the
+# coordinator's default list; the owner may override): 42 and 1030 are the
+# seeds the suite already pins (SIM-3080, SIM-5020); 1, 7, 99 and 123 are
+# the seeds the part 3.1 sweep holds per-seed data for. D3 (owner): seeds 3
+# and 123 are the bad-draw seeds and stay in. Seed 3 draws an odometry
+# distance scale of -1.30 sigma (odometry under-reports travel), which makes
+# AMCL lag the car; seed 123 is the worst start on the CI samples. Why a
+# negative scale loses the car and a positive one does not is the open
+# topic 2026-10-20-amcl-negative-odom-bias, accepted as a known limitation
+# (D5), so the bounds below include these seeds. D6: no retry, a run that
+# never releases t=0 counts as a failure.
+SEEDS = (42, 1030, 1, 7, 99, 123, 3)
 # The scale SIM-3080 and SIM-3090 run at, and the scale these numbers are
 # measured at: AMCL's update rate is wall-clock bound work inside a
 # simulated-time run, so a spread measured at 1x would not transfer.
 TIME_SCALE = 5.0
 TIMEOUT_SECONDS = 400.0
-# The plan's N >= 10: enough that the maximum of the sample is a usable
-# bound, few enough that the suite stays inside a nightly window.
-RUN_COUNT = 10
+# Runs per seed. The pooled sample is len(SEEDS) * RUNS_PER_SEED laps at
+# ~66 s each on CI, inside the nightly leg's 180 min timeout. (Until N2 the
+# sample was ten runs of seed 42, the plan's N >= 10.)
+RUNS_PER_SEED = 5
 
 # Measured, in three steps. (1) The docstring sample above: maximum 0.437,
 # median 0.3035. Each bound was first set ~1.5x the sample's worst, with a
@@ -109,10 +131,33 @@ RUN_COUNT = 10
 # better view of a worse typical error, bought with near-blindness to a
 # fatter tail.
 # A bound that has to be widened is a regression to explain, never a
-# number to raise (repo-gotchas #14).
-ATE_RMSE_MAXIMUM = 0.65  # sample maximum 0.570 (red nightly), 0.541 (CI)
-ATE_RMSE_MEDIAN_MAXIMUM = 0.40  # highest sample median 0.3035
-AVAILABILITY_MINIMUM = 0.99  # sample minimum 0.99411
+# number to raise (repo-gotchas #14). This one was widened, as a reviewed
+# diff the owner accepted (D5 re-rule, 2026-10-20), because the sample now
+# holds seeds 3 and 123 (D3). The numbers above are the seed-42 history;
+# the bounds below are SIM-5030's own multi-seed bounds. SIM-3080, SIM-5020
+# and ACC-4030 keep 0.65 as a seed-42 bound (D4) and do not share these.
+#
+# Multi-seed samples, 35 runs each (7 seeds x 5), CI, sha 9c8c73b, availability
+# 1.0 on every run, post-3.1b tree, main's alphas (CI_SAMPLE_A / _B below
+# hold every run):
+#     run 39423332965  median 0.2945  mean 0.4198  max 1.569 (seed 3)
+#     run 39423349401  median 0.3384  mean 0.3682  max 0.687 (seed 123)
+# Per-seed medians, run 39423332965 / 39423349401:
+#     42: 0.220 / 0.286   1030: 0.192 / 0.192   1: 0.591 / 0.514
+#     7: 0.236 / 0.227    99: 0.302 / 0.253     123: 0.413 / 0.490
+#     3: 0.532 / 0.546
+# Dev host, same tree, seed 3 x5: 0.477 0.529 0.536 0.612 1.495 (median
+# 0.536). The dev-host runs feed only the per-run maximum, never the median.
+# Median bound: the highest pooled median of a 35-run CI sample, 0.3384,
+# times the ratio the old bound carried over its sample, 0.40 / 0.3035 =
+# 1.318 -> 0.446, rounded up to 0.45 (was 0.40). Maximum bound: the worst
+# single run, 1.569, times the setting ratio 0.65 / 0.437 = 1.487 -> 2.333,
+# rounded up to 2.35 (was 0.65). The bound's margin over the worst run it
+# has seen is 2.35 / 1.569 = 1.50; the old 0.65 had 0.65 / 0.570 = 1.14, so
+# the looser of the two ratios was chosen. Availability stays 0.99.
+ATE_RMSE_MAXIMUM = 2.35  # worst run 1.569 (CI 39423332965, seed 3)
+ATE_RMSE_MEDIAN_MAXIMUM = 0.45  # highest pooled median 0.3384 (CI 39423349401)
+AVAILABILITY_MINIMUM = 0.99  # sample minimum 1.0 (seed-42 history 0.99411)
 
 
 def amcl_violations(
@@ -129,32 +174,59 @@ def amcl_violations(
     return violated
 
 
+def sample_evidence(scores: list[dict]) -> dict:
+    """The pooled sample plus each seed's own, for `log/sim-5030.json`.
+
+    `by_seed` is evidence only: the bounds apply to the pooled sample.
+    """
+    rmses = [score["ate_rmse"] for score in scores]
+    by_seed: dict[str, dict] = {}
+    for seed in sorted({score["seed"] for score in scores}):
+        own = sorted(s["ate_rmse"] for s in scores if s["seed"] == seed)
+        by_seed[str(seed)] = {
+            "ate_rmse_sorted": own,
+            "median": statistics.median(own),
+        }
+    return {
+        "seeds": sorted({score["seed"] for score in scores}),
+        "scores": scores,
+        "by_seed": by_seed,
+        "ate_rmse_sorted": sorted(rmses),
+        "spread": max(rmses) - min(rmses),
+        "median": statistics.median(rmses),
+        "mean": statistics.fmean(rmses),
+        "availability_min": min(score["availability"] for score in scores),
+    }
+
+
 def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
     scores = []
     load_before = read_host_load()
     started = time.monotonic()
-    for run in range(RUN_COUNT):
-        recording = tmp_path / f"amcl-{run}.jsonl"
-        metrics = run_scenario(
-            seed=SEED,
-            scenario=SCENARIO,
-            time_scale=TIME_SCALE,
-            timeout=TIMEOUT_SECONDS,
-            pose_source="amcl",
-            drive_on_estimate=False,
-            launch_arguments={"recording_path": str(recording)},
-        )
-        # Open loop: the lap is the reference stack's own, identical every
-        # run, and AMCL is measured beside it. A lap that differs means
-        # the estimator leaked into the driven path, not that AMCL moved.
-        assert metrics["lap_completed"], metrics
-        assert metrics["collision_count"] == 0, metrics
+    for seed in SEEDS:
+        for run in range(RUNS_PER_SEED):
+            recording = tmp_path / f"amcl-{seed}-{run}.jsonl"
+            metrics = run_scenario(
+                seed=seed,
+                scenario=SCENARIO,
+                time_scale=TIME_SCALE,
+                timeout=TIMEOUT_SECONDS,
+                pose_source="amcl",
+                drive_on_estimate=False,
+                launch_arguments={"recording_path": str(recording)},
+            )
+            # Open loop: the lap is the reference stack's own, identical
+            # every run of a seed, and AMCL is measured beside it. A lap
+            # that differs means the estimator leaked into the driven
+            # path, not that AMCL moved.
+            assert metrics["lap_completed"], metrics
+            assert metrics["collision_count"] == 0, metrics
 
-        scored = score_recording(
-            read_recording(recording), estimate_topic=ESTIMATE_TOPIC
-        )
-        print(f"SIM-5030 run {run}: {scored}")
-        scores.append(scored)
+            scored = score_recording(
+                read_recording(recording), estimate_topic=ESTIMATE_TOPIC
+            )
+            print(f"SIM-5030 seed {seed} run {run}: {scored}")
+            scores.append({"seed": seed, "run": run, **scored})
 
     rmses = [score["ate_rmse"] for score in scores]
     availabilities = [score["availability"] for score in scores]
@@ -173,74 +245,147 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
     # existed no distribution of the spread had ever been kept.
     log_dir = REPOSITORY_ROOT / "log"
     log_dir.mkdir(exist_ok=True)
-    (log_dir / "sim-5030.json").write_text(
-        json.dumps(
-            {
-                "scores": scores,
-                "ate_rmse_sorted": sorted(rmses),
-                "spread": spread,
-                "median": median,
-                "mean": statistics.fmean(rmses),
-                "availability_min": min(availabilities),
-                "wall_seconds": time.monotonic() - started,
-                "host_load": host_load_delta(load_before, read_host_load()),
-            },
-            indent=2,
-        )
-    )
+    evidence = sample_evidence(scores)
+    evidence["wall_seconds"] = time.monotonic() - started
+    evidence["host_load"] = host_load_delta(load_before, read_host_load())
+    (log_dir / "sim-5030.json").write_text(json.dumps(evidence, indent=2))
     violated = amcl_violations(rmses, availabilities)
     if violated:
-        worst = rmses.index(max(rmses))
+        worst = scores[rmses.index(max(rmses))]
         shutil.copyfile(
-            tmp_path / f"amcl-{worst}.jsonl", log_dir / "sim-5030-max.jsonl"
+            tmp_path / f"amcl-{worst['seed']}-{worst['run']}.jsonl",
+            log_dir / "sim-5030-max.jsonl",
         )
 
     assert not violated, (violated, sorted(rmses), availabilities)
 
 
-# The red nightly 38381183034's own ten (sorted), and the ten of the
-# original docstring sample: the bound must pass both and reject a shift.
-RED_NIGHTLY_SAMPLE = [
-    0.172,
-    0.178,
-    0.191,
-    0.232,
-    0.234,
+# The two multi-seed CI samples the bounds were derived from (35 runs each,
+# sorted, rounded to 3 places; SEEDS x RUNS_PER_SEED). The bound must pass
+# both and reject a shift. History: the seed-42 ten of nightly 38381183034
+# (0.172 .. 0.570, median 0.2345) and the original docstring ten (0.215 ..
+# 0.437, median 0.3035) bounded the previous 0.40 / 0.65.
+# CI run 39423332965
+CI_SAMPLE_A = [
+    0.141,
+    0.146,
+    0.165,
+    0.192,
+    0.198,
+    0.202,
+    0.206,
+    0.218,
+    0.22,
     0.235,
-    0.268,
-    0.335,
-    0.385,
-    0.570,
-]
-DOCSTRING_SAMPLE = [
-    0.215,
+    0.236,
     0.246,
-    0.275,
-    0.289,
-    0.301,
-    0.306,
-    0.316,
-    0.323,
-    0.429,
-    0.437,
+    0.258,
+    0.272,
+    0.274,
+    0.279,
+    0.291,
+    0.294,
+    0.302,
+    0.319,
+    0.381,
+    0.404,
+    0.413,
+    0.436,
+    0.448,
+    0.45,
+    0.532,
+    0.557,
+    0.591,
+    0.627,
+    0.699,
+    0.712,
+    0.786,
+    1.393,
+    1.569,
 ]
-AVAILABLE = [1.0] * RUN_COUNT
+# CI run 39423349401
+CI_SAMPLE_B = [
+    0.172,
+    0.187,
+    0.19,
+    0.192,
+    0.201,
+    0.206,
+    0.224,
+    0.227,
+    0.233,
+    0.253,
+    0.258,
+    0.264,
+    0.267,
+    0.275,
+    0.284,
+    0.286,
+    0.331,
+    0.338,
+    0.356,
+    0.389,
+    0.402,
+    0.428,
+    0.438,
+    0.446,
+    0.468,
+    0.472,
+    0.49,
+    0.514,
+    0.541,
+    0.546,
+    0.556,
+    0.567,
+    0.582,
+    0.615,
+    0.687,
+]
+AVAILABLE = [1.0] * len(CI_SAMPLE_A)
 
 
-def test_sim_5030_bound_passes_the_red_nightly_sample() -> None:
-    assert amcl_violations(RED_NIGHTLY_SAMPLE, AVAILABLE) == []
-    assert amcl_violations(DOCSTRING_SAMPLE, AVAILABLE) == []
+def test_sim_5030_bound_passes_the_ci_samples() -> None:
+    assert amcl_violations(CI_SAMPLE_A, AVAILABLE) == []
+    assert amcl_violations(CI_SAMPLE_B, AVAILABLE) == []
 
 
 def test_sim_5030_bound_rejects_a_shifted_median() -> None:
-    # Typical error ~1.7x the red nightly's (median 0.425 against 0.2345)
-    # with no run above 0.65: the old max-min spread (0.25) passes it too.
-    shifted = [0.35, 0.38, 0.40, 0.41, 0.42, 0.43, 0.45, 0.48, 0.52, 0.60]
+    # Every run of CI sample B 0.2 m worse (median 0.538 against 0.338) with
+    # no run past the maximum bound: only the median bound sees it.
+    shifted = [value + 0.2 for value in CI_SAMPLE_B]
     assert max(shifted) <= ATE_RMSE_MAXIMUM
     assert amcl_violations(shifted, AVAILABLE) == ["median"]
 
 
 def test_sim_5030_bound_rejects_a_single_run_past_the_maximum() -> None:
-    assert amcl_violations([*RED_NIGHTLY_SAMPLE[:-1], 0.66], AVAILABLE) == [
-        "maximum"
+    # One run just past the maximum bound (a literal on purpose: raising
+    # ATE_RMSE_MAXIMUM must mean editing this test); the median is untouched.
+    blown = [*CI_SAMPLE_A[:-1], 2.36]
+    assert amcl_violations(blown, AVAILABLE) == ["maximum"]
+
+
+def test_sim_5030_samples_several_seeds() -> None:
+    assert len(set(SEEDS)) >= 2, SEEDS
+    assert RUNS_PER_SEED >= 2, RUNS_PER_SEED
+    # D3: the bad-draw seeds stay in; dropping one is a reviewed ruling.
+    assert {3, 123} <= set(SEEDS), SEEDS
+
+
+def test_sim_5030_evidence_groups_runs_by_seed() -> None:
+    scores = [
+        {"seed": 42, "ate_rmse": 0.30, "availability": 1.0},
+        {"seed": 7, "ate_rmse": 0.20, "availability": 1.0},
+        {"seed": 42, "ate_rmse": 0.10, "availability": 0.995},
+        {"seed": 7, "ate_rmse": 0.50, "availability": 1.0},
     ]
+    evidence = sample_evidence(scores)
+    assert evidence["seeds"] == [7, 42]
+    assert evidence["by_seed"]["42"] == {
+        "ate_rmse_sorted": [0.10, 0.30],
+        "median": 0.20,
+    }
+    assert evidence["by_seed"]["7"]["ate_rmse_sorted"] == [0.20, 0.50]
+    assert evidence["ate_rmse_sorted"] == [0.10, 0.20, 0.30, 0.50]
+    assert evidence["median"] == 0.25
+    assert evidence["availability_min"] == 0.995
+    assert evidence["scores"] == scores
