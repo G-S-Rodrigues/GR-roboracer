@@ -36,6 +36,12 @@ from skimage.measure import find_contours
 from skimage.morphology import skeletonize
 from skimage.segmentation import watershed
 
+from raceline.geometry import (
+    nearest_distance,
+    resample_closed,
+    signed_area,
+    tangents,
+)
 from raceline.track import Track
 
 STEP_M = 0.1  # output spacing; upstream's interp_track step
@@ -237,27 +243,6 @@ def _smooth_closed(pts: np.ndarray) -> np.ndarray:
     return smooth
 
 
-def _resample_closed(pts: np.ndarray, step: float = STEP_M) -> np.ndarray:
-    closed = np.vstack([pts, pts[:1]])
-    seg = np.hypot(*np.diff(closed, axis=0).T)
-    s = np.concatenate([[0.0], np.cumsum(seg)])
-    n = max(int(round(s[-1] / step)), 3)
-    t = np.linspace(0.0, s[-1], n, endpoint=False)
-    return np.column_stack(
-        [np.interp(t, s, closed[:, 0]), np.interp(t, s, closed[:, 1])]
-    )
-
-
-def _signed_area(xy: np.ndarray) -> float:
-    x, y = xy[:, 0], xy[:, 1]
-    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
-
-
-def _tangents(xy: np.ndarray) -> np.ndarray:
-    t = np.roll(xy, -1, axis=0) - np.roll(xy, 1, axis=0)
-    return t / np.hypot(t[:, 0], t[:, 1])[:, None]
-
-
 def _curvature(xy: np.ndarray) -> np.ndarray:
     # Not upstream's: computed here from the extracted path, never copied
     # (spec). The skeleton wobbles by about a cell, which a second derivative
@@ -372,7 +357,7 @@ def _bridge_unobserved(
     e = int(round(BRIDGE_EXT_M / step))
     k = int(round(BRIDGE_TANGENT_M / step))
     for contour in contours:
-        p = _resample_closed(_fixed_start(contour))
+        p = resample_closed(_fixed_start(contour), STEP_M)
         n = len(p)
         bad = ~observed_mask(grid, p)
         if not bad.any():
@@ -423,11 +408,11 @@ def _classify_bounds(
     # Replaces upstream's traversal-direction heuristic (:265-280): the sign of
     # cross(tangent, offset to the bound) at every centreline point, majority
     # vote; positive = left of travel (track.cpp:143's left normal).
-    tan = _tangents(xy)
+    tan = tangents(xy)
     votes = []
     for b in bounds:
-        _, idx = cKDTree(_resample_closed(b)).query(xy)
-        near = _resample_closed(b)[idx]
+        _, idx = cKDTree(resample_closed(b, STEP_M)).query(xy)
+        near = resample_closed(b, STEP_M)[idx]
         d = near - xy
         cross = tan[:, 0] * d[:, 1] - tan[:, 1] * d[:, 0]
         pos = float(np.mean(cross > 0))
@@ -448,8 +433,7 @@ def _classify_bounds(
 
 def _widths(xy: np.ndarray, bound: np.ndarray) -> np.ndarray:
     # dist_to_bounds (:296-405): minimum distance to the bound at 0.1 m.
-    d, _ = cKDTree(_resample_closed(bound)).query(xy)
-    return d
+    return nearest_distance(xy, bound, STEP_M)
 
 
 def _offset_bound(
@@ -457,9 +441,12 @@ def _offset_bound(
 ) -> np.ndarray:
     # The bound moved half_width towards the centreline along its own normal.
     b = gaussian_filter1d(
-        _resample_closed(bound), BOUND_SIGMA_M / STEP_M, axis=0, mode="wrap"
+        resample_closed(bound, STEP_M),
+        BOUND_SIGMA_M / STEP_M,
+        axis=0,
+        mode="wrap",
     )
-    t = _tangents(b)
+    t = tangents(b)
     n = np.column_stack([-t[:, 1], t[:, 0]])
     _, i = cKDTree(xy).query(b)
     side = np.sign(np.einsum("ij,ij->i", xy[i] - b, n))
@@ -496,7 +483,7 @@ def _recentre(
     mixed = gaussian_filter1d(
         mixed, RECENTRE_SIGMA_M / STEP_M, axis=0, mode="wrap"
     )
-    return _resample_closed(mixed)
+    return resample_closed(mixed, STEP_M)
 
 
 def _check_inside(
@@ -516,10 +503,10 @@ def _check_inside(
     on_map = (col >= 0) & (col < w) & (row >= 0) & (row < h)
     free = np.zeros(len(xy), dtype=bool)
     free[on_map] = binary[row[on_map], col[on_map]] > 0
-    tan = _tangents(xy)
+    tan = tangents(xy)
     bad_side = np.zeros(len(xy), dtype=bool)
     for bound, sign in ((left, 1.0), (right, -1.0)):
-        b = _resample_closed(bound)
+        b = resample_closed(bound, STEP_M)
         d = b[cKDTree(b).query(xy)[1]] - xy
         cross = tan[:, 0] * d[:, 1] - tan[:, 1] * d[:, 0]
         bad_side |= sign * cross <= 0
@@ -564,8 +551,8 @@ def _centerline(grid, start_pose, direction, walls="non_free", binary=None):
     if not loops:
         raise ValueError("no closed track loop near start_pose")
     cells = max(loops, key=lambda t: t[0])[1]
-    xy = _resample_closed(
-        _cells_to_m(_smooth_closed(cells.astype(float)), grid)
+    xy = resample_closed(
+        _cells_to_m(_smooth_closed(cells.astype(float)), grid), STEP_M
     )
     return binary, xy
 
@@ -598,7 +585,7 @@ def _orient(xy, start_pose, direction):
         np.argmin(np.hypot(xy[:, 0] - start_pose.x, xy[:, 1] - start_pose.y))
     )
     heading = np.array([np.cos(start_pose.yaw), np.sin(start_pose.yaw)])
-    if _tangents(xy)[near] @ heading < 0:
+    if tangents(xy)[near] @ heading < 0:
         xy = xy[::-1].copy()
         near = int(
             np.argmin(
@@ -606,7 +593,7 @@ def _orient(xy, start_pose, direction):
             )
         )
     xy = np.roll(xy, -near, axis=0)
-    ccw = _signed_area(xy) > 0
+    ccw = signed_area(xy) > 0
     if ccw != (direction == "ccw"):
         raise ValueError(
             f"direction '{direction}' contradicts start_pose.yaw "
