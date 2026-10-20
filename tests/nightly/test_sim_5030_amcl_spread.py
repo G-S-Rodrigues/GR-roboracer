@@ -68,13 +68,18 @@ from scripts.compare_localization import (
 
 SCENARIO = "config/scenarios/spielberg.yaml"
 ESTIMATE_TOPIC = "/localization/odom"
-# PLACEHOLDER: owner D1 unruled - the seed list and runs per seed below are
-# the plan's default, committed only so the structure can be tested; the
-# pre-PR guard fails while this line exists.
-# A fixed list, never rotated, so a red night is reproducible. 42 and 1030
-# are the seeds the suite already pins (SIM-3080, SIM-5020); 1, 7, 99 and 123
-# are the seeds the part 3.1 sweep holds per-seed data for.
-SEEDS = (42, 1030, 1, 7, 99, 123)
+# A fixed list, never rotated, so a red night is reproducible. D1 (the
+# coordinator's default list; the owner may override): 42 and 1030 are the
+# seeds the suite already pins (SIM-3080, SIM-5020); 1, 7, 99 and 123 are
+# the seeds the part 3.1 sweep holds per-seed data for. D3 (owner): seeds 3
+# and 123 are the bad-draw seeds and stay in. Seed 3 draws an odometry
+# distance scale of -1.30 sigma (odometry under-reports travel), which makes
+# AMCL lag the car; seed 123 is the worst start on the CI samples. Why a
+# negative scale loses the car and a positive one does not is the open
+# topic 2026-10-20-amcl-negative-odom-bias, accepted as a known limitation
+# (D5), so the bounds below include these seeds. D6: no retry, a run that
+# never releases t=0 counts as a failure.
+SEEDS = (42, 1030, 1, 7, 99, 123, 3)
 # The scale SIM-3080 and SIM-3090 run at, and the scale these numbers are
 # measured at: AMCL's update rate is wall-clock bound work inside a
 # simulated-time run, so a spread measured at 1x would not transfer.
@@ -284,6 +289,8 @@ def test_sim_5030_bound_rejects_a_single_run_past_the_maximum() -> None:
 def test_sim_5030_samples_several_seeds() -> None:
     assert len(set(SEEDS)) >= 2, SEEDS
     assert RUNS_PER_SEED >= 2, RUNS_PER_SEED
+    # D3: the bad-draw seeds stay in; dropping one is a reviewed ruling.
+    assert {3, 123} <= set(SEEDS), SEEDS
 
 
 def test_sim_5030_evidence_groups_runs_by_seed() -> None:
