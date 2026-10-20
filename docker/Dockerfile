@@ -92,11 +92,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Ubuntu 24.04 marks the system interpreter externally-managed (PEP 668).
 # This is a disposable container image, so installing into it is intended.
-RUN pip3 install --no-cache-dir --break-system-packages \
-        robotframework \
-        robotframework-tidy \
-        ruff \
-        pre-commit
+# The tools are a pinned closure installed --no-deps (nothing resolves at
+# build time; see docker/dev-tools-requirements.txt), and `pip3 check` fails
+# the build if a pinned dist disagrees with Debian's. It must stay before the
+# gym install below, whose jax-pf override would fail it.
+COPY docker/dev-tools-requirements.txt /tmp/dev-tools-requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages --no-deps \
+        -r /tmp/dev-tools-requirements.txt \
+    && pip3 check \
+    && rm /tmp/dev-tools-requirements.txt
 
 # uv is present in dev for tools/ and sim/ work, but sim/ itself runs in
 # fast-sim: nothing here creates a venv that ament could discover.

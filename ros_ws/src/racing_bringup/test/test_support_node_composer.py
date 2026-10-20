@@ -51,6 +51,12 @@ RELIABLE_QOS = QoSProfile(
 MAP_TO_ODOM = (1.0, 2.0, math.pi / 2)
 DEAD_RECKONING = (4.0, -1.0, 0.7)
 EXPECTED = (2.0, 6.0, 0.7 + math.pi / 2)
+# The sim publishes base_link at the centre of gravity's height. map -> odom
+# gets a z that does not cancel it (an estimator's would be -h, composing to
+# 0.0, which the node returned before z was composed).
+DEAD_RECKONING_Z = 0.074
+MAP_TO_ODOM_Z = 0.5
+EXPECTED_Z = MAP_TO_ODOM_Z + DEAD_RECKONING_Z
 
 
 def _yaw(q) -> float:
@@ -129,6 +135,7 @@ def test_bringup_2010_composes_the_estimate_and_leaves_tf_alone(graph):
         message.child_frame_id = "base_link"
         message.pose.pose.position.x = pose[0]
         message.pose.pose.position.y = pose[1]
+        message.pose.pose.position.z = DEAD_RECKONING_Z
         message.pose.pose.orientation.z = math.sin(pose[2] / 2.0)
         message.pose.pose.orientation.w = math.cos(pose[2] / 2.0)
         message.twist.twist.linear.x = 2.5
@@ -146,6 +153,7 @@ def test_bringup_2010_composes_the_estimate_and_leaves_tf_alone(graph):
     transform.child_frame_id = "odom"
     transform.transform.translation.x = MAP_TO_ODOM[0]
     transform.transform.translation.y = MAP_TO_ODOM[1]
+    transform.transform.translation.z = MAP_TO_ODOM_Z
     transform.transform.rotation.z = math.sin(MAP_TO_ODOM[2] / 2.0)
     transform.transform.rotation.w = math.cos(MAP_TO_ODOM[2] / 2.0)
     estimator.sendTransform(transform)
@@ -168,6 +176,9 @@ def test_bringup_2010_composes_the_estimate_and_leaves_tf_alone(graph):
         pose = message.pose.pose
         assert pose.position.x == pytest.approx(EXPECTED[0], abs=1e-9)
         assert pose.position.y == pytest.approx(EXPECTED[1], abs=1e-9)
+        # map -> odom is a yaw rotation, so z adds: the composed pose equals
+        # TF map -> base_link, as the docstring promises.
+        assert pose.position.z == pytest.approx(EXPECTED_Z, abs=1e-9)
         assert math.remainder(
             _yaw(pose.orientation) - EXPECTED[2], 2 * math.pi
         ) == pytest.approx(0.0, abs=1e-9)

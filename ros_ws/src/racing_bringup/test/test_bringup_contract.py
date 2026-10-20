@@ -295,11 +295,15 @@ def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
 def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     vehicle_file: Path,
 ) -> None:
-    """BRINGUP-1050: the sim's laser mount is the URDF's base_link_to_laser.
+    """BRINGUP-1050: the sim's laser mount is the URDF's rear_axle_to_laser.
 
     /scan is stamped in frame `laser` and every estimator places its beams
-    through TF base_link -> laser, which robot_state_publisher takes from the
-    URDF. The sim ray-marches /scan from the mount the vehicle file states.
+    through TF rear_axle -> laser, which robot_state_publisher takes from the
+    URDF. The vehicle file states the mount from the rear axle (the frame
+    every source measures the lidar from: AutoDRIVE roboracer_1, the
+    f1tenth_simulator scan_distance_to_base_link); the sim converts it to
+    the CoG by the gym's lr, which SIMJAX-1140 pins to the URDF, so yaml,
+    URDF and cast are one chain.
     Two copies of one geometry number drift silently (repo-gotchas #15's
     shape): a mismatch shifts every scan point by the difference, and reads
     as localization error, never as a fault. The sim is planar, so a mount
@@ -312,11 +316,15 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     urdf = REPOSITORY_ROOT / (
         "ros_ws/src/racing_vehicle_description/urdf/f1tenth.urdf"
     )
-    origin = (
+    joint = (
         ElementTree.parse(urdf)
         .getroot()
-        .find("./joint[@name='base_link_to_laser']/origin")
+        .find("./joint[@name='rear_axle_to_laser']")
     )
+    assert joint is not None, "no joint rear_axle_to_laser"
+    assert joint.find("parent").attrib["link"] == "rear_axle"
+    origin = joint.find("origin")
+    assert origin is not None
     x, y, _z = (float(value) for value in origin.attrib["xyz"].split())
     roll, pitch, yaw = (float(value) for value in origin.attrib["rpy"].split())
     assert (roll, pitch) == (0.0, 0.0)
@@ -331,7 +339,7 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     )
 
     # ...and the launch hands the sim that file, or the mount never arrives
-    # and the sim casts from base_link.
+    # and the sim casts from the rear axle.
     tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
     sim_node = next(
         node.value

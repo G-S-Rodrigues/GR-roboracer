@@ -43,6 +43,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     `colcon build` fails with `No rule to make target '/opt/ros/jazzy/lib/libfastcdr.so.2.2.7'`.
     After any image rebuild, `rm -rf build/* install/*` inside `dev` before building.
 
+27. **An unpinned install in the image is latent until the layer cache misses.** CI's gha cache
+    replays a resolve from whenever the layer last ran (here 2026-10-02), so drift surfaces only when
+    the upstream base tag moves, and then on every leg and every PR at once. Seen: the unpinned
+    `pip3 install pre-commit` resolved `virtualenv 21.14.11`, which needs `packaging>=26.3`, and pip
+    could not replace Debian's `packaging 24.0` (no RECORD file); three nightlies failed at "Build the
+    dev image" before any test ran. Symptom: a Dockerfile untouched for weeks fails to build. Remedy:
+    the dev tools are a full closure in `docker/dev-tools-requirements.txt`, installed `--no-deps`,
+    then `pip3 check`; CHECK-1330/1340 guard it. Bumps are reviewed diffs.
+
 ## ROS
 
 6. **QoS mismatch looks like absent data, not an error.** A reliable subscriber never hears a
@@ -163,6 +172,16 @@ Traps any task in this repository can hit. Each one cost real time at least once
     tree, so a stale map shows up as a slow `--ready`, never a skipped test. The exception is a path
     assigned to the *wrong* implementation, which nothing catches but review and the nightly.
 
+    The scope's base is `refs/remotes/origin/main` when it exists (local `main` only when it is absent,
+    and the line says `main (no origin/main)`); it is never fetched, and `; base <ref> <sha>` is printed
+    on the scope and ready lines so a stale one shows. In `dev`, git fails twice over on a worktree made
+    on the host: its `.git` file names a host path that does not exist (`not a git repository`), or, with
+    a hand-rewritten relative path, root-vs-UID-1000 ownership that `safe.directory=/ws` does not cover
+    (`dubious ownership`). `changed_scope.py` therefore, only when plain git fails, locates the git dir itself behind a trust gate
+    (CHECK-1350..1370) and runs git with `GIT_DIR`/`GIT_WORK_TREE`; it logs `changed_scope: git dir ...`
+    on stderr. Any other git in `dev` on a host worktree still needs the hand rewrite and a
+    `safe.directory`. Never `git worktree prune/repair` in `dev`: it rewrites the host's back-pointers.
+
 24. **The sourced ROS `PYTHONPATH` leaks into every uv venv run after it.** `check.sh` sources ROS and
     the overlay, and `PYTHONPATH` is honoured inside a uv venv, ahead of its site-packages. A
     `raceline/` run without `env -u PYTHONPATH` can import `rclpy` and `racing_common` (ADR 0003's
@@ -170,3 +189,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     code as `env -u PYTHONPATH uv run --project raceline --locked ...`. Guard: RACELINE-1020. The
     TUM optimizer runs in `raceline/tum_env/` (Python 3.8, original pins with two bumped: tph 0.78, quadprog 0.1.12; see the README), reached as a subprocess
     by `raceline.tum` (README there); never import it into the 3.12 env.
+
+26. **`base_link` is the centre of gravity, not the rear axle.** The gym state, every published pose,
+    z = h (0.074 m), and the supervisor/metrics point are the CoG; the URDF drawing and `laser_x` are
+    authored in `rear_axle`, its TF child lr = 0.17145 m behind, and the sim converts the mount by lr.
+    Reading 0.275 as CoG-relative put the beams 0.171 m ahead of the real lidar and nothing errored.
+    Pure Pursuit's law is exact only at the rear axle and runs on the CoG by owner ruling (a small
+    steering-angle bias). **A pose measured at the rear axle (AutoDRIVE's `roboracer_1`, a real car's
+    wheel odometry) must be moved lr along heading and given z = h before it is published as
+    `base_link`.** Under an estimator, `map -> base_link` z may be 0 and `map -> odom` carry -h (measured
+    under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
+    `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
+    the axle centre (a wheel radius higher), because every mesh is authored there.

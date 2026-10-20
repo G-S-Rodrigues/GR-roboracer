@@ -1,0 +1,40 @@
+# The dev stage's pip tools, as a complete pinned closure. Installed with
+# `--no-deps` and followed by `pip3 check` (docker/Dockerfile), so nothing
+# resolves at build time and PyPI drift cannot change the image.
+#
+# Why: from 2026-10-17 the nightlies failed at "Build the dev image". The
+# unpinned install resolved virtualenv 21.14.11, which needs packaging>=26.3,
+# and pip could not replace Debian's packaging 24.0 (no RECORD file).
+# Latent until the base image tag moved and invalidated CI's layer cache.
+#
+# Source: the set CI built on 2026-10-02 (run 36989493802, job 110782122606),
+# the last build that actually executed the pip layer; every gate since then
+# linted and tested with it.
+#
+# Debian owns packaging, distlib, pyyaml and pygments; they are deliberately
+# absent and `pip3 check` must stay clean against them.
+#
+# To bump: in a throwaway container off the `underlay` stage, install the new
+# top-level set unpinned, take `pip3 freeze` of what pip installed (not the
+# Debian-owned dists), and commit the result as a reviewed diff.
+cfgv==3.5.0
+click==8.5.0
+colorama==0.4.6
+filelock==4.0.9
+identify==2.6.20
+jinja2==3.1.6
+markdown-it-py==4.2.0
+markupsafe==3.0.3
+mdurl==0.1.2
+nodeenv==1.11.0
+pathspec==1.1.1
+platformdirs==4.12.2
+pre-commit==4.6.2
+python-discovery==1.6.1
+rich==15.0.0
+rich-click==1.9.9
+robotframework==7.5
+robotframework-tidy==4.18.0
+ruff==0.16.10
+tomli==2.4.1
+virtualenv==21.14.3

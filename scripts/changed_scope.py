@@ -18,8 +18,8 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, replace
+from pathlib import Path, PurePosixPath
 
 # The extensions scripts/check.sh hands to clang-format and clang-tidy.
 CPP_EXTENSIONS = (".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx")
@@ -318,6 +318,7 @@ class ReadyScope:
     implementations: tuple[str, ...]
     tests: tuple[str, ...]
     why: tuple[str, ...]
+    base: str = ""
 
 
 def _whole(reason: str) -> ReadyScope:
@@ -408,16 +409,28 @@ def owners_of(test_id: str, stack: StackMap) -> list[str]:
 
 
 RunGit = Callable[[list[str]], str]
+ORIGIN_MAIN = "refs/remotes/origin/main"
 
 
 def _lines(output: str) -> list[str]:
     return [line for line in output.splitlines() if line]
 
 
-def changed_paths(run_git: RunGit) -> list[str]:
-    """The branch's changed set: merge-base diff, staged diff and
-    untracked new files, deduplicated. `run_git` raises on failure."""
-    base = run_git(["merge-base", "main", "HEAD"]).strip()
+def merge_base(run_git: RunGit) -> tuple[str, str]:
+    """(label, sha) of the branch's base. `origin/main` when it exists, and a
+    failure against it raises; local `main` only when `origin/main` is truly
+    absent (the lookup exits 1). Never fetches. Raises on any failure."""
+    try:
+        run_git(["show-ref", "--verify", "--quiet", ORIGIN_MAIN])
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode != 1:
+            raise
+        sha = run_git(["merge-base", "main", "HEAD"]).strip()
+        return "main (no origin/main)", sha
+    return "origin/main", run_git(["merge-base", ORIGIN_MAIN, "HEAD"]).strip()
+
+
+def _changed_since(run_git: RunGit, base: str) -> list[str]:
     paths: set[str] = set()
     paths.update(_lines(run_git(["diff", "--name-only", "--no-renames", base])))
     paths.update(
@@ -429,6 +442,12 @@ def changed_paths(run_git: RunGit) -> list[str]:
         _lines(run_git(["ls-files", "--others", "--exclude-standard"]))
     )
     return sorted(paths)
+
+
+def changed_paths(run_git: RunGit) -> list[str]:
+    """The branch's changed set: merge-base diff, staged diff and
+    untracked new files, deduplicated. `run_git` raises on failure."""
+    return _changed_since(run_git, merge_base(run_git)[1])
 
 
 def resolve(
@@ -444,16 +463,18 @@ def resolve(
         )
 
     try:
-        changed = changed_paths(run_git)
+        label, sha = merge_base(run_git)
+        changed = _changed_since(run_git, sha)
     except subprocess.CalledProcessError as exc:
         return (
             Scope(whole_tree=True, packages=frozenset(), cpp=(), py=()),
             f"git failed: {exc}",
         )
 
+    base = f"base {label} {sha[:9]}"
     scope = scope_for(changed)
     if scope.whole_tree:
-        return scope, "whole-tree trigger in changed set"
+        return scope, f"whole-tree trigger in changed set; {base}"
 
     scope = Scope(
         whole_tree=False,
@@ -461,7 +482,7 @@ def resolve(
         cpp=tuple(p for p in scope.cpp if exists(p)),
         py=tuple(p for p in scope.py if exists(p)),
     )
-    return scope, "scoped to changed packages"
+    return scope, f"scoped to changed packages; {base}"
 
 
 def render_shell(scope: Scope, reason: str) -> str:
@@ -501,14 +522,21 @@ def resolve_ready(
     if env.get("CHECK_SCOPE") == "all":
         return _whole("CHECK_SCOPE=all"), None
     try:
-        changed = changed_paths(run_git)
+        label, sha = merge_base(run_git)
+        changed = _changed_since(run_git, sha)
     except subprocess.CalledProcessError as exc:
         return _whole(f"git failed: {exc}"), None
     try:
         stack, deps = load()
     except Exception as exc:  # yaml, robot import, missing file, ValueError
         return _whole(f"reference_stack.yaml unreadable: {exc}"), None
-    return select_ready(changed, stack, deps), stack
+    return (
+        replace(
+            select_ready(changed, stack, deps),
+            base=f"{label} {sha[:9]}",
+        ),
+        stack,
+    )
 
 
 def render_ready_shell(scope: ReadyScope, stack: StackMap | None) -> str:
@@ -532,8 +560,11 @@ def render_ready_shell(scope: ReadyScope, stack: StackMap | None) -> str:
             f"tests {', '.join(scope.tests)}; "
             f"because {'; '.join(scope.why) or 'no mapped path'}"
         )
+        if scope.base:
+            line += f"; base {scope.base}"
     else:
-        line = f"whole tree ({scope.reason})"
+        suffix = f"; base {scope.base}" if scope.base else ""
+        line = f"whole tree ({scope.reason}{suffix})"
     return (
         "\n".join(
             [
@@ -551,6 +582,144 @@ def render_ready_shell(scope: ReadyScope, stack: StackMap | None) -> str:
     )
 
 
+@dataclass(frozen=True)
+class GitDirLocation:
+    """A worktree's git dir found by `locate_git_dir`."""
+
+    git_dir: Path
+    work_tree: Path
+    gitfile_target: str
+
+
+# Variables by which a caller has already chosen where git looks; they
+# would override at run time what the trust gate validated.
+_CALLER_CHOSEN = (
+    "GIT_DIR",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+)
+
+
+def _default_owner(path: Path) -> int:
+    return path.stat().st_uid
+
+
+def locate_git_dir(
+    start: Path,
+    env: Mapping[str, str],
+    *,
+    owner: Callable[[Path], int] = _default_owner,
+) -> GitDirLocation | None:
+    """Find the git dir of the worktree holding `start` when its `.git` file
+    cannot be followed (it names a host path, or git distrusts the owner).
+
+    Explicit `GIT_DIR` skips git's ownership check, so trust is only
+    extended from a common repo `A` that git itself opens, to a worktree
+    nested inside it: `A/.git/worktrees/<name>` whose back-pointer names this
+    worktree at the same position under `A`. Anything else is None, and the
+    caller runs plain git (which fails closed to whole tree)."""
+    if any(name in env for name in _CALLER_CHOSEN):
+        return None
+    try:
+        start = start.absolute()
+        work = next(
+            (d for d in (start, *start.parents) if (d / ".git").exists()),
+            None,
+        )
+        if work is None or (work / ".git").is_dir():
+            return None
+        first = (work / ".git").read_text().splitlines()[:1]
+        if not first or not first[0].startswith("gitdir: "):
+            return None
+        target = first[0][len("gitdir: ") :].strip()
+        name = PurePosixPath(target).name
+        if name in ("", ".", ".."):
+            return None
+        target_abs = (
+            Path(target) if Path(target).is_absolute() else work / target
+        )
+        found = None
+        for common in work.parents:
+            cand = common / ".git" / "worktrees" / name
+            if not (cand.is_dir() and (cand / "gitdir").is_file()):
+                continue
+            back = PurePosixPath((cand / "gitdir").read_text().strip())
+            rel = work.relative_to(common).parts
+            if back.parts[-len(rel) - 1 :] == (*rel, ".git"):
+                found = (common, cand)
+                break
+        if found is None:
+            return None
+        common, cand = found
+        if target_abs.exists() and target_abs.resolve() != cand.resolve():
+            return None
+        # Trust gate: all of it before any git runs with GIT_DIR.
+        common_git = (common / ".git").resolve()
+        probe = subprocess.run(
+            ["git", "-C", str(common), "rev-parse", "--absolute-git-dir"],
+            env=dict(env),
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode != 0:
+            return None
+        if Path(probe.stdout.strip()).resolve() != common_git:
+            return None
+        if not (cand / "commondir").is_file():
+            return None
+        pointed = (cand / (cand / "commondir").read_text().strip()).resolve()
+        if pointed != common_git:
+            return None
+        want = owner(common / ".git")
+        for path in (
+            cand,
+            cand / "commondir",
+            cand / "gitdir",
+            work / ".git",
+        ):
+            if owner(path) != want:
+                return None
+        return GitDirLocation(
+            git_dir=cand, work_tree=work, gitfile_target=target
+        )
+    except (OSError, ValueError, UnicodeDecodeError, RuntimeError):
+        return None
+
+
+def make_run_git(
+    cwd: Path, env: Mapping[str, str]
+) -> tuple[RunGit, GitDirLocation | None]:
+    """The `run_git` for this process. Plain git first; only when it cannot
+    open `cwd` is the git dir located by `locate_git_dir`, and where it was
+    found is returned (else None), so a healthy checkout never bypasses
+    git's ownership check."""
+    plain = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=cwd,
+        env=dict(env),
+        capture_output=True,
+    )
+    location = locate_git_dir(cwd, env) if plain.returncode != 0 else None
+    git_env = dict(env)
+    if location is not None:
+        git_env["GIT_DIR"] = str(location.git_dir)
+        git_env["GIT_WORK_TREE"] = str(location.work_tree)
+
+    def run_git(git_args: list[str]) -> str:
+        return subprocess.run(
+            ["git", *git_args],
+            cwd=cwd,
+            env=git_env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+    return run_git, location
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
@@ -563,15 +732,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
 
-    def run_git(git_args: list[str]) -> str:
-        return subprocess.run(
-            ["git", *git_args],
-            cwd=os.getcwd(),
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-
     if args.owners is not None:
         owners = owners_of(args.owners, load_stack(root))
         if not owners:
@@ -579,6 +739,13 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         sys.stdout.write("\n".join(owners) + "\n")
         return 0
+
+    run_git, location = make_run_git(Path.cwd(), os.environ)
+    if location is not None:
+        sys.stderr.write(
+            f"changed_scope: git dir {location.git_dir} "
+            f"(the worktree's .git names {location.gitfile_target})\n"
+        )
 
     if args.ready:
 
