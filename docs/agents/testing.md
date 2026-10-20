@@ -15,7 +15,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | Tier | What it proves | Runner | Cost |
 |---|---|---|---|
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
-| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total without raceline; raceline 28-38 s warm measured on the part-2.3 branch (2026-10-20; `test_extract.py` ~7 s of it, TUM tests 8 s each) (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
+| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~8 s warm (the map extractor added ~2.5 s); measured idle 2026-10-20: raceline suite ~17 s on main, ~20 s with part 2.3 (`test_extract.py` ~3.5 -> ~5.7 s), already over that target before 2.3 (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~201 s |

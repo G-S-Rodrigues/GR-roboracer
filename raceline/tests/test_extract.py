@@ -192,7 +192,7 @@ def _ring(
     free = (r > r_in) & (r < r_out)
     data[(np.abs(r - r_in) <= RES) | (np.abs(r - r_out) <= RES)] = 100
     if gap is not None:
-        sect = np.abs(ang - c_deg) < gap / 2
+        sect = np.abs((ang - c_deg + 180.0) % 360.0 - 180.0) < gap / 2
         if gap_wall in ("outer", "both"):
             data[sect & (np.abs(r - r_out) <= RES)] = -1
             free |= sect & (r > r_in) & (r < r_out + fan_out)
