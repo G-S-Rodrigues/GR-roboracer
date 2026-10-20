@@ -85,18 +85,6 @@ def crossings(
 def remove_folds_cuts(
     wall: np.ndarray, max_loop: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """STUB (part 4 Step 4b): the clean wall, and no tips yet."""
-    return remove_folds(wall, max_loop), np.zeros((0, 2)), np.zeros(0)
-
-
-def cell_edge_distance(
-    xy: np.ndarray, centres: np.ndarray, resolution: float
-) -> np.ndarray:
-    """STUB (part 4 Step 4b): infinitely far from every cell."""
-    return np.full(len(xy), np.inf)
-
-
-def remove_folds(wall: np.ndarray, max_loop: float) -> np.ndarray:
     """Cut the small loops out of an offset of a simple closed curve.
 
     Where an offset's distance exceeds the inside radius it grows a
@@ -106,12 +94,20 @@ def remove_folds(wall: np.ndarray, max_loop: float) -> np.ndarray:
     ``max_loop`` of the crossing; otherwise the wall passes over itself and
     ``ValueError`` ("self-intersect") is raised. Winding is not a criterion.
     A wall with no crossing is returned unchanged.
+
+    Returns ``(clean, tips, reach)``: the clean wall, the crossing points
+    that replaced a cut loop and are still in it after every later cut (the
+    sharp tips), and each tip's reach, the largest distance from the crossing
+    to a point of the loop it replaced (the number compared with
+    ``max_loop``).
     """
     current = wall
+    tip = np.zeros(len(wall), dtype=bool)
+    reach_of = np.zeros(len(wall))
     for _ in range(len(wall)):
         found = crossings(current)
         if not found:
-            return current
+            return current, current[tip].copy(), reach_of[tip].copy()
         i, j, x = found[0]
         inner = current[i + 1 : j + 1]
         outer = np.vstack([current[j + 1 :], current[: i + 1]])
@@ -123,8 +119,44 @@ def remove_folds(wall: np.ndarray, max_loop: float) -> np.ndarray:
                 f"({x[0]:.3f}, {x[1]:.3f}); the smaller loop reaches "
                 f"{reach:.3f} m, over the {max_loop:.3f} m bound"
             )
+        one = np.ones(1, dtype=bool)
         if small is inner:
             current = np.vstack([current[: i + 1], x, current[j + 1 :]])
+            tip = np.concatenate([tip[: i + 1], one, tip[j + 1 :]])
+            reach_of = np.concatenate(
+                [reach_of[: i + 1], [reach], reach_of[j + 1 :]]
+            )
         else:
             current = np.vstack([x, inner])
+            tip = np.concatenate([one, tip[i + 1 : j + 1]])
+            reach_of = np.concatenate([[reach], reach_of[i + 1 : j + 1]])
     raise ValueError("wall still self-intersects after removing its folds")
+
+
+def remove_folds(wall: np.ndarray, max_loop: float) -> np.ndarray:
+    """``remove_folds_cuts``'s clean wall alone."""
+    return remove_folds_cuts(wall, max_loop)[0]
+
+
+def cell_edge_distance(
+    xy: np.ndarray, centres: np.ndarray, resolution: float
+) -> np.ndarray:
+    """Distance from each point to the nearest occupied cell *square*.
+
+    A cell is a square of side ``resolution`` centred on its entry in
+    ``centres``; the distance is to its edge (0 inside one). The nearest
+    square lies among the centres within (nearest-centre distance +
+    ``resolution`` / sqrt 2), so only those are measured exactly.
+    """
+    xy = np.asarray(xy, dtype=float).reshape(-1, 2)
+    if len(centres) == 0:
+        return np.full(len(xy), np.inf)
+    tree = cKDTree(centres)
+    nearest, _ = tree.query(xy)
+    half = resolution / 2.0
+    out = np.empty(len(xy))
+    for k, (p, d0) in enumerate(zip(xy, nearest, strict=True)):
+        near = centres[tree.query_ball_point(p, d0 + resolution / np.sqrt(2))]
+        d = np.maximum(np.abs(near - p) - half, 0.0)
+        out[k] = np.hypot(d[:, 0], d[:, 1]).min()
+    return out

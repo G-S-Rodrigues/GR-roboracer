@@ -7,6 +7,7 @@ cases. No map and no TUM.
 import dataclasses
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 from raceline.optimize import Raceline
@@ -340,3 +341,173 @@ def test_raceline_1365h_a_curl_larger_than_the_bound_is_not_cut():
     assert len(geometry.crossings(wall)) >= 1
     with pytest.raises(ValueError, match="self-intersect"):
         geometry.remove_folds(wall, 1.0)
+
+
+# --- RACELINE-1367: the sharp-tip rule (owner E9 = (c), plan D16) ----------
+
+TIP = 4.2  # the rounded square's clean inner wall has tips at (+-4.2, +-4.2)
+CELL = 0.05
+
+
+def _gt_required():
+    return verify.required_clearances(_vehicle(), MARGIN)["ground_truth"]
+
+
+def _tip_cells(drop=()) -> verify.ObservedCells:
+    """A 0.05 m grid aligned on multiples of 0.05; the island is the cells
+    whose centre is inside the clean inner wall (so a tip is a cell corner).
+    ``drop`` is a list of ((x, y), radius): island cells within it are freed."""
+    clean = verify.track_walls(_rounded_square(), "ground_truth").left
+    centre = clean.mean(axis=0)
+    poly = (clean - centre).astype(np.float32)
+    k = np.arange(-int(4.4 / CELL), int(4.4 / CELL))
+    xs = (k + 0.5) * CELL
+    gx, gy = np.meshgrid(xs, xs)
+    pts = np.column_stack([gx.ravel(), gy.ravel()])
+    inside = np.array(
+        [
+            cv2.pointPolygonTest(poly, (float(x), float(y)), False) > 0
+            for x, y in pts - centre
+        ]
+    )
+    pts = pts[inside]
+    for (cx, cy), rho in drop:
+        pts = pts[np.hypot(pts[:, 0] - cx, pts[:, 1] - cy) >= rho]
+    return verify.ObservedCells(pts, CELL, "synthetic")
+
+
+TIPS = [(TIP, TIP), (-TIP, TIP), (-TIP, -TIP), (TIP, -TIP)]
+
+
+def _tip_line(corner_offset=0.20, replace=None) -> Raceline:
+    """Corner points 0.20 off each tip along the outward diagonal, and the
+    four straights' midpoints on the centerline. ``replace`` maps a point
+    index to a new xy."""
+    u = corner_offset / np.sqrt(2.0)
+    corners = [(TIP + u, TIP + u), (-TIP - u, TIP + u)]
+    corners += [(-TIP - u, -TIP - u), (TIP + u, -TIP - u)]
+    pts = [
+        (0.0, -5.0),
+        corners[3],
+        (5.0, 0.0),
+        corners[0],
+        (0.0, 5.0),
+        corners[1],
+        (-5.0, 0.0),
+        corners[2],
+    ]
+    for i, xy in (replace or {}).items():
+        pts[i] = xy
+    return _line_from_xy(np.array(pts), v=1.0)
+
+
+def _tip_verdict(cells, line=None):
+    track = _rounded_square()
+    walls = verify.track_walls(track, "ground_truth", cells=cells)
+    verdict = verify.verify(
+        line or _tip_line(), _vehicle(), [(walls, _gt_required())], track
+    )
+    return walls, verdict
+
+
+def _clearance_failures(verdict):
+    return _failures(verdict, "clearance ground_truth")
+
+
+def test_raceline_1367a_the_cut_corners_are_tips():
+    track = _rounded_square()
+    left_raw, right_raw = verify.offsets(track)
+    clean, tips, reach = geometry.remove_folds_cuts(left_raw, 0.8)
+    assert np.array_equal(clean, geometry.remove_folds(left_raw, 0.8))
+    assert len(tips) == 4
+    order = np.lexsort((tips[:, 1], tips[:, 0]))
+    expect = np.array(sorted(TIPS))
+    assert np.abs(tips[order] - expect).max() < 1e-9
+    assert len(reach) == 4
+    assert np.all((reach > 0) & (reach <= 0.8))
+    _, no_tips, no_reach = geometry.remove_folds_cuts(right_raw, 0.8)
+    assert len(no_tips) == 0 and len(no_reach) == 0
+    walls = verify.track_walls(track, "ground_truth")
+    assert len(walls.tips) == 4 and len(walls.tip_reach) == 4
+    assert np.abs(walls.tips[order] - expect).max() < 1e-9
+
+
+def test_raceline_1367b_polygon_tip_fails_and_observed_cells_pass():
+    walls, verdict = _tip_verdict(_tip_cells(drop=[(t, 0.15) for t in TIPS]))
+    assert not _clearance_failures(verdict)
+    mc = verdict.min_clearance
+    assert mc["ground_truth"] == pytest.approx(0.20, abs=1e-4)
+    assert mc["ground_truth_tip_cells"] == pytest.approx(0.3239, abs=1e-3)
+    assert mc["ground_truth_judged"] == pytest.approx(0.3239, abs=1e-3)
+    records = verdict.tips["ground_truth"]
+    assert len(records) == 4
+    for rec in records:
+        assert rec["observed"]
+        assert rec["cells_at_tip"] == pytest.approx(0.1414, abs=1e-3)
+        assert rec["cells_at_tip"] <= rec["reach"]
+        assert rec["governs"] == 1
+
+
+def test_raceline_1367c_when_the_cells_fail_too_the_line_fails():
+    _, verdict = _tip_verdict(_tip_cells(drop=[(t, 0.10) for t in TIPS]))
+    failures = _clearance_failures(verdict)
+    assert len(failures) == 1
+    assert "ground_truth" in failures[0] and "sharp tip" in failures[0]
+    assert "0.271" in failures[0] and "0.200" in failures[0]
+    judged = verdict.min_clearance["ground_truth_judged"]
+    assert judged == pytest.approx(0.2707, abs=1e-3)
+
+
+def test_raceline_1367d_an_unobserved_tip_gets_no_relief():
+    cells = _tip_cells(drop=[(t, 0.45) for t in TIPS])
+    walls, verdict = _tip_verdict(cells)
+    for t, r in zip(walls.tips, walls.tip_reach, strict=True):
+        d = geometry.cell_edge_distance(
+            t[None, :], cells.centres, cells.resolution
+        )[0]
+        assert d > r  # else the case is vacuous
+    assert all(not rec["observed"] for rec in verdict.tips["ground_truth"])
+    assert "ground_truth_tip_cells" not in verdict.min_clearance
+    failures = _clearance_failures(verdict)
+    assert len(failures) == 1 and "0.200" in failures[0]
+
+
+def test_raceline_1367e_off_a_tip_the_polygon_governs():
+    cells = _tip_cells(
+        drop=[(t, 0.15) for t in TIPS] + [((0.0, -TIP), 0.5)],
+    )
+    line = _tip_line(replace={0: (0.0, -4.4)})
+    _, verdict = _tip_verdict(cells, line)
+    failures = _clearance_failures(verdict)
+    assert len(failures) == 1
+    assert "(0.000, -4.400)" in failures[0]
+    assert "sharp tip" not in failures[0]
+    for rec in verdict.tips["ground_truth"]:
+        assert rec["polygon_min"] == pytest.approx(0.20, abs=1e-4)
+        assert rec["cells_min"] == pytest.approx(0.3239, abs=1e-3)
+
+
+def test_raceline_1367f_without_cells_the_polygon_governs():
+    walls, verdict = _tip_verdict(None)
+    failures = _clearance_failures(verdict)
+    assert len(failures) == 1 and "0.200" in failures[0]
+    assert "ground_truth_judged" not in verdict.min_clearance
+    records = verdict.tips["ground_truth"]
+    assert len(records) == 4
+    assert all(rec["cells_at_tip"] is None for rec in records)
+
+
+def test_raceline_1367g_beyond_the_disc_the_polygon_still_governs():
+    top_right = 3  # index of the (+, +) corner point in _tip_line
+    cells = _tip_cells(
+        drop=[(t, 0.15) for t in TIPS] + [((4.4, 4.0), 0.35)],
+    )
+    line = _tip_line(replace={top_right: (4.4, 4.0)})
+    _, verdict = _tip_verdict(cells, line)
+    failures = _clearance_failures(verdict)
+    assert len(failures) == 1
+    assert "(4.400, 4.000)" in failures[0]
+    assert "sharp tip" in failures[0] and "0.209" in failures[0]
+    mc = verdict.min_clearance
+    assert mc["ground_truth_judged"] == pytest.approx(0.2095, abs=1e-3)
+    assert mc["ground_truth_tip_cells"] == pytest.approx(0.3202, abs=1e-3)
