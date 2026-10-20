@@ -261,7 +261,10 @@ def main():
         up = _load_upstream(tmp)
         for which, grid in grids.items():
             t0 = time.perf_counter()
-            track, right, left, _ = te._extract_spielberg(grid, committed)
+            # the bench compares upstream with part 2's baseline (non_free)
+            track, right, left, _ = te._extract_spielberg(
+                grid, committed, walls="non_free"
+            )
             secs = time.perf_counter() - t0
             print(
                 _row(

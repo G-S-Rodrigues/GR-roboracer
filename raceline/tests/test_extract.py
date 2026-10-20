@@ -108,6 +108,19 @@ RADIUS_TOL = 0.02
 WIDTH_TOL = 0.04
 KAPPA_MAX_REL = 0.07
 KAPPA_MEAN_REL = 0.01
+# Part 2.3, walls="observed" with a bridged gap (C1 sweep: 11,702 runs that
+# MAX_BRIDGE_TURN_DEG / MAX_BRIDGE_M admit, R_in 4.0-6.4, outer / inner / both
+# walls, gaps 16-60 deg, gap centres every 5 deg). The extractor is
+# deterministic; each tolerance is the worst measurement plus about a third of
+# a cell:
+#   a bridged side narrower than truth by up to 0.259 (R_in 5.2, both walls,
+#   24 deg, c -60)                                   -> BRIDGE_WIDTH_TOL 0.28
+#   centreline radius off by up to 0.135 (R_in 5.4, outer, 26 deg, c 0)
+#                                                    -> BRIDGE_RADIUS_TOL 0.155
+# Wider than truth never exceeds +0.034 per side (R_in 5.4, inner 38 deg, c 110)
+# or +0.029 total; WIDTH_TOL 0.04 holds unchanged.
+BRIDGE_WIDTH_TOL = 0.28
+BRIDGE_RADIUS_TOL = 0.155
 
 
 def _grid(data, origin=(-7.0, -7.0)):
@@ -151,10 +164,58 @@ def _varying_ring(r_in=4.0, base=5.8, amp=1.0, half=8.0):
     return _grid(np.where(free, 0, data), origin=(-half, -half))
 
 
-def _extract(grid, start, direction="ccw"):
+def _ring(
+    r_in=4.0,
+    r_out=6.0,
+    half=7.0,
+    xmax=None,
+    ymax=None,
+    gap=None,
+    gap_wall="outer",
+    c_deg=50.0,
+    fan_out=0.8,
+    fan_in=0.8,
+):
+    """``_annulus`` generalised: a frame cropped at ``xmax`` / ``ymax``, and a
+    gap of ``gap`` degrees centred at ``c_deg`` in the outer, inner or both
+    walls. The lidar saw through the gap: free cells fan out to ``fan_out``
+    beyond the outer wall / ``fan_in`` into the island, and the wall cells are
+    unknown."""
+    x1 = half if xmax is None else xmax
+    y1 = half if ymax is None else ymax
+    nx, ny = int(round((x1 + half) / RES)), int(round((y1 + half) / RES))
+    x, y = np.meshgrid(
+        -half + (np.arange(nx) + 0.5) * RES, -half + (np.arange(ny) + 0.5) * RES
+    )
+    r = np.hypot(x, y)
+    ang = np.degrees(np.arctan2(y, x))
+    data = np.full((ny, nx), -1, dtype=np.int8)
+    free = (r > r_in) & (r < r_out)
+    data[(np.abs(r - r_in) <= RES) | (np.abs(r - r_out) <= RES)] = 100
+    if gap is not None:
+        sect = np.abs((ang - c_deg + 180.0) % 360.0 - 180.0) < gap / 2
+        if gap_wall in ("outer", "both"):
+            data[sect & (np.abs(r - r_out) <= RES)] = -1
+            free |= sect & (r > r_in) & (r < r_out + fan_out)
+        if gap_wall in ("inner", "both"):
+            data[sect & (np.abs(r - r_in) <= RES)] = -1
+            free |= sect & (r > r_in - fan_in) & (r < r_out)
+    data[free] = 0
+    return _grid(data, origin=(-half, -half))
+
+
+def _ring_start(r_in=4.0):
+    from raceline.extract import Pose2D
+
+    return Pose2D(0.0, -(r_in + 1.0), 0.0)
+
+
+def _extract(grid, start, direction="ccw", walls="observed"):
     from raceline.extract import extract_track
 
-    return extract_track(grid, grid.resolution, grid.origin, start, direction)
+    return extract_track(
+        grid, grid.resolution, grid.origin, start, direction, walls=walls
+    )
 
 
 def _area(xy):
@@ -395,7 +456,7 @@ def _png_edges(grid):
     ]
 
 
-def _extract_spielberg(grid, committed):
+def _extract_spielberg(grid, committed, walls="observed"):
     from raceline.extract import Pose2D, extract_track, track_bounds
 
     p0, p1 = committed.xy[0], committed.xy[1]
@@ -407,8 +468,9 @@ def _extract_spielberg(grid, committed):
         grid.origin,
         Pose2D(float(p0[0]), float(p0[1]), yaw),
         direction,
+        walls=walls,
     )
-    right, left = track_bounds(grid, track.xy)
+    right, left = track_bounds(grid, track.xy, walls=walls)
     return track, right, left, yaw
 
 
@@ -480,14 +542,18 @@ def spielberg_maps():
 
     committed = _committed()
     gym, survey = load_map(GYM_MAP), load_map(SURVEY_MAP)
-    return {
+    out = {
         "committed": committed,
         "gym": gym,
         "survey": survey,
         "gym_edges": _png_edges(gym),
-        "gym_result": _extract_spielberg(gym, committed),
-        "survey_result": _extract_spielberg(survey, committed),
     }
+    for walls in ("observed", "non_free"):
+        out["gym_result", walls] = _extract_spielberg(gym, committed, walls)
+        out["survey_result", walls] = _extract_spielberg(
+            survey, committed, walls
+        )
+    return out
 
 
 def _common_checks(maps, grid, result):
@@ -511,11 +577,13 @@ def _common_checks(maps, grid, result):
     assert np.abs(track.curvature).max() < 1.0 / 0.5  # tighter than the car
 
 
-def test_raceline_1110_gym_png_walls_match_its_own_edges(spielberg_maps):
-    """RACELINE-1110: extracted bounds vs the gym PNG's free-cell wall edges."""
+@pytest.mark.parametrize("walls", ["observed", "non_free"])
+def test_raceline_1110_gym_png_walls_match_its_own_edges(spielberg_maps, walls):
+    """RACELINE-1110: extracted bounds vs the gym PNG's free-cell wall edges,
+    under both wall selectors (the gym map has no frame leak: same figures)."""
     maps = spielberg_maps
     grid = maps["gym"]
-    result = maps["gym_result"]
+    result = maps["gym_result", walls]
     _common_checks(maps, grid, result)
     track, right, left, _ = result
     for bound in (left, right):
@@ -534,23 +602,60 @@ def test_raceline_1110_gym_png_walls_match_its_own_edges(spielberg_maps):
     assert abs(mean_bound / mean_edge - 1.0) <= BOUND_LEN_RTOL
 
 
-def test_raceline_1120_survey_walls_match_the_gym_walls(spielberg_maps):
+# Part 2.3, walls="observed" on the survey. Measured on the branch (padding the
+# frame with unknown; the corner pocket no longer fills), against the
+# non_free figures above, which stay as they were:
+#   largest total width 2.502 (non_free 3.158)         -> 2.55
+#   left bound on the frame 3.28 % (non_free 6.03 %)   -> 0.04
+#   edge -> bound coverage within 0.15 m 100 % (non_free 97.85 %) -> 0.995
+#   edge -> bound max 0.091 (non_free 0.987, asserted for the first time)
+#                                              -> SLAM_EDGE_TOL 0.15 (kept)
+#   lap p95 0.047 (0.053) -> 0.06; corner p95 0.063 (0.413) -> 0.08;
+#   lateral max 0.651 (0.705) -> 0.70
+# The margin is about one cell, tighter than the survey's three-cell convention
+# above: the leak that needed three cells is gone.
+OBSERVED_SURVEY = {
+    "total_width": 2.55,
+    "frame_share": 0.04,
+    "coverage": 0.995,
+    "lap_p95": 0.06,
+    "corner_p95": 0.08,
+    "lateral_max": 0.70,
+}
+
+
+@pytest.mark.parametrize("walls", ["observed", "non_free"])
+def test_raceline_1120_survey_walls_match_the_gym_walls(spielberg_maps, walls):
     """RACELINE-1120: the same on the committed slam survey (acceptance 2)."""
     maps = spielberg_maps
     grid = maps["survey"]
-    result = maps["survey_result"]
+    result = maps["survey_result", walls]
     _common_checks(maps, grid, result)
     track, right, left, _ = result
+    obs = OBSERVED_SURVEY
     for bound in (left, right):
-        to_edge, _, outside = _edge_errors(grid, bound, maps["gym_edges"])
-        assert to_edge <= SLAM_EDGE_TOL
-        assert outside <= SLAM_MAX_FRAME_SHARE
-        assert (
-            _coverage(grid, bound, maps["gym_edges"], SLAM_EDGE_TOL)
-            >= SLAM_MIN_COVERAGE
+        to_edge, to_bound, outside = _edge_errors(
+            grid, bound, maps["gym_edges"]
         )
+        assert to_edge <= SLAM_EDGE_TOL
+        if walls == "observed":
+            assert to_bound <= SLAM_EDGE_TOL  # the leak is fixed
+            assert outside <= obs["frame_share"]
+            assert (
+                _coverage(grid, bound, maps["gym_edges"], SLAM_EDGE_TOL)
+                >= obs["coverage"]
+            )
+        else:
+            assert outside <= SLAM_MAX_FRAME_SHARE
+            assert (
+                _coverage(grid, bound, maps["gym_edges"], SLAM_EDGE_TOL)
+                >= SLAM_MIN_COVERAGE
+            )
     # the leak's size, in the gate: the committed track is 2.2 m wide
-    assert (track.w_left + track.w_right).max() <= SLAM_MAX_TOTAL_WIDTH
+    ceiling = (
+        obs["total_width"] if walls == "observed" else SLAM_MAX_TOTAL_WIDTH
+    )
+    assert (track.w_left + track.w_right).max() <= ceiling
 
 
 # Lateral distance of the extracted centerline from the committed one, in the
@@ -586,16 +691,178 @@ def _lateral_to_committed(committed, xy):
     return d, corner
 
 
+@pytest.mark.parametrize("walls", ["observed", "non_free"])
 @pytest.mark.parametrize("which", ["gym", "survey"])
 def test_raceline_1130_corners_follow_the_committed_centerline(
-    spielberg_maps, which
+    spielberg_maps, which, walls
 ):
     """RACELINE-1130: the corner clean-up. The medial axis cuts the corners;
     the lateral error over them, and the length, must stay with the track."""
     maps = spielberg_maps
-    track = maps[which + "_result"][0]
+    track = maps[which + "_result", walls][0]
     d, corner = _lateral_to_committed(maps["committed"], track.xy)
     assert corner.sum() > 100  # the stretch under test exists
+    if which == "survey" and walls == "observed":
+        obs = OBSERVED_SURVEY
+        assert np.percentile(d, 95) <= obs["lap_p95"]
+        assert np.percentile(d[corner], 95) <= obs["corner_p95"]
+        assert d.max() <= obs["lateral_max"]
+        return
     assert np.percentile(d, 95) <= LAP_P95_TOL[which]
     assert np.percentile(d[corner], 95) <= CORNER_P95_TOL[which]
     assert d.max() <= LATERAL_MAX_TOL[which]
+
+
+# ---- walls="observed" (part 2.3) -------------------------------------------
+
+
+def test_raceline_1140_a_wall_next_to_the_frame_is_not_filled_in():
+    """RACELINE-1140: an outer wall one cell inside two adjacent frame edges
+    (the survey's corner pocket). non_free fills the pocket the frame cuts off
+    and takes the frame for the bound; observed does not."""
+    grid = _ring(xmax=6.10, ymax=6.10)
+    _assert_annulus(_extract(grid, _ring_start(), walls="observed"))
+    leaked = _extract(grid, _ring_start(), walls="non_free")
+    assert (leaked.w_left + leaked.w_right).max() > 3.0  # 4.008 measured
+
+
+def _widths_of(track):
+    return track.w_left, track.w_right
+
+
+_GAP_CASES = {
+    "outer_fan_6_8": dict(gap=32),
+    "outer_fan_to_frame": dict(gap=32, xmax=6.6, ymax=6.6, fan_out=3.0),
+    "inner_50": dict(gap=50, gap_wall="inner"),
+    # the worst admitted runs of the C1 sweep, one per tolerance
+    "worst_narrow": dict(
+        r_in=5.2, r_out=7.2, half=8.2, gap=24, gap_wall="both", c_deg=-60
+    ),
+    "worst_radius": dict(r_in=5.4, r_out=7.4, half=8.4, gap=26, c_deg=0),
+    "worst_wide": dict(
+        r_in=5.4, r_out=7.4, half=8.4, gap=38, gap_wall="inner", c_deg=110
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(_GAP_CASES))
+def test_raceline_1150_an_open_wall_is_bridged_not_taken_as_track(name):
+    """RACELINE-1150: a gap the lidar saw through. observed bridges it from the
+    walls at its ends: nowhere wider than the annulus (WIDTH_TOL), narrower by
+    at most BRIDGE_WIDTH_TOL, the centreline within BRIDGE_RADIUS_TOL. non_free
+    takes the free fan for track (total width 2.797 and 3.360 measured)."""
+    from raceline.extract import observed_mask, track_bounds
+
+    kw = _GAP_CASES[name]
+    r_c = kw.get("r_in", 4.0) + 1.0
+    grid = _ring(**kw)
+    start = _ring_start(kw.get("r_in", 4.0))
+    track = _extract(grid, start, walls="observed")
+    assert (track.w_left + track.w_right).max() <= 2.0 + WIDTH_TOL
+    for w in (track.w_left, track.w_right):
+        assert w.max() <= 1.0 + WIDTH_TOL
+        assert w.min() >= 1.0 - BRIDGE_WIDTH_TOL
+    r = np.hypot(track.xy[:, 0], track.xy[:, 1])
+    assert np.abs(r - r_c).max() <= BRIDGE_RADIUS_TOL
+    # the bridge is drawn, not seen: some bound points are unobserved
+    right, left = track_bounds(grid, track.xy, walls="observed")
+    unobserved = sum(
+        int((~observed_mask(grid, b)).sum()) for b in (right, left)
+    )
+    assert unobserved > 0
+    if name.startswith("outer_fan"):
+        loose = _extract(grid, start, walls="non_free")
+        assert (loose.w_left + loose.w_right).max() > 2.5
+
+
+def test_raceline_1150_a_wall_beyond_the_frame_stays_narrow():
+    """RACELINE-1150 (wall_beyond_frame): the outer wall lies off the map over
+    about 30 deg (chord 3.63 m, under MAX_BRIDGE_M). The frame stays the bound
+    and the track errs narrow (0.815 against truth 1.0), never wide;
+    observed_mask reports those points. Past the cap the same map raises
+    (RACELINE-1155 wall_beyond_frame_past_the_cap)."""
+    from raceline.extract import observed_mask, track_bounds
+
+    grid = _ring(xmax=5.8)
+    track = _extract(grid, _ring_start(), walls="observed")
+    assert track.w_left.max() <= 1.0 + WIDTH_TOL
+    assert track.w_right.max() <= 1.0 + WIDTH_TOL
+    assert min(track.w_left.min(), track.w_right.min()) <= 0.85  # 0.815
+    right, left = track_bounds(grid, track.xy, walls="observed")
+    assert sum(int((~observed_mask(grid, b)).sum()) for b in (right, left)) > 0
+
+
+def _no_wall_ring():
+    grid = _ring()
+    data = np.where(grid.data == 100, -1, grid.data)
+    return _grid(data, origin=(grid.origin.x, grid.origin.y))
+
+
+@pytest.mark.parametrize(
+    "name,make,r_in",
+    [
+        # R_in 3, inner 70 deg: chord 3.80 m (under the cap) but a 90 deg
+        # end-tangent turn > MAX_BRIDGE_TURN_DEG
+        (
+            "turn_past_the_cap",
+            lambda: _ring(
+                r_in=3.0, r_out=5.0, half=6.0, gap=70, gap_wall="inner"
+            ),
+            3.0,
+        ),
+        # R_in 8, inner 60 deg: turn 66.3 deg but a 8.37 m chord > MAX_BRIDGE_M
+        (
+            "chord_past_the_cap",
+            lambda: _ring(
+                r_in=8.0, r_out=10.0, half=11.0, gap=60, gap_wall="inner"
+            ),
+            8.0,
+        ),
+        # the outer 40 deg gap: chord 4.55 m, turn 44 deg
+        ("chord_just_past_the_cap", lambda: _ring(gap=40), 4.0),
+        # the outer 120 deg gap (chord 9.45 m, turn 109 deg)
+        ("outer_120_deg", lambda: _ring(gap=120), 4.0),
+        # the outer wall off the map over ~42 deg: chord 4.73 m > MAX_BRIDGE_M
+        ("wall_beyond_frame_past_the_cap", lambda: _ring(xmax=5.6), 4.0),
+        ("no_observed_wall_at_all", _no_wall_ring, 4.0),
+    ],
+)
+def test_raceline_1155_a_gap_past_the_cap_raises_unobserved(name, make, r_in):
+    """RACELINE-1155: past the cap the extractor stops with a named error
+    instead of returning a plausible wrong track."""
+    with pytest.raises(ValueError, match="unobserved"):
+        _extract(make(), _ring_start(r_in), walls="observed")
+
+
+@pytest.mark.parametrize("walls", ["observed", "non_free"])
+def test_raceline_1160_track_bounds_are_the_walls_extract_track_measured(
+    walls,
+):
+    """RACELINE-1160: track_bounds(grid, track.xy) returns the bounds the
+    widths were measured to, bridges included (part 4's verifier relies
+    on it)."""
+    from raceline.extract import _widths, track_bounds
+
+    grid = _ring(gap=32)
+    track = _extract(grid, _ring_start(), walls=walls)
+    right, left = track_bounds(grid, track.xy, walls=walls)
+    assert np.abs(_widths(track.xy, left) - track.w_left).max() <= 1e-9
+    assert np.abs(_widths(track.xy, right) - track.w_right).max() <= 1e-9
+
+
+def test_raceline_1170_the_survey_bounds_are_seen_walls(spielberg_maps):
+    """RACELINE-1170: the map-only check, no ground truth. Every point of the
+    observed bounds has an occupied cell within OBSERVED_TOL; non_free's left
+    bound runs 1.96 % (74 of 3769 points) along the frame."""
+    from raceline.extract import observed_mask
+
+    grid = spielberg_maps["survey"]
+    for walls, left_share in (("observed", 0.0), ("non_free", 0.015)):
+        _, right, left, _ = spielberg_maps["survey_result", walls]
+        share_l = float((~observed_mask(grid, _resample(left, 0.1))).mean())
+        share_r = float((~observed_mask(grid, _resample(right, 0.1))).mean())
+        assert share_r == 0.0
+        if walls == "observed":
+            assert share_l == 0.0
+        else:
+            assert share_l >= left_share

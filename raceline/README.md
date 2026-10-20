@@ -133,9 +133,10 @@ own edge 0.036 (left) / 0.000 (right), edge to bound 0.049 / 0.000, length
 0.9981; survey bound to edge 0.090 / 0.092 against the new edges, left
 coverage 97.85 % within 0.15 m, length 1.0017.
 
-The survey's free space leaks past the wall at the top-left hairpin out to the
-map frame (up to 0.96 m beyond the true wall); a bound on the frame is not a
-wall, and no extractor can know. The medial axis cuts hairpins whatever the
+Until part 2.3 the survey's free space leaked past the wall at the top-left
+hairpin out to the map frame (up to 0.96 m beyond the true wall); see "Observed
+walls" below, which fixes it and keeps the leaking behaviour as
+`walls="non_free"`. The medial axis cuts hairpins whatever the
 cell size, so the shipped centerline is re-centred after the bounds are known:
 at a corner it is the outer bound moved inward by the half-width (the inner
 wall is clipped, the outer one is intact), on straights the mean of both
@@ -150,6 +151,46 @@ distance to the committed centerline, medial axis alone -> shipped:
 The remaining max is the 0.165 m hairpin near (-75.4, 52.3); the survey's corner
 p95 is its top-left leak. The length ceiling went 1.5 % -> 0.3 %.
 
+**Observed walls (part 2.3).** `extract_track` and `track_bounds` take
+`walls="observed"` (the default) or `"non_free"` (part 2's behaviour, byte for
+byte, kept as the baseline: ADR 0005).
+
+- *Why the survey leaked.* The survey did record the top-left outer wall (2
+  occupied cells), but the map frame cuts a strip of 4-13 unknown cells off
+  from the unknown outside. `_fill_patches` saw a small patch and filled it as
+  corridor, wall included, so the image edge became the bound. `observed`
+  pads the grid with 10 unknown cells before binarizing and crops after. Survey
+  numbers, `non_free` -> `observed`: largest total width 3.158 -> 2.502 m (gym
+  2.525); left edge to bound 0.987 -> 0.091; coverage 97.85 % -> 100 %; left
+  bound on the frame 6.03 % -> 3.28 %; corner lateral p95 0.413 -> 0.063;
+  bound points with no occupied cell within 0.15 m: 74 -> 0. The gym is unchanged.
+- *Open walls.* A gap the lidar saw through leaves bound stretches with no
+  occupied cell near them. `observed` finds them (`OBSERVED_TOL` 0.15 m),
+  replaces each with a cubic Hermite curve between the observed walls at its
+  ends (grown 0.3 m onto solid wall, tangents from the next 0.5 m) and extracts
+  again. Bridged sides come out narrower than truth (down to 0.74 of it for a
+  gap on both walls), never wider by more than 0.034. A Hermite curve lies inside
+  the arc it replaces, which on an inner wall is a wider corridor: R_in 4 with a
+  90 deg gap reads +0.074 and 120 deg +0.183. So a bridge is capped at an
+  end-tangent turn of 70 deg and a chord of 4.0 m (`MAX_BRIDGE_TURN_DEG`,
+  `MAX_BRIDGE_M`); past either the extractor raises `ValueError` naming
+  "unobserved". The chord is the primary limit: the end tangents' error grows
+  with the chord, and from 4.38 m a bridged side read up to +0.066 wider than
+  truth (outer and inner gaps, at turns of only 42-67 deg). The measured turn includes the 0.3 m extensions (a nominal 20 deg gap
+  reads 36 deg at R 4). A gap on a non-circular wall (straight to arc) is not
+  swept; real maps are its check.
+- *No ground truth.* `observed_mask(grid, pts)` says which points of a bound
+  have an occupied cell near them. The False ones are bridged or on the frame;
+  a large share, or one long run, means the map does not support a raceline
+  (RACELINE-1170 pins the survey at 0). Repeating the extraction on two SLAM
+  runs of one track, and counting contacts in simulation, wait for the
+  AutoDRIVE map workflow.
+- *The frame.* If the true wall lies beyond the map frame, the frame stays the
+  bound under both selectors and the track errs narrow (left 0.815 against 1.0
+  on a ring cropped at x = 5.8; cropped at 5.6, chord 4.73 m, it raises), never wide; `observed_mask` flags those
+  points. Padding can also narrow a bound next to the frame, never widen one (a
+  frame-touching 0.3 m unknown patch: right width min 0.937 -> 0.621).
+
 **Against unmodified upstream (part 2.2).** The same metrics as RACELINE-1110
 to 1130, run on ForzaETH's `extract_centerline` / `smooth_centerline` /
 `extract_track_bounds` at `202450f` by `raceline/bench/upstream_baseline.py`
@@ -157,7 +198,7 @@ to 1130, run on ForzaETH's `extract_centerline` / `smooth_centerline` /
 and length columns are the centerline vs the committed one; bound columns are
 the bounds vs the gym PNG's own free-cell edges (survey: coverage within 0.15 m
 instead of edge to bound). Re-run it, and refresh this table, whenever the
-extractor changes.
+extractor changes. The "part 2" rows are `walls="non_free"` (the bench pins it).
 
 | map | extractor | lap p95 | corner p95 | lateral max | length ratio | bound->edge max (L / R) | edge->bound max (gym) or coverage within 0.15 m (survey) (L / R) | bound on frame (L / R) | side share left (L / R) | s |
 |---|---|---|---|---|---|---|---|---|---|---|
