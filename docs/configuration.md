@@ -26,7 +26,7 @@ These are always launched and have no field. Nothing selects them.
   estimate stops the car instead of fooling it.
 - `racing_metrics` and `racing_evaluation`. The evaluation (`localization_error`) scores the
   estimate against ground truth.
-- `racing_recording`, the simulator adapter, the support node and `robot_state_publisher`.
+- `racing_recording`, the support node and `robot_state_publisher`.
 
 ## Replaceable roles
 
@@ -80,7 +80,7 @@ stack:
   planner: track_raceline  # Available: track_raceline. Planned: track_centerline (rename)
   controller: pure_pursuit  # Available: pure_pursuit
 runtime:
-  seed: 42  # Available: any integer
+  seed: 42  # Available: any non-negative integer
   time_scale: 1.0  # Available: any positive number
   recording_path: log/mapping.jsonl  # Available: any writable path
 mapping:
@@ -117,7 +117,7 @@ stack:
   planner: track_raceline  # Available: track_raceline. Planned: track_centerline (rename), an optimized-raceline planner
   controller: pure_pursuit  # Available: pure_pursuit
 runtime:
-  seed: 42  # Available: any integer
+  seed: 42  # Available: any non-negative integer
   time_scale: 1.0  # Available: any positive number
   drive_on_estimate: true  # Available: true, false (ignored with ground_truth)
   recording_path: log/recording.jsonl  # Available: any writable path
@@ -129,7 +129,7 @@ This is amcl closed loop, the demonstration configuration. Today, from `/ws`:
 
 ```bash
 # Ground truth (the reference stack):
-ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=ground_truth seed:=42
 # slam_toolbox, open loop:
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=slam_toolbox drive_on_estimate:=false seed:=42
 # amcl, closed loop:
@@ -146,7 +146,7 @@ looks the same to a scan matcher.
 | `schema_version` | none | Which command you run decides it. |
 | `workflow` | none | `mapping` runs `slam_toolbox_mapping.launch.py` or `map_track.sh`; `racing` runs `sim_pure_pursuit.launch.py`. |
 | `scenario` | `scenario:=` | Also supplies amcl's map grid. |
-| `vehicle` | `vehicle:=` | `map_track.sh` passes no vehicle, so it always uses the launch default `config/vehicles/f1tenth_default.yaml`. Another value needs the direct mapping launch. |
+| `vehicle` | `vehicle:=` | `map_track.sh` passes no vehicle, so it always uses the launch default `config/vehicles/f1tenth_default.yaml`. Another value needs the direct mapping launch, and that launch does not save a map: the mapping guide covers saving. |
 | `stack.simulator` | none | One implementation today, always launched. |
 | `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox` and `amcl` are accepted; anything else is an error. |
 | `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
