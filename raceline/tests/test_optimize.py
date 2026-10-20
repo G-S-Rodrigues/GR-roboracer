@@ -28,8 +28,11 @@ def _oval_track() -> Track:
     )
 
 
-def _fabricated_tum(calls):
-    """A run_tum stand-in: the oval centerline as a closed 7-column result."""
+def _fabricated_tum(calls, shift=0.0):
+    """A run_tum stand-in: the oval centerline as a closed 7-column result.
+
+    ``shift`` moves x by that much, so a pass's result differs from the track.
+    """
 
     def fake(track_csv, inputs_dir, curv_opt_type, safety_width, timeout=None):
         calls.append(
@@ -44,7 +47,7 @@ def _fabricated_tum(calls):
                 "safety_width": safety_width,
             }
         )
-        xy = test_smoke._oval()
+        xy = test_smoke._oval() + [shift, 0.0]
         n = len(xy)
         tangent = geometry.tangents(xy)
         psi = np.arctan2(tangent[:, 1], tangent[:, 0]) - np.pi / 2
@@ -102,6 +105,18 @@ def test_raceline_1370_two_passes_feed_the_result_back(monkeypatch):
     delta = np.angle(np.exp(1j * (line.psi - want_psi)))
     assert np.abs(delta).max() < 1e-9
     assert np.allclose(line.kappa, 0.1)
+
+
+def test_raceline_1370_pass_two_reads_pass_ones_line(monkeypatch):
+    calls = []
+    monkeypatch.setattr(optimize, "run_tum", _fabricated_tum(calls, 0.05))
+    vehicle = load_vehicle(VEHICLES / "f1tenth_default.yaml")
+    optimize.optimize(_oval_track(), vehicle, "tum_mincurv_iqp")
+    first, second = calls[0]["track"], calls[1]["track"]
+    assert np.allclose(first[:, :2], test_smoke._oval(), atol=1e-8)
+    assert np.allclose(
+        second[:, :2], test_smoke._oval() + [0.05, 0.0], atol=1e-8
+    )
 
 
 def test_raceline_1375_an_unknown_optimizer_is_refused(monkeypatch):

@@ -183,15 +183,15 @@ def main(argv: list[str] | None = None) -> int:
     name = args.name or stem
     vehicle: VehicleLimits = load_vehicle(args.vehicle)
 
-    if args.map:
-        try:
+    try:
+        if args.map:
             track, input_walls = _input_map(args, name)
-        except ValueError as err:
-            print(f"input: {err}", file=sys.stderr)
-            return 3
-    else:
-        track = load_track(args.track)
-        input_walls = verify.track_walls(track, "input")
+        else:
+            track = load_track(args.track)
+            input_walls = verify.track_walls(track, "input")
+    except ValueError as err:
+        print(f"input: {err}", file=sys.stderr)
+        return 3
     if args.ground_truth_track:
         truth = verify.track_walls(
             load_track(args.ground_truth_track), "ground_truth"

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 import raceline.__main__ as runner
 import test_extract
 import test_smoke
@@ -201,3 +202,20 @@ def test_raceline_1390_a_line_the_verifier_rejects_is_not_written(
     assert runner.main(_argv(tmp_path, "--track", str(oval))) == 2
     assert "outside" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("kind", ["malformed", "figure_eight"])
+def test_raceline_1392_a_bad_track_input_exits_3_too(
+    monkeypatch, tmp_path, capsys, kind
+):
+    calls = []
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum(calls))
+    if kind == "malformed":
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("format_version: 2\n")
+    else:
+        bad = write_track(test_verify._figure_eight(), tmp_path / "bad.yaml")
+    assert runner.main(_argv(tmp_path, "--track", str(bad))) == 3
+    assert "input:" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
+    assert calls == []
