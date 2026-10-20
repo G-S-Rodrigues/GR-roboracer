@@ -19,8 +19,9 @@ All other meshes are produced from scratch by
 cylinders in Python, written out as binary STL). None is traced from any CAD
 source, so nothing is copied. They are sized to fit this repo's fixed URDF
 dimensions (wheelbase 0.33 m, track 0.236 m, wheel radius 0.058 m) and are
-authored directly in `base_link` coordinates, so the URDF attaches each one with
-an identity joint and there is no per-link placement math in the URDF.
+authored directly in `rear_axle` coordinates (the origin is the rear axle's
+ground point; base_link is the centre of gravity, 0.17145 m ahead and 0.074 m
+above it), so the URDF attaches each one with an identity joint and there is no per-link placement math in the URDF.
 
 - `chassis.stl` — main plate with raised side rails, cross-members, front/rear
   bars, a steering servo pocket, and rear motor-mount pads. Replaces the earlier

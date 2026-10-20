@@ -73,7 +73,7 @@ fi
 if (( scope_whole_tree )); then
     echo "==> scope: whole tree (${scope_reason})"
 else
-    echo "==> scope: packages ${scope_packages[*]:-<none>}"
+    echo "==> scope: packages ${scope_packages[*]:-<none>} (${scope_reason})"
 fi
 
 # A process started with `docker exec` does not inherit environment changes

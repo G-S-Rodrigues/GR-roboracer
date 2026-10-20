@@ -18,6 +18,7 @@ import launch_testing.actions
 import pytest
 import rclpy
 import yaml
+from f1tenth_gym_jax.envs.utils import Param
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -98,24 +99,24 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         return messages
 
     def test_adapt_2120_scan_is_cast_from_the_laser_mount(self):
-        """ADAPT-2120: straight ahead, /scan reads the laser mount's
-        forward offset less than /ground_truth/scan.
+        """ADAPT-2120: straight ahead, /scan reads less than
+        /ground_truth/scan by the laser's offset from base_link.
 
-        Held, the vehicle sits at one pose, and the laser lies on the
-        forward ray 0.275 m ahead of base_link, so both rays hit the same
-        wall point and the ranges differ by exactly the mount offset. A scan
-        cast from base_link but stamped `laser` would read the same range as
-        ground truth - and TF would place every point 0.275 m too far
-        forward. /ground_truth/scan stays cast from base_link: it is what
-        racing_metrics' clearance and collisions read, and the goldens
-        depend on it. The median over held samples removes /scan's noise.
+        `laser_x` is measured from the rear axle; base_link is the CoG, lr
+        ahead of it, so the laser lies `laser_x - lr` (0.10355 m) ahead of
+        base_link. Held, the vehicle sits at one pose and both rays hit the
+        same wall point, so the ranges differ by exactly that. A scan cast
+        from base_link but stamped `laser` would read the same range as
+        ground truth, and one cast `laser_x` from the CoG would differ by
+        0.275: TF would then place every point lr off. /ground_truth/scan
+        stays cast from base_link: racing_metrics' clearance and collisions
+        read it, and the goldens depend on it. The median over held samples
+        removes /scan's noise.
 
         Measured at the held contract_test pose, each scan read at angle 0
-        by its own declared angles: 0.2713 m (the map is a raster); cast
-        from base_link, /scan read 0.0052 m. Before plan D6 the two middle
-        beams were compared by index and read 0.2876 m, but the gym's beams
-        sit at -0.0004/+0.075 rad, not the declared +/-0.037. The 0.05 m
-        delta is ~14x the error and far from 0.0052.
+        by its own declared angles: 0.2713 m for a 0.275 m offset (the map
+        is a raster); cast from base_link, /scan read 0.0052 m. The 0.05 m
+        delta is far from both the 0.275 and the 0 alternatives.
         """
         truth = self._collect("/ground_truth/scan")
         noisy = self._collect("/scan")
@@ -128,5 +129,5 @@ class TestAdapterLaserOrigin(unittest.TestCase):
 
         self.assertTrue(math.isfinite(truth_range))
         self.assertAlmostEqual(
-            truth_range - laser_range, _mount_x(), delta=0.05
+            truth_range - laser_range, _mount_x() - Param().lr, delta=0.05
         )

@@ -21,6 +21,11 @@ runs it, and ADR 0007 says why. `--fast` (tiers 0–1, the pre-commit hook) and 
 tier 2 and one seeded lap) are faster loops. A gate nobody runs is worse than no gate (ADR 0005, ADR
 0007).
 
+**A red nightly does not block development.** The nightly is watched, not waited on: a PR merges on
+its ready gate and green PR CI, never on a nightly run, and a red nightly halts no branch in flight. A
+fix can always land afterwards. The fix for a nightly failure is carried into the next plan written,
+as one of its steps or as a fix part at the head of the queue.
+
 ## Algorithms are added, never replaced
 
 This is a research stack. When a better method lands, **the one it beat stays** — deleting it

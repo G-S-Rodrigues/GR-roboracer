@@ -15,7 +15,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | Tier | What it proves | Runner | Cost |
 |---|---|---|---|
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
-| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~4 s warm (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
+| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~8 s warm (the map extractor added ~2.5 s); measured idle 2026-10-20: raceline suite ~17 s on main, ~20 s with part 2.3 (`test_extract.py` ~3.5 -> ~5.7 s), already over that target before 2.3 (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~201 s |
@@ -29,6 +29,14 @@ as implementations accumulate: `--nightly` runs everything `--full` does and the
 and the scheduled CI job runs it on one seed leg. Nothing in tier 5 is part of "done" — a test
 belongs there when its cost is laps rather than seconds and what it catches is a regression only a
 combination shows.
+
+A red nightly leaves evidence: node logs and Robot output (`logs-seed-<n>`, failed legs only), SIM-5030's sample
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), and, when a
+`run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
+(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). A passing run
+prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and bounds the pooled median and
+the maximum of those runs (`log/sim-5030.json` also carries `by_seed`, evidence only), not their max-min spread (one tail run sets the spread; the samples behind the
+bound are in the test).
 
 ## Running them
 
@@ -109,7 +117,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **84 tier-1, 18 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **119 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -122,6 +130,15 @@ The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` a
 The nightly-flake work added tier 1 `EVAL-1060`.
 The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
 The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
+The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130` (nine IDs, 1085 among them).
+`raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.
+The vehicle-limits work added tier 1 `RACELINE-1210..1250`, `SIMJAX-1120/1130`, `BRINGUP-1090/1100`,
+`CHECK-1310/1320`.
+The importer-convention work added tier 1 `SIM-1030`.
+The image-pin work added tier 1 `CHECK-1330/1340`.
+The base-link work (part 3.1b) added tier 1 `SIMJAX-1140`, `DESC-1020`; tier 2 `ADAPT-2130`.
+The worktree-scope work added tier 1 `CHECK-1350` to `CHECK-1390`.
+The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/1170`.
 
 ## The tests that matter most
 

@@ -47,7 +47,8 @@ Localization Estimate Tracks Ground Truth: amcl
     ...    slam_toolbox case above for why each is its own test case.
     [Tags]    impl:pose_source=amcl
     [Template]    Pose Source Should Track Ground Truth
-    # amcl 0.65 from SIM-5030's ten runs (0.215-0.437 m).
+    # amcl 0.65: the seed-42 bound (SIM-5030's seed-42 slice, 0.215-0.437 m
+    # originally, 0.141-0.356 post-3.1b); SIM-5030's own multi-seed bounds differ.
     amcl             0.65              0.99
 
 Vehicle Completes A Lap Driving On Its Own Estimate

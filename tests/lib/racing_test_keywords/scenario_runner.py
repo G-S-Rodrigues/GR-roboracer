@@ -23,6 +23,7 @@ from __future__ import annotations
 import sys
 import threading
 import time
+from collections import deque
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,19 @@ RELIABLE_QOS = QoSProfile(
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.VOLATILE,
 )
+
+# The observer's own drive subscription is deeper than the supervisor's (10),
+# so a lagging observer drops nothing it is meant to count.
+CONTROLLER_DRIVE_TOPIC = "/controller/drive"
+OBSERVER_DRIVE_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=200,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
+# racing_safety_supervisor's stale_input_timeout_ms (config/vehicles/
+# f1tenth_default.yaml). Read here only to classify a latch; never changed.
+STALE_INPUT_WINDOW_SECONDS = 0.100
 
 # The sim publishes /clock best effort (racing_sim_gym_jax/node.py CLOCK_QOS).
 CLOCK_QOS = QoSProfile(
@@ -184,6 +198,45 @@ def metrics_to_dict(message: ScenarioMetrics) -> dict[str, Any]:
     return {field: getattr(message, field) for field in _METRICS_FIELDS}
 
 
+def read_host_load() -> dict[str, float]:
+    """A snapshot of host CPU pressure from ``/proc`` (Linux only).
+
+    ``steal`` and ``iowait`` are cumulative jiffies from ``/proc/stat``'s
+    aggregate ``cpu`` line, ``total`` the sum of all its fields, and
+    ``load1`` the one-minute load average. Two snapshots subtracted by
+    ``host_load_delta`` say whether the host was starved during the run
+    between them. Empty on a host without ``/proc``.
+    """
+    try:
+        with open("/proc/stat") as stat:
+            fields = [float(value) for value in stat.readline().split()[1:]]
+        with open("/proc/loadavg") as loadavg:
+            load1 = float(loadavg.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return {}
+    return {
+        "total": sum(fields),
+        "iowait": fields[4] if len(fields) > 4 else 0.0,
+        "steal": fields[7] if len(fields) > 7 else 0.0,
+        "load1": load1,
+    }
+
+
+def host_load_delta(
+    before: Mapping[str, float], after: Mapping[str, float]
+) -> dict[str, float]:
+    """``after - before`` as shares of the elapsed CPU jiffies, plus load."""
+    if not before or not after:
+        return {}
+    total = max(after["total"] - before["total"], 1.0)
+    return {
+        "steal_share": (after["steal"] - before["steal"]) / total,
+        "iowait_share": (after["iowait"] - before["iowait"]) / total,
+        "load1_start": before["load1"],
+        "load1_end": after["load1"],
+    }
+
+
 class _HangObserver:
     """Records what the stack reported, so a hung lap can say why.
 
@@ -191,7 +244,19 @@ class _HangObserver:
     silent: the car stops, the lap never completes and /scenario/metrics
     never publishes. Observing /safety/status and /clock on the driver node
     names the latch and the sim time reached. It changes no deadline.
+
+    It also keeps the stamps of the ``/controller/drive`` commands and of the
+    ``/safety/status`` messages around the opening of a latch, to say which
+    side of the controller -> supervisor chain went quiet (``verdict``).
+    Drive stamps are the odom stamps the controller answered, so they do not
+    move when this observer is late. Every sample is kept to sim t <= 2 s;
+    after that a one-second ring buffer, and nothing once the first non-NONE
+    status has arrived, so memory is bounded. The callbacks themselves run
+    for the whole lap.
     """
+
+    KEEP_ALL_UNTIL_SECONDS = 2.0
+    RING_SAMPLES = 150  # > 1 s of 100 Hz
 
     def __init__(self, node) -> None:
         self.status = None
@@ -199,6 +264,13 @@ class _HangObserver:
         self.stale_count = 0
         self.clock = None
         self._node = node
+        self._drive_stamps: deque[float] = deque()
+        self._status_stamps: deque[float] = deque()
+        self._max_drive_gap = 0.0
+        self._max_status_gap = 0.0
+        self._last_drive: float | None = None
+        self._last_status: float | None = None
+        self._load_at_start = read_host_load()
         self._subscriptions = [
             node.create_subscription(
                 SafetyStatus, SAFETY_STATUS_TOPIC, self._on_status, RELIABLE_QOS
@@ -206,16 +278,50 @@ class _HangObserver:
             node.create_subscription(
                 Clock, "/clock", self._on_clock, CLOCK_QOS
             ),
+            node.create_subscription(
+                AckermannDriveStamped,
+                CONTROLLER_DRIVE_TOPIC,
+                self._on_drive,
+                OBSERVER_DRIVE_QOS,
+            ),
         ]
+
+    @staticmethod
+    def _seconds(stamp) -> float:
+        return stamp.sec + stamp.nanosec * 1e-9
+
+    def _record(self, stamps: deque, seconds: float) -> None:
+        stamps.append(seconds)
+        if seconds > self.KEEP_ALL_UNTIL_SECONDS:
+            while len(stamps) > self.RING_SAMPLES:
+                stamps.popleft()
+
+    def _on_drive(self, message) -> None:
+        if self.first_latch is not None:
+            return
+        seconds = self._seconds(message.header.stamp)
+        if self._last_drive is not None:
+            self._max_drive_gap = max(
+                self._max_drive_gap, seconds - self._last_drive
+            )
+        self._last_drive = seconds
+        self._record(self._drive_stamps, seconds)
 
     def _on_status(self, message) -> None:
         self.status = message
         if message.reason == SafetyStatus.REASON_STALE_INPUT:
             self.stale_count += 1
-        if message.reason != SafetyStatus.REASON_NONE and (
-            self.first_latch is None
-        ):
+        if self.first_latch is not None:
+            return
+        seconds = self._seconds(message.header.stamp)
+        if message.reason != SafetyStatus.REASON_NONE:
             self.first_latch = message
+        if self._last_status is not None:
+            self._max_status_gap = max(
+                self._max_status_gap, seconds - self._last_status
+            )
+        self._last_status = seconds
+        self._record(self._status_stamps, seconds)
 
     def _on_clock(self, message) -> None:
         self.clock = message.clock
@@ -246,6 +352,46 @@ class _HangObserver:
             f"stamp={stamp.sec + stamp.nanosec * 1e-9:.3f}s"
         )
 
+    def verdict(self) -> str:
+        """Which side of the controller -> supervisor chain went quiet.
+
+        ``supervisor-lag``: commands stamped inside the stale window exist,
+        yet the supervisor's own status stamps skip at least that window - it
+        judged a queue it had not read. ``controller-silent``: the status
+        stamps are continuous and no command is stamped inside the window.
+        Anything else is ``unclassified``.
+        """
+        if self.first_latch is None:
+            return "no-latch"
+        latch = self._seconds(self.first_latch.header.stamp)
+        in_window = [
+            stamp
+            for stamp in self._drive_stamps
+            if latch - STALE_INPUT_WINDOW_SECONDS < stamp <= latch
+        ]
+        status_skipped = self._max_status_gap >= STALE_INPUT_WINDOW_SECONDS
+        if in_window and status_skipped:
+            return "supervisor-lag"
+        if not in_window and not status_skipped:
+            return "controller-silent"
+        return "unclassified"
+
+    def _startup_trace(self) -> str:
+        if self.first_latch is None:
+            return ""
+        latch = self._seconds(self.first_latch.header.stamp)
+        recent = [
+            f"{stamp:.3f}"
+            for stamp in self._drive_stamps
+            if latch - 0.2 < stamp <= latch
+        ]
+        return (
+            f"; verdict={self.verdict()}; "
+            f"drive stamps in ({latch - 0.2:.3f}, {latch:.3f}]={recent}; "
+            f"max drive gap={self._max_drive_gap:.3f}s; "
+            f"max status gap={self._max_status_gap:.3f}s"
+        )
+
     def describe(self) -> str:
         clock = (
             "none"
@@ -258,10 +404,18 @@ class _HangObserver:
             if self.first_latch is None
             else self._describe(self.first_latch)
         )
+        load = host_load_delta(self._load_at_start, read_host_load())
+        load_text = (
+            ""
+            if not load
+            else "; host load: "
+            + ", ".join(f"{key}={value:.4f}" for key, value in load.items())
+        )
         return (
             f"last /clock={clock}; last /safety/status={last}; "
             f"first non-NONE status={first}; "
             f"REASON_STALE_INPUT messages={self.stale_count}"
+            f"{self._startup_trace()}{load_text}"
         )
 
 

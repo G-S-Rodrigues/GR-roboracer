@@ -50,11 +50,17 @@ The full graph, with RViz:
 ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 ```
 
+In RViz, `base_link` is the car's centre of gravity at height h (0.074 m); `rear_axle` is its TF child,
+0.17145 m behind, and the drawing hangs off it.
+
 Headless, printing the run's metrics — this is what the nightly sweep drives:
 
 ```bash
 ./scripts/run_scenario.py --seed 42
 ```
+
+Add `--vehicle config/vehicles/f1tenth_gym_limits.yaml` to run another vehicle file (the launch's
+`vehicle:=`; default `config/vehicles/f1tenth_default.yaml`).
 
 Compare any two metrics records field by field, with the tolerances the tests use:
 

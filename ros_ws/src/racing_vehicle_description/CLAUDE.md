@@ -7,7 +7,7 @@ package assert their absence.
 ## Manual TF-sign check — do this after any change here or to the launch file
 
 The reason this is a manual step and not a numeric test: **a TF sign error passes every numeric
-test** and is obvious to a human instantly. Flipping the sign of `base_link_to_laser`'s yaw, or of
+test** and is obvious to a human instantly. Flipping the sign of `rear_axle_to_laser`'s yaw, or of
 the map -> base_link transform `racing_bringup`'s support node broadcasts, produces a robot model and
 LiDAR scan that still satisfy every tier-1/2/3 assertion (frame names, message shapes, timing) while
 being visibly wrong in RViz.

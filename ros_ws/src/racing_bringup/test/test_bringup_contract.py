@@ -3,12 +3,15 @@
 import ast
 from pathlib import Path
 
+import pytest
+
 PACKAGE_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = PACKAGE_ROOT.parents[2]
 LAUNCH_FILE = PACKAGE_ROOT / "launch" / "sim_pure_pursuit.launch.py"
 VEHICLE_CONFIG = (
     REPOSITORY_ROOT / "config" / "vehicles" / "f1tenth_default.yaml"
 )
+VEHICLE_FILES = sorted((REPOSITORY_ROOT / "config" / "vehicles").glob("*.yaml"))
 
 
 def _literal_keyword(call: ast.Call, name: str) -> str | None:
@@ -48,7 +51,13 @@ def test_launch_composes_the_complete_runtime_graph() -> None:
 def test_launch_exposes_reproducibility_and_headless_controls() -> None:
     """Scenario, seed, recording and RViz are launch-time controls."""
     source = LAUNCH_FILE.read_text(encoding="utf-8")
-    for argument in ("scenario", "seed", "recording_path", "use_rviz"):
+    for argument in (
+        "scenario",
+        "seed",
+        "recording_path",
+        "use_rviz",
+        "vehicle",
+    ):
         assert f'DeclareLaunchArgument("{argument}"' in source
     assert "IfCondition" in source
     assert "f1tenth_default.yaml" in source
@@ -282,12 +291,19 @@ def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
         assert tags == expected, test_id
 
 
-def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser() -> None:
-    """BRINGUP-1050: the sim's laser mount is the URDF's base_link_to_laser.
+@pytest.mark.parametrize("vehicle_file", VEHICLE_FILES, ids=lambda p: p.stem)
+def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
+    vehicle_file: Path,
+) -> None:
+    """BRINGUP-1050: the sim's laser mount is the URDF's rear_axle_to_laser.
 
     /scan is stamped in frame `laser` and every estimator places its beams
-    through TF base_link -> laser, which robot_state_publisher takes from the
-    URDF. The sim ray-marches /scan from the mount the vehicle file states.
+    through TF rear_axle -> laser, which robot_state_publisher takes from the
+    URDF. The vehicle file states the mount from the rear axle (the frame
+    every source measures the lidar from: AutoDRIVE roboracer_1, the
+    f1tenth_simulator scan_distance_to_base_link); the sim converts it to
+    the CoG by the gym's lr, which SIMJAX-1140 pins to the URDF, so yaml,
+    URDF and cast are one chain.
     Two copies of one geometry number drift silently (repo-gotchas #15's
     shape): a mismatch shifts every scan point by the difference, and reads
     as localization error, never as a fault. The sim is planar, so a mount
@@ -300,16 +316,20 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser() -> None:
     urdf = REPOSITORY_ROOT / (
         "ros_ws/src/racing_vehicle_description/urdf/f1tenth.urdf"
     )
-    origin = (
+    joint = (
         ElementTree.parse(urdf)
         .getroot()
-        .find("./joint[@name='base_link_to_laser']/origin")
+        .find("./joint[@name='rear_axle_to_laser']")
     )
+    assert joint is not None, "no joint rear_axle_to_laser"
+    assert joint.find("parent").attrib["link"] == "rear_axle"
+    origin = joint.find("origin")
+    assert origin is not None
     x, y, _z = (float(value) for value in origin.attrib["xyz"].split())
     roll, pitch, yaw = (float(value) for value in origin.attrib["rpy"].split())
     assert (roll, pitch) == (0.0, 0.0)
 
-    mount = yaml.safe_load(VEHICLE_CONFIG.read_text(encoding="utf-8"))[
+    mount = yaml.safe_load(vehicle_file.read_text(encoding="utf-8"))[
         "racing_sim"
     ]["ros__parameters"]
     assert (mount["laser_x"], mount["laser_y"], mount["laser_yaw"]) == (
@@ -319,7 +339,7 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser() -> None:
     )
 
     # ...and the launch hands the sim that file, or the mount never arrives
-    # and the sim casts from base_link.
+    # and the sim casts from the rear axle.
     tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
     sim_node = next(
         node.value
@@ -334,9 +354,125 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser() -> None:
         if keyword.arg == "parameters"
     )
     assert any(
-        isinstance(element, ast.Name) and element.id == "VEHICLE_CONFIG"
+        isinstance(element, ast.Name) and element.id == "vehicle"
         for element in parameters.elts
     )
+
+
+def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
+    """BRINGUP-1090: `vehicle:=` selects the vehicle file for every node that
+    reads one, defaults to today's file, and a missing file is an error.
+
+    Six nodes take the vehicle file. A node left on the constant would run
+    one vehicle's caps beside another's, which reads as a plausible lap and
+    nothing else.
+    """
+    import importlib.util
+
+    from launch import LaunchContext
+
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    constants = {
+        node.targets[0].id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+    }
+    assert constants["VEHICLE_CONFIG"] == "config/vehicles/f1tenth_default.yaml"
+
+    declared = {
+        call.args[0].value: call
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "DeclareLaunchArgument"
+    }
+    default = next(
+        keyword.value
+        for keyword in declared["vehicle"].keywords
+        if keyword.arg == "default_value"
+    )
+    assert isinstance(default, ast.Name) and default.id == "VEHICLE_CONFIG"
+
+    takes_vehicle = set()
+    for call in ast.walk(tree):
+        if not (
+            isinstance(call, ast.Call)
+            and getattr(call.func, "id", "") == "Node"
+        ):
+            continue
+        parameters = next(
+            (k.value for k in call.keywords if k.arg == "parameters"), None
+        )
+        names = {
+            element.id
+            for element in getattr(parameters, "elts", [])
+            if isinstance(element, ast.Name)
+        }
+        assert "VEHICLE_CONFIG" not in names
+        if "vehicle" in names:
+            takes_vehicle.add(
+                next(k.value.value for k in call.keywords if k.arg == "package")
+            )
+    assert takes_vehicle == {
+        "racing_sim_gym_jax",
+        "racing_bringup",
+        "racing_controller_baseline",
+        "racing_safety_supervisor",
+        "racing_metrics",
+        "racing_recording",
+    }
+
+    # A file that does not exist raises first, whatever the other arguments
+    # hold. The launch's paths are cwd-relative.
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    spec = importlib.util.spec_from_file_location(
+        "racing_sim_pure_pursuit_launch", LAUNCH_FILE
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    context = LaunchContext()
+    for entity in module.generate_launch_description().entities:
+        if hasattr(entity, "default_value"):
+            context.launch_configurations[entity.name] = "".join(
+                part.text for part in entity.default_value
+            )
+    context.launch_configurations["vehicle"] = "config/vehicles/no_such.yaml"
+    with pytest.raises(RuntimeError, match="no_such.yaml"):
+        module._launch_nodes(context, "", "")
+
+
+def test_bringup_1100_every_vehicle_file_covers_the_defaults_keys() -> None:
+    """BRINGUP-1100: a vehicle file has every section and key the default has.
+
+    A key missing from a file silently falls back to the node's
+    `declare_parameter` default (the supervisor's 2.0 m/s^2, say) while the
+    file claims a different vehicle.
+    """
+    import yaml
+
+    def sections(path: Path) -> dict:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return {
+            node: set(body["ros__parameters"])
+            for node, body in document.items()
+        }
+
+    default = sections(VEHICLE_CONFIG)
+    versions = []
+    for path in VEHICLE_FILES:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert sections(path) == default, path.name
+        metrics = document["racing_metrics"]["ros__parameters"]
+        recording = document["racing_recording"]["ros__parameters"]
+        assert (
+            metrics["vehicle_parameter_version"]
+            == recording["vehicle_parameter_version"]
+        ), path.name
+        versions.append(metrics["vehicle_parameter_version"])
+    assert len(set(versions)) == len(versions)
 
 
 def test_bringup_1060_the_scenario_selects_the_occupancy_grid() -> None:

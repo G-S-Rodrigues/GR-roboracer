@@ -2,7 +2,7 @@
 
 Models a realistic 1/10-scale off-road RC buggy with twin-vertical-plate
 chassis, A-arm suspension, coil-over shocks, motor cans, Jetson compute
-module, battery, camera, and hubs. All geometry authored in base_link
+module, battery, camera, and hubs. All geometry authored in rear_axle
 coordinates to match the fixed URDF joint offsets:
 
   wheelbase 0.33 m, track 0.236 m (0.118 m each side),
@@ -17,7 +17,9 @@ import struct
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Vehicle constants (must match URDF joint offsets exactly)
+# Vehicle constants (must match URDF joint offsets exactly). Meshes are
+# authored in `rear_axle` coordinates (origin at the rear axle's ground point);
+# the URDF's base_link is the centre of gravity, a parent of `rear_axle`.
 # ---------------------------------------------------------------------------
 WHEELBASE = 0.33
 TRACK = 0.236

@@ -35,7 +35,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Localization | [`amcl`](docs/workflows/racing.md#amcl-closed-loop) | Available | Saved-map localization and verified closed-loop driving on Spielberg. |
 | Planning and raceline generation | [`track_raceline`](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Current runtime planner publishes the centerline at constant speed. |
 | Planning and raceline generation | [Offline TUM minimum-curvature wrapper](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Offline tooling only; minimum-time optimization has not converged. |
-| Planning and raceline generation | Optimized raceline racing integration | In development | [Issue #12](https://github.com/G-S-Rodrigues/GR-roboracer/issues/12) remains open; [PR #17](https://github.com/G-S-Rodrigues/GR-roboracer/pull/17) merged the offline seam. |
+| Planning and raceline generation | Optimized raceline racing integration | In development | [Issue #12](https://github.com/G-S-Rodrigues/GR-roboracer/issues/12) remains open; see [path planning](docs/path-planning.md); [PR #17](https://github.com/G-S-Rodrigues/GR-roboracer/pull/17) merged the offline seam. |
 | Control | [`pure_pursuit`](docs/workflows/racing.md#control) | Available | Baseline controller with independent safety; currently ignores trajectory speed. |
 | Control | Tracking/dynamic MPC and MPCC | Exploratory | Controller research directions. |
 | Learning-based methods | Trajectory-conditioned or residual control | Exploratory | Learned control around a trajectory or classical controller. |
@@ -57,6 +57,7 @@ supported scenario. Then use the guides for the task at hand:
 - [Racing](docs/workflows/racing.md#simulation): run and inspect the available implementations.
 - [Results](docs/results.md): understand the measurements and current evidence.
 - [Verification](docs/verification.md): reproduce the public checks.
+- [Path planning](docs/path-planning.md): ground-truth centerline, survey map, extracted centerline and the minimum-curvature raceline compared.
 
 ## Licence
 

@@ -6,7 +6,8 @@ model itself. It starts just robot_state_publisher (publishing the URDF's
 fixed-joint TF tree) and RViz pointed at rviz/display.rviz.
 
 Because every joint in f1tenth.urdf is fixed and no node publishes joint states,
-the chassis sits motionless at base_link -- exactly what a geometry / placement
+the chassis sits motionless in rear_axle (0.171 m behind and
+0.074 m below base_link) -- exactly what a geometry / placement
 check wants, and the RViz twin of scripts/render_urdf.py's offline renders.
 
 Run from anywhere (share path resolves handled below):

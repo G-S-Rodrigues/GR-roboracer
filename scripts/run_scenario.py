@@ -39,6 +39,9 @@ def main() -> int:
     # Which node owns map -> odom, and so which pose the controller drives
     # on (sim_pure_pursuit.launch.py's POSE_SOURCE_CONFIGS).
     parser.add_argument("--pose-source", default="ground_truth")
+    # The vehicle file every vehicle-taking node reads (the launch's `vehicle`
+    # argument); absent, the launch's default stands.
+    parser.add_argument("--vehicle", default=None)
     parser.add_argument(
         "--score-only",
         action="store_true",
@@ -53,6 +56,9 @@ def main() -> int:
         time_scale=arguments.time_scale,
         pose_source=arguments.pose_source,
         drive_on_estimate=not arguments.score_only,
+        launch_arguments=(
+            {"vehicle": arguments.vehicle} if arguments.vehicle else None
+        ),
     )
     record = json.dumps(metrics, indent=2, sort_keys=True, default=str)
     if arguments.output is not None:
