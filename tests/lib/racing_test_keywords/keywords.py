@@ -9,13 +9,14 @@ read like plain English.
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from typing import Any
 
 from racing_interfaces.msg import SafetyStatus
+from robot.libraries.BuiltIn import BuiltIn
 
 from .scenario_runner import (
+    REPOSITORY_ROOT,
     run_scenario,
     run_scenario_with_track_limit_violation,
     score_localization,
@@ -32,6 +33,19 @@ LOCALIZATION_TIME_SCALE = 5.0
 LOCALIZATION_TIMEOUT_SECONDS = 400.0
 
 
+def _output_root() -> Path:
+    """Where this run's artifacts are kept: Robot's `${OUTPUT DIR}`, which
+    `check.sh` and CI point at `log/robot`, else `<repo>/log/robot` when a
+    keyword is called outside Robot."""
+    try:
+        directory = BuiltIn().get_variable_value("${OUTPUT DIR}")
+    except Exception:
+        directory = None
+    if directory:
+        return Path(directory)
+    return REPOSITORY_ROOT / "log" / "robot"
+
+
 class RacingTestKeywords:
     """Robot Framework library: run a racing scenario, assert on its metrics."""
 
@@ -41,6 +55,7 @@ class RacingTestKeywords:
         self._metrics: dict[str, Any] | None = None
         self._violation: dict[str, Any] | None = None
         self._localization: dict[str, Any] | None = None
+        self._recording: Path | None = None
 
     def run_racing_scenario(
         self, scenario: str | None = None, seed: int = 0
@@ -75,18 +90,26 @@ class RacingTestKeywords:
             "1",
             "yes",
         )
-        with tempfile.TemporaryDirectory() as directory:
-            recording = Path(directory) / f"{pose_source}.jsonl"
-            self._metrics = run_scenario(
-                seed=int(seed),
-                scenario=scenario,
-                time_scale=LOCALIZATION_TIME_SCALE,
-                timeout=LOCALIZATION_TIMEOUT_SECONDS,
-                pose_source=pose_source,
-                drive_on_estimate=closed_loop,
-                launch_arguments={"recording_path": str(recording)},
-            )
-            self._localization = score_localization(recording)
+        # Kept, not temporary: a failed availability or error assert is
+        # only explicable from the recording's stamps (nightly 39568107208
+        # lost 2.27 s of an amcl lap and the evidence with it).
+        kind = "closed" if closed_loop else "open"
+        recording = (
+            _output_root() / "localization" / f"{pose_source}-{kind}-loop.jsonl"
+        )
+        recording.parent.mkdir(parents=True, exist_ok=True)
+        recording.unlink(missing_ok=True)
+        self._recording = recording
+        self._metrics = run_scenario(
+            seed=int(seed),
+            scenario=scenario,
+            time_scale=LOCALIZATION_TIME_SCALE,
+            timeout=LOCALIZATION_TIMEOUT_SECONDS,
+            pose_source=pose_source,
+            drive_on_estimate=closed_loop,
+            launch_arguments={"recording_path": str(recording)},
+        )
+        self._localization = score_localization(recording)
 
     def _require_localization(self) -> dict[str, Any]:
         if self._localization is None:
@@ -95,12 +118,26 @@ class RacingTestKeywords:
             )
         return self._localization
 
+    def _localization_summary(self) -> str:
+        """Where the score lost its coverage, for a failed assert's text."""
+        score = self._require_localization()
+        fields = (
+            "maximum_gap",
+            "stale_gap_count",
+            "sample_count",
+            "scored_count",
+            "ate_rmse",
+        )
+        detail = ", ".join(f"{name}={score.get(name)}" for name in fields)
+        return f" ({detail}; recording {self._recording})"
+
     def localization_error_should_be_below(self, threshold: float) -> None:
         """The estimate's ATE RMSE over the lap, scored offline."""
         actual = self._require_localization()["ate_rmse"]
         if not actual < float(threshold):
             raise AssertionError(
                 f"expected ate_rmse < {threshold}, was {actual}"
+                + self._localization_summary()
             )
 
     def localization_availability_should_exceed(self, threshold: float) -> None:
@@ -110,6 +147,7 @@ class RacingTestKeywords:
         if not actual > float(threshold):
             raise AssertionError(
                 f"expected availability > {threshold}, was {actual}"
+                + self._localization_summary()
             )
 
     def _require_metrics(self) -> dict[str, Any]:
