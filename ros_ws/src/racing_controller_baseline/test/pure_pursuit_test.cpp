@@ -218,6 +218,13 @@ TEST(PurePursuitTest, PP1080NonFiniteVelocityIsRejectedOnlyUnderTrajectory) {
         EXPECT_THROW(target_speed(line, 0.2, params), std::invalid_argument);
         EXPECT_THROW(PurePursuit::compute(state, line, params),
                      std::invalid_argument);
+
+        // The first vertex too: the check must cover index 0.
+        const Trajectory first{
+            {0.0, 0.0, bad}, {1.0, 0.0, 1.0}, {2.0, 0.0, 1.0}};
+        EXPECT_THROW(target_speed(first, 1.5, params), std::invalid_argument);
+        EXPECT_THROW(PurePursuit::compute(state, first, params),
+                     std::invalid_argument);
     }
 
     const double nan = std::numeric_limits<double>::quiet_NaN();
