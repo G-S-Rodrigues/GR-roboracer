@@ -31,9 +31,9 @@ belongs there when its cost is laps rather than seconds and what it catches is a
 combination shows.
 
 A red nightly leaves evidence: node logs and Robot output (`logs-seed-<n>`, failed legs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), and, when a
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the localization recordings of tier 4 (ACC-4030/4040: `logs-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
 `run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
-(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). A passing run
+(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix leg (the matrix seed reaches only the seeded lap), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
 prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and bounds the pooled median and
 the maximum of those runs (`log/sim-5030.json` also carries `by_seed`, evidence only), not their max-min spread (one tail run sets the spread; the samples behind the
 bound are in the test).
@@ -117,7 +117,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **123 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **125 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -140,6 +140,7 @@ The base-link work (part 3.1b) added tier 1 `SIMJAX-1140`, `DESC-1020`; tier 2 `
 The worktree-scope work added tier 1 `CHECK-1350` to `CHECK-1390`.
 The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/1170`.
 The hairpin-fold work (part 2.4) added tier 1 `SIM-1040/1050/1060/1070`.
+The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).
 
 ## The tests that matter most
 
