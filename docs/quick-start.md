@@ -4,24 +4,23 @@ This page takes a new machine to a running simulation: the reference stack drivi
 analytic-circle track, with RViz open. It is the one complete first-run recipe; [Setup](setup.md)
 holds the optional and diagnostic material.
 
-The validated host is **WSL2 (Ubuntu 24.04) with WSLg**. Native Linux with a desktop session has not
-been validated for the RViz window; see [Native Linux](setup.md#native-linux-gui-unvalidated).
+The RViz display path has not yet been validated on a native Linux desktop; see
+[Display](setup.md#display).
 
 ## Before you start
 
 - A GitHub account with SSH access, and Git.
-- Docker with Compose v2, usable by your user without `sudo`: Docker Desktop with its WSL
-  integration enabled for Ubuntu 24.04, or Docker Engine installed inside the distro.
-- A graphical session: WSLg on Windows 11 (or a current Windows 10 build with WSLg). Check that
-  `/mnt/wslg` and `/tmp/.X11-unix` exist in your Ubuntu shell.
-- The repository on ext4 inside the distro (`~/gitroot/...`), never under `/mnt/c/`.
+- Linux (Ubuntu 24.04 is the one in use) with Docker and Compose v2, usable by your user without
+  `sudo`.
+- A graphical desktop session, for the RViz window.
+- The repository on a local Linux filesystem (`~/gitroot/...`).
 
 You need no host ROS install and no NVIDIA GPU. The first image build downloads and compiles a lot
 and takes a while; later runs reuse it.
 
 ## 1. Build and start the container
 
-Run these in an Ubuntu 24.04 shell on the host:
+Run these in a shell on the host:
 
 ```bash
 mkdir -p ~/gitroot
@@ -51,7 +50,7 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 
 ## What you should see
 
-RViz opens in a Windows window with a Displays panel on the left. In the 3D view you see a small
+RViz opens in a window with a Displays panel on the left. In the 3D view you see a small
 car model on a ring-shaped track drawn as polylines (the left boundary in green, the right in red, and the planned
 trajectory in blue), with the lidar scan drawn as points around the car. The car drives around the ring at
 real time. The `Map` display shows a warning, because this track has no saved map; that is expected.

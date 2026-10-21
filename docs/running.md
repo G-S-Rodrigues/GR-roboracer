@@ -5,11 +5,6 @@
 First-run setup, with the clone, image build and launch, is in [Quick Start](quick-start.md). Host
 requirements, GPU and display notes are in [Setup](setup.md#host-requirements).
 
-## Driving from a Windows shell
-
-Wrapping commands with `wsl.exe` and its two traps are in
-[Setup](setup.md#driving-from-a-windows-shell).
-
 ## Running a scenario
 
 The full graph, with RViz. Run it from `/ws` inside the container, after the build in

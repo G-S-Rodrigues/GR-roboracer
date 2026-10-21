@@ -5,39 +5,20 @@ page does not repeat its build and launch sequence.
 
 ## Host requirements
 
-- WSL2 with Ubuntu 24.04, and Docker with Compose v2: Docker Desktop with its WSL integration
-  enabled for the distro, or Docker Engine installed inside the distro. Check with `docker compose version` from the Ubuntu shell.
+- Linux (Ubuntu 24.04 is the one in use) with Docker and Compose v2, usable by your user without
+  `sudo`. Check with `docker compose version`.
 - SSH access to GitHub (`ssh -T git@github.com`). Clone with the SSH URL; an HTTPS clone prompts for
   credentials forever.
-- The working tree on ext4 inside the distro, such as `~/gitroot/GR-roboracer`. Under `/mnt/c/` a
-  colcon build is roughly ten times slower and file watchers stop firing without any error.
+- The working tree on a local Linux filesystem, such as `~/gitroot/GR-roboracer`. On a network or
+  FUSE-mounted filesystem a colcon build is far slower and file watchers can stop firing without any
+  error.
 - Only the optional GPU simulator needs an NVIDIA GPU with the container toolkit.
 
 ## Display
 
-The `dev` container mounts `/tmp/.X11-unix` and `/mnt/wslg` and sets `XDG_RUNTIME_DIR` to WSLg's
-runtime directory. If RViz does not open:
-
-- On the host, confirm `ls /mnt/wslg` and `echo $DISPLAY $WAYLAND_DISPLAY` are not empty. Run
-  `wsl --shutdown` from Windows and reopen Ubuntu if WSLg is stuck.
-- Start the container from the same shell that has those variables, then recreate it:
-  `docker compose -f docker/docker-compose.yaml up -d --force-recreate dev`.
-
-### Native Linux GUI (unvalidated)
-
-The RViz window has only been validated on WSL2/WSLg. Native Linux with X11 or Wayland may need
-different mounts and variables, and no recipe is published here because none has been tested. Run
+RViz opens in a window on your desktop, through the X11 socket the `dev` container mounts. The RViz
+display path has not yet been validated on a native Linux desktop. If the window does not open, run
 the headless commands in [Running](running.md) instead, or raise it in the repository's issues.
-
-## Driving from a Windows shell
-
-Commands wrap as `wsl.exe -d Ubuntu-24.04 -e bash -lc '...'`. Two traps:
-
-- Do not put `$PATH` inside the inner string. WSL interop injects the Windows `PATH`, which
-  contains `Program Files (x86)`; the unquoted parentheses are a bash syntax error. Use absolute
-  paths.
-- To edit files from Windows tools, the tree is at
-  `\\wsl.localhost\Ubuntu-24.04\home\<user>\gitroot\GR-roboracer`.
 
 ## Optional: the GPU simulator
 
