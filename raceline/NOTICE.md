@@ -9,6 +9,11 @@ are copied unmodified from ForzaETH/race_stack at commit
 `trajectory_optimizer` reads from its `input_path`; they are test fixtures,
 not this stack's vehicle (raceline part 3 owns that).
 
+## `raceline/optimize.py`
+
+The two-pass orchestration follows `global_planner_logic.py` @ `202450f` (the
+second chain of `compute_global_trajectory`) and copies no code from it.
+
 ## Installed, not vendored
 
 `ForzaETH/global_racetrajectory_optimization` @ `b1b38ec` (LGPL-3.0) and

@@ -1,8 +1,7 @@
 # raceline
 
 Offline raceline generation for GR-roboracer: a ROS-free uv project. Nothing in
-`ros_ws/` imports it; its output is files (committed under `config/racelines/`
-by a later part). It runs with `uv` in the `dev` container (ADR 0002 as
+`ros_ws/` imports it; its output is files (committed under `config/racelines/`). It runs with `uv` in the `dev` container (ADR 0002 as
 amended 2026-10-13, ADR 0003): `colcon build --base-paths ros_ws/src` never
 scans it, and it needs no CUDA.
 
@@ -97,7 +96,8 @@ needed: stray wall islands and corridor patches are filled, free space is
 closed 5x5 before upstream's class-default 3x3 opening (its shipped config uses 9x9; `NOTICE.md`), skeleton spurs are pruned, and the
 loop is the closed skeleton contour near `start_pose` that encloses the largest
 area. `start_pose.yaw` is the gym/ROS yaw (0 = +x), not TUM's psi. Per the
-spec, part 4's runner takes its input from `extract_track` on the map; the
+spec, part 4's runner takes its input from `extract_track` on the map (with
+`walls="observed"`); the
 committed `config/tracks/` file stays the gym's world.
 
 ```python
@@ -252,10 +252,79 @@ Errors scale with the cell; the length shortfall does not. The PNG's offset from
 the committed walls was `sim/track_importer.py`'s pixel convention, fixed by
 part 2.1 (SIM-1030): the importer now fills cells by their ROS-convention
 centres, so the gym collides with the committed walls to within a cell. Part 4's
-verifier still adds the survey's 0.15 m to its margin.
+verifier gives the ground-truth walls `EXTRACTION_ALLOWANCE` (0.15 m) less
+clearance than the walls the optimizer saw (see "Racelines").
 
 Cost: `extract_track` takes ~0.4 s per Spielberg map at 0.05 m. The three new
 dependencies add ~116 MB of wheels to a cold `uv sync` (331 MB installed).
+
+## Racelines (part 4)
+
+`python -m raceline` optimizes a line, verifies it and writes
+`config/racelines/<track>/<vehicle_version>/<optimizer>.{csv,yaml}`. Spielberg,
+both vehicles (run from the repo root in `dev`, TUM one process at a time; each
+run is ~13 min, two TUM passes):
+
+```bash
+for v in f1tenth_default f1tenth_gym_limits; do
+  env -u PYTHONPATH uv run --project raceline --locked python -m raceline \
+    --map config/scenarios/maps/Spielberg/slam/Spielberg.yaml --walls observed \
+    --start-pose 0 0 -2.879 --direction cw \
+    --ground-truth-track config/tracks/spielberg.yaml \
+    --ground-truth-map config/scenarios/maps/Spielberg/Spielberg.yaml \
+    --vehicle config/vehicles/$v.yaml --optimizer tum_mincurv_iqp --timeout 1800 || exit 1
+done
+```
+
+- *Format.* The CSV is the gym's `<map>_raceline.csv` shape: `;`-delimited, no
+  header, `s;x;y;psi;kappa;v;a`, psi in ROS yaw (TUM's is 0 = north; the writer
+  adds pi/2), no repeated closing point. The yaml records the command, the
+  sha256 of every input, the code blob SHAs, the TUM pin, the parameters and the
+  verdict; there are no timestamps, so a regeneration diffs clean.
+- *Reference point.* The line is a CoG path (`base_link`); nothing converts it.
+  `vehicle.kappa_max` (tan(delta)/L) is exact at the rear axle; the CoG form is
+  ~2.5 % tighter, and the measured maximum (0.50) leaves ~60 % headroom.
+- *Two passes.* Pass 1 is `mincurv_iqp` on the extracted track; its line becomes
+  the centerline of pass 2, widths measured to the same walls. This follows the
+  spec; ForzaETH's shipped global line is one pass (`--passes 1`).
+- *Margin.* `--margin` (default 0.30 m per side): the survey extraction
+  allowance 0.15 plus 0.15 for Pure Pursuit's tracking error. TUM gets
+  `safety_width = 2 (half_width + margin)`. Part 6's lap rules the value.
+- *What the verifier checks* (TUM's own `check_traj` only prints warnings):
+  closure, direction, psi, kappa against `kappa_max`, v^2 |kappa| against the
+  GGV a_y, a_x against the GGV and the engine table, and signed clearance to two
+  wall sets. **Input walls** (the extracted bounds the optimizer saw):
+  `half_width + margin - INPUT_BOUND_TOL`, 0.025 m. Measured on Spielberg: the
+  line is 0.4330 m (gym-limits, target 0.455) and 0.4288 m (default, target
+  0.45) from the survey bound at idx 290, a 0.022 / 0.021 m shortfall (TUM's
+  overshoot between nodes plus the bound's stair-step; the 60 m oval measured
+  0.0009 m). **Ground-truth walls** (`--ground-truth-track`): `half_width +
+  margin - 0.15 - 0.02` = 0.285 m (gym-limits).
+- *The clean ground-truth polygon.* The committed inner offset wall `xy - w n`
+  folds over itself at Spielberg idx 275-282 (gotcha 28), which gives a false
+  clearance. `verify.track_walls` cuts the fold (a loop that fits in a disc
+  narrower than the corridor); a loop that could hold the corridor raises.
+- *The sharp tip (owner ruling E9 = c).* The cut leaves a point where the two
+  offset legs cross, at (-74.878, 52.090), reach 0.326 m. For line points whose
+  nearest wall point is within that reach, the 0.285 rule is judged against the
+  `--ground-truth-map` occupied cells, measured to the cell edge, where the
+  polygon's mathematical tip is a point the real wall does not reach. Beyond the
+  reach the clean polygon governs, the input rule is never relieved, and a
+  point past the polygon still fails. Spielberg, gym-limits: polygon minimum
+  0.2856, cells minimum 0.3233, judged 0.3233; default: 0.2819, 0.3196, 0.3196.
+- *Exit codes.* 0 written; 2 the verifier rejected the line (nothing written);
+  3 the extractor refused the input, e.g. an "unobserved" gap wider than 4 m
+  (nothing written, TUM never run). `_unobserved` clearances and
+  `unobserved_share` report wall points the map does not show; they are not
+  failures.
+- *Spielberg results.* Gym-limits: input minimum 0.4330, lap 29.60 s, length
+  338.68 m, max |kappa| 0.4997. Default (3 m/s): input minimum 0.4288, lap
+  112.89 s, length 338.66 m, max |kappa| 0.5017. Step 1 (fresh TUM, gym-limits
+  inputs): kappa sign matches the geometry, psi offset pi/2 to 0.0005 rad,
+  |ds - |dxy|| <= 7e-5 m, a_y and a_x at the GGV limit exactly.
+- *Regeneration.* RACELINE-1395 turns red when the survey, the gym PNG, the
+  vehicle or the tables change. The fix is a reviewed regeneration (gotcha 14),
+  never a hash edit.
 
 ## Licences
 

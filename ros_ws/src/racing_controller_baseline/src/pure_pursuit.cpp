@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace racing_controller_baseline {
@@ -16,10 +17,9 @@ struct Segment {
     double length;
 };
 
-void validate(const Trajectory &trajectory, const ControllerParams &params) {
-    if (trajectory.empty()) {
-        throw std::invalid_argument("trajectory must not be empty");
-    }
+}  // namespace
+
+void validate_parameters(const ControllerParams &params) {
     if (params.lookahead_distance <= 0.0) {
         throw std::invalid_argument("lookahead distance must be positive");
     }
@@ -33,6 +33,28 @@ void validate(const Trajectory &trajectory, const ControllerParams &params) {
     if (params.curvature_speed_gain < 0.0) {
         throw std::invalid_argument(
             "curvature speed gain must be non-negative");
+    }
+    if (!std::isfinite(params.lookahead_gain) || params.lookahead_gain < 0.0) {
+        throw std::invalid_argument(
+            "lookahead gain must be finite and non-negative");
+    }
+}
+
+namespace {
+
+void validate(const Trajectory &trajectory, const ControllerParams &params) {
+    if (trajectory.empty()) {
+        throw std::invalid_argument("trajectory must not be empty");
+    }
+    validate_parameters(params);
+    if (params.speed_source == SpeedSource::TRAJECTORY) {
+        for (const auto &point : trajectory) {
+            if (!std::isfinite(point.v)) {
+                throw std::invalid_argument(
+                    "trajectory speed v must be finite under speed_source "
+                    "trajectory");
+            }
+        }
     }
 }
 
@@ -96,6 +118,51 @@ TrajectoryPoint point_at(double distance,
 
 }  // namespace
 
+SpeedSource parse_speed_source(const std::string &name) {
+    if (name == "curvature_schedule") {
+        return SpeedSource::CURVATURE_SCHEDULE;
+    }
+    if (name == "trajectory") {
+        return SpeedSource::TRAJECTORY;
+    }
+    throw std::invalid_argument(
+        "speed_source must be 'curvature_schedule' or "
+        "'trajectory', got '" +
+        name + "'");
+}
+
+double lookahead_distance(double speed, const ControllerParams &params) {
+    if (params.lookahead_gain > 0.0 && !std::isfinite(speed)) {
+        throw std::invalid_argument(
+            "measured speed must be finite when lookahead_gain is positive");
+    }
+    // Keep this argument order: std::max returns the first argument unless it
+    // is smaller, so 0 * inf = NaN at gain 0 still gives the floor.
+    return std::max(params.lookahead_distance, params.lookahead_gain * speed);
+}
+
+double target_speed(const Trajectory &trajectory, double progress,
+                    const ControllerParams &params) {
+    validate(trajectory, params);
+    const auto segments = make_segments(trajectory, params.closed_trajectory);
+    double speed = trajectory.front().v;
+    if (!segments.empty()) {
+        // Same rule as point_at, so a progress past the end falls on the last
+        // segment's end.
+        speed = segments.back().end.v;
+        for (const auto &segment : segments) {
+            if (progress <= segment.start_distance + segment.length) {
+                const auto ratio = std::clamp(
+                    (progress - segment.start_distance) / segment.length, 0.0,
+                    1.0);
+                speed = ratio < 0.5 ? segment.start.v : segment.end.v;
+                break;
+            }
+        }
+    }
+    return std::clamp(speed, params.minimum_speed, params.maximum_speed);
+}
+
 double curvature_speed_schedule(double kappa, const ControllerParams &params) {
     if (params.minimum_speed < 0.0 ||
         params.maximum_speed < params.minimum_speed ||
@@ -114,11 +181,13 @@ DriveCommand PurePursuit::compute(const VehicleState &state,
     validate(trajectory, params);
     const auto segments = make_segments(trajectory, params.closed_trajectory);
     auto target = trajectory.front();
+    double progress = 0.0;
     if (!segments.empty()) {
         const auto total_distance =
             segments.back().start_distance + segments.back().length;
+        progress = closest_progress(state, segments);
         auto target_distance =
-            closest_progress(state, segments) + params.lookahead_distance;
+            progress + lookahead_distance(state.speed, params);
         if (params.closed_trajectory) {
             target_distance = std::fmod(target_distance, total_distance);
         } else {
@@ -136,8 +205,10 @@ DriveCommand PurePursuit::compute(const VehicleState &state,
             ? 0.0
             : 2.0 * local_y / squared_distance;
     return {std::atan(params.wheelbase * curvature),
-            curvature_speed_schedule(curvature, params), curvature, target.x,
-            target.y};
+            params.speed_source == SpeedSource::TRAJECTORY
+                ? target_speed(trajectory, progress, params)
+                : curvature_speed_schedule(curvature, params),
+            curvature, target.x, target.y};
 }
 
 }  // namespace racing_controller_baseline
