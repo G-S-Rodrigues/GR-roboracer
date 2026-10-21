@@ -12,7 +12,7 @@ The RViz display path has not yet been validated on a native Linux desktop; see
 - A GitHub account with SSH access, and Git.
 - Linux (Ubuntu 24.04 is the one in use) with Docker and Compose v2, usable by your user without
   `sudo`.
-- A graphical desktop session, for the RViz window.
+- A graphical desktop session, for the RViz window that should open.
 - The repository on a local Linux filesystem (`~/gitroot/...`).
 
 You need no host ROS install and no NVIDIA GPU. The first image build downloads and compiles a lot
@@ -50,7 +50,7 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 
 ## What you should see
 
-RViz opens in a window with a Displays panel on the left. In the 3D view you see a small
+RViz should open in a window with a Displays panel on the left. In the 3D view you see a small
 car model on a ring-shaped track drawn as polylines (the left boundary in green, the right in red, and the planned
 trajectory in blue), with the lidar scan drawn as points around the car. The car drives around the ring at
 real time. The `Map` display shows a warning, because this track has no saved map; that is expected.

@@ -29,14 +29,15 @@ If RViz does not open:
 - On the host, `ls /mnt/wslg` and `echo $DISPLAY $WAYLAND_DISPLAY` must not be empty. If WSLg is
   stuck, run `wsl --shutdown` from Windows and reopen Ubuntu.
 - Compose reads the variables from the shell that starts the container, so start it from a shell
-  that has them, then recreate: `docker compose -f docker/docker-compose.yaml up -d --force-recreate dev`.
+  that has them, then recreate:
+  `docker compose -f docker/docker-compose.yaml up -d --force-recreate dev`.
 
 The checkout is bind-mounted at `/ws` (line 18) and owned by UID 1000 while the container runs as
 root; the `safe.directory` entry in the same environment block (lines 32-37) is why git works there.
 
 ## Driving from a Windows shell
 
-Commands wrap as `wsl.exe -d Ubuntu-24.04 -e bash -lc '...'`. Two traps:
+Commands wrap as `wsl.exe -d Ubuntu-24.04 -e bash -lc '...'`. One trap:
 
 - Do not put `$PATH` inside the inner string. WSL interop injects the Windows `PATH`, which contains
   `Program Files (x86)`; the unquoted parentheses are a bash syntax error. Use absolute paths.

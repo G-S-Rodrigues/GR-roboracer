@@ -10,15 +10,15 @@ page does not repeat its build and launch sequence.
 - SSH access to GitHub (`ssh -T git@github.com`). Clone with the SSH URL; an HTTPS clone prompts for
   credentials forever.
 - The working tree on a local Linux filesystem, such as `~/gitroot/GR-roboracer`. On a network or
-  FUSE-mounted filesystem a colcon build is far slower and file watchers can stop firing without any
-  error.
+  FUSE-mounted filesystem a colcon build can be much slower and file watchers can stop firing
+  without any error.
 - Only the optional GPU simulator needs an NVIDIA GPU with the container toolkit.
 
 ## Display
 
-RViz opens in a window on your desktop, through the X11 socket the `dev` container mounts. The RViz
-display path has not yet been validated on a native Linux desktop. If the window does not open, run
-the headless commands in [Running](running.md) instead, or raise it in the repository's issues.
+The RViz display path has not yet been validated on a native Linux desktop. If the window does not
+open, run the headless commands in [Running](running.md) instead, or raise it in the repository's
+issues.
 
 ## Optional: the GPU simulator
 
