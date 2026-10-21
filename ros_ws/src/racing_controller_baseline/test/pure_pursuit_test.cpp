@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
 #include <vector>
 
 namespace racing_controller_baseline {
@@ -62,6 +63,93 @@ TEST(PurePursuitTest, PP1030SpeedScheduleIsMonotonicInAbsoluteCurvature) {
     EXPECT_GT(straight, gentle_left);
     EXPECT_GT(gentle_left, sharp);
     EXPECT_GE(sharp, params.minimum_speed);
+}
+
+// PP-1040: characterization of today's default outputs. The literals below
+// were recorded from origin/main 3a847c79 (%.17g literals) before any
+// production change, and this test is never edited: the default path must stay
+// bit-identical.
+struct Pp1040Case {
+    VehicleState state;
+    DriveCommand expected;
+};
+
+Trajectory pp1040_polygon() {
+    Trajectory polygon;
+    for (int k = 0; k < 12; ++k) {
+        const double angle = k * M_PI / 6.0;
+        polygon.push_back({3.0 * std::cos(angle), 3.0 * std::sin(angle)});
+    }
+    return polygon;
+}
+
+void expect_bit_equal(const DriveCommand &actual, const DriveCommand &expected,
+                      std::size_t index) {
+    EXPECT_EQ(actual.steering_angle, expected.steering_angle) << index;
+    EXPECT_EQ(actual.speed, expected.speed) << index;
+    EXPECT_EQ(actual.curvature, expected.curvature) << index;
+    EXPECT_EQ(actual.target_x, expected.target_x) << index;
+    EXPECT_EQ(actual.target_y, expected.target_y) << index;
+}
+
+TEST(PurePursuitTest, PP1040DefaultParametersReproduceTodaysOutputs) {
+    const Trajectory polygon = pp1040_polygon();
+    const auto &v0 = polygon[0];
+    const auto &v1 = polygon[1];
+    const auto &v11 = polygon[11];
+    const double deg = M_PI / 180.0;
+    const std::vector<Pp1040Case> closed_cases{
+        // on-line (edge midpoint, heading along the edge)
+        {{0.5 * (v0.x + v1.x), 0.5 * (v0.y + v1.y), 120.0 * deg},
+         {-0.098733974167861727, 2.3073907718081674, -0.30016988741316475,
+          2.4400075358434266, 1.6580686755098895}},
+        // off-line, inside
+        {{2.0, 0.5, 100.0 * deg},
+         {-0.28018769116904874, 1.6025704645081524, -0.871992568464523,
+          2.4645265886817556, 1.6335496226715605}},
+        // off-line, outside
+        {{3.5, 0.8, 110.0 * deg},
+         {0.2742088059178277, 1.6195136633102003, 0.85240795923151325,
+          2.5341418309524184, 1.5639343804008974}},
+        // heading against the path
+        {{0.5 * (v0.x + v1.x), 0.5 * (v0.y + v1.y), -60.0 * deg},
+         {0.098733974167861963, 2.3073907718081657, 0.30016988741316547,
+          2.4400075358434266, 1.6580686755098895}},
+        // near the wrap: 97% of the way along the last edge
+        {{v11.x + 0.97 * (v0.x - v11.x), v11.y + 0.97 * (v0.y - v11.y),
+          75.0 * deg},
+         {0.30826521729488116, 1.5267981359139136, 0.9648962946920645,
+          2.7532386685568797, 0.92092582628906872}},
+        // exactly on a vertex
+        {{polygon[3].x, polygon[3].y, 180.0 * deg},
+         {0.16918757026553233, 1.9767558677936727, 0.51763809020504181,
+          -0.96592582628906798, 2.7411809548974793}},
+    };
+    ControllerParams closed;
+    closed.closed_trajectory = true;
+    closed.maximum_speed = 3.0;
+    for (std::size_t i = 0; i < closed_cases.size(); ++i) {
+        const auto actual =
+            PurePursuit::compute(closed_cases[i].state, polygon, closed);
+        expect_bit_equal(actual, closed_cases[i].expected, i);
+    }
+
+    const Trajectory open{{0.0, 0.0}, {2.0, 0.0}, {2.0, 2.0}};
+    const std::vector<Pp1040Case> open_cases{
+        {{-1.0, 0.2, 0.0},
+         {-0.032661648068873367, 2.7297297297297294, -0.099009900990099015, 1,
+          0}},  // before the start
+        {{2.3, 2.5, 1.5},
+         {0.47338956744176519, 1.1754404979442099, 1.5522346773374398, 2,
+          2}},  // past the end
+    };
+    ControllerParams open_params;
+    open_params.maximum_speed = 3.0;
+    for (std::size_t i = 0; i < open_cases.size(); ++i) {
+        const auto actual =
+            PurePursuit::compute(open_cases[i].state, open, open_params);
+        expect_bit_equal(actual, open_cases[i].expected, 100 + i);
+    }
 }
 
 }  // namespace
