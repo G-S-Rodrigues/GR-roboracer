@@ -7,6 +7,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace racing_controller_baseline {
@@ -155,17 +156,19 @@ TEST(PurePursuitTest, PP1040DefaultParametersReproduceTodaysOutputs) {
     }
 }
 
-ControllerParams trajectory_speed_params(double minimum, double maximum) {
+// limits = {minimum_speed, maximum_speed}
+ControllerParams trajectory_speed_params(
+    const std::pair<double, double> &limits) {
     ControllerParams params;
     params.speed_source = SpeedSource::TRAJECTORY;
-    params.minimum_speed = minimum;
-    params.maximum_speed = maximum;
+    params.minimum_speed = limits.first;
+    params.maximum_speed = limits.second;
     return params;
 }
 
 TEST(PurePursuitTest, PP1050TargetSpeedTakesNearestVertexByProgress) {
     const Trajectory line{{0.0, 0.0, 1.0}, {1.0, 0.0, 2.0}, {2.0, 0.0, 3.0}};
-    const auto params = trajectory_speed_params(0.0, 10.0);
+    const auto params = trajectory_speed_params({0.0, 10.0});
 
     EXPECT_EQ(target_speed(line, 0.4, params), 1.0);
     EXPECT_EQ(target_speed(line, 0.6, params), 2.0);
@@ -175,7 +178,7 @@ TEST(PurePursuitTest, PP1050TargetSpeedTakesNearestVertexByProgress) {
 
 TEST(PurePursuitTest, PP1060TargetSpeedClampsToTheSpeedLimits) {
     const Trajectory line{{0.0, 0.0, 0.0}, {1.0, 0.0, 10.0}, {2.0, 0.0, 1.7}};
-    const auto params = trajectory_speed_params(0.5, 3.0);
+    const auto params = trajectory_speed_params({0.5, 3.0});
 
     EXPECT_EQ(target_speed(line, 0.0, params), 0.5);
     EXPECT_EQ(target_speed(line, 1.0, params), 3.0);
@@ -183,7 +186,7 @@ TEST(PurePursuitTest, PP1060TargetSpeedClampsToTheSpeedLimits) {
 }
 
 TEST(PurePursuitTest, PP1070TargetSpeedOnClosedTrajectories) {
-    auto params = trajectory_speed_params(0.0, 10.0);
+    auto params = trajectory_speed_params({0.0, 10.0});
     params.closed_trajectory = true;
 
     // (a) no repeated closing vertex: the wrap segment v3 -> v0 spans 3..4.
@@ -211,7 +214,7 @@ TEST(PurePursuitTest, PP1080NonFiniteVelocityIsRejectedOnlyUnderTrajectory) {
         // The bad vertex is not the one the lookup lands on.
         const Trajectory line{
             {0.0, 0.0, 1.0}, {1.0, 0.0, 1.0}, {2.0, 0.0, bad}};
-        const auto params = trajectory_speed_params(0.5, 3.0);
+        const auto params = trajectory_speed_params({0.5, 3.0});
         EXPECT_THROW(target_speed(line, 0.2, params), std::invalid_argument);
         EXPECT_THROW(PurePursuit::compute(state, line, params),
                      std::invalid_argument);
