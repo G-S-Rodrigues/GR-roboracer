@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace racing_controller_baseline {
@@ -116,6 +117,19 @@ TrajectoryPoint point_at(double distance,
 }
 
 }  // namespace
+
+SpeedSource parse_speed_source(const std::string &name) {
+    if (name == "curvature_schedule") {
+        return SpeedSource::CURVATURE_SCHEDULE;
+    }
+    if (name == "trajectory") {
+        return SpeedSource::TRAJECTORY;
+    }
+    throw std::invalid_argument(
+        "speed_source must be 'curvature_schedule' or "
+        "'trajectory', got '" +
+        name + "'");
+}
 
 double lookahead_distance(double speed, const ControllerParams &params) {
     if (params.lookahead_gain > 0.0 && !std::isfinite(speed)) {

@@ -44,6 +44,10 @@ struct DriveCommand {
     double target_y{};
 };
 
+// "curvature_schedule" or "trajectory"; anything else throws
+// std::invalid_argument naming both.
+SpeedSource parse_speed_source(const std::string &name);
+
 // max(lookahead_distance, lookahead_gain * speed); `speed` is the measured
 // CoG speed. Throws on a non-finite speed when lookahead_gain > 0.
 double lookahead_distance(double speed, const ControllerParams &params);

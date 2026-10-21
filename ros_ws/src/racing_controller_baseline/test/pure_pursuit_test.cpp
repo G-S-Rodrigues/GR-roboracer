@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace racing_controller_baseline {
@@ -405,6 +406,22 @@ TEST(PurePursuitTest, PP1150DefaultParametersIgnoreTheMeasuredSpeed) {
             measured.speed = speed;
             expect_commands_equal(
                 PurePursuit::compute(measured, polygon, params), reference);
+        }
+    }
+}
+
+TEST(PurePursuitTest, PP1140ParseSpeedSourceAcceptsOnlyTheTwoNames) {
+    EXPECT_EQ(parse_speed_source("curvature_schedule"),
+              SpeedSource::CURVATURE_SCHEDULE);
+    EXPECT_EQ(parse_speed_source("trajectory"), SpeedSource::TRAJECTORY);
+    for (const std::string bad : {"", "Trajectory", "track"}) {
+        try {
+            parse_speed_source(bad);
+            ADD_FAILURE() << "no throw for '" << bad << "'";
+        } catch (const std::invalid_argument &error) {
+            const std::string message = error.what();
+            EXPECT_NE(message.find("curvature_schedule"), std::string::npos);
+            EXPECT_NE(message.find("trajectory"), std::string::npos);
         }
     }
 }

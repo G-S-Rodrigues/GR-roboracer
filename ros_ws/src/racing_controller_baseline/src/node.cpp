@@ -4,6 +4,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <racing_interfaces/msg/trajectory.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <string>
 #include <utility>
 
 #include "racing_controller_baseline/pure_pursuit.hpp"
@@ -22,6 +23,10 @@ class PurePursuitNode : public rclcpp::Node {
             declare_parameter("curvature_speed_gain", 1.0);
         params_.closed_trajectory =
             declare_parameter("closed_trajectory", true);
+        params_.speed_source = parse_speed_source(declare_parameter(
+            "speed_source", std::string("curvature_schedule")));
+        params_.lookahead_gain = declare_parameter("lookahead_gain", 0.0);
+        validate_parameters(params_);
 
         command_publisher_ =
             create_publisher<ackermann_msgs::msg::AckermannDriveStamped>(
@@ -37,7 +42,8 @@ class PurePursuitNode : public rclcpp::Node {
                                  orientation.z * orientation.z);
                 state_ = {message->pose.pose.position.x,
                           message->pose.pose.position.y,
-                          std::atan2(sin_yaw, cos_yaw)};
+                          std::atan2(sin_yaw, cos_yaw),
+                          message->twist.twist.linear.x};
                 stamp_ = message->header.stamp;
                 has_state_ = true;
                 publish_if_ready();
@@ -50,7 +56,7 @@ class PurePursuitNode : public rclcpp::Node {
                     trajectory_.clear();
                     trajectory_.reserve(message->points.size());
                     for (const auto &point : message->points) {
-                        trajectory_.push_back({point.x, point.y});
+                        trajectory_.push_back({point.x, point.y, point.v});
                     }
                     publish_if_ready();
                 });
