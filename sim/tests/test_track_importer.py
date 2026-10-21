@@ -467,6 +467,37 @@ def test_sim_1050_the_png_has_exactly_two_occupied_components(
     )
 
 
+def _same_asset(left: Path, right: Path) -> bool:
+    """Equal bytes, except a PNG is equal by decoded content.
+
+    An encoder upgrade may change a PNG's bytes and not one pixel, so the
+    PNG compares by size, mode and every pixel (Pillow is not pinned).
+    """
+    if left.suffix != ".png":
+        return filecmp.cmp(left, right, shallow=False)
+    with Image.open(left) as one, Image.open(right) as two:
+        return (
+            one.size == two.size
+            and one.mode == two.mode
+            and np.array_equal(np.asarray(one), np.asarray(two))
+        )
+
+
+def test_sim_1070_a_reencoded_png_is_the_same_asset_a_changed_pixel_is_not(
+    tmp_path: Path,
+) -> None:
+    """SIM-1070 helper: bytes may differ, pixels may not."""
+    source = Path("config/scenarios/maps/Spielberg/Spielberg.png")
+    with Image.open(source) as image:
+        image.save(tmp_path / "recompressed.png", compress_level=0)
+        pixels = np.asarray(image).copy()
+    assert (tmp_path / "recompressed.png").read_bytes() != source.read_bytes()
+    assert _same_asset(source, tmp_path / "recompressed.png")
+    pixels[0, 0] = 255 - pixels[0, 0]
+    Image.fromarray(pixels).save(tmp_path / "one_pixel.png")
+    assert not _same_asset(source, tmp_path / "one_pixel.png")
+
+
 @pytest.mark.parametrize(
     ("track", "name"),
     [("analytic_circle", "analytic_circle"), ("spielberg", "Spielberg")],
@@ -483,6 +514,6 @@ def test_sim_1070_the_committed_gym_assets_are_the_importer_output(
         file
         for file in files
         if not (committed / file).is_file()
-        or not filecmp.cmp(track_dir / file, committed / file, shallow=False)
+        or not _same_asset(track_dir / file, committed / file)
     ]
     assert stale == [], f"{name}: committed {stale} differ from the importer"
