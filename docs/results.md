@@ -1,8 +1,8 @@
 # Results
 
 This page lists the measurements the repository publishes and where each one comes from.
-`racing_metrics` computes them from a lap, and `sim/rollout.py` generates the committed
-records headless on the GPU. They are **baseline regression data, not a leaderboard**: the
+`sim/rollout.py` generates the committed records headless on the GPU, and `racing_metrics`
+computes the live record that is compared against them. They are **baseline regression data, not a leaderboard**: the
 reference stack today is `ground_truth` pose, `track_raceline` (the centerline at constant
 speed) and `pure_pursuit`, and none of it is tuned for speed. The numbers exist so that a
 change in speed, tracking or wall clearance shows up in the tests. [Verification](verification.md)
