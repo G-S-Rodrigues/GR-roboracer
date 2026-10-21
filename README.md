@@ -17,7 +17,7 @@ collisions.
 
 [![AMCL driving a closed-loop Spielberg lap on the generated survey map, 9.8x playback](docs/assets/readme-lap-preview.gif)](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view)
 
-Full recording (H.264, complete lap): [Google Drive](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view), played at 3.9x simulated
+Preview at 9.8x playback; full recording (H.264, complete lap): [Google Drive](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view), played at 3.9x simulated
 time. Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=amcl drive_on_estimate:=true seed:=42`
 on `config/scenarios/spielberg.yaml`, seed 42, at commit `cadfdd5`.
 
@@ -37,7 +37,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Localization | [`slam_toolbox`](docs/workflows/racing.md#online-slam-toolbox-evaluation) | Available | Online estimate evaluation while driving on ground truth; driving on its estimate latches a `TRACK_LIMIT` stop. |
 | Localization | [`amcl`](docs/workflows/racing.md#amcl-closed-loop) | Available | Saved-map localization and verified closed-loop driving on Spielberg. |
 | Planning and raceline generation | [`track_raceline`](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Current runtime planner publishes the centerline at constant speed. |
-| Planning and raceline generation | [Offline centerline extraction and TUM minimum-curvature wrapper](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Offline command `python -m raceline` (needs `--vehicle`, `--optimizer` and `--track` or `--map`; full command and flags in [raceline/README.md](raceline/README.md#racelines-part-4)); min-curvature racelines committed under `config/racelines/spielberg/`; nothing follows them yet; minimum-time optimization has not converged. |
+| Planning and raceline generation | [Offline centerline extraction and TUM minimum-curvature wrapper](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Offline command `python -m raceline` (needs `--vehicle`, `--optimizer` and `--track` or `--map`; `--map` also needs `--start-pose` and `--direction`; full command and flags in [raceline/README.md](raceline/README.md#racelines-part-4)); min-curvature racelines committed under `config/racelines/spielberg/`; nothing follows them yet; minimum-time optimization has not converged. |
 | Planning and raceline generation | Optimized raceline racing integration | In development | [Issue #12](https://github.com/G-S-Rodrigues/GR-roboracer/issues/12) remains open; see [path planning](docs/path-planning.md); [PR #17](https://github.com/G-S-Rodrigues/GR-roboracer/pull/17) merged the offline seam. |
 | Control | [`pure_pursuit`](docs/workflows/racing.md#control) | Available | Baseline controller with independent safety; by default ignores trajectory speed; the opt-in node parameter `speed_source=trajectory` follows it (a constant 1.0 m/s in the published `<map>_raceline.csv`, which is the centerline), and `lookahead_gain` defaults to 0; opt-in is in [racing.md](docs/workflows/racing.md#control). |
 | Control | Tracking/dynamic MPC and MPCC | Exploratory | Controller research directions. |
