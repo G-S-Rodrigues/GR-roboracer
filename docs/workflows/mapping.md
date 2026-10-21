@@ -8,8 +8,9 @@ shell inside the container, in `/ws`. The target configuration for a mapping run
 
 A survey is one Spielberg lap of the reference stack. The car drives on ground truth
 (`pose_source: ground_truth`) on `spielberg_survey.yaml`, which is Spielberg with exact sensors.
-While it drives, slam_toolbox (`mapper: slam_toolbox`) lays each `/scan` at the true pose, with scan
-matching and loop closure turned off. It never publishes `map -> odom`.
+While it drives, slam_toolbox (`mapper: slam_toolbox`) keeps a scan every 0.2 m or 0.1 rad and
+places it at the dead-reckoned pose, with scan matching and loop closure turned off. That pose is
+exact only because the survey scenario has no noise. It never publishes `map -> odom`.
 
 The result is a generated survey map, not an autonomous SLAM result. It does not show how well
 slam_toolbox can build a map from a drive it has to localize itself.
@@ -34,7 +35,7 @@ The output includes `lap_completed: true` once the lap is done.
 
 ## Save the map
 
-The RViz launch does not save anything. Before you stop it, open a second shell from the host, and
+The RViz launch does not save the map. Before you stop it, open a second shell from the host, and
 source the workspace there:
 
 ```bash

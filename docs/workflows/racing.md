@@ -20,7 +20,7 @@ Shared arguments: `seed:=`, `time_scale:=` (scales the wall rate, never the phys
 | Selection | The car drives on | Owns `map -> odom` | Section |
 |---|---|---|---|
 | `ground_truth` | ground truth | support node | [Ground truth](#ground-truth-reference-stack) |
-| `slam_toolbox` | ground truth | slam_toolbox | [slam_toolbox](#online-slam-toolbox-evaluation) |
+| `slam_toolbox` + `drive_on_estimate:=false` | ground truth | slam_toolbox | [slam_toolbox](#online-slam-toolbox-evaluation) |
 | `amcl` | the amcl estimate | amcl | [amcl](#amcl-closed-loop) |
 
 ## Ground-truth reference stack
