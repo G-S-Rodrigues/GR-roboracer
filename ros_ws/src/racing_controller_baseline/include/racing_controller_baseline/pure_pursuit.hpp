@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <string>
 #include <vector>
 
 namespace racing_controller_baseline {
@@ -13,9 +15,12 @@ struct VehicleState {
 struct TrajectoryPoint {
     double x{};
     double y{};
+    double v{};
 };
 
 using Trajectory = std::vector<TrajectoryPoint>;
+
+enum class SpeedSource : std::uint8_t { CURVATURE_SCHEDULE, TRAJECTORY };
 
 struct ControllerParams {
     double lookahead_distance{1.0};
@@ -24,6 +29,8 @@ struct ControllerParams {
     double maximum_speed{2.0};
     double curvature_speed_gain{1.0};
     bool closed_trajectory{false};
+    SpeedSource speed_source{SpeedSource::CURVATURE_SCHEDULE};
+    double lookahead_gain{0.0};
 };
 
 struct DriveCommand {
@@ -35,6 +42,11 @@ struct DriveCommand {
 };
 
 double curvature_speed_schedule(double kappa, const ControllerParams &params);
+
+// Speed of the trajectory vertex nearest `progress` by arc length, clamped to
+// [minimum_speed, maximum_speed].
+double target_speed(const Trajectory &trajectory, double progress,
+                    const ControllerParams &params);
 
 class PurePursuit {
    public:

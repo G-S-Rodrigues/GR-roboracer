@@ -34,6 +34,15 @@ void validate(const Trajectory &trajectory, const ControllerParams &params) {
         throw std::invalid_argument(
             "curvature speed gain must be non-negative");
     }
+    if (params.speed_source == SpeedSource::TRAJECTORY) {
+        for (const auto &point : trajectory) {
+            if (!std::isfinite(point.v)) {
+                throw std::invalid_argument(
+                    "trajectory speed v must be finite under speed_source "
+                    "trajectory");
+            }
+        }
+    }
 }
 
 std::vector<Segment> make_segments(const Trajectory &trajectory, bool closed) {
@@ -95,6 +104,28 @@ TrajectoryPoint point_at(double distance,
 }
 
 }  // namespace
+
+double target_speed(const Trajectory &trajectory, double progress,
+                    const ControllerParams &params) {
+    validate(trajectory, params);
+    const auto segments = make_segments(trajectory, params.closed_trajectory);
+    double speed = trajectory.front().v;
+    if (!segments.empty()) {
+        // Same rule as point_at, so a progress past the end falls on the last
+        // segment's end.
+        speed = segments.back().end.v;
+        for (const auto &segment : segments) {
+            if (progress <= segment.start_distance + segment.length) {
+                const auto ratio = std::clamp(
+                    (progress - segment.start_distance) / segment.length, 0.0,
+                    1.0);
+                speed = ratio < 0.5 ? segment.start.v : segment.end.v;
+                break;
+            }
+        }
+    }
+    return std::clamp(speed, params.minimum_speed, params.maximum_speed);
+}
 
 double curvature_speed_schedule(double kappa, const ControllerParams &params) {
     if (params.minimum_speed < 0.0 ||

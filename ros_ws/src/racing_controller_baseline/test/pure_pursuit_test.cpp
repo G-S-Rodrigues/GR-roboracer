@@ -4,6 +4,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace racing_controller_baseline {
@@ -150,6 +152,81 @@ TEST(PurePursuitTest, PP1040DefaultParametersReproduceTodaysOutputs) {
             PurePursuit::compute(open_cases[i].state, open, open_params);
         expect_bit_equal(actual, open_cases[i].expected, 100 + i);
     }
+}
+
+ControllerParams trajectory_speed_params(double minimum, double maximum) {
+    ControllerParams params;
+    params.speed_source = SpeedSource::TRAJECTORY;
+    params.minimum_speed = minimum;
+    params.maximum_speed = maximum;
+    return params;
+}
+
+TEST(PurePursuitTest, PP1050TargetSpeedTakesNearestVertexByProgress) {
+    const Trajectory line{{0.0, 0.0, 1.0}, {1.0, 0.0, 2.0}, {2.0, 0.0, 3.0}};
+    const auto params = trajectory_speed_params(0.0, 10.0);
+
+    EXPECT_EQ(target_speed(line, 0.4, params), 1.0);
+    EXPECT_EQ(target_speed(line, 0.6, params), 2.0);
+    EXPECT_EQ(target_speed(line, 1.49, params), 2.0);
+    EXPECT_EQ(target_speed(line, 2.0, params), 3.0);
+}
+
+TEST(PurePursuitTest, PP1060TargetSpeedClampsToTheSpeedLimits) {
+    const Trajectory line{{0.0, 0.0, 0.0}, {1.0, 0.0, 10.0}, {2.0, 0.0, 1.7}};
+    const auto params = trajectory_speed_params(0.5, 3.0);
+
+    EXPECT_EQ(target_speed(line, 0.0, params), 0.5);
+    EXPECT_EQ(target_speed(line, 1.0, params), 3.0);
+    EXPECT_EQ(target_speed(line, 2.0, params), 1.7);
+}
+
+TEST(PurePursuitTest, PP1070TargetSpeedOnClosedTrajectories) {
+    auto params = trajectory_speed_params(0.0, 10.0);
+    params.closed_trajectory = true;
+
+    // (a) no repeated closing vertex: the wrap segment v3 -> v0 spans 3..4.
+    const Trajectory square{
+        {0.0, 0.0, 1.0}, {1.0, 0.0, 2.0}, {1.0, 1.0, 3.0}, {0.0, 1.0, 4.0}};
+    EXPECT_EQ(target_speed(square, 3.9, params), 1.0);
+    EXPECT_EQ(target_speed(square, 3.4, params), 4.0);
+
+    // (b) closing vertex repeated with a different v: its zero-length
+    // segment is skipped, and the repeat is the end of v3 -> v4.
+    const Trajectory repeated{{0.0, 0.0, 1.0},
+                              {1.0, 0.0, 2.0},
+                              {1.0, 1.0, 3.0},
+                              {0.0, 1.0, 4.0},
+                              {0.0, 0.0, 9.0}};
+    EXPECT_EQ(target_speed(repeated, 3.9, params), 9.0);
+    EXPECT_EQ(target_speed(repeated, 3.4, params), 4.0);
+}
+
+TEST(PurePursuitTest, PP1080NonFiniteVelocityIsRejectedOnlyUnderTrajectory) {
+    const double bad_values[] = {std::numeric_limits<double>::quiet_NaN(),
+                                 std::numeric_limits<double>::infinity()};
+    const VehicleState state{0.5, 0.0, 0.0};
+    for (const double bad : bad_values) {
+        // The bad vertex is not the one the lookup lands on.
+        const Trajectory line{
+            {0.0, 0.0, 1.0}, {1.0, 0.0, 1.0}, {2.0, 0.0, bad}};
+        const auto params = trajectory_speed_params(0.5, 3.0);
+        EXPECT_THROW(target_speed(line, 0.2, params), std::invalid_argument);
+        EXPECT_THROW(PurePursuit::compute(state, line, params),
+                     std::invalid_argument);
+    }
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const Trajectory nan_v{{0.0, 0.0, nan}, {1.0, 0.0, nan}, {2.0, 1.0, nan}};
+    const Trajectory zero_v{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {2.0, 1.0, 0.0}};
+    const ControllerParams schedule;
+    const auto with_nan = PurePursuit::compute(state, nan_v, schedule);
+    const auto with_zero = PurePursuit::compute(state, zero_v, schedule);
+    EXPECT_EQ(with_nan.steering_angle, with_zero.steering_angle);
+    EXPECT_EQ(with_nan.speed, with_zero.speed);
+    EXPECT_EQ(with_nan.curvature, with_zero.curvature);
+    EXPECT_EQ(with_nan.target_x, with_zero.target_x);
+    EXPECT_EQ(with_nan.target_y, with_zero.target_y);
 }
 
 }  // namespace
