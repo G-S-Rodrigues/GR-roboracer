@@ -117,7 +117,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **123 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **135 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -140,6 +140,7 @@ The base-link work (part 3.1b) added tier 1 `SIMJAX-1140`, `DESC-1020`; tier 2 `
 The worktree-scope work added tier 1 `CHECK-1350` to `CHECK-1390`.
 The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/1170`.
 The hairpin-fold work (part 2.4) added tier 1 `SIM-1040/1050/1060/1070`.
+The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 
 ## The tests that matter most
 
