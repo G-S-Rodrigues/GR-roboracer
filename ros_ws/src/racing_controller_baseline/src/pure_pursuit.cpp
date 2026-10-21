@@ -167,11 +167,13 @@ DriveCommand PurePursuit::compute(const VehicleState &state,
     validate(trajectory, params);
     const auto segments = make_segments(trajectory, params.closed_trajectory);
     auto target = trajectory.front();
+    double progress = 0.0;
     if (!segments.empty()) {
         const auto total_distance =
             segments.back().start_distance + segments.back().length;
+        progress = closest_progress(state, segments);
         auto target_distance =
-            closest_progress(state, segments) + params.lookahead_distance;
+            progress + lookahead_distance(state.speed, params);
         if (params.closed_trajectory) {
             target_distance = std::fmod(target_distance, total_distance);
         } else {
@@ -189,8 +191,10 @@ DriveCommand PurePursuit::compute(const VehicleState &state,
             ? 0.0
             : 2.0 * local_y / squared_distance;
     return {std::atan(params.wheelbase * curvature),
-            curvature_speed_schedule(curvature, params), curvature, target.x,
-            target.y};
+            params.speed_source == SpeedSource::TRAJECTORY
+                ? target_speed(trajectory, progress, params)
+                : curvature_speed_schedule(curvature, params),
+            curvature, target.x, target.y};
 }
 
 }  // namespace racing_controller_baseline

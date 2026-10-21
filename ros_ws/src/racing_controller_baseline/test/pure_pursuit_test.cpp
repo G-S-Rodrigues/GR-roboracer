@@ -271,5 +271,143 @@ TEST(PurePursuitTest, PP1100LookaheadGainMustBeFiniteAndNonNegative) {
     }
 }
 
+// A closed 12-gon of radius 3 with v cycling 0.7 / 1.9 / 2.6 by vertex.
+Trajectory pp1110_polygon(bool with_v) {
+    const double cycle[] = {0.7, 1.9, 2.6};
+    Trajectory polygon;
+    for (int k = 0; k < 12; ++k) {
+        const double angle = k * M_PI / 6.0;
+        polygon.push_back({3.0 * std::cos(angle), 3.0 * std::sin(angle),
+                           with_v ? cycle[k % 3] : 0.0});
+    }
+    return polygon;
+}
+
+void expect_commands_equal(const DriveCommand &actual,
+                           const DriveCommand &expected) {
+    EXPECT_EQ(actual.steering_angle, expected.steering_angle);
+    EXPECT_EQ(actual.speed, expected.speed);
+    EXPECT_EQ(actual.curvature, expected.curvature);
+    EXPECT_EQ(actual.target_x, expected.target_x);
+    EXPECT_EQ(actual.target_y, expected.target_y);
+}
+
+TEST(PurePursuitTest, PP1110TrajectorySpeedIsTheClampedVAtTheClosestPoint) {
+    const Trajectory with_v = pp1110_polygon(true);
+    const Trajectory without_v = pp1110_polygon(false);
+    const double cycle[] = {0.7, 1.9, 2.6};
+    struct Probe {
+        std::size_t edge;
+        double ratio;
+        double inward;
+        std::size_t vertex;  // the vertex the test names for this state
+    };
+    // Projection ratios stay well away from 0.5.
+    const Probe probes[] = {{1, 0.2, 0.0, 1},  {4, 0.8, 0.0, 5},
+                            {7, 0.3, 0.0, 7},  {11, 0.9, 0.0, 0},
+                            {2, 0.2, 0.15, 2}, {8, 0.7, 0.0, 9}};
+    ControllerParams schedule;
+    schedule.minimum_speed = 0.5;
+    schedule.maximum_speed = 3.0;
+    ControllerParams trajectory = schedule;
+    trajectory.speed_source = SpeedSource::TRAJECTORY;
+    schedule.closed_trajectory = true;
+    trajectory.closed_trajectory = true;
+
+    for (const auto &probe : probes) {
+        const auto &a = with_v[probe.edge];
+        const auto &b = with_v[(probe.edge + 1) % 12];
+        const double x = a.x + probe.ratio * (b.x - a.x);
+        const double y = a.y + probe.ratio * (b.y - a.y);
+        const double norm = std::hypot(x, y);
+        const VehicleState state{x - probe.inward * x / norm,
+                                 y - probe.inward * y / norm,
+                                 std::atan2(b.y - a.y, b.x - a.x)};
+
+        // (a) the default source ignores v.
+        expect_commands_equal(PurePursuit::compute(state, with_v, schedule),
+                              PurePursuit::compute(state, without_v, schedule));
+
+        // (b) TRAJECTORY changes the speed only.
+        const auto by_schedule = PurePursuit::compute(state, with_v, schedule);
+        const auto by_trajectory =
+            PurePursuit::compute(state, with_v, trajectory);
+        EXPECT_EQ(by_trajectory.speed, cycle[probe.vertex % 3]);
+        EXPECT_EQ(by_trajectory.steering_angle, by_schedule.steering_angle);
+        EXPECT_EQ(by_trajectory.target_x, by_schedule.target_x);
+        EXPECT_EQ(by_trajectory.target_y, by_schedule.target_y);
+    }
+}
+
+TEST(PurePursuitTest, PP1120LookaheadUsesMeasuredSpeedNotTrajectoryV) {
+    Trajectory line;
+    for (int k = 0; k <= 5; ++k) {
+        line.push_back({static_cast<double>(k), 0.0, 1.0});
+    }
+    ControllerParams params;
+    params.lookahead_distance = 1.0;
+    params.lookahead_gain = 0.5;
+    params.minimum_speed = 0.5;
+    params.maximum_speed = 5.0;
+    const VehicleState state{0.0, 0.0, 0.0, 4.0};
+
+    // (a) schedule source, v = 0 everywhere: 0.5 * 4.0 = 2.0 m ahead.
+    Trajectory zero_v = line;
+    for (auto &point : zero_v) {
+        point.v = 0.0;
+    }
+    EXPECT_EQ(PurePursuit::compute(state, zero_v, params).target_x, 2.0);
+
+    // (b) trajectory source, v = 1.0: gain * v would give the 1.0 floor.
+    params.speed_source = SpeedSource::TRAJECTORY;
+    EXPECT_EQ(PurePursuit::compute(state, line, params).target_x, 2.0);
+}
+
+TEST(PurePursuitTest, PP1130TrajectorySpeedFollowsTheCarAcrossAProfileStep) {
+    Trajectory line;
+    for (int k = 0; k <= 10; ++k) {
+        line.push_back({static_cast<double>(k), 0.0, k < 5 ? 1.0 : 3.0});
+    }
+    ControllerParams params;
+    params.speed_source = SpeedSource::TRAJECTORY;
+    params.minimum_speed = 0.5;
+    params.maximum_speed = 3.0;
+
+    EXPECT_EQ(PurePursuit::compute({2.0, 0.0, 0.0}, line, params).speed, 1.0);
+    EXPECT_EQ(PurePursuit::compute({8.0, 0.0, 0.0}, line, params).speed, 3.0);
+}
+
+TEST(PurePursuitTest, PP1150DefaultParametersIgnoreTheMeasuredSpeed) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    const Trajectory polygon = pp1040_polygon();
+    const double deg = M_PI / 180.0;
+    const auto &v0 = polygon[0];
+    const auto &v1 = polygon[1];
+    const auto &v11 = polygon[11];
+    // The same states as PP-1040, speed left to the loop below.
+    const VehicleState states[] = {
+        {0.5 * (v0.x + v1.x), 0.5 * (v0.y + v1.y), 120.0 * deg},
+        {2.0, 0.5, 100.0 * deg},
+        {3.5, 0.8, 110.0 * deg},
+        {0.5 * (v0.x + v1.x), 0.5 * (v0.y + v1.y), -60.0 * deg},
+        {v11.x + 0.97 * (v0.x - v11.x), v11.y + 0.97 * (v0.y - v11.y),
+         75.0 * deg},
+        {polygon[3].x, polygon[3].y, 180.0 * deg},
+    };
+    ControllerParams params;
+    params.closed_trajectory = true;
+    params.maximum_speed = 3.0;
+    for (const auto &state : states) {
+        const auto reference = PurePursuit::compute(state, polygon, params);
+        for (const double speed : {2.7, -1.0, nan, inf}) {
+            VehicleState measured = state;
+            measured.speed = speed;
+            expect_commands_equal(
+                PurePursuit::compute(measured, polygon, params), reference);
+        }
+    }
+}
+
 }  // namespace
 }  // namespace racing_controller_baseline
