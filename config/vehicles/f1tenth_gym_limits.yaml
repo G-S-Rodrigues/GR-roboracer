@@ -4,6 +4,8 @@
 # a missing key silently falls back to the node's declare_parameter default).
 # Bump the version string in racing_metrics/racing_recording below whenever a
 # value here changes, so a metrics record can be attributed to this file.
+# Exception: v1 kept at maximum_speed 20.0, because no record carried v1 yet
+# (owner ruling 2026-10-14).
 #
 # Where each number comes from (SIMJAX-1120 pins them to Param):
 #   maximum_steering_angle 0.4189  Param.s_max
@@ -11,8 +13,8 @@
 #   maximum_acceleration   9.51    Param.a_max (the gym also clips braking at -a_max)
 #   vehicle_half_width     0.155   Param.width / 2
 #   wheelbase              0.3302  Param.lf + Param.lr
-#   maximum_speed          8.0     the owner's "8 m/s gym-limits vehicle"; the gym's
-#                                  own ceiling is Param.v_max = 20.0
+#   maximum_speed          20.0    Param.v_max (owner ruling 2026-10-14: the speed
+#                                  planner is free)
 # The GGV and ax_max_machines tables beside this file (f1tenth_gym_limits/) are the
 # gym's longitudinal model (SIMJAX-1130). ay = mu * g is a MODELLING BOUND: the
 # gym's `st` tyres are linear and never saturate, so the real lateral limit is
@@ -46,13 +48,13 @@ racing_controller_baseline:
     wheelbase: 0.3302
     lookahead_distance: 1.0
     minimum_speed: 0.5
-    maximum_speed: 8.0
+    maximum_speed: 20.0
     curvature_speed_gain: 1.0
     closed_trajectory: true
 
 racing_safety_supervisor:
   ros__parameters:
-    maximum_speed: 8.0
+    maximum_speed: 20.0
     maximum_steering_angle: 0.4189
     maximum_acceleration: 9.51
     maximum_steering_rate: 3.2

@@ -102,7 +102,7 @@ def test_raceline_1210_gym_limits_vehicle_loads_its_own_numbers():
     assert limits.wheelbase == 0.3302
     assert limits.max_steering_angle == 0.4189
     assert limits.kappa_max == pytest.approx(np.tan(0.4189) / 0.3302)
-    assert limits.v_max == 8.0
+    assert limits.v_max == 20.0
     assert limits.a_x_max == 9.51
     assert limits.ggv.shape == (21, 3)
     assert limits.ax_max_machines.shape[1] == 2
