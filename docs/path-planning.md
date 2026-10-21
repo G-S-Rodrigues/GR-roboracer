@@ -37,12 +37,13 @@ point, 0.65 m, is the hairpin (zoom B): the extractor rounds off the sharp inner
 The TUM global race trajectory optimizer (`mincurv_iqp`, run as a subprocess through
 `raceline.tum`), given the extracted track, finds the line through the corridor with least
 curvature (zoom C shows it using up to 0.73 m of the width at a corner). That halves the peak
-curvature, and the line comes out 4.6 m shorter than the centerline. Its own estimate, with the
-gym's vehicle limits, is a 29.60 s lap.
+curvature, and the line comes out 4.6 m shorter than the centerline. The optimizer's own estimate,
+with the gym's vehicle limits, is a 29.60 s lap; that is an estimate, not a measured lap.
 
-The orange line in the figure is from a measurement run, not a committed raceline: generating and
-committing it, and the verifier that checks it against the ground-truth walls, are still in
-progress. Nothing has yet driven it in the sim; that comparison is the next stage. It minimises
-curvature, not distance; no shortest-path method is implemented.
+Raceline files are committed under `config/racelines/spielberg/` (one per vehicle version) and
+`python -m raceline` produces them. The stack can race the default-vehicle line:
+`planner:=optimized_raceline speed_source:=trajectory`. Measured in the sim (seed 42, 5x), that lap
+takes 113.08 s against 120.41 s for the centerline lap. It minimises curvature, not distance; no
+shortest-path method is implemented.
 
 The figure was produced at 07799a4 (2026-10-20).
