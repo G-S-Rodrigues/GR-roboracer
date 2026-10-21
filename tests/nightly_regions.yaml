@@ -1,0 +1,26 @@
+# Which region of interest owns each nightly test (owner ruling 2026-10-22).
+# The nightly runs one job per region x seed; scripts/nightly_regions.py
+# refuses a map that drops, duplicates or invents an ID (CHECK-1510/1520).
+# `static` (tiers 0-2) holds no IDs and is not listed.
+slam:
+  - SIM-3070
+  - SIM-3080
+  - SIM-3100
+  - ACC-4030
+  - ACC-4040
+  - SIM-5010
+  - SIM-5020
+  - SIM-5030
+path_planning:
+  - SIM-3110
+control:
+  - SIM-3010
+  - SIM-3020
+  - SIM-3090
+  - ACC-4010
+  - ACC-4020
+shared:
+  - SIM-3030
+  - SIM-3040
+  - SIM-3050
+  - SIM-3060
