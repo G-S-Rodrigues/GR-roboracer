@@ -38,5 +38,5 @@ scales wall rate, never physics), `start_held` (default false; sim stays frozen 
 (BRINGUP-2020) — the sim draws that pose from the seed, so it cannot be configured.
 
 Also `planner` (`track_centerline` default | `optimized_raceline`), `raceline_optimizer`
-(`tum_mincurv_iqp`) and `speed_source` (`curvature_schedule` default | `trajectory`), which the
+(`tum_mincurv_iqp`) and `speed_source` (unset by default | `curvature_schedule` | `trajectory`), which the
 controller reads. Trap: the resolver fails closed (BRINGUP-1160); it never falls back to the centerline.

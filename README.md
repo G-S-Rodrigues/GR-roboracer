@@ -164,7 +164,7 @@ Any of the above as a seeded run that prints its metrics record, which is what t
 Under active development. The vertical slice runs on simulated time on two tracks (the analytic
 circle and Spielberg) with noisy sensors, and a seeded lap's metrics are asserted against a golden
 baseline. Three pose sources are selectable (ground truth, slam_toolbox, nav2_amcl) and scored by
-the same evaluation harness. The optimised raceline is selectable (`planner:=optimized_raceline`; see
+the same evaluation harness. The optimised raceline is selectable (`planner:=optimized_raceline speed_source:=trajectory`; see
 [docs/path-planning.md](docs/path-planning.md)). A second controller and hardware bring-up are next.
 
 ## Licence

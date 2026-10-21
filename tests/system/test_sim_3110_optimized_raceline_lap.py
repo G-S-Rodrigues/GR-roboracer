@@ -24,8 +24,8 @@ SCENARIO = str(REPOSITORY_ROOT / "config" / "scenarios" / "spielberg.yaml")
 
 # 5x, as SIM-3090. Measured (part 6 step 1, seed 42, 5x): 61 s / 63 s / 65 s
 # of wall time over three runs, lap 113.08 s each (0.00 s spread); seeds 7,
-# 1030 and 2026 lapped in 113.13 / 113.09 / 113.16 s with no collision and
-# no latch. The centerline lap on the curvature schedule is 120.41 s
+# 1030 and 2026 lapped in 113.13 / 113.09 / 113.16 s with no collision, no
+# saturation event and no latch. The centerline lap on the curvature schedule is 120.41 s
 # (spielberg_baseline.json).
 TIME_SCALE = 5.0
 LAP_WALL_SECONDS = 65.0
@@ -53,6 +53,7 @@ def test_sim_3110_optimized_raceline_lap() -> None:
 
     assert metrics["lap_completed"] is True
     assert metrics["collision_count"] == 0
+    assert metrics["control_saturation_events"] == 0
     assert metrics["vehicle_parameter_version"] == "f1tenth-default-v1"
     assert metrics["lap_time"] == pytest.approx(
         LAP_TIME, abs=LAP_TIME_TOLERANCE

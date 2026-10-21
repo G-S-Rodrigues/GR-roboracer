@@ -732,12 +732,23 @@ def _launched(context, module, package: str) -> dict:
     return _merged(context, nodes[0])
 
 
+def _effective(vehicle: Path, forwarded: dict, name: str):
+    """What the controller sees: the vehicle file's value, overlaid by what
+    the launch forwards after it (launch parameters apply in list order)."""
+    import yaml
+
+    document = yaml.safe_load(vehicle.read_text(encoding="utf-8"))
+    values = document["racing_controller_baseline"]["ros__parameters"]
+    return {**values, **forwarded}.get(name)
+
+
 def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
-    monkeypatch,
+    monkeypatch, tmp_path
 ) -> None:
     """BRINGUP-1170: `planner:=`, `raceline_optimizer:=` and `speed_source:=`
     reach the nodes that act on them, default to today's behaviour, and an
-    unknown value is an error rather than a silent centerline.
+    unknown value is an error rather than a silent centerline. `speed_source`
+    is forwarded only when given: argument > vehicle file > node default.
     """
     monkeypatch.chdir(REPOSITORY_ROOT)
     scenario = "config/scenarios/spielberg.yaml"
@@ -748,7 +759,34 @@ def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
     assert support["raceline_path"].endswith(
         "maps/Spielberg/Spielberg_raceline.csv"
     )
-    assert controller.get("speed_source") == "curvature_schedule"
+    # Precedence: a given argument > the vehicle file > the node default.
+    # Not given, nothing is forwarded, so the node default applies.
+    assert "speed_source" not in controller
+
+    # A vehicle file may set speed_source; with no argument it is preserved.
+    import yaml
+
+    document = yaml.safe_load(DEFAULT_VEHICLE.read_text(encoding="utf-8"))
+    document["racing_controller_baseline"]["ros__parameters"][
+        "speed_source"
+    ] = "trajectory"
+    vehicle = tmp_path / "vehicle_trajectory.yaml"
+    vehicle.write_text(yaml.safe_dump(document), encoding="utf-8")
+    module, context = _launch_context(scenario=scenario, vehicle=str(vehicle))
+    controller = _launched(context, module, "racing_controller_baseline")
+    assert "speed_source" not in controller
+    assert _effective(vehicle, controller, "speed_source") == "trajectory"
+
+    # A given argument wins over the vehicle file.
+    module, context = _launch_context(
+        scenario=scenario,
+        vehicle=str(vehicle),
+        speed_source="curvature_schedule",
+    )
+    controller = _launched(context, module, "racing_controller_baseline")
+    assert (
+        _effective(vehicle, controller, "speed_source") == "curvature_schedule"
+    )
 
     module, context = _launch_context(
         scenario=scenario,

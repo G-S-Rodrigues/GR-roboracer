@@ -97,8 +97,10 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     raceline_optimizer = LaunchConfiguration("raceline_optimizer").perform(
         context
     )
+    # Forwarded to the controller only when given (empty = unset), so the
+    # precedence is: argument > vehicle file > the node's default.
     speed_source = LaunchConfiguration("speed_source").perform(context)
-    if speed_source not in SPEED_SOURCES:
+    if speed_source and speed_source not in SPEED_SOURCES:
         raise RuntimeError(f"unknown speed_source: {speed_source}")
     try:
         tracks = track_parameters(
@@ -153,7 +155,10 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         executable="racing_controller_baseline_node",
         parameters=[
             vehicle,
-            {"use_sim_time": True, "speed_source": speed_source},
+            {
+                "use_sim_time": True,
+                **({"speed_source": speed_source} if speed_source else {}),
+            },
         ],
         # The pose the controller drives on is selected here rather than in
         # its C++, which keeps the standard /odom: this remap is the seam
@@ -289,8 +294,8 @@ def generate_launch_description() -> LaunchDescription:
     )
     speed_source_arg = DeclareLaunchArgument(
         "speed_source",
-        default_value="curvature_schedule",
-        choices=list(SPEED_SOURCES),
+        default_value="",
+        choices=["", *SPEED_SOURCES],
     )
 
     return LaunchDescription(
