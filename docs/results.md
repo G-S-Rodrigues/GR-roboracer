@@ -46,6 +46,6 @@ generated survey map: the vehicle drives on ground truth while SLAM Toolbox buil
 
 [![SLAM Toolbox building the Spielberg survey map, 10.0x playback](assets/mapping-preview.gif)](https://drive.google.com/file/d/1t3zhPOqS_hqWlyoussUel7uGPjXklRbF/view)
 
-Preview at 10.0x playback; full recording (H.264, complete survey lap): [Google Drive](https://drive.google.com/file/d/1t3zhPOqS_hqWlyoussUel7uGPjXklRbF/view),
-played at 4.0x simulated time. Recorded with `ros2 launch racing_bringup slam_toolbox_mapping.launch.py scenario:=config/scenarios/spielberg_survey.yaml seed:=42`
+▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1t3zhPOqS_hqWlyoussUel7uGPjXklRbF/view):
+the complete survey lap at 4.0x simulated time (the preview above plays at 10.0x). Recorded with `ros2 launch racing_bringup slam_toolbox_mapping.launch.py scenario:=config/scenarios/spielberg_survey.yaml seed:=42`
 on `config/scenarios/spielberg_survey.yaml`, seed 42, at commit `cadfdd5`.

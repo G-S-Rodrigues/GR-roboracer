@@ -7,4 +7,5 @@ __pycache__/
 *.rosbag
 *.db3
 .scratch/
-.claude/
+.claude/*
+!.claude/skills/

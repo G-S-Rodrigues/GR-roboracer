@@ -21,6 +21,9 @@ runs it, and ADR 0007 says why. `--fast` (tiers 0–1, the pre-commit hook) and 
 tier 2 and one seeded lap) are faster loops. A gate nobody runs is worse than no gate (ADR 0005, ADR
 0007).
 
+**Nor is a change done while a user-facing doc it made untrue is unfixed.** The docs change in the
+same PR as the code; the `gr-roboracer-docs` skill says which pages and when a video is due.
+
 **A red nightly does not block development.** The nightly is watched, not waited on: a PR merges on
 its ready gate and green PR CI, never on a nightly run, and a red nightly halts no branch in flight. A
 fix can always land afterwards. The fix for a nightly failure is carried into the next plan written,
@@ -69,6 +72,7 @@ has no ROS in it at all — that split is deliberate and load-bearing (ADR 0002,
 | adding a second implementation of anything, or wondering whether to delete the old one | `docs/adr/0005-algorithms-are-added-not-replaced.md` |
 | touching message stamps, timers, `use_sim_time`, or anything that reads the clock | `docs/adr/0006-simulated-time-is-the-time-base.md` |
 | changing `check.sh --ready`'s selection, or a `paths` / `verified_by` in `config/reference_stack.yaml` | `docs/adr/0007-ready-is-a-scoped-local-run.md` |
+| changing anything a user can see or run (a launch argument, an implementation, a command, a capability status, a result) | the `gr-roboracer-docs` skill (`.claude/skills/gr-roboracer-docs/`) |
 | regenerating `tests/golden/baseline.json` | `docs/agents/repo-gotchas.md` #14 — it is a reviewed diff, never a way to green a run |
 
 ## Git
