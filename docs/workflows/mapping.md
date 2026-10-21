@@ -1,0 +1,96 @@
+# Mapping
+
+This page assumes the [Quick Start](../quick-start.md): the workspace is built and you are in a
+shell inside the container, in `/ws`. The target configuration for a mapping run is in
+[Configuration](../configuration.md#mapping-example).
+
+## Survey mapping
+
+A survey is one Spielberg lap of the reference stack. The car drives on ground truth
+(`pose_source: ground_truth`) on `spielberg_survey.yaml`, which is Spielberg with exact sensors.
+While it drives, slam_toolbox (`mapper: slam_toolbox`) keeps a scan every 0.2 m or 0.1 rad and
+places it at the dead-reckoned pose, with scan matching and loop closure turned off. That pose is
+exact only because the survey scenario has no noise. It never publishes `map -> odom`.
+
+The result is a generated survey map, not an autonomous SLAM result. It does not show how well
+slam_toolbox can build a map from a drive it has to localize itself.
+
+## Watch the map grow in RViz
+
+From `/ws`, with RViz on (the default):
+
+```bash
+ros2 launch racing_bringup slam_toolbox_mapping.launch.py scenario:=config/scenarios/spielberg_survey.yaml seed:=42
+```
+
+RViz's `Map` display shows `/map`, which the mapper republishes every 5 s, next to the scan, the car
+and the track. Let the car complete one lap. To confirm the lap finished, echo the latched
+metrics from a second shell (see the next section for how to open one):
+
+```bash
+ros2 topic echo --once --qos-durability transient_local --qos-reliability reliable /scenario/metrics racing_interfaces/msg/ScenarioMetrics
+```
+
+The output includes `lap_completed: true` once the lap is done.
+
+## Save the map
+
+The RViz launch does not save the map. Before you stop it, open a second shell from the host, and
+source the workspace there:
+
+```bash
+docker exec -it gr-roboracer-dev bash
+cd /ws
+source /ws/setup.sh
+```
+
+Then save the latest `/map`. The flags matter. `map_saver_cli`'s own arguments come first and
+`--ros-args` last; the other order is silent and writes a default `map_<epoch>.pgm` instead.
+
+```bash
+mkdir -p log/maps
+ros2 run nav2_map_server map_saver_cli -f log/maps/Spielberg --fmt png --occ 0.65 --free 0.196 --ros-args -p use_sim_time:=true -p save_map_timeout:=60.0 -p map_subscribe_transient_local:=true
+```
+
+Stop the launch with Ctrl+C afterwards. Save after the lap: the last `/map` covers the whole lap.
+
+## Headless: one command
+
+`map_track.sh` does the lap and the save without RViz:
+
+```bash
+./scripts/map_track.sh config/scenarios/spielberg_survey.yaml log/maps/Spielberg
+```
+
+It fixes the seed at 42, runs at 1x, and gives up if no lap completes within 240 s (the
+`LAP_WAIT` environment variable changes that). Give it
+`config/scenarios/maps/Spielberg/slam/Spielberg` as the stem only to replace the committed grid,
+which is a reviewed change.
+
+## Saved artifacts
+
+The stem you give produces two files:
+
+- `<stem>.png`: the occupancy grid, trinary, 0.05 m per cell.
+- `<stem>.yaml`: resolution, origin and the thresholds 0.65 (occupied) and 0.196 (free).
+
+No pose graph is saved. The files belong to the container user, and two runs differ slightly
+because the asynchronous mapper picks its own scans. The committed survey grid is
+`config/scenarios/maps/Spielberg/slam/Spielberg`, and it is what amcl localizes on in
+[Racing](racing.md#amcl-closed-loop).
+
+## Mapping versus online SLAM
+
+In mapping, slam_toolbox only builds the map. The car drives on ground truth and the support node
+owns `map -> odom`. As a racing pose source (`pose_source:=slam_toolbox`), slam_toolbox matches
+scans, owns `map -> odom`, saves no map, and its estimate is scored against ground truth. See
+[online slam_toolbox evaluation](racing.md#online-slam-toolbox-evaluation).
+
+## Demonstration
+
+A recorded mapping run is in [Results](../results.md#mapping-demonstration).
+
+## Next
+
+- [Racing](racing.md#amcl-closed-loop) on the saved map.
+- [Configuration](../configuration.md).

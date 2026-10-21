@@ -78,8 +78,9 @@ Work goes on a branch off `main` and lands by PR. PRs land as merge commits
 `1-stack-bootstrap` work may push directly to `main`**, because it is what created the default
 branch. That authorization does not extend past it.
 
-Host setup, the WSL2 quirks that bite from a Windows shell, and how to drive a scenario by hand are
-in `docs/running.md`.
+Host setup and the first run are in `docs/setup.md` and `docs/quick-start.md`, driving a scenario by
+hand is in `docs/running.md`, and the WSL2 quirks (WSLg display, Windows shell) are in
+`docs/agents/running-wsl.md`.
 
 ## Conventions
 
