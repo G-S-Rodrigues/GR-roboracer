@@ -530,3 +530,118 @@ def test_raceline_1367g_beyond_the_disc_the_polygon_still_governs():
     assert mc["ground_truth_judged"] == pytest.approx(0.2095, abs=1e-3)
     assert mc["ground_truth_tip_cells"] == pytest.approx(0.3202, abs=1e-3)
 
+
+# ---- the committed racelines (RACELINE-1395) --------------------------------
+
+REPO = Path(__file__).resolve().parents[2]
+COMMITTED_RACELINES = {
+    "spielberg/f1tenth-default-v1/tum_mincurv_iqp",
+    "spielberg/f1tenth-gym-limits-v1/tum_mincurv_iqp",
+}
+RECORDED_TOL = 1e-6
+
+
+def _same(recorded, now, where):
+    if isinstance(recorded, dict):
+        assert set(recorded) == set(now), where
+        for key in recorded:
+            _same(recorded[key], now[key], f"{where}.{key}")
+    elif isinstance(recorded, (list, tuple)):
+        assert len(recorded) == len(now), where
+        for i, (a, b) in enumerate(zip(recorded, now, strict=True)):
+            _same(a, b, f"{where}[{i}]")
+    elif isinstance(recorded, float):
+        assert now == pytest.approx(recorded, abs=RECORDED_TOL), where
+    else:
+        assert recorded == now, where
+
+
+def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
+    """RACELINE-1395: the committed lines are exactly the expected two; each
+    yaml's hashes match the files it was made from (a redrawn map, a changed
+    vehicle or a new ground-truth track turns this red and forces a reviewed
+    regeneration, never a hash edit), and its line passes the verifier
+    against the walls re-extracted from the recorded map and against the
+    ground-truth walls, with the recorded verdict reproduced."""
+    import hashlib
+    from types import SimpleNamespace
+
+    import raceline.__main__ as runner
+    import yaml
+    from raceline.extract import load_map
+    from raceline.optimize import load_raceline_csv
+    from raceline.track import load_track
+
+    root = REPO / "config" / "racelines"
+    found = {
+        p.relative_to(root).with_suffix("").as_posix()
+        for p in root.glob("*/*/*.csv")
+    }
+    assert found == COMMITTED_RACELINES
+
+    def sha(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    for rel in sorted(found):
+        name = rel.split("/")[0]
+        doc = yaml.safe_load((root / f"{rel}.yaml").read_text())
+        assert doc["track"] == name
+        src = doc["source"]
+        src_yaml = REPO / src["path"]
+        assert sha(src_yaml) == src["sha256"]
+        image = yaml.safe_load(src_yaml.read_text())["image"]
+        assert sha(src_yaml.parent / image) == src["image_sha256"]
+        veh = doc["vehicle"]
+        assert sha(REPO / veh["path"]) == veh["sha256"]
+        vehicle = load_vehicle(REPO / veh["path"])
+        assert vehicle.version == doc["vehicle_version"] == rel.split("/")[1]
+        assert sha(vehicle.ggv_path) == veh["ggv_sha256"]
+        assert (
+            sha(vehicle.ax_max_machines_path) == veh["ax_max_machines_sha256"]
+        )
+        gt = doc["ground_truth"]
+        assert gt["path"] == f"config/tracks/{name}.yaml"
+        assert sha(REPO / gt["path"]) == gt["sha256"]
+        ground_truth = load_track(REPO / gt["path"])
+
+        gm = doc["ground_truth_map"]
+        gym_dirs = [
+            d
+            for d in (REPO / "config" / "scenarios" / "maps").iterdir()
+            if d.name.lower() == name
+        ]
+        assert len(gym_dirs) == 1
+        gym_yaml = gym_dirs[0] / f"{gym_dirs[0].name}.yaml"
+        assert gm["path"] == gym_yaml.relative_to(REPO).as_posix()
+        assert sha(gym_yaml) == gm["sha256"]
+        gym_image = yaml.safe_load(gym_yaml.read_text())["image"]
+        assert sha(gym_yaml.parent / gym_image) == gm["image_sha256"]
+        cells = verify.observed_cells(load_map(gym_yaml), gm["path"])
+
+        params = doc["parameters"]
+        assert params["walls"] == "observed"
+        args = SimpleNamespace(
+            map=src_yaml,
+            start_pose=params["start_pose"],
+            direction=params["direction"],
+            walls=params["walls"],
+        )
+        track, input_walls = runner._input_map(args, name)
+        truth = verify.track_walls(ground_truth, "ground_truth", cells)
+        required = verify.required_clearances(vehicle, params["margin"])
+        line = load_raceline_csv(root / f"{rel}.csv")
+        verdict = verify.verify(
+            line,
+            vehicle,
+            [
+                (input_walls, required["input"]),
+                (truth, required["ground_truth"]),
+            ],
+            track,
+        )
+        assert verdict.ok, verdict.failures
+        _same(doc["verdict"], runner._verdict_doc(verdict), rel)
+        tips = doc["verdict"]["tips"]["ground_truth"]
+        assert len(tips) == 1  # vacuity guard: the rule is exercised
+        assert tips[0]["xy"] == pytest.approx([-74.878, 52.090], abs=1e-3)
+        assert tips[0]["observed"] is True
