@@ -15,8 +15,11 @@ drives on ground truth while SLAM Toolbox builds it. AMCL then drives in closed 
 on its own estimate; the existing acceptance case verifies a completed lap with zero
 collisions.
 
-Animated preview and full H.264 recording are pending capture. The published preview
-will link to the complete recording and disclose its measured playback acceleration.
+[![AMCL driving a closed-loop Spielberg lap on the generated survey map, 9.8x playback](docs/assets/readme-lap-preview.gif)](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view)
+
+Full recording (H.264, complete lap): [Google Drive](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view), played at 3.9x simulated
+time. Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=amcl drive_on_estimate:=true seed:=42`
+on `config/scenarios/spielberg.yaml`, seed 42, at commit `cadfdd5`.
 
 ## Capabilities and roadmap
 
