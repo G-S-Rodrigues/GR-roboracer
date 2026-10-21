@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 
 from scripts.nightly_regions import (
+    REGIONS,
     discover_nightly_tests,
+    discover_robot_cases,
+    load_regions,
+    nightly_set,
     select,
 )
 
@@ -177,3 +181,51 @@ def test_check_1520_shell_output_evals_to_the_arrays(tmp_path: Path) -> None:
     bogus = run("--region", "bogus")
     assert bogus.returncode == 1
     assert "unknown region 'bogus'" in bogus.stderr
+
+
+def test_check_1510_union_equals_discovered_nightly_set() -> None:
+    """CHECK-1510: the regions partition the nightly set found by discovery
+    over tests/system, tests/acceptance and tests/nightly: nothing dropped,
+    nothing twice, nothing invented."""
+    known = nightly_set(REPO_ROOT)
+    regions = load_regions(REPO_ROOT / "tests/nightly_regions.yaml", known)
+    assigned = [i for ids in regions.values() for i in ids]
+    assert len(assigned) == len(set(assigned))
+    assert set(assigned) == known
+    assert set(regions) == set(REGIONS)
+
+
+def test_check_1510_union_equals_collected_files_and_cases() -> None:
+    """CHECK-1510: pytest's own collection of tests/system and tests/nightly,
+    and Robot's case list, equal what the regions select."""
+    collected = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            "tests/system",
+            "tests/nightly",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert collected.returncode == 0, collected.stdout + collected.stderr
+    files = {
+        line.split("::")[0]
+        for line in collected.stdout.splitlines()
+        if line.startswith("tests/") and "::" in line
+    }
+    selected = [select(REPO_ROOT, r, tier5=True) for r in REGIONS]
+    selected_files = [f for s in selected for f in s.system_tests]
+    selected_files += [f for s in selected for f in s.nightly_tests]
+    assert len(selected_files) == len(set(selected_files))
+    assert set(selected_files) == files
+    cases = sorted(
+        n for names in discover_robot_cases(REPO_ROOT).values() for n in names
+    )
+    selected_cases = sorted(n for s in selected for n in s.robot_tests)
+    assert selected_cases == cases
