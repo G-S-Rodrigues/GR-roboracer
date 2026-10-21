@@ -120,6 +120,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     coordinates and paints the outline. Until part 2.1 the importer drew the gym's walls up to 0.078 m
     off the committed track with no error (SIM-1030).
 
+28. **An offset wall folds where the centerline's radius is under its width, and nothing errors.**
+    Spielberg's hairpin (idx 275-282) turns at r 0.64 m against a 1.1 m half-width, so `xy +- w*n`
+    crosses itself and the even-odd fill drew the swallowtail as a detached 11-cell occupied spur in
+    the gym PNG. Symptom: a speck of wall beside the track, a wall polygon that crosses itself, a
+    raceline that "touches" it. The importer's `_walls` now cuts each fold at its crossing
+    (`_remove_folds`; SIM-1040/1050/1060/1070 guard it) and raises "self-intersect" past half the
+    corridor. The yaml's curvature column is the *upstream raceline's* (it integrates to -394.4 deg
+    per lap), so never rebuild a centerline from it.
+
 ## Visualization
 
 16. **A missing mesh is invisible, not an error.** `robot_state_publisher` never loads geometry, so a
