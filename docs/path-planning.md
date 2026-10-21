@@ -43,7 +43,7 @@ with the gym's vehicle limits, is a 29.60 s lap; that is an estimate, not a meas
 Raceline files are committed under `config/racelines/spielberg/` (one per vehicle version) and
 `python -m raceline` produces them. The stack can race the default-vehicle line:
 `planner:=optimized_raceline speed_source:=trajectory`. Measured in the sim (seed 42, 5x), that lap
-takes 113.08 s against 120.41 s for the centerline lap. That difference changes both the line and
+takes 113.08 s against 120.41 s for the centerline lap. The comparison changes both the line and
 the speed source: the raceline lap runs at the trajectory's flat 3.0 m/s, the centerline lap on the
 controller's curvature schedule. 120.41 s is the headless golden; the live centerline lap measures
 about 120.44 s. It minimises curvature, not distance; no

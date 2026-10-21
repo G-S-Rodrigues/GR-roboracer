@@ -162,7 +162,7 @@ looks the same to a scan matcher.
 | `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox` and `amcl` are accepted; anything else is an error. |
 | `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
 | `stack.planner` | `planner:=` | `track_centerline` (default) or `optimized_raceline`; anything else is an error. |
-| `stack.raceline_optimizer` | `raceline_optimizer:=` | `tum_mincurv_iqp`; read only under `optimized_raceline`. |
+| `stack.raceline_optimizer` | `raceline_optimizer:=` | `tum_mincurv_iqp`; used only under `optimized_raceline`, but validated always. |
 | `stack.controller` | none | One implementation today, always launched. |
 | `stack.speed_source` | `speed_source:=` | Also settable in the vehicle file's `racing_controller_baseline` block; a given argument wins. |
 | `runtime.seed` | `seed:=` | `map_track.sh` forces `42`. |

@@ -21,8 +21,9 @@ angles and the safety supervisor.
 
 ## 2. Launch and contract tests
 
-These tests start the simulator adapter and check what it publishes: types, rate and frames. They
-show the ROS contract holds without a full lap.
+These tests start one node (the simulator adapter, or the controller for PP-2010) and check its ROS
+contract: what it publishes, at what rate and in which frames, and which inputs it reads. They show
+the contract holds without a full lap.
 
 - ADAPT-2010: scan, odometry and IMU use standard ROS message types.
 - ADAPT-2030: the backend publishes at its configured 100 Hz.
