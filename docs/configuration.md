@@ -1,0 +1,167 @@
+# Configuration
+
+> **Target contract, not yet executable.** No launcher reads this YAML yet. Run today's command shown beside it.
+
+Today you select a stack with `ros2 launch` arguments and two dedicated launches. This page
+describes the single YAML file a future launcher will accept, and gives today's equivalent of every
+field. Each field lists the values that exist now (`Available`) and the ones on the roadmap
+(`Planned`). Capability status lives in the [README matrix](../README.md#capabilities-and-roadmap).
+
+## Choose a workflow first
+
+Pick one of two workflows. The choice decides which fields apply and which values are legal.
+
+- `mapping`: build an occupancy-grid map of a track with the survey vehicle.
+- `racing`: run a lap with a selected stack.
+
+For example, in `mapping` the only legal `pose_source` is `ground_truth`: the mapper owns the
+map, never the pose, so the car drives on exact pose. In `racing`, `slam_toolbox` and `amcl` are
+pose sources.
+
+## Fixed services
+
+These are always launched and have no field. Nothing selects them.
+
+- `safety_supervisor` reads ground truth in simulation whatever the pose source, so a drifting
+  estimate stops the car instead of fooling it.
+- `racing_metrics` and `racing_evaluation`. The evaluation (`localization_error`) scores the
+  estimate against ground truth.
+- `racing_recording`, the support node and `robot_state_publisher`.
+
+## Replaceable roles
+
+| Role | Available (racing) | Available (mapping) | Planned | Reference default |
+|---|---|---|---|---|
+| `simulator` | `f1tenth_gym_jax` | `f1tenth_gym_jax` | an AutoDRIVE simulator (no identifier yet) | `f1tenth_gym_jax` |
+| `pose_source` | `ground_truth`, `slam_toolbox`, `amcl` | `ground_truth` | none | `ground_truth` |
+| `mapper` | none (racing has no mapper) | `slam_toolbox` | none | n/a |
+| `planner` | `track_raceline` | `track_raceline` | `track_centerline` (rename); an optimized-raceline planner (In development, issue #12, no identifier yet) | `track_raceline` |
+| `controller` | `pure_pursuit` | `pure_pursuit` | none | `pure_pursuit` |
+
+`track_raceline` publishes the scenario's `<map>_raceline.csv`, which today holds the track
+centerline at constant speed. `track_centerline` is the planned corrective rename for what that
+planner actually is. It is not a value any launch accepts today. Exploratory methods (MPC/MPCC,
+learned control, FAR-LIO) have no identifier and are not listed here.
+
+The reference default is the composition every new implementation is verified in. Its names come
+from `config/reference_stack.yaml`, which is a test map, not this schema.
+
+## Runtime controls
+
+- `seed` and `time_scale` (the ratio of simulated time to wall clock).
+- `recording_path`: where the run record is written.
+- `drive_on_estimate` (racing only): drive on the estimator's pose instead of ground truth. It is
+  ignored with `ground_truth`. `true` is acceptance-backed for `amcl`. No acceptance lap backs it
+  for `slam_toolbox`, which is measured open loop only, so use `false` there.
+- `scenario` and `vehicle`: the track and sensor setup, and the vehicle parameter file.
+
+Two launch arguments have no field. `start_held` holds physics and the clock at t=0 until the
+first reset, which the test harness uses to define t=0. `estimate_topic` overrides which pose is
+scored, and its default already follows the pose source. Both stay today-only advanced arguments.
+
+## Visualization
+
+`visualization.rviz` opens RViz (`use_rviz:=`). The supported mapping script always turns it off.
+
+## Mapping example
+
+> **Target contract, not yet executable.** No launcher reads this YAML yet. Run today's command shown beside it.
+
+```yaml
+# Mapping: survey a track and save its occupancy grid.
+schema_version: 1  # Available: 1
+workflow: mapping  # Available: mapping, racing
+scenario: config/scenarios/spielberg_survey.yaml  # Available: config/scenarios/spielberg_survey.yaml (exact sensors)
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml
+stack:
+  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
+  pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
+  mapper: slam_toolbox  # Available: slam_toolbox (survey mapper, never owns map -> odom)
+  planner: track_raceline  # Available: track_raceline. Planned: track_centerline (rename)
+  controller: pure_pursuit  # Available: pure_pursuit
+runtime:
+  seed: 42  # Available: any non-negative integer
+  time_scale: 1.0  # Available: any positive number
+  recording_path: log/mapping.jsonl  # Available: any writable path
+mapping:
+  output: log/maps/Spielberg  # Available: any path stem; writes <stem>.png and <stem>.yaml
+visualization:
+  rviz: false  # Available: true, false
+```
+
+Today, from `/ws` inside the container after the Quick Start:
+
+```bash
+# Mapping, supported entry point (headless; saves the map):
+./scripts/map_track.sh config/scenarios/spielberg_survey.yaml log/maps/Spielberg
+# Mapping with RViz (does not save; the mapping guide covers saving):
+ros2 launch racing_bringup slam_toolbox_mapping.launch.py scenario:=config/scenarios/spielberg_survey.yaml seed:=42
+```
+
+The committed survey map is `config/scenarios/maps/Spielberg/slam/Spielberg`, and overwriting it
+is a reviewed diff. The example writes to `log/maps/Spielberg` so following it is harmless.
+
+## Racing example
+
+> **Target contract, not yet executable.** No launcher reads this YAML yet. Run today's command shown beside it.
+
+```yaml
+# Racing: one lap with a selected stack.
+schema_version: 1  # Available: 1
+workflow: racing  # Available: mapping, racing
+scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/contract_test.yaml (no localization)
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml
+stack:
+  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
+  pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl
+  planner: track_raceline  # Available: track_raceline. Planned: track_centerline (rename), an optimized-raceline planner
+  controller: pure_pursuit  # Available: pure_pursuit
+runtime:
+  seed: 42  # Available: any non-negative integer
+  time_scale: 1.0  # Available: any positive number
+  drive_on_estimate: true  # Available: true, false (ignored with ground_truth)
+  recording_path: log/recording.jsonl  # Available: any writable path
+visualization:
+  rviz: true  # Available: true, false
+```
+
+This is amcl closed loop, the demonstration configuration. Today, from `/ws`:
+
+```bash
+# Ground truth (the reference stack):
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=ground_truth seed:=42
+# slam_toolbox, open loop:
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=slam_toolbox drive_on_estimate:=false seed:=42
+# amcl, closed loop:
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=amcl drive_on_estimate:=true seed:=42
+```
+
+`contract_test.yaml` is the analytic circle. Never use it to judge localization: every point on it
+looks the same to a scan matcher.
+
+## From fields to today's arguments
+
+| Field | Today | Notes |
+|---|---|---|
+| `schema_version` | none | Which command you run decides it. |
+| `workflow` | none | `mapping` runs `slam_toolbox_mapping.launch.py` or `map_track.sh`; `racing` runs `sim_pure_pursuit.launch.py`. |
+| `scenario` | `scenario:=` | Also supplies amcl's map grid. |
+| `vehicle` | `vehicle:=` | `map_track.sh` passes no vehicle, so it always uses the launch default `config/vehicles/f1tenth_default.yaml`. Another value needs the direct mapping launch, and that launch does not save a map: the mapping guide covers saving. |
+| `stack.simulator` | none | One implementation today, always launched. |
+| `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox` and `amcl` are accepted; anything else is an error. |
+| `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
+| `stack.planner` | none | One implementation today, always launched. |
+| `stack.controller` | none | One implementation today, always launched. |
+| `runtime.seed` | `seed:=` | `map_track.sh` forces `42`. |
+| `runtime.time_scale` | `time_scale:=` | `map_track.sh` passes none, so it runs at the default `1.0`. |
+| `runtime.drive_on_estimate` | `drive_on_estimate:=` | Ignored with `ground_truth`. |
+| `runtime.recording_path` | `recording_path:=` | `map_track.sh` forces `log/mapping.jsonl`. |
+| `mapping.output` | second argument of `map_track.sh` | No launch argument. |
+| `visualization.rviz` | `use_rviz:=` | `map_track.sh` forces `false`. |
+| (no field) | `start_held:=` | Harness control for t=0. |
+| (no field) | `estimate_topic:=` | Overrides the scored pose; default follows the pose source. |
+
+## Next
+
+- [Create or update a map](workflows/mapping.md#survey-mapping)
+- [Run a lap with a selected stack](workflows/racing.md#simulation)
