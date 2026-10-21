@@ -92,7 +92,8 @@ class RacingTestKeywords:
         )
         # Kept, not temporary: a failed availability or error assert is
         # only explicable from the recording's stamps (nightly 39568107208
-        # lost 2.27 s of an amcl lap and the evidence with it).
+        # lost about 2.27 s of sim time beyond the 0.5 s window, i.e. one
+        # ~2.8 s hole or several, and the evidence with it).
         kind = "closed" if closed_loop else "open"
         recording = (
             _output_root() / "localization" / f"{pose_source}-{kind}-loop.jsonl"
