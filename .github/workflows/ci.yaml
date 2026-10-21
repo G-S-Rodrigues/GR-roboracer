@@ -57,24 +57,40 @@ jobs:
             --env ROS_DOMAIN_ID=42 \
             gr-roboracer:dev ./scripts/check.sh --ci
 
+  # Split by region of interest (owner, 2026-10-22) so a region's tier 5 grows
+  # inside its own timeout: one job per region x seed. tests/nightly_regions.yaml
+  # assigns every tier 3-5 test to one region and CHECK-1510 proves the union is
+  # the whole nightly; `static` is tiers 0-2 and owns no test. The seed reaches
+  # only the seeded lap (control) and tier 5 (seed 42), so tiers 3-4 repeat on
+  # every seed leg on purpose: that is the flake detector.
   nightly:
-    name: Tiers 3-4 (tier 5 on seed 42), seed ${{ matrix.seed }}
+    name: Nightly ${{ matrix.region }}, seed ${{ matrix.seed }}
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # The seed-42 leg runs tier 5 as well, and tier 5 is laps, not seconds.
-    timeout-minutes: 180
+    # Per region, from matrix.include. Tier 5 is laps, not seconds, and it runs
+    # on the seed-42 job of the region that owns it.
+    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix:
+        region: [static, slam, path_planning, control, shared]
         # 42 and 1030 are the seeds the committed tier-3 tests pin; the others
         # exist so a controller that only survives the seeds it was tuned
         # against fails here rather than on a track.
         seed: [42, 1030, 7, 2026]
+        include:
+          - {region: static, timeout: 180}
+          - {region: slam, timeout: 180}
+          - {region: path_planning, timeout: 180}
+          - {region: control, timeout: 180}
+          - {region: shared, timeout: 180}
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
+      # Only one job exports the layer cache, so twenty concurrent jobs do not
+      # write it at once; every job reads it.
       - name: Build the dev image
         uses: docker/build-push-action@v6
         with:
@@ -84,37 +100,22 @@ jobs:
           tags: gr-roboracer:dev
           load: true
           cache-from: type=gha,scope=dev
-          cache-to: type=gha,mode=max,scope=dev
+          cache-to: ${{ (matrix.region == 'static' && matrix.seed == 42) && 'type=gha,mode=max,scope=dev' || '' }}
 
-      - name: check.sh --full
-        if: matrix.seed != 42
+      # NIGHTLY_TIER5 crosses into the container only through --env: a step
+      # `env:` sets it on the runner, not inside `docker run`.
+      - name: check.sh --nightly-region ${{ matrix.region }}
         run: |
           docker run --rm \
             --volume "$PWD:/ws" \
             --workdir /ws \
             --env ROS_DOMAIN_ID=42 \
             --env ROS_LOG_DIR=/ws/log/ros \
-            gr-roboracer:dev ./scripts/check.sh --full
-
-      # Tier 5 on one leg only, and as a replacement for --full on that leg
-      # rather than an addition to it. It comes before the seeded lap because
-      # it is the seed-42 leg's only workspace build, and the lap needs the
-      # built overlay (the bind mount carries build/ and install/ across).
-      # --nightly already runs everything --full does, and the cross-product
-      # is the cost ADR 0005 keeps out of the gate - running it once per
-      # matrix seed would square it.
-      - name: check.sh --nightly
-        if: matrix.seed == 42
-        run: |
-          docker run --rm \
-            --volume "$PWD:/ws" \
-            --workdir /ws \
-            --env ROS_DOMAIN_ID=42 \
-            --env ROS_LOG_DIR=/ws/log/ros \
-            gr-roboracer:dev ./scripts/check.sh --nightly
+            --env NIGHTLY_TIER5=${{ matrix.seed == 42 && '1' || '0' }} \
+            gr-roboracer:dev ./scripts/check.sh --nightly-region ${{ matrix.region }}
 
       - name: Upload SIM-5030's sample
-        if: always() && matrix.seed == 42
+        if: always() && matrix.region == 'slam' && matrix.seed == 42
         uses: actions/upload-artifact@v4
         with:
           name: sim-5030
@@ -123,7 +124,10 @@ jobs:
             log/sim-5030-max.jsonl
           if-no-files-found: ignore
 
+      # After check.sh, whose build produced the overlay the lap needs (the
+      # bind mount carries build/ and install/ across).
       - name: One seeded lap on this matrix seed
+        if: matrix.region == 'control'
         run: |
           docker run --rm \
             --volume "$PWD:/ws" \
@@ -134,21 +138,21 @@ jobs:
               --seed ${{ matrix.seed }} \
               --output log/scenario-seed-${{ matrix.seed }}.json
 
-      # Node logs and Robot Framework output, kept only for a red leg. The CI
+      # Node logs and Robot Framework output, kept only for a red job. The CI
       # log carries no node output, so a latched stop on a runner left no
       # evidence beyond the observer's one-line description.
       - name: Upload the failed run's node and Robot logs
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: logs-seed-${{ matrix.seed }}
+          name: logs-${{ matrix.region }}-seed-${{ matrix.seed }}
           path: |
             log/ros/
             log/robot/
           if-no-files-found: warn
 
       - name: Upload the run's metrics
-        if: always()
+        if: always() && matrix.region == 'control'
         uses: actions/upload-artifact@v4
         with:
           name: scenario-seed-${{ matrix.seed }}

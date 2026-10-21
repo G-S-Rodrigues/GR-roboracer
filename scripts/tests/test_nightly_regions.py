@@ -229,3 +229,29 @@ def test_check_1510_union_equals_collected_files_and_cases() -> None:
     )
     selected_cases = sorted(n for s in selected for n in s.robot_tests)
     assert selected_cases == cases
+
+
+def test_check_1510_ci_matrix() -> None:
+    """CHECK-1510: the nightly job's matrix runs every region (the map's
+    plus `static`), and each region carries an integer timeout. Only
+    `matrix.region` and `matrix.include` are read; `${{ }}` strings
+    elsewhere are never parsed."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/ci.yaml").read_text(encoding="utf-8")
+    )
+    matrix = workflow["jobs"]["nightly"]["strategy"]["matrix"]
+    assert "region" in matrix, "ci.yaml nightly matrix has no `region`"
+    mapped = yaml.safe_load(
+        (REPO_ROOT / "tests/nightly_regions.yaml").read_text(encoding="utf-8")
+    )
+    assert set(matrix["region"]) == set(mapped) | {"static"}
+    assert len(matrix["region"]) == len(set(matrix["region"]))
+    timeouts = {
+        entry["region"]: entry.get("timeout") for entry in matrix["include"]
+    }
+    for region in matrix["region"]:
+        assert isinstance(timeouts.get(region), int), (
+            f"no timeout for region {region}"
+        )
