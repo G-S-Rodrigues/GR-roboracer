@@ -229,5 +229,47 @@ TEST(PurePursuitTest, PP1080NonFiniteVelocityIsRejectedOnlyUnderTrajectory) {
     EXPECT_EQ(with_nan.target_y, with_zero.target_y);
 }
 
+TEST(PurePursuitTest, PP1090LookaheadScalesWithMeasuredSpeedAboveTheFloor) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+
+    ControllerParams fixed;
+    fixed.lookahead_distance = 1.0;
+    fixed.lookahead_gain = 0.0;
+    for (const double speed : {0.0, 2.5, 100.0, -1.0, nan, inf}) {
+        EXPECT_EQ(lookahead_distance(speed, fixed), 1.0) << speed;
+    }
+
+    ControllerParams scaled;
+    scaled.lookahead_distance = 1.0;
+    scaled.lookahead_gain = 0.5;
+    EXPECT_EQ(lookahead_distance(1.0, scaled), 1.0);
+    EXPECT_EQ(lookahead_distance(4.0, scaled), 2.0);
+    EXPECT_EQ(lookahead_distance(-3.0, scaled), 1.0);
+    EXPECT_THROW(lookahead_distance(nan, scaled), std::invalid_argument);
+    EXPECT_THROW(lookahead_distance(inf, scaled), std::invalid_argument);
+}
+
+TEST(PurePursuitTest, PP1100LookaheadGainMustBeFiniteAndNonNegative) {
+    const Trajectory line{{0.0, 0.0, 1.0}, {2.0, 0.0, 1.0}};
+    const VehicleState state{};
+    for (const double bad : {-0.1, std::numeric_limits<double>::quiet_NaN()}) {
+        ControllerParams params;
+        params.lookahead_gain = bad;
+        EXPECT_THROW(validate_parameters(params), std::invalid_argument);
+        EXPECT_THROW(PurePursuit::compute(state, line, params),
+                     std::invalid_argument);
+    }
+
+    for (const auto source :
+         {SpeedSource::CURVATURE_SCHEDULE, SpeedSource::TRAJECTORY}) {
+        ControllerParams params;
+        params.lookahead_gain = 0.5;
+        params.speed_source = source;
+        EXPECT_NO_THROW(validate_parameters(params));
+        EXPECT_NO_THROW(PurePursuit::compute(state, line, params));
+    }
+}
+
 }  // namespace
 }  // namespace racing_controller_baseline

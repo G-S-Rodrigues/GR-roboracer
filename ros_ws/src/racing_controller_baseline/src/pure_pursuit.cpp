@@ -16,10 +16,9 @@ struct Segment {
     double length;
 };
 
-void validate(const Trajectory &trajectory, const ControllerParams &params) {
-    if (trajectory.empty()) {
-        throw std::invalid_argument("trajectory must not be empty");
-    }
+}  // namespace
+
+void validate_parameters(const ControllerParams &params) {
     if (params.lookahead_distance <= 0.0) {
         throw std::invalid_argument("lookahead distance must be positive");
     }
@@ -34,6 +33,19 @@ void validate(const Trajectory &trajectory, const ControllerParams &params) {
         throw std::invalid_argument(
             "curvature speed gain must be non-negative");
     }
+    if (!std::isfinite(params.lookahead_gain) || params.lookahead_gain < 0.0) {
+        throw std::invalid_argument(
+            "lookahead gain must be finite and non-negative");
+    }
+}
+
+namespace {
+
+void validate(const Trajectory &trajectory, const ControllerParams &params) {
+    if (trajectory.empty()) {
+        throw std::invalid_argument("trajectory must not be empty");
+    }
+    validate_parameters(params);
     if (params.speed_source == SpeedSource::TRAJECTORY) {
         for (const auto &point : trajectory) {
             if (!std::isfinite(point.v)) {
@@ -104,6 +116,16 @@ TrajectoryPoint point_at(double distance,
 }
 
 }  // namespace
+
+double lookahead_distance(double speed, const ControllerParams &params) {
+    if (params.lookahead_gain > 0.0 && !std::isfinite(speed)) {
+        throw std::invalid_argument(
+            "measured speed must be finite when lookahead_gain is positive");
+    }
+    // Keep this argument order: std::max returns the first argument unless it
+    // is smaller, so 0 * inf = NaN at gain 0 still gives the floor.
+    return std::max(params.lookahead_distance, params.lookahead_gain * speed);
+}
 
 double target_speed(const Trajectory &trajectory, double progress,
                     const ControllerParams &params) {

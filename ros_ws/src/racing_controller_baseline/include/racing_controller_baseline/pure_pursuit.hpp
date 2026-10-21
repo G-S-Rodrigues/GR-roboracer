@@ -10,6 +10,8 @@ struct VehicleState {
     double x{};
     double y{};
     double yaw{};
+    // Measured CoG speed from the base_link twist of /odom, m/s.
+    double speed{};
 };
 
 struct TrajectoryPoint {
@@ -23,6 +25,7 @@ using Trajectory = std::vector<TrajectoryPoint>;
 enum class SpeedSource : std::uint8_t { CURVATURE_SCHEDULE, TRAJECTORY };
 
 struct ControllerParams {
+    // Fixed lookahead; the floor when lookahead_gain > 0.
     double lookahead_distance{1.0};
     double wheelbase{0.33};
     double minimum_speed{0.5};
@@ -40,6 +43,13 @@ struct DriveCommand {
     double target_x{};
     double target_y{};
 };
+
+// max(lookahead_distance, lookahead_gain * speed); `speed` is the measured
+// CoG speed. Throws on a non-finite speed when lookahead_gain > 0.
+double lookahead_distance(double speed, const ControllerParams &params);
+
+// The parameter checks alone; throws std::invalid_argument.
+void validate_parameters(const ControllerParams &params);
 
 double curvature_speed_schedule(double kappa, const ControllerParams &params);
 
