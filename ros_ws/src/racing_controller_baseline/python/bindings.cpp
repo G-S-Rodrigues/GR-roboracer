@@ -11,11 +11,12 @@ PYBIND11_MODULE(racing_controller_baseline, module) {
         "Python binding for the authoritative C++ baseline controller";
 
     py::class_<VehicleState>(module, "VehicleState")
-        .def(py::init<double, double, double>(), py::arg("x") = 0.0,
-             py::arg("y") = 0.0, py::arg("yaw") = 0.0)
+        .def(py::init<double, double, double, double>(), py::arg("x") = 0.0,
+             py::arg("y") = 0.0, py::arg("yaw") = 0.0, py::arg("speed") = 0.0)
         .def_readwrite("x", &VehicleState::x)
         .def_readwrite("y", &VehicleState::y)
-        .def_readwrite("yaw", &VehicleState::yaw);
+        .def_readwrite("yaw", &VehicleState::yaw)
+        .def_readwrite("speed", &VehicleState::speed);
 
     py::class_<TrajectoryPoint>(module, "TrajectoryPoint")
         .def(py::init<double, double>(), py::arg("x") = 0.0, py::arg("y") = 0.0)

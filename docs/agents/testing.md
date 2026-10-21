@@ -15,7 +15,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | Tier | What it proves | Runner | Cost |
 |---|---|---|---|
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
-| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~8 s warm (the map extractor added ~2.5 s); measured idle 2026-10-20: raceline suite ~17 s on main, ~20 s with part 2.3 (`test_extract.py` ~3.5 -> ~5.7 s), already over that target before 2.3 (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
+| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~8 s warm (the map extractor added ~2.5 s); measured idle 2026-10-21: raceline suite ~29 s with part 4 (101 tests; three real-TUM tests ~5 s each, RACELINE-1395 ~5 s; ~17 s on main, ~20 s with part 2.3), already over that target before 2.3 (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~201 s |
@@ -117,7 +117,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **123 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **158 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -140,6 +140,9 @@ The base-link work (part 3.1b) added tier 1 `SIMJAX-1140`, `DESC-1020`; tier 2 `
 The worktree-scope work added tier 1 `CHECK-1350` to `CHECK-1390`.
 The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/1170`.
 The hairpin-fold work (part 2.4) added tier 1 `SIM-1040/1050/1060/1070`.
+The optimized-raceline runner work (part 4) added tier 1 `RACELINE-1310` to `RACELINE-1395` (23 IDs).
+
+The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 
 ## The tests that matter most
 
