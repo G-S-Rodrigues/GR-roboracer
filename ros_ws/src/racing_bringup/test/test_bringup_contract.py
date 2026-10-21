@@ -253,6 +253,22 @@ def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
     source = LAUNCH_FILE.read_text(encoding="utf-8")
     assert 'remappings=[("/odom", GROUND_TRUTH_POSE)]' in source
     assert '"estimate_topic", default_value=GROUND_TRUTH_POSE' in source
+    # The planner role: the default implementation is the launch's default
+    # `planner`, and the implementations named agree with the resolver's.
+    from racing_bringup import scenario_parameters
+
+    assert roles["planner"]["implementation"] == "track_centerline"
+    assert '"planner", default_value="track_centerline"' in " ".join(
+        source.split()
+    )
+    named = {
+        roles["planner"]["implementation"],
+        *(
+            a["implementation"]
+            for a in roles["planner"].get("alternatives", [])
+        ),
+    }
+    assert named == set(scenario_parameters.PLANNERS)
 
 
 def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
