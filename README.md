@@ -34,7 +34,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Localization | [`slam_toolbox`](docs/workflows/racing.md#online-slam-toolbox-evaluation) | Available | Online estimate evaluation while driving on ground truth; driving on its estimate latches a `TRACK_LIMIT` stop. |
 | Localization | [`amcl`](docs/workflows/racing.md#amcl-closed-loop) | Available | Saved-map localization and verified closed-loop driving on Spielberg. |
 | Planning and raceline generation | [`track_raceline`](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Current runtime planner publishes the centerline at constant speed. |
-| Planning and raceline generation | [Offline TUM minimum-curvature wrapper](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Offline tooling only; minimum-time optimization has not converged. |
+| Planning and raceline generation | [Offline centerline extraction and TUM minimum-curvature wrapper](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Python library in `raceline/` (`raceline.extract`, `raceline.tum`); no command-line entry point yet; minimum-time optimization has not converged. |
 | Planning and raceline generation | Optimized raceline racing integration | In development | [Issue #12](https://github.com/G-S-Rodrigues/GR-roboracer/issues/12) remains open; see [path planning](docs/path-planning.md); [PR #17](https://github.com/G-S-Rodrigues/GR-roboracer/pull/17) merged the offline seam. |
 | Control | [`pure_pursuit`](docs/workflows/racing.md#control) | Available | Baseline controller with independent safety; currently ignores trajectory speed. |
 | Control | Tracking/dynamic MPC and MPCC | Exploratory | Controller research directions. |
