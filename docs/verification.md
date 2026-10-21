@@ -52,10 +52,14 @@ Black-box cases on the composed stack, one per behaviour a user can name:
 
 ## 5. Nightly coverage
 
-The nightly runs on a schedule, never in a pull request. It has four legs, one per seed 42, 1030, 7 and 2026.
-Each leg runs layers 1 to 4, whose tests keep their own pinned seeds, then one seeded lap on the leg's seed.
-The seed-42 leg adds this layer, the cross-product of tracks, implementations and seeds. Its track
-dimension is Spielberg alone today.
+The nightly runs on a schedule, never in a pull request. It runs one job per region of interest and
+seed: five regions (`static`, `slam`, `path_planning`, `control` and `shared`) and the seeds 42, 1030, 7
+and 2026, so twenty jobs. `static` is build and lint with the layer 1 and 2 tests; the other four split
+layers 3 and 4 between them, and the file [`tests/nightly_regions.yaml`](../tests/nightly_regions.yaml)
+names which region owns each test. The `control` job also runs one seeded lap on the job's seed. The
+tests keep their own pinned seeds, so the seed only changes that lap and layer 5. Layer 5, the
+cross-product of tracks, implementations and seeds, runs on the seed-42 job of each region that owns a
+layer 5 test. Its track dimension is Spielberg alone today.
 
 - SIM-5010: the committed occupancy grid regenerates from the survey.
 - SIM-5020: `slam_toolbox` and `amcl` over seeds 42 and 1030 on Spielberg.
@@ -63,14 +67,15 @@ dimension is Spielberg alone today.
 
 ## Running the checks
 
-`./scripts/check.sh` takes exactly one mode. Its tiers are the layers above: tier 1 is layer 1, tier 2
+`./scripts/check.sh` takes one mode, and `--nightly-region` also takes a region. Its tiers are the layers above: tier 1 is layer 1, tier 2
 is layer 2, and so on up to tier 5 for layer 5. Tier 0 is build and lint.
 
 - `--fast`: build, lint and the unit tests, scoped to what a branch changed. The pre-commit hook runs it.
 - `--ci`: `--fast` plus the launch and contract tests and one seeded lap. This is the pull-request job.
 - `--ready`: the definition of done for a change. It runs the scoped unit and contract tests, the seeded lap (SIM-3020) and the system and acceptance tests for the implementations the change touched.
-- `--full`: tiers 0 to 4, which is layers 1 to 4 plus build and lint. The three nightly legs that are not seed 42 run it.
+- `--full`: tiers 0 to 4, which is layers 1 to 4 plus build and lint, over the whole tree.
 - `--nightly`: `--full` plus layer 5, the cross-product. It takes minutes to hours and runs on a schedule.
+- `--nightly-region <region>`: what one nightly job runs, one of `static`, `slam`, `path_planning`, `control` or `shared`. Together the regions cover what `--full` and `--nightly` cover. Set `NIGHTLY_TIER5=1` to add the region's layer 5 tests.
 
 Run the definition of done in the container from the [Quick Start](quick-start.md):
 
