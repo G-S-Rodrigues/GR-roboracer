@@ -135,7 +135,7 @@ def test_raceline_1380_real_tum_on_the_oval_passes_the_verifier():
         track, vehicle, "tum_mincurv_iqp", margin=margin, passes=1, timeout=300
     )
     walls = verify.track_walls(track, "input")
-    required = vehicle.half_width + margin - BOUND_TOL
+    required = vehicle.half_width + margin - verify.INPUT_BOUND_TOL
     verdict = verify.verify(line, vehicle, [(walls, required)], track)
     assert verdict.ok, verdict.failures
     offset = test_smoke._left_offset(line.xy)

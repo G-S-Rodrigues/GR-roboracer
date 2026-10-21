@@ -40,7 +40,13 @@ from raceline.vehicle import VehicleLimits
 EXTRACTION_ALLOWANCE = 0.15  # m
 # TUM's exported spline overshoots an active bound slightly between its QP
 # nodes. Measured worst overshoot 0.0009 m (RACELINE-1010); 0.02 m rounds it up.
-BOUND_TOL = 0.02  # m
+BOUND_TOL = 0.02  # m; the ground-truth rule's (base - allowance - this)
+# The input-bound check has its own, wider tolerance (owner ruling
+# 2026-10-21). On Spielberg the line sits 0.4334 m (gym-limits, target 0.455)
+# and 0.429 m (default, target 0.45) from the survey bound at idx 290: a
+# shortfall of 0.0216 / 0.021 m, TUM's overshoot between nodes plus the
+# bound's stair-step. The 60 m oval measured 0.0009. Rounded up to 0.025.
+INPUT_BOUND_TOL = 0.025  # m
 # Tolerances below are the Step 1 re-run's measurements rounded up (gotcha 14).
 # STEP1_MEASURED_PLACEHOLDER
 KAPPA_TOL = 0.05  # 1/m: kappa column vs the three-point curvature
@@ -147,8 +153,11 @@ def required_clearances(
     """The clearance each wall set must give: the one place the allowance is
     applied. The ground-truth walls may lie ``EXTRACTION_ALLOWANCE`` beyond
     the walls the optimizer saw, so they ask for that much less."""
-    base = vehicle.half_width + margin - BOUND_TOL
-    return {"input": base, "ground_truth": base - EXTRACTION_ALLOWANCE}
+    base = vehicle.half_width + margin
+    return {
+        "input": base - INPUT_BOUND_TOL,
+        "ground_truth": base - BOUND_TOL - EXTRACTION_ALLOWANCE,
+    }
 
 
 def _signed_clearance(walls: WallSet, xy: np.ndarray) -> np.ndarray:
