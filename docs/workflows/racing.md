@@ -84,9 +84,13 @@ Neither has a launch argument, and there is nothing to run.
 Available: `pure_pursuit`. By default (`speed_source=curvature_schedule`) it sets speed from path
 curvature, not from trajectory speed, and the independent safety supervisor clamps its commands.
 The opt-in node parameter `speed_source=trajectory` follows the trajectory's speed instead, which
-on the current centerline CSV is a constant 1.0 m/s; `lookahead_gain` defaults to 0. These are node
-parameters, not launch arguments. It is the only controller, so it has no launch
-argument.
+in the published `<map>_raceline.csv` (the centerline) is a constant 1.0 m/s. `lookahead_gain` sets
+lookahead = max(`lookahead_distance`, gain x measured speed); it defaults to 0, so it is off. These
+are node parameters, not launch arguments: to opt in, set `speed_source` (and `lookahead_gain`)
+in the `racing_controller_baseline` block of a vehicle file (see
+`config/vehicles/f1tenth_default.yaml`) and pass that file with `vehicle:=`. The node reads its
+parameters only at start-up, so `ros2 param set` has no effect.
+It is the only controller, so it has no launch argument.
 
 Exploratory: tracking and dynamic MPC, and MPCC. None has an identifier yet.
 

@@ -9,7 +9,7 @@ claims of working code. This page says what each of five layers proves, then how
 
 ## 1. Unit tests
 
-ROS-free logic is tested without a ROS graph, so these tests are the quickest layer: the whole layer, which includes the JAX simulator backend on Spielberg and the raceline suite, takes about 30 s. They cover the track and
+ROS-free logic is tested without a ROS graph, so these tests are the quickest layer: the layer includes the JAX simulator backend on Spielberg and the raceline suite. They cover the track and
 Frenet conversions, the pure pursuit law, the metrics accumulator, the simulator backend's scan
 angles and the safety supervisor.
 
@@ -36,7 +36,7 @@ bound it against ground truth.
 - SIM-3040: live metrics match `tests/golden/baseline.json` within tolerance.
 - SIM-3090: the Spielberg lap matches `tests/golden/spielberg_baseline.json`.
 - SIM-3070: with the car driving on ground truth, `slam_toolbox` publishes an estimate whose RMSE against ground truth is within 4.0 m. The test is open loop and does not claim the estimate is good.
-- SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate stays available and its position RMSE is within 0.65 m (the seed-42 bound).
+- SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate is available in at least 0.99 of samples and its position RMSE is within 0.65 m (the seed-42 bound).
 
 ## 4. Acceptance tests (Robot Framework)
 
