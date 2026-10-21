@@ -10,6 +10,11 @@ this directory is then generated from that track file by `sim/track_importer.py`
 **not** used: the sim, the golden generator and the supervisor's track limits must all see one
 world, and that world is the one the canonical centerline and widths describe.
 
+The importer cuts offset-wall folds (a corner whose centerline radius is under its width, as
+Spielberg's hairpin around a wall tip at idx 275-282). It used to draw one as a detached 11-cell
+occupied spur at about (-75, 52.2). The cut inner wall's tip is within 0.087 m of the upstream map's
+real tip.
+
 Regenerate with:
 
 ```bash
