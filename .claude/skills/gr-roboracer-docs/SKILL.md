@@ -105,3 +105,11 @@ previous video into `docs/demonstrations.md`.
 Whichever PR merges second updates the docs: it merges `main`, re-checks every claim it touches
 against the merged code, and fixes the pages in its own PR. Tell the other session which pages
 yours changes before either merges.
+
+## Merging a docs-only PR
+
+A PR is **docs-only** when every file it changes is a `.md` file or under `docs/assets/`. It
+needs neither `check.sh --ready` nor green CI (owner ruling, 2026-10-22): run `docs_check.py`,
+then merge with `gh pr merge --merge` without waiting for CI. A PR that also touches code,
+config, a test or a script — the scripts in this skill included — takes the full gate in
+`CLAUDE.md`.

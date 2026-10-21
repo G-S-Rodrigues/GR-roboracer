@@ -19,7 +19,8 @@ docker exec gr-roboracer-dev bash -lc 'cd /ws && ./scripts/check.sh --ready'
 cannot place runs the whole tree (ADR 0007). `--full` is no longer in the development loop: the nightly
 runs it, and ADR 0007 says why. `--fast` (tiers 0–1, the pre-commit hook) and `--ci` (the PR job: adds
 tier 2 and one seeded lap) are faster loops. A gate nobody runs is worse than no gate (ADR 0005, ADR
-0007).
+0007). A docs-only PR is the one exception: the `gr-roboracer-docs` skill says what
+that means and what it runs instead.
 
 **Nor is a change done while a user-facing doc it made untrue is unfixed.** The docs change in the
 same PR as the code; the `gr-roboracer-docs` skill says which pages and when a video is due.
