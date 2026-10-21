@@ -8,7 +8,7 @@ from f1tenth_gym_jax.envs.utils import Param
 
 VEHICLES = Path(__file__).resolve().parents[4] / "config" / "vehicles"
 GRAVITY = 9.81  # dynamic_models.py: the gym's own constant
-GYM_LIMITS_V_MAX = 8.0  # the owner's "8 m/s gym-limits vehicle"
+GYM_LIMITS_V_MAX = 20.0  # owner ruling 2026-10-14: the gym's own ceiling
 
 
 def _parameters(vehicle: Path, node: str) -> dict:
