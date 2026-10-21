@@ -25,8 +25,8 @@ SCENARIO = str(REPOSITORY_ROOT / "config" / "scenarios" / "spielberg.yaml")
 # 5x, as SIM-3090. Measured (part 6 step 1, seed 42, 5x): 61 s / 63 s / 65 s
 # of wall time over three runs, lap 113.08 s each (0.00 s spread); seeds 7,
 # 1030 and 2026 lapped in 113.13 / 113.09 / 113.16 s with no collision, no
-# saturation event and no latch. The centerline lap on the curvature schedule is 120.41 s
-# (spielberg_baseline.json).
+# saturation event and no latch. The centerline lap on the curvature
+# schedule is 120.41 s (spielberg_baseline.json).
 TIME_SCALE = 5.0
 LAP_WALL_SECONDS = 65.0
 # 3x the measured wall time, as SIM-3090.
