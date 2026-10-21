@@ -238,7 +238,7 @@ def test_raceline_1360_the_extraction_allowance_is_the_pinned_edge_tolerance():
 
 def test_raceline_1360b_input_and_ground_truth_tolerances_are_separate():
     """Owner ruling 2026-10-21: the input-bound check has its own tolerance.
-    Spielberg's line sits 0.4334 (gym-limits, target 0.455) and 0.429
+    Spielberg's line sits 0.4330 (gym-limits, target 0.455) and 0.429
     (default, target 0.45) from the survey bound at idx 290; the ground-truth
     requirement stays hw + margin - 0.15 - 0.02."""
     assert verify.INPUT_BOUND_TOL == 0.025
@@ -251,7 +251,7 @@ def test_raceline_1360b_input_and_ground_truth_tolerances_are_separate():
     assert r_def["input"] == pytest.approx(0.425)
     assert r_gym["ground_truth"] == pytest.approx(0.285)
     assert r_def["ground_truth"] == pytest.approx(0.280)
-    assert r_gym["input"] <= 0.4334 and r_def["input"] <= 0.429
+    assert r_gym["input"] <= 0.4330 and r_def["input"] <= 0.429
 
 
 def _rounded_square(half=5.0, radius=0.5, w=0.8) -> Track:
@@ -371,11 +371,11 @@ def _gt_required():
     return verify.required_clearances(_vehicle(), MARGIN)["ground_truth"]
 
 
-def _tip_cells(drop=()) -> verify.ObservedCells:
+def _tip_cells(drop=(), w=0.8) -> verify.ObservedCells:
     """A 0.05 m grid aligned on multiples of 0.05; the island is the cells
     whose centre is inside the clean inner wall (so a tip is a cell corner).
     ``drop`` is a list of ((x, y), radius): island cells within it are freed."""
-    clean = verify.track_walls(_rounded_square(), "ground_truth").left
+    clean = verify.track_walls(_rounded_square(w=w), "ground_truth").left
     centre = clean.mean(axis=0)
     poly = (clean - centre).astype(np.float32)
     k = np.arange(-int(4.4 / CELL), int(4.4 / CELL))
@@ -529,6 +529,26 @@ def test_raceline_1367g_beyond_the_disc_the_polygon_still_governs():
     mc = verdict.min_clearance
     assert mc["ground_truth_judged"] == pytest.approx(0.2095, abs=1e-3)
     assert mc["ground_truth_tip_cells"] == pytest.approx(0.3202, abs=1e-3)
+
+
+def test_raceline_1367h_a_point_past_the_polygon_gets_no_relief():
+    """E11: the relief applies only where the polygon clearance c >= 0. On a
+    w 1.2 square the tip (3.8, 3.8) has reach 0.641; the line point sits 0.1 m
+    inside the island (c = -0.071, outside the walls) with the cells cleared
+    around it, so d_cells 0.324 and d_rest 0.574 both exceed the requirement.
+    Without the c >= 0 branch the line would pass."""
+    w, tip = 1.2, 3.8
+    point = (tip - 0.1 / np.sqrt(2.0), tip - 0.1 / np.sqrt(2.0))
+    cells = _tip_cells(drop=[(point, 0.35)], w=w)
+    track = _rounded_square(w=w)
+    walls = verify.track_walls(track, "ground_truth", cells=cells)
+    assert (tip, tip) in [tuple(np.round(t, 6)) for t in walls.tips]
+    line = _tip_line(replace={3: point})
+    verdict = verify.verify(line, _vehicle(), [(walls, _gt_required())], track)
+    failures = _clearance_failures(verdict)
+    assert len(failures) == 1
+    assert "outside the walls" in failures[0]
+    assert "sharp tip" not in failures[0]
 
 
 # ---- the committed racelines (RACELINE-1395) --------------------------------

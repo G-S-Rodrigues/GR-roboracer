@@ -42,17 +42,21 @@ EXTRACTION_ALLOWANCE = 0.15  # m
 # nodes. Measured worst overshoot 0.0009 m (RACELINE-1010); 0.02 m rounds it up.
 BOUND_TOL = 0.02  # m; the ground-truth rule's (base - allowance - this)
 # The input-bound check has its own, wider tolerance (owner ruling
-# 2026-10-21). On Spielberg the line sits 0.4334 m (gym-limits, target 0.455)
+# 2026-10-21). On Spielberg the line sits 0.4330 m (gym-limits, target 0.455)
 # and 0.429 m (default, target 0.45) from the survey bound at idx 290: a
-# shortfall of 0.0216 / 0.021 m, TUM's overshoot between nodes plus the
+# shortfall of 0.0220 / 0.021 m, TUM's overshoot between nodes plus the
 # bound's stair-step. The 60 m oval measured 0.0009. Rounded up to 0.025.
 INPUT_BOUND_TOL = 0.025  # m
-# Tolerances below are the Step 1 re-run's measurements rounded up (gotcha 14).
-# STEP1_MEASURED_PLACEHOLDER
-KAPPA_TOL = 0.05  # 1/m: kappa column vs the three-point curvature
-PSI_TOL = 0.01  # rad: psi vs the central-difference heading
-DS_TOL = 1e-3  # m: |ds - |dxy||
-LIMIT_TOL = 1e-6  # relative: v**2 |kappa| and a against their table limits
+# Tolerances below are deliberately loose guards on a recomputation, not
+# tight fits: measured on the two committed lines (review 2026-10-21), they
+# admit the TUM output with a wide margin (gotcha 14: the measurement is
+# stated, the value is unchanged).
+# kappa column vs the three-point curvature; measured 0.0013
+KAPPA_TOL = 0.05  # 1/m
+PSI_TOL = 0.01  # rad: psi vs the central-difference heading; measured 2.9e-4
+DS_TOL = 1e-3  # m: |ds - |dxy||; measured 1.1e-5
+# relative: v**2 |kappa|, a vs table limits; measured ratio 1 + 1e-13
+LIMIT_TOL = 1e-6
 S0_TOL = 1e-6  # m
 MIN_POINTS = 3
 
