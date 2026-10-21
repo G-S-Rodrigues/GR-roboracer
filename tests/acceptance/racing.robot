@@ -6,7 +6,7 @@ Library           racing_test_keywords.keywords.RacingTestKeywords
 Vehicle Completes Baseline Lap Safely
     [Documentation]    ACC-4010
     [Tags]    impl:simulator=f1tenth_gym_jax    impl:pose_source=ground_truth
-    ...    impl:planner=track_raceline    impl:controller=pure_pursuit
+    ...    impl:planner=track_centerline    impl:controller=pure_pursuit
     ...    impl:safety=safety_supervisor
     Run Racing Scenario    seed=42
     Lap Completion Should Be    true

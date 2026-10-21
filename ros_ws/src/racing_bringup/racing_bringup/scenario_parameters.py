@@ -19,12 +19,92 @@ import yaml
 REPORTING_KEYS = ("scenario_id", "track_version")
 
 
-def track_parameters(scenario_path: Path) -> dict[str, dict[str, Any]]:
-    """Return {node name: parameter overrides} for one scenario file."""
+PLANNERS = ("track_centerline", "optimized_raceline")
+RACELINE_OPTIMIZERS = ("tum_mincurv_iqp",)
+
+
+def _vehicle_version(vehicle_path: Path) -> str:
+    """The vehicle parameter version both reporting nodes agree on.
+
+    Duplicates raceline/raceline/vehicle.py's reader: ros_ws never imports the
+    uv project (ADR 0003).
+    """
+    document = yaml.safe_load(Path(vehicle_path).read_text(encoding="utf-8"))
+    versions = {
+        name: ((document.get(name) or {}).get("ros__parameters") or {}).get(
+            "vehicle_parameter_version"
+        )
+        for name in ("racing_metrics", "racing_recording")
+    }
+    if None in versions.values() or len(set(versions.values())) != 1:
+        raise ValueError(
+            f"{vehicle_path}: vehicle_parameter_version must be set and equal "
+            f"under racing_metrics and racing_recording, got {versions}"
+        )
+    return str(versions["racing_metrics"])
+
+
+def _optimized_raceline(
+    track_file: Path, optimizer: str, vehicle_path: Path | None
+) -> str:
+    if vehicle_path is None:
+        raise ValueError("planner optimized_raceline needs a vehicle_path")
+    version = _vehicle_version(vehicle_path)
+    csv = (
+        track_file.parent.parent
+        / "racelines"
+        / track_file.stem
+        / version
+        / f"{optimizer}.csv"
+    )
+    if not csv.is_file():
+        raise FileNotFoundError(f"no committed raceline at {csv}")
+    sidecar_path = csv.with_suffix(".yaml")
+    if not sidecar_path.is_file():
+        raise FileNotFoundError(f"no raceline sidecar at {sidecar_path}")
+    sidecar = yaml.safe_load(sidecar_path.read_text(encoding="utf-8"))
+    for key, expected in (
+        ("track", track_file.stem),
+        ("vehicle_version", version),
+        ("optimizer", optimizer),
+    ):
+        if sidecar.get(key) != expected:
+            raise ValueError(
+                f"{sidecar_path}: {key} is {sidecar.get(key)!r}, "
+                f"expected {expected!r}"
+            )
+    if (sidecar.get("verdict") or {}).get("ok") is not True:
+        raise ValueError(f"{sidecar_path}: verdict.ok is not true")
+    return str(csv)
+
+
+def track_parameters(
+    scenario_path: Path,
+    *,
+    planner: str = "track_centerline",
+    raceline_optimizer: str = "tum_mincurv_iqp",
+    vehicle_path: Path | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Return {node name: parameter overrides} for one scenario file.
+
+    `planner="optimized_raceline"` swaps the scenario's own
+    `<map>_raceline.csv` for the committed
+    `config/racelines/<track>/<vehicle version>/<optimizer>.csv`. It fails
+    closed: an unknown name, a missing file or a sidecar that disagrees raises,
+    and the centerline is never a fallback.
+    """
+    if planner not in PLANNERS:
+        raise ValueError(f"unknown planner {planner!r}; one of {PLANNERS}")
+    if raceline_optimizer not in RACELINE_OPTIMIZERS:
+        raise ValueError(
+            f"unknown raceline_optimizer {raceline_optimizer!r}; "
+            f"one of {RACELINE_OPTIMIZERS}"
+        )
     scenario_path = Path(scenario_path).resolve()
     document = yaml.safe_load(scenario_path.read_text(encoding="utf-8"))
     base = scenario_path.parent
-    track = str((base / document["track"]).resolve())
+    track_file = (base / document["track"]).resolve()
+    track = str(track_file)
     map_name = str(document["environment"]["map"])
     raceline = str(
         (
@@ -34,6 +114,10 @@ def track_parameters(scenario_path: Path) -> dict[str, dict[str, Any]]:
             / f"{map_name}_raceline.csv"
         ).resolve()
     )
+    if planner == "optimized_raceline":
+        raceline = _optimized_raceline(
+            track_file, raceline_optimizer, vehicle_path
+        )
     # The track's committed occupancy grid, surveyed by scripts/map_track.sh
     # and served to nav2_amcl by nav2_map_server. Derived from the scenario's
     # own map for the same reason the raceline is: a hand-set grid path is a

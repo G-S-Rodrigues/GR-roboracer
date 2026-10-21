@@ -16,6 +16,12 @@ source /ws/setup.sh
 ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 ```
 
+The minimum-curvature line from `config/racelines/`, raced at its own speed:
+
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory
+```
+
 In RViz, `base_link` is the car's centre of gravity at height h (0.074 m); `rear_axle` is its TF child,
 0.17145 m behind, and the drawing hangs off it.
 

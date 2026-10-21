@@ -31,7 +31,7 @@ neutral_paths:
   - ros_ws/src/*/CLAUDE.md
   - scripts/tests/*
   # raceline/ is offline: its output reaches a lap only through files committed
-  # under config/racelines/ (config/ is whole tree; part 6 maps it).
+  # under config/racelines/ (mapped to the optimized_raceline planner).
   - raceline/*
   # No gate test launches the gym-limits vehicle (owner ruling 2026-10-11: it
   # runs nightly only) and only raceline/ reads the GGV tables. The default
@@ -86,12 +86,25 @@ roles:
           - ros_ws/src/racing_evaluation/*
         verified_by: [SIM-3080, ACC-4030, ACC-4040]
   planner:
-    # The scenario's precomputed raceline, published on /trajectory.
-    implementation: track_raceline
+    # The scenario's centerline, published on /trajectory; renamed from
+    # track_raceline 2026-10-21, owner ruling 2026-10-11, behaviour unchanged.
+    implementation: track_centerline
     package: racing_bringup
     paths:
       - ros_ws/src/racing_bringup/*
     verified_by: [SIM-3040, SIM-3090, ACC-4010]
+    # Selected by `planner:=optimized_raceline` on sim_pure_pursuit.launch.py;
+    # listed, not ranked (ADR 0005).
+    alternatives:
+      - implementation: optimized_raceline
+        package: racing_bringup
+        # The committed raceline config/racelines/<track>/<vehicle version>/
+        # <raceline_optimizer>.csv, selected by planner:=optimized_raceline.
+        paths:
+          - config/racelines/*
+          - ros_ws/src/racing_bringup/*
+          - ros_ws/src/racing_controller_baseline/*  # speed_source: trajectory
+        verified_by: [SIM-3110]
   controller:
     implementation: pure_pursuit
     package: racing_controller_baseline

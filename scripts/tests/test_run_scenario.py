@@ -40,3 +40,36 @@ def test_check_1320_vehicle_is_passed_through_only_when_given(
 
     assert given["launch_arguments"] == {"vehicle": VEHICLE}
     assert not absent.get("launch_arguments")
+
+
+def test_check_1430_planner_arguments_are_passed_through_only_when_given(
+    monkeypatch, capsys
+) -> None:
+    """CHECK-1430: `--planner`, `--raceline-optimizer` and `--speed-source`
+    reach the launch as `planner:=`, `raceline_optimizer:=` and
+    `speed_source:=` next to `vehicle:=`; none given, no launch arguments."""
+    given = _run(
+        monkeypatch,
+        [
+            "--seed",
+            "1",
+            "--planner",
+            "optimized_raceline",
+            "--raceline-optimizer",
+            "tum_mincurv_iqp",
+            "--speed-source",
+            "trajectory",
+            "--vehicle",
+            VEHICLE,
+        ],
+    )
+    absent = _run(monkeypatch, ["--seed", "1"])
+    capsys.readouterr()
+
+    assert given["launch_arguments"] == {
+        "planner": "optimized_raceline",
+        "raceline_optimizer": "tum_mincurv_iqp",
+        "speed_source": "trajectory",
+        "vehicle": VEHICLE,
+    }
+    assert not absent.get("launch_arguments")

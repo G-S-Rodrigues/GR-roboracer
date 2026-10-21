@@ -64,32 +64,46 @@ not install.
 
 ## Planning and raceline generation
 
-Available: `track_raceline`. It publishes the scenario's `<map>_raceline.csv` on `/trajectory`,
-which today is the centerline at constant speed. It has no launch argument, because it is the only
-planner.
+Selected by `planner:=`, which is `track_centerline` by default.
 
-Available, offline, not selectable by launch: map centerline extraction and the TUM
-minimum-curvature wrapper in `raceline/`. `env -u PYTHONPATH uv run --project raceline --locked
-python -m raceline` optimizes a line from a map or track, verifies it and writes
+- `track_centerline` publishes the scenario's `<map>_raceline.csv` on `/trajectory`, which is the
+  centerline at constant speed. (It was called `track_raceline` before part 6 of issue #12.)
+- `optimized_raceline` publishes the committed minimum-curvature line
+  `config/racelines/<track>/<vehicle_version>/<raceline_optimizer>.csv`, with
+  `raceline_optimizer:=tum_mincurv_iqp` (the only optimizer). A missing line, an unknown name or a
+  line whose sidecar `.yaml` disagrees is an error; the launch never falls back to the centerline.
+
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory seed:=42
+```
+
+`speed_source:=trajectory` makes the car follow the line's own speed, a flat 3.0 m/s for the
+default vehicle. Without it the controller keeps its curvature schedule, whatever the line. On
+Spielberg, ground truth, seed 42, 5x, that lap measured 113.08 s (test SIM-3110) against 120.41 s
+for the centerline lap on the curvature schedule. The gym-limits vehicle's line resolves, but no
+gate lap drives it.
+
+Available, offline: map centerline extraction and the TUM minimum-curvature wrapper in
+`raceline/`. `env -u PYTHONPATH uv run --project raceline --locked python -m raceline` optimizes a
+line from a map or track, verifies it and writes
 `config/racelines/<track>/<vehicle_version>/<optimizer>.{csv,yaml}`; min-curvature racelines for
-Spielberg are committed under `config/racelines/spielberg/`. No planner follows them yet. See the
+Spielberg are committed under `config/racelines/spielberg/`. See the
 [raceline README](../../raceline/README.md#racelines-part-4) and [Path planning](../path-planning.md).
 
-Planned: `track_centerline`, a rename of today's planner.
-In development (issue #12): an optimized-raceline planner.
-Neither has a launch argument, and there is nothing to run.
+Minimum-time optimization has not converged (see [Verification](../verification.md)).
 
 ## Control
 
 Available: `pure_pursuit`. By default (`speed_source=curvature_schedule`) it sets speed from path
 curvature, not from trajectory speed, and the independent safety supervisor clamps its commands.
-The opt-in node parameter `speed_source=trajectory` follows the trajectory's speed instead, which
-in the published `<map>_raceline.csv` (the centerline) is a constant 1.0 m/s. `lookahead_gain` sets
-lookahead = max(`lookahead_distance`, gain x measured speed); it defaults to 0, so it is off. These
-are node parameters, not launch arguments: to opt in, set `speed_source` (and `lookahead_gain`)
-in the `racing_controller_baseline` block of a vehicle file (see
-`config/vehicles/f1tenth_default.yaml`) and pass that file with `vehicle:=`. The node reads its
-parameters only at start-up, so `ros2 param set` has no effect.
+The opt-in `speed_source=trajectory` follows the trajectory's speed instead, which in the published
+`<map>_raceline.csv` (the centerline) is a constant 1.0 m/s and on a committed raceline is the
+line's own speed. Set it either with the launch argument `speed_source:=trajectory`, or in the
+`racing_controller_baseline` block of a vehicle file (see `config/vehicles/f1tenth_default.yaml`)
+passed with `vehicle:=`. A given argument beats the vehicle file, which beats the default
+`curvature_schedule`. `lookahead_gain` sets lookahead = max(`lookahead_distance`, gain x measured
+speed); it defaults to 0, so it is off, and it is a node parameter only: set it in the vehicle
+file. The node reads its parameters only at start-up, so `ros2 param set` has no effect.
 It is the only controller, so it has no launch argument.
 
 Exploratory: tracking and dynamic MPC, and MPCC. None has an identifier yet.

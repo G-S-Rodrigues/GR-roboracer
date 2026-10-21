@@ -253,6 +253,22 @@ def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
     source = LAUNCH_FILE.read_text(encoding="utf-8")
     assert 'remappings=[("/odom", GROUND_TRUTH_POSE)]' in source
     assert '"estimate_topic", default_value=GROUND_TRUTH_POSE' in source
+    # The planner role: the default implementation is the launch's default
+    # `planner`, and the implementations named agree with the resolver's.
+    from racing_bringup import scenario_parameters
+
+    assert roles["planner"]["implementation"] == "track_centerline"
+    assert '"planner", default_value="track_centerline"' in " ".join(
+        source.split()
+    )
+    named = {
+        roles["planner"]["implementation"],
+        *(
+            a["implementation"]
+            for a in roles["planner"].get("alternatives", [])
+        ),
+    }
+    assert named == set(scenario_parameters.PLANNERS)
 
 
 def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
@@ -359,6 +375,29 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     )
 
 
+def _launch_context(**overrides: str):
+    """The launch module and a LaunchContext holding every declared
+    argument's default, then `overrides`. Paths are cwd-relative."""
+    import importlib.util
+
+    from launch import LaunchContext
+
+    spec = importlib.util.spec_from_file_location(
+        "racing_sim_pure_pursuit_launch", LAUNCH_FILE
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    context = LaunchContext()
+    for entity in module.generate_launch_description().entities:
+        if hasattr(entity, "default_value"):
+            context.launch_configurations[entity.name] = "".join(
+                part.text for part in entity.default_value
+            )
+    context.launch_configurations.update(overrides)
+    return module, context
+
+
 def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
     """BRINGUP-1090: `vehicle:=` selects the vehicle file for every node that
     reads one, defaults to today's file, and a missing file is an error.
@@ -367,10 +406,6 @@ def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
     one vehicle's caps beside another's, which reads as a plausible lap and
     nothing else.
     """
-    import importlib.util
-
-    from launch import LaunchContext
-
     tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
     constants = {
         node.targets[0].id: node.value.value
@@ -427,19 +462,7 @@ def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
     # A file that does not exist raises first, whatever the other arguments
     # hold. The launch's paths are cwd-relative.
     monkeypatch.chdir(REPOSITORY_ROOT)
-    spec = importlib.util.spec_from_file_location(
-        "racing_sim_pure_pursuit_launch", LAUNCH_FILE
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    context = LaunchContext()
-    for entity in module.generate_launch_description().entities:
-        if hasattr(entity, "default_value"):
-            context.launch_configurations[entity.name] = "".join(
-                part.text for part in entity.default_value
-            )
-    context.launch_configurations["vehicle"] = "config/vehicles/no_such.yaml"
+    module, context = _launch_context(vehicle="config/vehicles/no_such.yaml")
     with pytest.raises(RuntimeError, match="no_such.yaml"):
         module._launch_nodes(context, "", "")
 
@@ -502,3 +525,294 @@ def test_bringup_1060_the_scenario_selects_the_occupancy_grid() -> None:
     )
     assert spielberg["map_server"]["yaml_filename"] == str(grid)
     assert grid.is_file(), "the committed occupancy grid is missing"
+
+
+SPIELBERG_SCENARIO = REPOSITORY_ROOT / "config" / "scenarios" / "spielberg.yaml"
+DEFAULT_VEHICLE = (
+    REPOSITORY_ROOT / "config" / "vehicles" / "f1tenth_default.yaml"
+)
+GYM_LIMITS_VEHICLE = (
+    REPOSITORY_ROOT / "config" / "vehicles" / "f1tenth_gym_limits.yaml"
+)
+
+
+@pytest.mark.parametrize(
+    ("vehicle", "version"),
+    [
+        (DEFAULT_VEHICLE, "f1tenth-default-v1"),
+        (GYM_LIMITS_VEHICLE, "f1tenth-gym-limits-v1"),
+    ],
+)
+def test_bringup_1150_the_planner_selects_the_committed_raceline(
+    vehicle: Path, version: str
+) -> None:
+    """BRINGUP-1150: `planner=optimized_raceline` loads
+    `config/racelines/<track>/<vehicle version>/<optimizer>.csv`, whichever
+    vehicle is named; the default planner still loads the scenario's own
+    `<map>_raceline.csv`, byte for byte as before.
+    """
+    from racing_bringup.scenario_parameters import track_parameters
+
+    expected = (
+        REPOSITORY_ROOT
+        / "config"
+        / "racelines"
+        / "spielberg"
+        / version
+        / "tum_mincurv_iqp.csv"
+    )
+    optimized = track_parameters(
+        SPIELBERG_SCENARIO,
+        planner="optimized_raceline",
+        raceline_optimizer="tum_mincurv_iqp",
+        vehicle_path=vehicle,
+    )
+    assert optimized["racing_bringup_support"]["raceline_path"] == str(expected)
+
+    legacy = track_parameters(SPIELBERG_SCENARIO, vehicle_path=vehicle)
+    assert legacy == track_parameters(SPIELBERG_SCENARIO)
+    assert legacy["racing_bringup_support"]["raceline_path"].endswith(
+        "maps/Spielberg/Spielberg_raceline.csv"
+    )
+
+
+def _raceline_world(tmp_path: Path) -> tuple[Path, Path]:
+    """A copy of the Spielberg config tree small enough to corrupt one field
+    of: scenario, track, vehicle and the default vehicle's raceline."""
+    import shutil
+
+    config = tmp_path / "config"
+    for name in ("scenarios", "tracks", "vehicles"):
+        (config / name).mkdir(parents=True)
+    shutil.copy(SPIELBERG_SCENARIO, config / "scenarios")
+    shutil.copy(
+        REPOSITORY_ROOT / "config" / "tracks" / "spielberg.yaml",
+        config / "tracks",
+    )
+    shutil.copy(DEFAULT_VEHICLE, config / "vehicles")
+    target = config / "racelines" / "spielberg" / "f1tenth-default-v1"
+    target.mkdir(parents=True)
+    source = (
+        REPOSITORY_ROOT
+        / "config"
+        / "racelines"
+        / "spielberg"
+        / "f1tenth-default-v1"
+    )
+    for suffix in (".csv", ".yaml"):
+        shutil.copy(source / f"tum_mincurv_iqp{suffix}", target)
+    return config / "scenarios" / "spielberg.yaml", config / "vehicles" / (
+        "f1tenth_default.yaml"
+    )
+
+
+def _resolve(scenario: Path, vehicle: Path | None, **keywords):
+    from racing_bringup.scenario_parameters import track_parameters
+
+    return track_parameters(
+        scenario,
+        planner=keywords.pop("planner", "optimized_raceline"),
+        vehicle_path=vehicle,
+        **keywords,
+    )
+
+
+def test_bringup_1160_the_resolver_fails_closed(tmp_path: Path) -> None:
+    """BRINGUP-1160: a raceline that is not exactly the one asked for is an
+    error, never the centerline. The scenario, vehicle and sidecar can each
+    disagree with the file name; every disagreement raises.
+    """
+    import yaml
+
+    scenario, vehicle = _raceline_world(tmp_path)
+    sidecar = (
+        scenario.parents[1]
+        / "racelines"
+        / "spielberg"
+        / ("f1tenth-default-v1/tum_mincurv_iqp.yaml")
+    )
+    # The unmodified copy resolves, so every raise below is the one change.
+    assert _resolve(scenario, vehicle)
+
+    with pytest.raises(ValueError, match="planner"):
+        _resolve(scenario, vehicle, planner="no_such_planner")
+    with pytest.raises(ValueError, match="raceline_optimizer"):
+        _resolve(scenario, vehicle, raceline_optimizer="no_such_optimizer")
+    # An unknown optimizer is an error under the default planner as well, so
+    # a typo never passes silently.
+    with pytest.raises(ValueError, match="raceline_optimizer"):
+        _resolve(
+            scenario,
+            vehicle,
+            planner="track_centerline",
+            raceline_optimizer="no_such_optimizer",
+        )
+    with pytest.raises(ValueError, match="vehicle"):
+        _resolve(scenario, None)
+
+    original = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    for key, value in (
+        ("track", "monza"),
+        ("vehicle_version", "f1tenth-gym-limits-v1"),
+        ("optimizer", "tum_mintime"),
+    ):
+        sidecar.write_text(
+            yaml.safe_dump(dict(original, **{key: value})), encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match=key):
+            _resolve(scenario, vehicle)
+    sidecar.write_text(
+        yaml.safe_dump(dict(original, verdict={"ok": False})), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="verdict"):
+        _resolve(scenario, vehicle)
+    sidecar.write_text(yaml.safe_dump(original), encoding="utf-8")
+
+    vehicle_document = yaml.safe_load(vehicle.read_text(encoding="utf-8"))
+    without = {name: {"ros__parameters": {}} for name in ("racing_metrics",)}
+    vehicle.write_text(yaml.safe_dump(without), encoding="utf-8")
+    with pytest.raises(ValueError, match="vehicle_parameter_version"):
+        _resolve(scenario, vehicle)
+    disagreeing = yaml.safe_load(yaml.safe_dump(vehicle_document))
+    disagreeing["racing_recording"]["ros__parameters"][
+        "vehicle_parameter_version"
+    ] = "f1tenth-gym-limits-v1"
+    vehicle.write_text(yaml.safe_dump(disagreeing), encoding="utf-8")
+    with pytest.raises(ValueError, match="vehicle_parameter_version"):
+        _resolve(scenario, vehicle)
+    vehicle.write_text(yaml.safe_dump(vehicle_document), encoding="utf-8")
+
+    # No committed raceline for the track: the circle has none.
+    contract = REPOSITORY_ROOT / "config" / "scenarios" / "contract_test.yaml"
+    with pytest.raises(FileNotFoundError, match="analytic_circle"):
+        _resolve(contract, DEFAULT_VEHICLE)
+
+
+def _node_parameters(context, node) -> list:
+    """A launch_ros Node's parameters, decoded.
+
+    launch_ros has no public accessor; Jazzy keeps the normalized list as
+    `node._Node__parameters` (launch_ros/actions/node.py), whose dict keys and
+    string values are tuples of Substitutions.
+    """
+    import yaml
+    from launch.utilities import perform_substitutions
+
+    def decode(value):
+        if isinstance(value, tuple) and all(
+            hasattr(v, "perform") for v in value
+        ):
+            # launch_ros stores a string as its YAML text: "x\n...\n".
+            return yaml.safe_load(perform_substitutions(context, list(value)))
+        return value
+
+    decoded = []
+    for entry in node._Node__parameters:
+        if isinstance(entry, dict):
+            entry = {decode(key): decode(value) for key, value in entry.items()}
+        decoded.append(entry)
+    return decoded
+
+
+def _merged(context, node) -> dict:
+    merged: dict = {}
+    for entry in _node_parameters(context, node):
+        if isinstance(entry, dict):
+            merged.update(entry)
+    return merged
+
+
+def _launched(context, module, package: str) -> dict:
+    nodes = [
+        node
+        for node in module._launch_nodes(context, "", "")
+        if getattr(node, "_Node__package", None) == package
+    ]
+    assert len(nodes) == 1
+    return _merged(context, nodes[0])
+
+
+def _effective(vehicle: Path, forwarded: dict, name: str):
+    """What the controller sees: the vehicle file's value, overlaid by what
+    the launch forwards after it (launch parameters apply in list order)."""
+    import yaml
+
+    document = yaml.safe_load(vehicle.read_text(encoding="utf-8"))
+    values = document["racing_controller_baseline"]["ros__parameters"]
+    return {**values, **forwarded}.get(name)
+
+
+def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
+    monkeypatch, tmp_path
+) -> None:
+    """BRINGUP-1170: `planner:=`, `raceline_optimizer:=` and `speed_source:=`
+    reach the nodes that act on them, default to today's behaviour, and an
+    unknown value is an error rather than a silent centerline. `speed_source`
+    is forwarded only when given: argument > vehicle file > node default.
+    """
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    scenario = "config/scenarios/spielberg.yaml"
+
+    module, context = _launch_context(scenario=scenario)
+    support = _launched(context, module, "racing_bringup")
+    controller = _launched(context, module, "racing_controller_baseline")
+    assert support["raceline_path"].endswith(
+        "maps/Spielberg/Spielberg_raceline.csv"
+    )
+    # Precedence: a given argument > the vehicle file > the node default.
+    # Not given, nothing is forwarded, so the node default applies.
+    assert "speed_source" not in controller
+
+    # A vehicle file may set speed_source; with no argument it is preserved.
+    import yaml
+
+    document = yaml.safe_load(DEFAULT_VEHICLE.read_text(encoding="utf-8"))
+    document["racing_controller_baseline"]["ros__parameters"][
+        "speed_source"
+    ] = "trajectory"
+    vehicle = tmp_path / "vehicle_trajectory.yaml"
+    vehicle.write_text(yaml.safe_dump(document), encoding="utf-8")
+    module, context = _launch_context(scenario=scenario, vehicle=str(vehicle))
+    controller = _launched(context, module, "racing_controller_baseline")
+    assert "speed_source" not in controller
+    assert _effective(vehicle, controller, "speed_source") == "trajectory"
+
+    # A given argument wins over the vehicle file.
+    module, context = _launch_context(
+        scenario=scenario,
+        vehicle=str(vehicle),
+        speed_source="curvature_schedule",
+    )
+    controller = _launched(context, module, "racing_controller_baseline")
+    assert (
+        _effective(vehicle, controller, "speed_source") == "curvature_schedule"
+    )
+
+    module, context = _launch_context(
+        scenario=scenario,
+        planner="optimized_raceline",
+        raceline_optimizer="tum_mincurv_iqp",
+        speed_source="trajectory",
+    )
+    support = _launched(context, module, "racing_bringup")
+    controller = _launched(context, module, "racing_controller_baseline")
+    assert support["raceline_path"] == str(
+        REPOSITORY_ROOT
+        / "config"
+        / "racelines"
+        / "spielberg"
+        / "f1tenth-default-v1"
+        / "tum_mincurv_iqp.csv"
+    )
+    assert controller.get("speed_source") == "trajectory"
+
+    for overrides in (
+        {"planner": "no_such_planner"},
+        {"raceline_optimizer": "no_such_optimizer"},
+        {"speed_source": "no_such_source"},
+        # No committed raceline for the circle: never the centerline instead.
+        {"planner": "optimized_raceline"},
+    ):
+        module, context = _launch_context(**overrides)
+        with pytest.raises(RuntimeError):
+            module._launch_nodes(context, "", "")

@@ -117,7 +117,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **160 tier-1, 19 tier-2, 10 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **166 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -145,6 +145,8 @@ The optimized-raceline runner work (part 4) added tier 1 `RACELINE-1310` to `RAC
 The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 
 The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).
+
+The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHECK-1420/1430`, `SIM-1080`; tier 2 `PP-2010`; tier 3 `SIM-3110`.
 
 ## The tests that matter most
 

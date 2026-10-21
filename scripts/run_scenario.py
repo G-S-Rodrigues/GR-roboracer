@@ -42,12 +42,29 @@ def main() -> int:
     # The vehicle file every vehicle-taking node reads (the launch's `vehicle`
     # argument); absent, the launch's default stands.
     parser.add_argument("--vehicle", default=None)
+    # Which line /trajectory carries and how the controller picks its speed
+    # (the launch's `planner`, `raceline_optimizer` and `speed_source`);
+    # absent, the launch's defaults stand.
+    parser.add_argument("--planner", default=None)
+    parser.add_argument("--raceline-optimizer", default=None)
+    parser.add_argument("--speed-source", default=None)
     parser.add_argument(
         "--score-only",
         action="store_true",
         help="run the pose source but keep the controller on ground truth",
     )
     arguments = parser.parse_args()
+
+    launch_arguments = {
+        name: value
+        for name, value in (
+            ("planner", arguments.planner),
+            ("raceline_optimizer", arguments.raceline_optimizer),
+            ("speed_source", arguments.speed_source),
+            ("vehicle", arguments.vehicle),
+        )
+        if value
+    }
 
     metrics = run_scenario(
         seed=arguments.seed,
@@ -56,9 +73,7 @@ def main() -> int:
         time_scale=arguments.time_scale,
         pose_source=arguments.pose_source,
         drive_on_estimate=not arguments.score_only,
-        launch_arguments=(
-            {"vehicle": arguments.vehicle} if arguments.vehicle else None
-        ),
+        launch_arguments=launch_arguments or None,
     )
     record = json.dumps(metrics, indent=2, sort_keys=True, default=str)
     if arguments.output is not None:

@@ -35,13 +35,15 @@ These are always launched and have no field. Nothing selects them.
 | `simulator` | `f1tenth_gym_jax` | `f1tenth_gym_jax` | an AutoDRIVE simulator (no identifier yet) | `f1tenth_gym_jax` |
 | `pose_source` | `ground_truth`, `slam_toolbox`, `amcl` | `ground_truth` | none | `ground_truth` |
 | `mapper` | none (racing has no mapper) | `slam_toolbox` | none | n/a |
-| `planner` | `track_raceline` | `track_raceline` | `track_centerline` (rename); an optimized-raceline planner (In development, issue #12, no identifier yet) | `track_raceline` |
+| `planner` | `track_centerline`, `optimized_raceline` | `track_centerline` | none | `track_centerline` |
 | `controller` | `pure_pursuit` | `pure_pursuit` | none | `pure_pursuit` |
 
-`track_raceline` publishes the scenario's `<map>_raceline.csv`, which today holds the track
-centerline at constant speed. `track_centerline` is the planned corrective rename for what that
-planner actually is. It is not a value any launch accepts today. Exploratory methods (MPC/MPCC,
-learned control, FAR-LIO) have no identifier and are not listed here.
+`track_centerline` publishes the scenario's `<map>_raceline.csv`, which holds the track centerline
+at constant speed. It was called `track_raceline` before part 6 of issue #12 renamed it for what it
+is. `optimized_raceline` publishes the committed minimum-curvature line
+`config/racelines/<track>/<vehicle version>/<raceline_optimizer>.csv` instead. A missing or
+mismatched line is an error: the launch never falls back to the centerline. Exploratory methods
+(MPC/MPCC, learned control, FAR-LIO) have no identifier and are not listed here.
 
 The reference default is the composition every new implementation is verified in. Its names come
 from `config/reference_stack.yaml`, which is a test map, not this schema.
@@ -54,6 +56,11 @@ from `config/reference_stack.yaml`, which is a test map, not this schema.
   ignored with `ground_truth`. `true` is acceptance-backed for `amcl`. No acceptance lap backs it
   for `slam_toolbox`, which is measured open loop only, so use `false` there.
 - `scenario` and `vehicle`: the track and sensor setup, and the vehicle parameter file.
+- `planner`, `raceline_optimizer` and `speed_source` (racing): which line `/trajectory` carries
+  (`track_centerline` by default, or `optimized_raceline`), which optimizer's committed line
+  (`tum_mincurv_iqp`, the only one), and how the controller picks its speed (`curvature_schedule`
+  or `trajectory`). `speed_source` is forwarded only when given: a given argument beats the vehicle
+  file's `speed_source`, which beats the controller's default `curvature_schedule`.
 
 Two launch arguments have no field. `start_held` holds physics and the clock at t=0 until the
 first reset, which the test harness uses to define t=0. `estimate_topic` overrides which pose is
@@ -77,7 +84,7 @@ stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
   pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
   mapper: slam_toolbox  # Available: slam_toolbox (survey mapper, never owns map -> odom)
-  planner: track_raceline  # Available: track_raceline. Planned: track_centerline (rename)
+  planner: track_centerline  # Available: track_centerline
   controller: pure_pursuit  # Available: pure_pursuit
 runtime:
   seed: 42  # Available: any non-negative integer
@@ -114,8 +121,10 @@ vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1te
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
   pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl
-  planner: track_raceline  # Available: track_raceline. Planned: track_centerline (rename), an optimized-raceline planner
+  planner: track_centerline  # Available: track_centerline, optimized_raceline
+  raceline_optimizer: tum_mincurv_iqp  # Available: tum_mincurv_iqp (used by optimized_raceline)
   controller: pure_pursuit  # Available: pure_pursuit
+  speed_source: curvature_schedule  # Available: curvature_schedule, trajectory (unset: the vehicle file's value, else curvature_schedule)
 runtime:
   seed: 42  # Available: any non-negative integer
   time_scale: 1.0  # Available: any positive number
@@ -134,6 +143,8 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=slam_toolbox drive_on_estimate:=false seed:=42
 # amcl, closed loop:
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=amcl drive_on_estimate:=true seed:=42
+# The minimum-curvature line at its own speed, on ground truth:
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory seed:=42
 ```
 
 `contract_test.yaml` is the analytic circle. Never use it to judge localization: every point on it
@@ -150,8 +161,10 @@ looks the same to a scan matcher.
 | `stack.simulator` | none | One implementation today, always launched. |
 | `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox` and `amcl` are accepted; anything else is an error. |
 | `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
-| `stack.planner` | none | One implementation today, always launched. |
+| `stack.planner` | `planner:=` | `track_centerline` (default) or `optimized_raceline`; anything else is an error. |
+| `stack.raceline_optimizer` | `raceline_optimizer:=` | `tum_mincurv_iqp`; used only under `optimized_raceline`, but validated always. |
 | `stack.controller` | none | One implementation today, always launched. |
+| `stack.speed_source` | `speed_source:=` | Also settable in the vehicle file's `racing_controller_baseline` block; a given argument wins. |
 | `runtime.seed` | `seed:=` | `map_track.sh` forces `42`. |
 | `runtime.time_scale` | `time_scale:=` | `map_track.sh` passes none, so it runs at the default `1.0`. |
 | `runtime.drive_on_estimate` | `drive_on_estimate:=` | Ignored with `ground_truth`. |

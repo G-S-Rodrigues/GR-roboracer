@@ -21,11 +21,13 @@ angles and the safety supervisor.
 
 ## 2. Launch and contract tests
 
-These tests start the simulator adapter and check what it publishes: types, rate and frames. They
-show the ROS contract holds without a full lap.
+These tests start one node (the simulator adapter, or the controller for PP-2010) and check its ROS
+contract: what it publishes, at what rate and in which frames, and which inputs it reads. They show
+the contract holds without a full lap.
 
 - ADAPT-2010: scan, odometry and IMU use standard ROS message types.
 - ADAPT-2030: the backend publishes at its configured 100 Hz.
+- PP-2010: the controller node follows the trajectory's speed only under `speed_source: trajectory`, and reads the odometry twist into its lookahead only under `lookahead_gain > 0`.
 
 ## 3. System tests
 
@@ -35,6 +37,7 @@ bound it against ground truth.
 - SIM-3020: a seeded lap through the real launch completes.
 - SIM-3040: live metrics match `tests/golden/baseline.json` within tolerance.
 - SIM-3090: the Spielberg lap matches `tests/golden/spielberg_baseline.json`.
+- SIM-3110: the Spielberg lap on the committed minimum-curvature line (`planner:=optimized_raceline speed_source:=trajectory`, default vehicle, seed 42) completes with 0 collisions and 0 saturation events, at its own measured lap time of 113.08 s (tolerance 0.05 s).
 - SIM-3070: with the car driving on ground truth, `slam_toolbox` publishes an estimate whose RMSE against ground truth is within 4.0 m. The test is open loop and does not claim the estimate is good.
 - SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate is available in at least 0.99 of samples and its position RMSE is within 0.65 m (the seed-42 bound).
 

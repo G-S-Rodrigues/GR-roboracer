@@ -16,10 +16,17 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from racing_bringup.estimators import amcl, slam_toolbox
-from racing_bringup.scenario_parameters import track_parameters
+from racing_bringup.scenario_parameters import (
+    PLANNERS,
+    RACELINE_OPTIMIZERS,
+    track_parameters,
+)
 
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
+# How the controller's command speed is chosen: its own curvature schedule, or
+# the speed each /trajectory point carries (a raceline's).
+SPEED_SOURCES = ("curvature_schedule", "trajectory")
 REC_DEFAULT = "log/recording.jsonl"
 # The pose the controller drives on, and so the estimate racing_evaluation
 # scores by default: ground truth, the reference stack's pose source
@@ -83,7 +90,27 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
 
     # The scenario names the world; every track-aware node loads that same
     # world (BRINGUP-1010), over the vehicle file's defaults.
-    tracks = track_parameters(Path(scenario.perform(context)))
+    # planner / raceline_optimizer pick which line /trajectory carries; the
+    # resolver fails closed, so a wrong value is an error, never a fallback to
+    # the centerline.
+    planner = LaunchConfiguration("planner").perform(context)
+    raceline_optimizer = LaunchConfiguration("raceline_optimizer").perform(
+        context
+    )
+    # Forwarded to the controller only when given (empty = unset), so the
+    # precedence is: argument > vehicle file > the node's default.
+    speed_source = LaunchConfiguration("speed_source").perform(context)
+    if speed_source and speed_source not in SPEED_SOURCES:
+        raise RuntimeError(f"unknown speed_source: {speed_source}")
+    try:
+        tracks = track_parameters(
+            Path(scenario.perform(context)),
+            planner=planner,
+            raceline_optimizer=raceline_optimizer,
+            vehicle_path=Path(vehicle),
+        )
+    except (ValueError, FileNotFoundError) as error:
+        raise RuntimeError(str(error)) from error
 
     # The simulator owns the clock (ADR 0006): it publishes /clock from its
     # own simulated-time counter and stays off use_sim_time so its wall
@@ -126,7 +153,13 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     controller_node = Node(
         package="racing_controller_baseline",
         executable="racing_controller_baseline_node",
-        parameters=[vehicle, {"use_sim_time": True}],
+        parameters=[
+            vehicle,
+            {
+                "use_sim_time": True,
+                **({"speed_source": speed_source} if speed_source else {}),
+            },
+        ],
         # The pose the controller drives on is selected here rather than in
         # its C++, which keeps the standard /odom: this remap is the seam
         # pose_source moves. Its default stays ground truth - driving on
@@ -251,6 +284,19 @@ def generate_launch_description() -> LaunchDescription:
     drive_on_estimate_arg = DeclareLaunchArgument(
         "drive_on_estimate", default_value="true"
     )
+    planner_arg = DeclareLaunchArgument(
+        "planner", default_value="track_centerline", choices=list(PLANNERS)
+    )
+    raceline_optimizer_arg = DeclareLaunchArgument(
+        "raceline_optimizer",
+        default_value="tum_mincurv_iqp",
+        choices=list(RACELINE_OPTIMIZERS),
+    )
+    speed_source_arg = DeclareLaunchArgument(
+        "speed_source",
+        default_value="",
+        choices=["", *SPEED_SOURCES],
+    )
 
     return LaunchDescription(
         [
@@ -264,6 +310,9 @@ def generate_launch_description() -> LaunchDescription:
             estimate_topic_arg,
             pose_source_arg,
             drive_on_estimate_arg,
+            planner_arg,
+            raceline_optimizer_arg,
+            speed_source_arg,
             OpaqueFunction(
                 function=_launch_nodes,
                 args=[robot_description, rviz_config],

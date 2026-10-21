@@ -391,7 +391,8 @@ def test_check_1150_the_real_map_loads_with_its_shape() -> None:
     stack = load_stack(REPO_ROOT)
 
     keys = {impl.key for impl in stack.implementations}
-    assert len(stack.implementations) == 8
+    assert len(stack.implementations) == 9
+    assert "planner=optimized_raceline" in keys
     assert "pose_source=amcl" in keys
     assert "pose_source=slam_toolbox" in keys
     amcl = next(i for i in stack.implementations if i.name == "amcl")
@@ -399,7 +400,7 @@ def test_check_1150_the_real_map_loads_with_its_shape() -> None:
     assert amcl.default is False
     assert set(amcl.verified_by) == {"SIM-3080", "ACC-4030", "ACC-4040"}
     assert set(stack.system_tests) == {
-        f"SIM-{n}" for n in range(3010, 3101, 10)
+        f"SIM-{n}" for n in range(3010, 3111, 10)
     }
     assert set(stack.acceptance_tags) == {
         "ACC-4010",
@@ -897,6 +898,37 @@ def test_check_1310_gym_limits_vehicle_and_ggv_paths_are_neutral() -> None:
 
     assert scope.whole_tree is False
     assert scope.tests == ("SIM-3020",)
+
+
+def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
+    None
+):
+    """CHECK-1420: the planner's default is `track_centerline`, the committed
+    racelines belong to the `optimized_raceline` alternative that SIM-3110
+    verifies, and a change to one selects that test rather than the whole
+    tree."""
+    stack = load_stack(REPO_ROOT)
+    deps = reverse_dependents(read_manifests(REPO_ROOT))
+
+    import yaml
+
+    planner = yaml.safe_load(
+        (REPO_ROOT / "config" / "reference_stack.yaml").read_text(
+            encoding="utf-8"
+        )
+    )["roles"]["planner"]
+    assert planner["implementation"] == "track_centerline"
+    alternatives = {a["implementation"]: a for a in planner["alternatives"]}
+    assert alternatives["optimized_raceline"]["verified_by"] == ["SIM-3110"]
+
+    scope = select_ready(
+        ["config/racelines/spielberg/f1tenth-default-v1/tum_mincurv_iqp.csv"],
+        stack,
+        deps,
+    )
+
+    assert scope.whole_tree is False
+    assert set(scope.tests) == {"SIM-3020", "SIM-3110"}
 
 
 def test_check_1170_real_map_instrument_couplings() -> None:
