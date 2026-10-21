@@ -69,8 +69,11 @@ which today is the centerline at constant speed. It has no launch argument, beca
 planner.
 
 Available, offline, not selectable by launch: map centerline extraction and the TUM
-minimum-curvature wrapper in `raceline/`. They are a library with no command to run. See
-[Path planning](../path-planning.md) and the [raceline README](../../raceline/README.md).
+minimum-curvature wrapper in `raceline/`. `env -u PYTHONPATH uv run --project raceline --locked
+python -m raceline` optimizes a line from a map or track, verifies it and writes
+`config/racelines/<track>/<vehicle_version>/<optimizer>.{csv,yaml}`; min-curvature racelines for
+Spielberg are committed under `config/racelines/spielberg/`. No planner follows them yet. See the
+[raceline README](../../raceline/README.md#racelines-part-4) and [Path planning](../path-planning.md).
 
 Planned: `track_centerline`, a rename of today's planner.
 In development (issue #12): an optimized-raceline planner.
@@ -78,8 +81,11 @@ Neither has a launch argument, and there is nothing to run.
 
 ## Control
 
-Available: `pure_pursuit`. It sets speed from path curvature, not from trajectory speed, and the
-independent safety supervisor clamps its commands. It is the only controller, so it has no launch
+Available: `pure_pursuit`. By default (`speed_source=curvature_schedule`) it sets speed from path
+curvature, not from trajectory speed, and the independent safety supervisor clamps its commands.
+The opt-in node parameter `speed_source=trajectory` follows the trajectory's speed instead, which
+on the current centerline CSV is a constant 1.0 m/s; `lookahead_gain` defaults to 0. These are node
+parameters, not launch arguments. It is the only controller, so it has no launch
 argument.
 
 Exploratory: tracking and dynamic MPC, and MPCC. None has an identifier yet.
