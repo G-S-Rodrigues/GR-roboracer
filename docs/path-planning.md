@@ -2,7 +2,12 @@
 
 Where the path the car drives comes from, and how far each method has got. Track: Spielberg.
 
-![Spielberg path planning comparison](images/path_planning_comparison.png)
+![Spielberg minimum-curvature raceline coloured by planned speed](assets/path-planning-raceline-speed.png)
+
+The gym-limits vehicle's minimum-curvature raceline, coloured by the speed it plans, against the
+ground-truth centerline (dashed), the centerline extracted from the survey map (orange) and the
+ground-truth walls. The zooms show the hairpin and the corner where the raceline cuts most; the
+dotted line in them is the default vehicle's raceline.
 
 | | Source | Length | Max curvature (0.5 m sampling) |
 |---|---|---|---|
@@ -30,13 +35,13 @@ to unknown space are not walls, and a short unobserved gap is bridged under a tu
 past which extraction raises rather than guess (see `raceline/README.md`).
 
 Against the ground truth it is 0.029 m off on average and 0.047 m at the 95th percentile. The worst
-point, 0.65 m, is the hairpin (zoom B): the extractor rounds off the sharp inner tip.
+point, 0.65 m, is the hairpin (hairpin zoom): the extractor rounds off the sharp inner tip.
 
 ## Minimum-curvature raceline
 
 The TUM global race trajectory optimizer (`mincurv_iqp`, run as a subprocess through
 `raceline.tum`), given the extracted track, finds the line through the corridor with least
-curvature (zoom C shows it using up to 0.73 m of the width at a corner). That halves the peak
+curvature (the corner zoom shows it using up to 0.73 m of the width at a corner). That halves the peak
 curvature, and the line comes out 4.6 m shorter than the centerline. The optimizer's own estimate,
 with the gym's vehicle limits, is a 29.60 s lap; that is an estimate, not a measured lap.
 
@@ -52,4 +57,4 @@ shortest-path method is implemented.
 The nightly drives every committed line on both vehicles and publishes the comparison as the
 `raceline-report` artifact (see [Verification](verification.md)).
 
-The figure was produced at 07799a4 (2026-10-20).
+The figure was produced at a61e5fa (2026-10-22).
