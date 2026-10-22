@@ -20,3 +20,6 @@ Regenerate with:
 ```bash
 python3 -m sim.track_importer config/tracks/spielberg.yaml config/scenarios/maps
 ```
+
+The same upstream revision is also referenced, not copied, as the submodule
+`third_party/f1tenth_racetracks`: see `third_party/NOTICE.md`.

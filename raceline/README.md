@@ -325,6 +325,10 @@ done
 - *Regeneration.* RACELINE-1395 turns red when the survey, the gym PNG, the
   vehicle or the tables change. The fix is a reviewed regeneration (gotcha 14),
   never a hash edit.
+- *Nightly regeneration.* SIM-5040 re-runs every committed line's recorded
+  `command:` each night. It compares the inputs exactly and the line within a
+  measured tolerance (nearest point, position and speed); `verdict` deltas and
+  `code:` drift are reported, not asserted.
 
 ## Licences
 

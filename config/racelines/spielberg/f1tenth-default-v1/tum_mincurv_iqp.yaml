@@ -25,7 +25,7 @@ code:
   raceline/track.py: a9f334b165f2bb0d5e24b5e8f1371388b7459510
   raceline/tum.py: cc271072780e34cf9f9297afad595639cf65e0ea
   raceline/vehicle.py: bd92ebb5715e9322ba5bd9baa157566a14066adf
-  raceline/verify.py: a9344f74c93f77f30e7c8e24bac2401658084608
+  raceline/verify.py: ec17163cd385810705df7a786d3afb3758345832
   tum_env/run_tum.py: 8d63a410134d23d0999b8ab55024529820fe9932
 tum:
   global-racetrajectory-optimization: global-racetrajectory-optimization @ git+https://github.com/ForzaETH/global_racetrajectory_optimization@b1b38ecfefec7200d5bcb243f115af1d795b3766

@@ -85,7 +85,11 @@ jobs:
           - {region: control, timeout: 180}
           - {region: shared, timeout: 180}
     steps:
+      # The submodule is read only by SIM-5050's upstream reference row, so
+      # only the path_planning legs fetch it (third_party/NOTICE.md).
       - uses: actions/checkout@v4
+        with:
+          submodules: ${{ matrix.region == 'path_planning' }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -122,6 +126,16 @@ jobs:
           path: |
             log/sim-5030.json
             log/sim-5030-max.jsonl
+          if-no-files-found: ignore
+
+      # Tier 5 runs on seed 42 only (NIGHTLY_TIER5 above), so SIM-5040/5050
+      # write the report on path_planning/42 alone.
+      - name: Upload the raceline comparison report
+        if: always() && matrix.region == 'path_planning' && matrix.seed == 42
+        uses: actions/upload-artifact@v4
+        with:
+          name: raceline-report
+          path: log/raceline-report/
           if-no-files-found: ignore
 
       # After check.sh, whose build produced the overlay the lap needs (the

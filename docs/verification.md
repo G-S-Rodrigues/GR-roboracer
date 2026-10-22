@@ -64,6 +64,8 @@ layer 5 test. Its track dimension is Spielberg alone today.
 - SIM-5010: the committed occupancy grid regenerates from the survey.
 - SIM-5020: `slam_toolbox` and `amcl` over seeds 42 and 1030 on Spielberg.
 - SIM-5030: the `amcl` run-to-run spread, over seeds 42, 1030, 1, 7, 99, 123 and 3, with 5 runs per seed.
+- SIM-5040: every committed raceline regenerates from its recorded command. The inputs (survey map, vehicle, TUM pins, parameters) must match exactly and the line must land within a measured tolerance of the committed one.
+- SIM-5050: the raceline comparison report, both vehicles by every committed line by seeds 42, 1030, 7 and 2026. A gym-limits run that does not finish is recorded with the distance it reached; a default-vehicle run that does not finish fails the test. No lap time or ranking is asserted.
 
 ## Running the checks
 
