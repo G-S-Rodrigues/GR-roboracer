@@ -49,4 +49,7 @@ controller's curvature schedule. 120.41 s is the headless golden; the live cente
 about 120.44 s. It minimises curvature, not distance; no
 shortest-path method is implemented.
 
+The nightly drives every committed line on both vehicles and publishes the comparison as the
+`raceline-report` artifact (see [Verification](verification.md)).
+
 The figure was produced at 07799a4 (2026-10-20).

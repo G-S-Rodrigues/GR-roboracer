@@ -12,6 +12,9 @@ page does not repeat its build and launch sequence.
 - The working tree on a local Linux filesystem, such as `~/gitroot/GR-roboracer`. On a network or
   FUSE-mounted filesystem a colcon build can be much slower and file watchers can stop firing
   without any error.
+- Optional: `git submodule update --init third_party/f1tenth_racetracks` fetches the upstream
+  racetracks, which only the nightly raceline report reads (its upstream reference row). Nothing
+  else needs it, and the report says "not available" without it.
 - Only the optional GPU simulator needs an NVIDIA GPU with the container toolkit.
 
 ## Display
