@@ -82,6 +82,11 @@ Superseded by ADR 0007: `--ready` is the definition of done; `--full` runs night
 scheduled CI job runs `--nightly` on one seed leg and `--full` on the others, because running the
 cross-product once per matrix seed would square the cost this section exists to contain.
 
+Note, 2026-10-22 (part 7.0): the nightly is now split by region of interest, one job per region and
+seed running `check.sh --nightly-region <region>`, with tier 5 only on seed 42 of the region that owns
+it. The union of the regions is the same set of tests, and the reasoning about not squaring the cost
+still holds.
+
 ## Consequences
 
 - The repository accumulates implementations permanently. Some will be superseded and never used

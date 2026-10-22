@@ -26,14 +26,14 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 **Tier 5 exists** (`tests/nightly/`, `check.sh --nightly`), built with the SLAM/localization phase.
 ADR 0005 places the expensive cross-product there so that `--fast`, `--ci` and `--full` do not grow
 as implementations accumulate: `--nightly` runs everything `--full` does and then the cross-product,
-and the scheduled CI job runs it on one seed leg. Nothing in tier 5 is part of "done" — a test
+and the scheduled CI job runs `--nightly-region <region>` per region x seed, with `NIGHTLY_TIER5=1` on seed 42, so tier 5 runs in the seed-42 job of each region that owns a tier-5 test. Nothing in tier 5 is part of "done" — a test
 belongs there when its cost is laps rather than seconds and what it catches is a regression only a
 combination shows.
 
-A red nightly leaves evidence: node logs and Robot output (`logs-seed-<n>`, failed legs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the localization recordings of tier 4 (ACC-4030/4040: `logs-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
+A red nightly leaves evidence: node logs and Robot output (`logs-<region>-seed-<n>`, failed jobs only), SIM-5030's sample
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
 `run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
-(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix leg (the matrix seed reaches only the seeded lap), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
+(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
 prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and bounds the pooled median and
 the maximum of those runs (`log/sim-5030.json` also carries `by_seed`, evidence only), not their max-min spread (one tail run sets the spread; the samples behind the
 bound are in the test).
@@ -45,7 +45,8 @@ bound are in the test).
 ./scripts/check.sh --ci     # + tier 2 and one seeded tier-3 lap. The PR gate.
 ./scripts/check.sh --ready  # scoped tiers 0-2, SIM-3020, and the tier-3/4 tests the map selects. Done. ~5-7 min.
 ./scripts/check.sh --full   # tiers 0-4, whole tree. The nightly's gate. ~13 min.
-./scripts/check.sh --nightly # + tier 5. Scheduled, not part of done.
+./scripts/check.sh --nightly # + tier 5, the whole nightly in one command. CI runs --nightly-region instead; not part of done.
+./scripts/check.sh --nightly-region <static|slam|path_planning|control|shared>  # one nightly job (NIGHTLY_TIER5=1 adds its tier 5)
 ```
 
 `--fast` diffs the branch against `main` (plus index, worktree and untracked files) and lints and tests
@@ -117,7 +118,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **166 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 3 tier-5.**
+Current counts: **168 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 3 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -142,6 +143,7 @@ The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/11
 The hairpin-fold work (part 2.4) added tier 1 `SIM-1040/1050/1060/1070`.
 The optimized-raceline runner work (part 4) added tier 1 `RACELINE-1310` to `RACELINE-1395` (23 IDs).
 
+The nightly-split work (part 7.0) added tier 1 `CHECK-1510/1520` (`scripts/tests/test_nightly_regions.py`; `tests/nightly_regions.yaml` assigns each nightly test to a region, `slam`, `path_planning`, `control` or `shared`, plus the implicit `static`).
 The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 
 The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).

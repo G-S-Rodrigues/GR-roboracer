@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
     cat >&2 <<'EOF'
-Usage: check.sh --fast|--ci|--ready|--full|--nightly
+Usage: check.sh --fast|--ci|--ready|--full|--nightly|--nightly-region <region>
 
   --fast    build, lint, tier 1, scoped to the branch's changes (see
             scripts/changed_scope.py). The pre-commit gate. Set
@@ -20,10 +20,21 @@ Usage: check.sh --fast|--ci|--ready|--full|--nightly
   --nightly --full plus tier 5: the cross-product of tracks,
             implementations and seeds. Minutes to hours; it runs on a
             schedule, never in the development loop.
+  --nightly-region <region>
+            what one nightly job runs: static (tiers 0-2, whole tree), or
+            slam, path_planning, control, shared (the build, then that
+            region's tier-3/4 tests from tests/nightly_regions.yaml).
+            NIGHTLY_TIER5=1 adds the region's tier-5 tests. A region the
+            selector refuses exits 1; it never runs the whole tree.
 EOF
 }
 
-if [[ $# -ne 1 ]] ||
+if [[ $# -ge 1 && "$1" == "--nightly-region" ]]; then
+    if [[ $# -ne 2 ]]; then
+        usage
+        exit 2
+    fi
+elif [[ $# -ne 1 ]] ||
     [[ "$1" != "--fast" && "$1" != "--ci" && "$1" != "--ready" && "$1" != "--full" &&
     "$1" != "--nightly" ]]; then
     usage
@@ -36,6 +47,7 @@ fi
 ci_system_test="tests/system/test_sim_3020_seeded_lap_completes.py"
 
 mode="$1"
+region="${2:-}"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
@@ -61,6 +73,28 @@ if [[ "$mode" == "--ready" ]]; then
         ready_line="whole tree (changed_scope.py --ready failed)"
     fi
     echo "==> ready scope: ${ready_line}"
+fi
+# What --nightly-region runs in tiers 3-5, from tests/nightly_regions.yaml. A
+# selector failure is fatal: falling back to the whole tree or to nothing would
+# make a region's job pass for the wrong reason.
+region_system_tests=()
+region_robot_tests=()
+region_nightly_tests=()
+run_static=1
+if [[ "$mode" == "--nightly-region" ]]; then
+    tier5_arg=()
+    if [[ "${NIGHTLY_TIER5:-0}" == 1 ]]; then
+        tier5_arg=(--tier5)
+    fi
+    if ! region_sh="$(python3 scripts/nightly_regions.py --region "$region" "${tier5_arg[@]}" --shell)"; then
+        echo "==> nightly region: selector failed for '${region}'" >&2
+        exit 1
+    fi
+    eval "$region_sh"
+    # Only static runs tiers 0-2 past the build.
+    if [[ "$region" != "static" ]]; then
+        run_static=0
+    fi
 fi
 if [[ "$mode" == "--fast" || "$mode" == "--ready" ]]; then
     if scope_sh="$(python3 scripts/changed_scope.py)"; then
@@ -101,98 +135,100 @@ set +u
 source "$repo_root/install/setup.bash"
 set -u
 
-echo "==> clang-format"
-if (( scope_whole_tree )); then
-    mapfile -d '' cpp_files < <(
-        find ros_ws/src -type f \
-            \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' \
-            -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' \) \
-            -print0
-    )
-    if (( ${#cpp_files[@]} )); then
-        clang-format --dry-run --Werror "${cpp_files[@]}"
-    fi
-elif (( ${#scope_cpp[@]} )); then
-    clang-format --dry-run --Werror "${scope_cpp[@]}"
-else
-    echo "skipped (no C++ changed)"
-fi
-
-echo "==> clang-tidy"
-if (( scope_whole_tree )); then
-    while IFS= read -r -d '' compilation_database; do
-        run-clang-tidy \
-            -p "$(dirname "$compilation_database")" \
-            -config-file "$repo_root/.clang-tidy"
-    done < <(find build -name compile_commands.json -type f -print0)
-elif (( ${#scope_cpp[@]} == 0 )); then
-    echo "skipped (no C++ changed)"
-else
-    for pkg in "${scope_packages[@]}"; do
-        if [[ -f "build/$pkg/compile_commands.json" ]]; then
-            run-clang-tidy \
-                -p "build/$pkg" \
-                -config-file "$repo_root/.clang-tidy"
+if (( run_static )); then
+    echo "==> clang-format"
+    if (( scope_whole_tree )); then
+        mapfile -d '' cpp_files < <(
+            find ros_ws/src -type f \
+                \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' \
+                -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' \) \
+                -print0
+        )
+        if (( ${#cpp_files[@]} )); then
+            clang-format --dry-run --Werror "${cpp_files[@]}"
         fi
-    done
-fi
-
-echo "==> ruff"
-if (( scope_whole_tree )); then
-    ruff check sim tools tests scripts raceline ros_ws/src
-    ruff format --check sim tools tests scripts raceline ros_ws/src
-elif (( ${#scope_py[@]} )); then
-    ruff check "${scope_py[@]}"
-    ruff format --check "${scope_py[@]}"
-else
-    echo "skipped (no Python changed)"
-fi
-
-if [[ "$mode" == "--fast" || "$mode" == "--ready" ]] && ! (( scope_whole_tree )) && (( ${#scope_packages[@]} == 0 )); then
-    echo "==> ROS package tests"
-    echo "skipped (no ROS package changed)"
-else
-    echo "==> ROS package tests"
-    if [[ "$mode" == "--ready" ]]; then
-        # Every label: tiers 1 and 2, scoped to the changed packages.
-        colcon test \
-            --event-handlers console_cohesion+ \
-            --return-code-on-test-failure \
-            --ctest-args --output-on-failure \
-            "${scope_colcon_select[@]}"
-    elif [[ "$mode" == "--fast" ]]; then
-        colcon test \
-            --event-handlers console_cohesion+ \
-            --return-code-on-test-failure \
-            --ctest-args -L 'tier1|gtest|lint' --output-on-failure \
-            "${scope_colcon_select[@]}"
+    elif (( ${#scope_cpp[@]} )); then
+        clang-format --dry-run --Werror "${scope_cpp[@]}"
     else
-        # --ci and --full both run every package test: tier 2 costs ~5s, so
-        # splitting it out would buy nothing and leave a hole in the PR gate.
-        colcon test \
-            --event-handlers console_cohesion+ \
-            --return-code-on-test-failure \
-            --ctest-args --output-on-failure
+        echo "skipped (no C++ changed)"
     fi
-    colcon test-result --verbose
-fi
 
-if find sim/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
-    echo "==> simulator unit tests"
-    python3 -m pytest sim/tests
-fi
+    echo "==> clang-tidy"
+    if (( scope_whole_tree )); then
+        while IFS= read -r -d '' compilation_database; do
+            run-clang-tidy \
+                -p "$(dirname "$compilation_database")" \
+                -config-file "$repo_root/.clang-tidy"
+        done < <(find build -name compile_commands.json -type f -print0)
+    elif (( ${#scope_cpp[@]} == 0 )); then
+        echo "skipped (no C++ changed)"
+    else
+        for pkg in "${scope_packages[@]}"; do
+            if [[ -f "build/$pkg/compile_commands.json" ]]; then
+                run-clang-tidy \
+                    -p "build/$pkg" \
+                    -config-file "$repo_root/.clang-tidy"
+            fi
+        done
+    fi
 
-if find scripts/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
-    echo "==> scripts unit tests"
-    python3 -m pytest scripts/tests
-fi
+    echo "==> ruff"
+    if (( scope_whole_tree )); then
+        ruff check sim tools tests scripts raceline ros_ws/src
+        ruff format --check sim tools tests scripts raceline ros_ws/src
+    elif (( ${#scope_py[@]} )); then
+        ruff check "${scope_py[@]}"
+        ruff format --check "${scope_py[@]}"
+    else
+        echo "skipped (no Python changed)"
+    fi
 
-if find raceline/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
-    echo "==> raceline unit tests"
-    # Its own uv project (ADR 0003's seam). PYTHONPATH is unset because the
-    # ROS environment sourced above would otherwise sit ahead of the venv and
-    # let rclpy import silently (RACELINE-1020, gotcha 24).
-    env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests
+    if [[ "$mode" == "--fast" || "$mode" == "--ready" ]] && ! (( scope_whole_tree )) && (( ${#scope_packages[@]} == 0 )); then
+        echo "==> ROS package tests"
+        echo "skipped (no ROS package changed)"
+    else
+        echo "==> ROS package tests"
+        if [[ "$mode" == "--ready" ]]; then
+            # Every label: tiers 1 and 2, scoped to the changed packages.
+            colcon test \
+                --event-handlers console_cohesion+ \
+                --return-code-on-test-failure \
+                --ctest-args --output-on-failure \
+                "${scope_colcon_select[@]}"
+        elif [[ "$mode" == "--fast" ]]; then
+            colcon test \
+                --event-handlers console_cohesion+ \
+                --return-code-on-test-failure \
+                --ctest-args -L 'tier1|gtest|lint' --output-on-failure \
+                "${scope_colcon_select[@]}"
+        else
+            # --ci and --full both run every package test: tier 2 costs ~5s, so
+            # splitting it out would buy nothing and leave a hole in the PR gate.
+            colcon test \
+                --event-handlers console_cohesion+ \
+                --return-code-on-test-failure \
+                --ctest-args --output-on-failure
+        fi
+        colcon test-result --verbose
+    fi
+
+    if find sim/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
+        echo "==> simulator unit tests"
+        python3 -m pytest sim/tests
+    fi
+
+    if find scripts/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
+        echo "==> scripts unit tests"
+        python3 -m pytest scripts/tests
+    fi
+
+    if find raceline/tests -type f -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
+        echo "==> raceline unit tests"
+        # Its own uv project (ADR 0003's seam). PYTHONPATH is unset because the
+        # ROS environment sourced above would otherwise sit ahead of the venv and
+        # let rclpy import silently (RACELINE-1020, gotcha 24).
+        env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests
+    fi
 fi
 
 if [[ "$mode" == "--ci" ]] && [[ -f "$ci_system_test" ]]; then
@@ -222,6 +258,27 @@ if [[ "$mode" == "--ready" ]]; then
         # A Robot run whose --include matches nothing exits 252.
         echo "skipped (no acceptance test selected)"
     fi
+fi
+
+if [[ "$mode" == "--nightly-region" ]] && (( ${#region_system_tests[@]} )); then
+    echo "==> system tests"
+    python3 -m pytest "${region_system_tests[@]}"
+fi
+
+if [[ "$mode" == "--nightly-region" ]] && (( ${#region_robot_tests[@]} )); then
+    echo "==> acceptance tests"
+    # An empty --test list would run everything, so this is skipped when empty.
+    robot_select=()
+    for name in "${region_robot_tests[@]}"; do
+        robot_select+=(--test "$name")
+    done
+    robot --pythonpath tests/lib --outputdir log/robot \
+        "${robot_select[@]}" tests/acceptance
+fi
+
+if [[ "$mode" == "--nightly-region" ]] && (( ${#region_nightly_tests[@]} )); then
+    echo "==> nightly cross-product"
+    python3 -m pytest "${region_nightly_tests[@]}"
 fi
 
 if [[ "$mode" == "--full" || "$mode" == "--nightly" ]]; then
