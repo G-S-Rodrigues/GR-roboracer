@@ -213,7 +213,13 @@ def test_check_1510_union_equals_collected_files_and_cases() -> None:
         text=True,
         check=False,
     )
-    assert collected.returncode == 0, collected.stdout + collected.stderr
+    assert collected.returncode == 0, (
+        "pytest could not collect tests/system and tests/nightly. Their "
+        "conftests import ROS, so source /opt/ros/jazzy/setup.bash and the "
+        "overlay (install/setup.bash) first, as check.sh does.\n"
+        + collected.stdout
+        + collected.stderr
+    )
     files = {
         line.split("::")[0]
         for line in collected.stdout.splitlines()

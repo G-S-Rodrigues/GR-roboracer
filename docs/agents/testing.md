@@ -26,7 +26,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 **Tier 5 exists** (`tests/nightly/`, `check.sh --nightly`), built with the SLAM/localization phase.
 ADR 0005 places the expensive cross-product there so that `--fast`, `--ci` and `--full` do not grow
 as implementations accumulate: `--nightly` runs everything `--full` does and then the cross-product,
-and the scheduled CI job runs it in the seed-42 job of each region that owns a tier-5 test. Nothing in tier 5 is part of "done" — a test
+and the scheduled CI job runs `--nightly-region <region>` per region x seed, with `NIGHTLY_TIER5=1` on seed 42, so tier 5 runs in the seed-42 job of each region that owns a tier-5 test. Nothing in tier 5 is part of "done" — a test
 belongs there when its cost is laps rather than seconds and what it catches is a regression only a
 combination shows.
 
@@ -45,7 +45,7 @@ bound are in the test).
 ./scripts/check.sh --ci     # + tier 2 and one seeded tier-3 lap. The PR gate.
 ./scripts/check.sh --ready  # scoped tiers 0-2, SIM-3020, and the tier-3/4 tests the map selects. Done. ~5-7 min.
 ./scripts/check.sh --full   # tiers 0-4, whole tree. The nightly's gate. ~13 min.
-./scripts/check.sh --nightly # + tier 5. Scheduled, not part of done.
+./scripts/check.sh --nightly # + tier 5, the whole nightly in one command. CI runs --nightly-region instead; not part of done.
 ./scripts/check.sh --nightly-region <static|slam|path_planning|control|shared>  # one nightly job (NIGHTLY_TIER5=1 adds its tier 5)
 ```
 

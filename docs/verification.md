@@ -74,7 +74,7 @@ is layer 2, and so on up to tier 5 for layer 5. Tier 0 is build and lint.
 - `--ci`: `--fast` plus the launch and contract tests and one seeded lap. This is the pull-request job.
 - `--ready`: the definition of done for a change. It runs the scoped unit and contract tests, the seeded lap (SIM-3020) and the system and acceptance tests for the implementations the change touched.
 - `--full`: tiers 0 to 4, which is layers 1 to 4 plus build and lint, over the whole tree.
-- `--nightly`: `--full` plus layer 5, the cross-product. It takes minutes to hours and runs on a schedule.
+- `--nightly`: `--full` plus layer 5, the cross-product. It takes minutes to hours. The schedule runs `--nightly-region` per job, and `--nightly` is the one-command local equivalent of the whole nightly.
 - `--nightly-region <region>`: what one nightly job runs, one of `static`, `slam`, `path_planning`, `control` or `shared`. Together the regions cover what `--full` and `--nightly` cover. Set `NIGHTLY_TIER5=1` to add the region's layer 5 tests.
 
 Run the definition of done in the container from the [Quick Start](quick-start.md):
