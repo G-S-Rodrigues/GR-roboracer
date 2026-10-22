@@ -267,8 +267,10 @@ def summarise(runs: list[dict], lines: dict | None = None) -> list[dict]:
             "lap_max": laps[-1] if laps else None,
             "dnf_min_m": min(stopped) if stopped else None,
             "dnf_max_m": max(stopped) if stopped else None,
-            "collisions": sum(
-                r["metrics"].get("collision_count", 0) for r in done
+            "collisions": (
+                sum(r["metrics"].get("collision_count", 0) for r in done)
+                if done
+                else None
             ),
             "min_wall_clearance": min(clearances) if clearances else None,
         }
@@ -491,7 +493,7 @@ def render(rows, regeneration, reference=None) -> str:
                 total=row["n_total"],
                 laps=_laps(row),
                 dnf=_dnf(row),
-                coll=row["collisions"],
+                coll=_cell(row["collisions"], "{}"),
                 mwc=_cell(row["min_wall_clearance"], "{:.3f}"),
                 vmc=_cell(row.get("verifier_min_clearance"), "{:.3f}"),
                 length=_cell(row.get("length_m"), "{:.1f}"),

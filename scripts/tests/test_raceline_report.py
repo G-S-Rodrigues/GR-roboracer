@@ -235,6 +235,7 @@ def test_check_1450_aggregation_never_shows_a_dnf_as_a_number() -> None:
     assert all_dnf["lap_min"] is None
     assert all_dnf["lap_median"] is None
     assert all_dnf["lap_max"] is None
+    assert all_dnf["collisions"] is None
 
 
 # CHECK-1460 -------------------------------------------------------------
