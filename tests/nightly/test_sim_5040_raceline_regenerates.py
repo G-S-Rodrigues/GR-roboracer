@@ -1,0 +1,189 @@
+"""SIM-5040: every committed raceline regenerates from its recorded command.
+
+A committed line is only evidence while the command in its yaml still
+produces it. This test re-runs each recorded `command:` (with an `--out-dir`
+of its own, so nothing committed is touched) and requires:
+
+- the CLI's own verifier to pass (exit 0);
+- the inputs recorded in the yaml to match exactly: source, ground-truth and
+  vehicle hashes, the TUM pins, the parameters and the normalised command;
+- the regenerated line to lie within `REGEN_XY_TOL` / `REGEN_V_TOL` of the
+  committed one, nearest point to nearest point.
+
+`verdict` deltas and `code:` drift are recorded and printed, never asserted
+(owner O4, plan R5): a drifted `code:` block is a stale record, not a wrong
+line, and RACELINE-1395 already guards the committed line itself.
+
+It prints the measured deltas on every run, passing or not, and writes
+`log/raceline-report/regeneration.json` (overwritten, never appended) for
+SIM-5050's report. The TUM solve is deterministic only up to the CPU's
+OpenBLAS kernel, which is why the line is compared within a tolerance and
+the inputs are compared exactly.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import time
+from functools import lru_cache
+from pathlib import Path
+
+import pytest
+import yaml
+
+from scripts.raceline_report import (
+    compare_lines,
+    provenance_diff,
+    regeneration_argv,
+)
+
+REPO = Path(__file__).resolve().parents[2]
+REPORT_DIR = REPO / "log" / "raceline-report"
+RACELINES = sorted((REPO / "config" / "racelines").glob("*/*/*.yaml"))
+# The recorded --timeout is per pass and the optimizer makes 2 passes (C3).
+SOLVE_TIMEOUT_SECONDS = 2 * 1800 + 300
+
+# Tolerance procedure (owner Q3): 10 x the worst dev-rerun delta, rounded up
+# to a 1-2-5 step, with a floor of 0.01 m / 0.01 m/s (a fifth of the survey
+# map's 0.05 m cell, the smallest difference the verifier resolves). Not to be
+# widened to green a run (repo-gotchas #14); tighten it from the CI actuals
+# this test prints on every run.
+MEASUREMENT = (
+    "gym-limits line regenerated twice on the dev host (i7-12700H, OpenBLAS "
+    "kernel Haswell, tum_env Python 3.8.20, ~13 min per solve): plain rerun "
+    "byte-identical (max dxy 0, max dv 0); OPENBLAS_NUM_THREADS=1 with "
+    "OPENBLAS_CORETYPE=Nehalem (2190 s) max dxy 2.2e-9 m, max dv 3.0e-8 "
+    "m/s, verdict deltas <= 1e-10, code drift none. The default line "
+    "regenerated in place byte-identical (765 s). 10 x worst = 2.2e-8 m / "
+    "3.0e-7 m/s, both under the floor"
+)
+REGEN_XY_TOL = 0.01
+REGEN_V_TOL = 0.01
+
+RECORDS: dict[str, dict] = {}
+
+
+@lru_cache(maxsize=1)
+def tum_python() -> str:
+    done = subprocess.run(
+        [
+            "env",
+            "-u",
+            "PYTHONPATH",
+            "uv",
+            "run",
+            "--project",
+            "raceline/tum_env",
+            "--locked",
+            "python",
+            "-V",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return (done.stdout or done.stderr).strip()
+
+
+def regenerate(doc: dict, out_dir: Path) -> tuple[Path, dict, float]:
+    """Run the recorded command; returns (fresh csv, fresh yaml, seconds).
+
+    Module-level so the RED mutation can replace it with a stand-in that
+    pays for no TUM run.
+    """
+    argv = regeneration_argv(doc, out_dir)
+    started = time.monotonic()
+    done = subprocess.run(
+        [
+            "env",
+            "-u",
+            "PYTHONPATH",
+            "uv",
+            "run",
+            "--project",
+            "raceline",
+            "--locked",
+            *argv,
+        ],
+        cwd=REPO,
+        timeout=SOLVE_TIMEOUT_SECONDS,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    seconds = time.monotonic() - started
+    assert done.returncode == 0, (
+        f"regeneration exited {done.returncode} (the CLI's verifier rejected "
+        f"the line or the solve failed):\n{done.stderr[-2000:]}"
+    )
+    folder = out_dir / doc["track"] / doc["vehicle_version"]
+    fresh_csv = folder / f"{doc['optimizer']}.csv"
+    fresh_doc = yaml.safe_load(
+        (folder / f"{doc['optimizer']}.yaml").read_text(encoding="utf-8")
+    )
+    return fresh_csv, fresh_doc, seconds
+
+
+def check_source(doc: dict) -> None:
+    """The line must come from the SLAM survey map, not the ground truth."""
+    path = doc["source"]["path"]
+    assert re.fullmatch(r"config/scenarios/maps/([^/]+)/slam/\1\.yaml", path), (
+        f"source.path {path!r} is not a survey map "
+        "(maps/<Track>/slam/<Track>.yaml)"
+    )
+
+
+def _write_records() -> None:
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    (REPORT_DIR / "regeneration.json").write_text(
+        json.dumps(RECORDS, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+
+def test_sim_5040_has_racelines_to_regenerate() -> None:
+    assert len(RACELINES) >= 2, f"found only {RACELINES}"
+
+
+@pytest.mark.parametrize(
+    "yaml_path",
+    RACELINES,
+    ids=[str(p.relative_to(REPO / "config" / "racelines")) for p in RACELINES],
+)
+def test_sim_5040_raceline_regenerates(yaml_path: Path, tmp_path: Path) -> None:
+    committed = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    check_source(committed)
+
+    fresh_csv, fresh_doc, seconds = regenerate(committed, tmp_path / "regen")
+    measured = compare_lines(yaml_path.with_suffix(".csv"), fresh_csv)
+    diff = provenance_diff(committed, fresh_doc)
+
+    name = str(yaml_path.relative_to(REPO / "config" / "racelines"))
+    RECORDS[name] = {
+        "solve_seconds": seconds,
+        "max_xy_m": measured["max_xy_m"],
+        "max_dv_mps": measured["max_dv_mps"],
+        "verdict_deltas": diff["verdict_deltas"],
+        "code_drift": diff["code_drift"],
+        "tum_python": tum_python(),
+    }
+    _write_records()
+    print(
+        f"\nSIM-5040 {name}: solve {seconds:.0f} s, "
+        f"max dxy {measured['max_xy_m']:.6f} m, "
+        f"max dv {measured['max_dv_mps']:.6f} m/s, "
+        f"tum {tum_python()}, code drift {sorted(diff['code_drift'])}, "
+        f"verdict deltas {diff['verdict_deltas']}"
+    )
+
+    assert diff["differences"] == [], diff["differences"]
+    assert measured["max_xy_m"] <= REGEN_XY_TOL, (
+        f"{name}: regenerated line is {measured['max_xy_m']:.4f} m from the "
+        f"committed one (bound {REGEN_XY_TOL} m)"
+    )
+    assert measured["max_dv_mps"] <= REGEN_V_TOL, (
+        f"{name}: regenerated speed differs by {measured['max_dv_mps']:.4f} "
+        f"m/s (bound {REGEN_V_TOL} m/s)"
+    )
