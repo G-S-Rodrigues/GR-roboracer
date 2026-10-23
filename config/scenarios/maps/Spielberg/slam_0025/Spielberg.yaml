@@ -1,24 +1,26 @@
-# Spielberg survey grid at 0.025 m cells: a finer sibling of ../slam/Spielberg
-# (0.05 m, kept untouched: algorithms and data are added, never replaced).
+# Spielberg dense survey grid at 0.025 m cells: a sibling of ../slam/Spielberg (0.05 m,
+# kept untouched: algorithms and data are added, never replaced).
 # Made 2026-10-23 on main cfbf844's stack by the survey procedure of
-# scripts/map_track.sh (spielberg_survey scenario, seed 42, one lap at 1x,
-# slam_toolbox async mapper with scan matching and loop closure off, map_saver_cli
-# --fmt png --occ 0.65 --free 0.196), with two overrides that are NOT committed
-# defaults: slam_toolbox `resolution: 0.025` (config/localization/
-# slam_toolbox_survey.yaml otherwise unchanged) and the controller's
-# maximum_speed 1.5 m/s instead of 3.0 (a vehicle-file copy passed as
-# vehicle:=). Lap 239.57 s sim time, 0 collisions, no latch.
-# Against the track's ground-truth walls (nearest occupied cell, per wall
-# point): max 0.088/0.093 m, p95 0.056/0.055, median 0.026/0.027 (left/right);
-# the 0.05 m map measured the same way: max 0.097/0.105, p95 0.067/0.066,
-# median 0.029/0.028. Occupied cells sit ~1.7 cm outward of the GT wall on
-# average in both. raceline's walls="observed" extraction runs cleanly on it.
-# A 0.01 m survey was tried and not committed: its walls are speckled (max
-# 0.25/0.31 m from GT) and the extractor finds no closed loop on it.
+# scripts/map_track.sh (spielberg_survey scenario, seed 42, slam_toolbox async mapper,
+# scan matching and loop closure off, map_saver_cli --fmt png --occ 0.65 --free 0.196),
+# with overrides that are NOT committed defaults: slam_toolbox resolution 0.025,
+# minimum_travel_distance 0.02 and minimum_travel_heading 0.02 (committed 0.2 / 0.1, so
+# a scan every 2 cm instead of 20 cm: the 64 beams are ~0.074 rad apart and a fine grid
+# is speckled unless scans overlap densely), the controller's maximum_speed 1.5 m/s
+# (vehicle file copy), and a scenario copy with max_steps 100000 so the run lasts 2 laps
+# (lap 1 at 239.56 s sim, run stopped at ~490 s, 0 collisions, no latch).
+# The mapper dropped scans (message-filter queue full, continuously) and ran at ~280 MB
+# RSS peak; the map is nonetheless complete and denser than the sparse survey.
+# Against the track's ground-truth walls (nearest occupied cell, per wall point), left/right:
+# max 0.074/0.081 m, p95 0.049/0.045, median 0.018/0.018.
+# The 0.05 m map: max 0.097/0.105, p95 0.067/0.066, median 0.029/0.028; the 0.025 m
+# one-lap sparse map: max 0.088/0.093, p95 0.056/0.055, median 0.026/0.027. Occupied cells
+# sit ~1.4-1.6 cm outward of the GT wall on average. raceline's walls="observed"
+# extraction runs cleanly on it.
 image: Spielberg.png
 mode: trinary
 resolution: 0.025
-origin: [-77.257, -10.273, 0]
+origin: [-77.259, -10.279, 0]
 negate: 0
 occupied_thresh: 0.65
 free_thresh: 0.196
