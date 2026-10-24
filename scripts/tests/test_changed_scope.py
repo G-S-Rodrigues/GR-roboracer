@@ -879,6 +879,21 @@ def test_check_1300_raceline_paths_are_neutral_on_the_real_map() -> None:
     assert scope.tests == ("SIM-3020",)
 
 
+def test_check_1530_raceline_report_is_neutral_frozen_pose_is_not() -> None:
+    """CHECK-1530: raceline_report.py is read only by tier 5 and its tier-1
+    test, so on the real map it selects only the reference lap. The frozen-pose
+    rule a lap imports lives in frozen_pose.py, which stays whole tree."""
+    stack = load_stack(REPO_ROOT)
+    deps = reverse_dependents(read_manifests(REPO_ROOT))
+
+    report = select_ready(["scripts/raceline_report.py"], stack, deps)
+    assert report.whole_tree is False
+    assert report.tests == ("SIM-3020",)
+
+    frozen = select_ready(["scripts/frozen_pose.py"], stack, deps)
+    assert frozen.whole_tree is True
+
+
 def test_check_1310_gym_limits_vehicle_and_ggv_paths_are_neutral() -> None:
     """CHECK-1310: no gate test launches the gym-limits vehicle and no node
     reads a GGV table, so on the real map their paths select only the
