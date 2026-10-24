@@ -16,6 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
+from scripts.frozen_pose import FROZEN_EPSILON_M, FrozenPose
+
 STATE_TOPIC = "/ground_truth/track_relative_state"
 STATUS_TOPIC = "/safety/status"
 COMMAND_PREFIX = ["python", "-m", "raceline"]
@@ -24,9 +26,9 @@ COMMAND_PREFIX = ["python", "-m", "raceline"]
 # *not* latches: any clamp sets COMMAND_LIMIT (supervisor.cpp:45-81).
 LATCH_REASONS = frozenset({3, 4})
 CLAMP_ESTOP = 64
-# A pose that moved less than this over the whole window is frozen. The gym
-# keeps the old state on a collision, so a frozen pose repeats exactly.
-FROZEN_EPSILON_M = 1e-3
+# The frozen-pose rule lives in scripts/frozen_pose.py (a lap imports it);
+# FROZEN_EPSILON_M is re-exported from there.
+__all__ = ["FROZEN_EPSILON_M"]
 METRIC_FIELDS = (
     "lap_time",
     "minimum_wall_clearance",
@@ -187,7 +189,10 @@ def run_outcome(events, observer_text, track_length, frozen_window_s) -> dict:
     ESTOP_LATCHED, or CLAMP_ESTOP in ``active_clamps`` (A1). ``dnf``: the
     pose (s and d) is constant over the last ``frozen_window_s`` of sim time.
     ``budget``: still moving. ``observer_text`` is carried for the report and
-    never read to classify (its "latch" is any non-NONE reason).
+    never read to classify (its "latch" is any non-NONE reason). Only statuses
+    stamped after 0 count: the sim is held at /clock 0 until ``~/reset`` and
+    the supervisor's status during the hold is not the run's (N1; the same
+    rule as ``_post_reset``).
 
     ``distance_m`` is forward progress from the first post-reset ``s``,
     unwrapped modulo ``track_length`` (R2).
@@ -197,6 +202,7 @@ def run_outcome(events, observer_text, track_length, frozen_window_s) -> dict:
     )
     latched = any(
         e["topic"] == STATUS_TOPIC
+        and _stamp(e) > 0.0
         and (
             e["payload"]["reason"] in LATCH_REASONS
             or e["payload"]["active_clamps"] & CLAMP_ESTOP
@@ -209,18 +215,10 @@ def run_outcome(events, observer_text, track_length, frozen_window_s) -> dict:
             after["payload"]["s"] - before["payload"]["s"], track_length
         )
         reached = max(reached, distance)
-    frozen = False
-    if states:
-        end = _stamp(states[-1])
-        window = [e for e in states if _stamp(e) >= end - frozen_window_s]
-        spans = end - _stamp(states[0]) >= frozen_window_s
-        first = window[0]["payload"]
-        frozen = spans and all(
-            abs(_wrap(e["payload"]["s"] - first["s"], track_length))
-            < FROZEN_EPSILON_M
-            and abs(e["payload"]["d"] - first["d"]) < FROZEN_EPSILON_M
-            for e in window
-        )
+    pose = FrozenPose(frozen_window_s, track_length)
+    for e in states:
+        pose.update(_stamp(e), e["payload"]["s"], e["payload"]["d"])
+    frozen = pose.frozen
     outcome = "latched" if latched else "dnf" if frozen else "budget"
     return {
         "outcome": outcome,
@@ -352,6 +350,16 @@ def normalise_command(command: str) -> str:
         else:
             kept.append(token)
     return shlex.join(kept)
+
+
+def read_regeneration(path: Path, not_before: float) -> dict:
+    """The regeneration record at ``path``, or ``{}`` when it is missing or
+    older than ``not_before`` (epoch seconds): a stale file from an earlier
+    session must render "not measured", never as this run's result (N2)."""
+    path = Path(path)
+    if not path.is_file() or path.stat().st_mtime < not_before:
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def regeneration_argv(doc: dict, out_dir: Path) -> list[str]:

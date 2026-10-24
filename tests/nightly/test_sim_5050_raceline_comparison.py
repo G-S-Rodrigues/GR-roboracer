@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import time
 from pathlib import Path
 
 import racing_common
@@ -38,6 +39,7 @@ from scripts.raceline_report import (
     raceline_geometry,
     read_manifest,
     read_recording_tolerant,
+    read_regeneration,
     render,
     run_outcome,
     structural_failures,
@@ -61,7 +63,9 @@ DEFAULT_VEHICLE = "default"
 # O5: four seeds; revisit if the seed-42 leg passes 150 min.
 SEEDS = (42, 1030, 7, 2026)
 TIME_SCALE = 5.0
-# SIM-3110's 3 x 65 s. A run that does not finish costs all of it.
+# SIM-3110's 3 x 65 s. A run that is still moving at the end costs all of it;
+# one whose pose froze (a DNF or a latch) is stopped by the frozen-pose hook
+# 2 x FROZEN_WINDOW_SECONDS of sim time after it stops, 0.4 s of wall at x5.
 TIMEOUT_SECONDS = 195.0
 # Sim seconds over which s and d must not move for a pose to be frozen.
 # Measured (part 7 step 2, gym-limits, seed 42, 100 Hz recordings): the car is
@@ -69,6 +73,9 @@ TIMEOUT_SECONDS = 195.0
 # before that the longest stretch with s and d still is 0.02 s. 1.0 s is 50x
 # that, and a creeping car moves more than the 1 mm threshold in it.
 FROZEN_WINDOW_SECONDS = 1.0
+# Collection time, before SIM-5040 writes regeneration.json in this session:
+# an older file is a previous session's and renders "not measured" (N2).
+SESSION_START = time.time()
 NO_METRICS = "no message on /scenario/metrics"
 
 
@@ -103,8 +110,27 @@ def one_run(vehicle: str, line: str, seed: int, track_length: float, tmp: Path):
             timeout=TIMEOUT_SECONDS,
             time_scale=TIME_SCALE,
             launch_arguments=launch_arguments(vehicle_file, line, recording),
+            # Twice the window: run_outcome classifies from the recording,
+            # whose subscriber is not the hook's, and a stop at exactly one
+            # window can leave a recorded still tail short of it (`budget`).
+            stop_on_frozen_pose=2 * FROZEN_WINDOW_SECONDS,
+            track_length=track_length,
         )
-        run.update(outcome="completed", metrics=metrics)
+        if metrics.get("lap_completed"):
+            run.update(outcome="completed", metrics=metrics)
+        else:
+            # The hook stopped a frozen pose; finalize published partial
+            # metrics. Classify from the recording, as for a timeout.
+            run["partial_metrics"] = metrics
+            events = read_recording_tolerant(recording)
+            run.update(
+                run_outcome(
+                    events,
+                    "frozen-pose stop",
+                    track_length,
+                    FROZEN_WINDOW_SECONDS,
+                )
+            )
     except TimeoutError as error:
         text = str(error)
         if text.startswith(NO_METRICS) and recording.exists():
@@ -137,10 +163,7 @@ def static_fields(version: str, line: str) -> dict:
 
 
 def regeneration_record() -> dict:
-    path = REPORT_DIR / "regeneration.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    return read_regeneration(REPORT_DIR / "regeneration.json", SESSION_START)
 
 
 def test_sim_5050_raceline_comparison(tmp_path: Path) -> None:
