@@ -122,6 +122,19 @@ def test_raceline_1385_a_track_run_writes_the_csv_and_provenance(
     assert doc["verdict"]["ok"] is True
 
 
+def test_raceline_1500_provenance_records_the_runner_itself(
+    monkeypatch, tmp_path
+):
+    """N5: __main__.py builds the command and the parameters, so a change to
+    it must show up as code drift in the provenance."""
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    oval = _oval_yaml(tmp_path)
+    assert runner.main(_argv(tmp_path, "--track", str(oval))) == 0
+    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
+    assert doc["code"]["raceline/__main__.py"] == _blob(Path(runner.__file__))
+
+
 def _ring_args(tmp_path):
     grid = test_extract._ring()
     start = test_extract._ring_start()
