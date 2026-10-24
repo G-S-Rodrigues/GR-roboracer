@@ -36,6 +36,10 @@ Spielberg: `slam_toolbox` within 4.0 m RMSE and `amcl` within 0.65 m, each with 
 0.99 (ACC-4030). A further case drives a full lap on the `amcl` estimate with zero collisions
 (ACC-4040). See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
 
+The denser surveys beside the committed grid, measured against the track's ground-truth walls, have a
+95th-percentile wall deviation of 0.067 m at 0.05 m cells, 0.049 m at 0.025 m and 0.046 m at 0.02 m
+(`config/scenarios/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers hold the full figures).
+
 ## Mapping demonstration
 
 The recording shows the real simulator, ROS and SLAM Toolbox path building the Spielberg grid

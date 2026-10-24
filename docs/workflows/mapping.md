@@ -77,9 +77,11 @@ The stem you give produces two files:
 No pose graph is saved. The files belong to the container user, and two runs differ slightly
 because the asynchronous mapper picks its own scans. The committed survey grid is
 `config/scenarios/maps/Spielberg/slam/Spielberg`, and it is what amcl localizes on in
-[Racing](racing.md#amcl-closed-loop). Denser 0.025 m and 0.02 m surveys (a scan every 2 cm, two
-laps at 1.5 m/s) sit beside it in
+[Racing](racing.md#amcl-closed-loop). Denser 0.025 m and 0.02 m surveys (minimum travel 2 cm over two
+laps at 1.5 m/s; the mapper dropped scans throughout, so fewer were integrated) sit beside it in
 `config/scenarios/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers say how they were made.
+`./scripts/map_track.sh` does not produce them (non-default slam_toolbox settings and a longer
+scenario), and no launch selects them: amcl reads `slam/`.
 
 ## Mapping versus online SLAM
 
