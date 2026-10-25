@@ -9,6 +9,9 @@ direction are an assumption that part 10 checks against the simulator.
 import hashlib
 from pathlib import Path
 
+import numpy as np
+import pytest
+
 REPO = Path(__file__).resolve().parents[2]
 MAP_DIR = REPO / "config" / "scenarios" / "maps" / "Porto"
 MAP_YAML = MAP_DIR / "Porto.yaml"
@@ -101,3 +104,134 @@ def test_raceline_1185_cli_writes_what_the_extractor_extracts(tmp_path, capsys):
     assert track_from_map.main(_cli_args(bad, ("5", "5", "0"))) == 3
     assert not bad.exists()
     assert capsys.readouterr().err.strip()
+
+
+@pytest.fixture(scope="module")
+def extracted():
+    from raceline.extract import Pose2D, extract_track, load_map
+
+    grid = load_map(MAP_YAML)
+    return extract_track(
+        grid,
+        grid.resolution,
+        grid.origin,
+        Pose2D(*START),
+        DIRECTION,
+        name="Porto",
+        walls="observed",
+    )
+
+
+@pytest.fixture(scope="module")
+def grid():
+    from raceline.extract import load_map
+
+    return load_map(MAP_YAML)
+
+
+def _outside_walls(track, grid, floor):
+    """Indices of centerline points off a free cell or under the floor.
+
+    Independent of the extractor: the free cells and the distance to the
+    nearest occupied cell both come from the official map.
+    """
+    from raceline.extract import _dist_to_occupied
+
+    dist = _dist_to_occupied(grid)
+    col = np.floor((track.xy[:, 0] - grid.origin.x) / grid.resolution)
+    row = np.floor((track.xy[:, 1] - grid.origin.y) / grid.resolution)
+    h, w = dist.shape
+    bad = []
+    cells = zip(col.astype(int), row.astype(int), strict=True)
+    for i, (c, r) in enumerate(cells):
+        if not (0 <= c < w and 0 <= r < h) or (
+            grid.data[r, c] != 0 or dist[r, c] < floor
+        ):
+            bad.append(i)
+    return bad
+
+
+def _too_narrow(track, minimum=MIN_TOTAL_WIDTH_M):
+    """Indices where ``w_left + w_right`` is under ``minimum``."""
+    total = track.w_left + track.w_right
+    return [int(i) for i in np.flatnonzero(total < minimum)]
+
+
+def test_raceline_1190_porto_track_regenerates_from_the_map(extracted):
+    """RACELINE-1190: porto.yaml is the extraction of the committed map.
+
+    Same point count, values within 1e-6 (the file prints xy and curvature
+    at 1e-9 and widths at 1e-6).
+    """
+    from raceline.track import load_track
+
+    got = load_track(TRACK)
+    assert len(got.xy) == len(extracted.xy)
+    np.testing.assert_allclose(got.xy, extracted.xy, atol=1e-6)
+    np.testing.assert_allclose(got.curvature, extracted.curvature, atol=1e-6)
+    np.testing.assert_allclose(got.w_left, extracted.w_left, atol=1e-6)
+    np.testing.assert_allclose(got.w_right, extracted.w_right, atol=1e-6)
+
+
+def test_raceline_1195_porto_track_is_a_closed_lap_of_known_length():
+    """RACELINE-1195: Porto's lap is 32.71 m (repo-gotchas #15).
+
+    Lap distance comes from the track, so this file is Porto's lap length:
+    within 1% of the measured 32.71 m, closed, starting within
+    ``MAX_START_OFFSET`` of the assumed spawn.
+    """
+    from raceline.extract import MAX_START_OFFSET, STEP_M
+    from raceline.track import load_track
+
+    track = load_track(TRACK)
+    assert track.name == "Porto"
+    seg = np.roll(track.xy, -1, axis=0) - track.xy
+    step = np.hypot(seg[:, 0], seg[:, 1])
+    assert step[-1] <= 1.5 * STEP_M, f"gap {step[-1]:.3f} m closing the loop"
+    assert abs(step.sum() - LENGTH_M) <= 0.01 * LENGTH_M, step.sum()
+    assert np.hypot(*(track.xy[0] - START[:2])) <= MAX_START_OFFSET
+
+
+def test_raceline_1200_porto_centerline_stays_inside_the_walls(grid):
+    """RACELINE-1200: every point is a free cell >= 0.45 m from a wall.
+
+    The negative case moves the committed line 1.0 m along its left normal,
+    out of the 1.18-2.6 m corridor: the check must flag it, or it is vacuous.
+    """
+    from raceline.geometry import tangents
+    from raceline.track import Track, load_track
+
+    track = load_track(TRACK)
+    assert _outside_walls(track, grid, CLEARANCE_FLOOR_M) == []
+
+    tan = tangents(track.xy)
+    left = np.column_stack([-tan[:, 1], tan[:, 0]])
+    shifted = Track(
+        track.name,
+        track.xy + 1.0 * left,
+        track.curvature,
+        track.w_left,
+        track.w_right,
+    )
+    bad = _outside_walls(shifted, grid, CLEARANCE_FLOOR_M)
+    assert bad, "a line shifted 1.0 m sideways passed the inside-walls check"
+
+
+def test_raceline_1205_porto_is_wide_enough_everywhere():
+    """RACELINE-1205: w_left + w_right >= 0.90 m at every point.
+
+    Measured min 1.176 m, the duct gaps included. The negative case scales
+    the widths by 0.7 (min ~0.82 m): the check must flag it.
+    """
+    from raceline.track import Track, load_track
+
+    track = load_track(TRACK)
+    assert _too_narrow(track) == []
+    thin = Track(
+        track.name,
+        track.xy,
+        track.curvature,
+        0.7 * track.w_left,
+        0.7 * track.w_right,
+    )
+    assert _too_narrow(thin), "widths x0.7 passed the minimum-width check"
