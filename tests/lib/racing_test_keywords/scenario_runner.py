@@ -20,11 +20,12 @@ thread, spins its own rclpy node to wait for ``/scenario/metrics``, then calls
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import threading
 import time
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,7 @@ from rclpy.qos import (
 )
 from rosgraph_msgs.msg import Clock
 
+from .probes import Probe
 from .ros_helpers import (
     ensure_rclpy_initialized,
     reset_rclpy,
@@ -569,6 +571,7 @@ def run_scenario(
     *,
     stop_on_frozen_pose: float | None = None,
     track_length: float | None = None,
+    probes: Sequence[Probe] = (),
 ) -> dict[str, Any]:
     """Launch the full stack headlessly, run a seeded scenario, return metrics.
 
@@ -600,6 +603,11 @@ def run_scenario(
     ``timeout``. It needs ``track_length`` (the caller's, from the track the
     scenario drives; the scenario names a map, not a track file) and raises
     ``ValueError`` without it. ``None`` leaves the wait untouched.
+
+    ``probes`` (``racing_test_keywords.probes``) attach to the driver node
+    beside the hang observer, are told when t=0 starts, and are closed at
+    the end; the caller reads their results afterwards. The default ``()``
+    changes nothing for any other caller.
     """
     if stop_on_frozen_pose is not None and track_length is None:
         raise ValueError("stop_on_frozen_pose needs track_length")
@@ -643,8 +651,12 @@ def run_scenario(
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
         observer = _HangObserver(node)
+        for probe in probes:
+            probe.attach(node)
         try:
             _reset_at_deterministic_t0(node, seed, timeout, pose_source)
+            for probe in probes:
+                probe.started()
             if stop_on_frozen_pose is None:
                 message = wait_for_message(
                     node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
@@ -660,6 +672,9 @@ def run_scenario(
         except BaseException as error:  # noqa: BLE001 - re-raised on the caller's thread
             failure.append(error)
         finally:
+            for probe in probes:
+                with contextlib.suppress(BaseException):  # never mask the run
+                    probe.close()
             observer.close()
             node.destroy_node()
             service.shutdown()
