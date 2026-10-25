@@ -5,5 +5,5 @@ This package is the backend-neutral simulator boundary. It contains contract con
 - Keep backend-specific symbols, imports, and types out of `include/`.
 - All backends publish `/scan`, `/odom`, `/imu`, and `/ground_truth/track_relative_state`, subscribe to `/drive`, and provide private `reset` and `step_mode` services. Launched with `start_held: true`, a backend publishes its t=0 snapshot without advancing `/clock` until the first `reset` (ADAPT-2080).
 - Preserve the `map`, `base_link`, and `laser` frame names and the declared QoS profiles.
-- ADAPT-2010 through ADAPT-2050 remain explicitly skipped until Step 9 supplies the first backend; Step 9 removes those markers.
+- A backend declares five read-only capability parameters (`capability.clock|reset|step_mode|time_scale|start_held`, names in `contract.hpp`). Conformance tests that need one are gated in `test/conformance.py` `REQUIREMENTS`; a lacking test prints `NOT APPLICABLE <id>` and returns, never a skip marker (ADAPT-1030, ADAPT-2150).
 - ADAPT-2060 is structural and must always pass.

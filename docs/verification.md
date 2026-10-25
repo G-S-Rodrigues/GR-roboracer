@@ -27,6 +27,7 @@ the contract holds without a full lap.
 
 - ADAPT-2010: scan, odometry and IMU use standard ROS message types.
 - ADAPT-2030: the backend publishes at its configured 100 Hz.
+- ADAPT-2140: the backend declares its capabilities (clock, reset, step mode, time scale, start held) as read-only parameters. The conformance tests that need one select by it, and a test whose capability the backend lacks is named as not applicable in the output.
 - PP-2010: the controller node follows the trajectory's speed only under `speed_source: trajectory`, and reads the odometry twist into its lookahead only under `lookahead_gain > 0`.
 
 ## 3. System tests

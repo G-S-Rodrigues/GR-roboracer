@@ -2,6 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-09-10
+**Amended:** 2026-10-25 (autodrive-sim part 6, #44) — see "Amendment — a simulator without a clock".
 **Amends:** ADR 0003 — its Context claimed `racing_sim_gym_jax` is "bound to real time by
 construction". That sentence has been corrected in ADR 0003 itself; ADR 0003's decision is unaffected.
 **Does not change:** ADR 0002's CUDA-stays-in-`fast-sim` decision — see below. Its *reason* changed,
@@ -81,3 +82,26 @@ on record is the one that is still true.
   which is where tier 4 and every interactive run stay.
 - Long tracks become affordable, which is what makes ADR 0005's matrix payable.
 - Anything replaying a recording must honour the recorded stamps rather than assuming wall clock.
+
+## Amendment — a simulator without a clock
+
+"The simulator owns the clock" holds **when it has one**. A backend states which it is as
+`capability.clock` (a read-only parameter on `racing_sim`, `racing_sim_adapter`'s contract):
+`owns_clock` publishes `/clock` and is the case above; `free_running` is a source that has no
+clock of its own to hand the graph. AutoDRIVE is that: no timestamp, no step counter, a fixed
+20 Hz, and a real car is the same. For `free_running` the stack runs with `use_sim_time:=false` and
+takes time from its source's stamps.
+
+The launch wiring for that arrives with `simulator:=` (autodrive-sim part 8). Until then every node
+still runs with `use_sim_time: true` and only `owns_clock` backends can be launched.
+
+What does not change: `time_scale` and its default 1.0 for a clock-owning backend, the deterministic
+t=0 defined by `~/reset`, and "every node takes time from its ROS clock".
+
+Consequences for a `free_running` backend:
+
+- Runs are not reproducible, so tier-3 assertions on it are bounded (a lap completes, within a
+  stated envelope), not golden.
+- `time_scale` and `start_held` do not exist there; the conformance tests that need them are
+  reported not applicable by name, never skipped.
+- Gotcha #19's deterministic t=0 becomes "the first frame after a reset" (part 8 defines it).
