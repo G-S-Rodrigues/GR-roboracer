@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from raceline import verify
+from raceline import diagnose, verify
 from raceline.extract import (
     Pose2D,
     extract_track,
@@ -34,6 +34,7 @@ from raceline.vehicle import VehicleLimits, load_vehicle
 
 PACKAGE = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = PACKAGE.parent / "config" / "racelines"
+DEFAULT_PLOTS = PACKAGE.parent / "log" / "raceline"
 CODE_FILES = (
     "raceline/__main__.py",
     "raceline/extract.py",
@@ -91,6 +92,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--name")
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
     p.add_argument("--timeout", type=float)
+    p.add_argument(
+        "--plots",
+        type=Path,
+        help="where the diagnostic plots go (default log/raceline/<track>/"
+        "<vehicle>/<optimizer>/, never config/racelines/)",
+    )
+    p.add_argument("--no-plots", action="store_true")
     return p
 
 
@@ -246,6 +254,12 @@ def main(argv: list[str] | None = None) -> int:
     if truth is not None:
         pairs.append((truth, required["ground_truth"]))
     verdict = verify.verify(line, vehicle, pairs, track)
+    if not args.no_plots:
+        # On rejection too: the plot is how a rejected line is understood.
+        plots = args.plots or (
+            DEFAULT_PLOTS / name / vehicle.version / args.optimizer
+        )
+        diagnose.write(line, vehicle, pairs, track, plots)
     if not verdict.ok:
         print("rejected by the verifier:", file=sys.stderr)
         for failure in verdict.failures:

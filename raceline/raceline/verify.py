@@ -359,6 +359,60 @@ def _direction(line: Raceline, xy: np.ndarray, ref: Track) -> list[str]:
     return [f"direction: {', '.join(reasons)}"] if reasons else []
 
 
+def _limit_ratios(line: Raceline, vehicle: VehicleLimits) -> dict:
+    """Per point: the lateral and longitudinal limits and the share used.
+
+    ``ay_ratio`` is ``v^2 |kappa|`` over the GGV's lateral limit; ``ax_ratio``
+    is ``a`` over the GGV's longitudinal limit, the engine map's too while
+    accelerating. The one place these are computed: ``verify`` judges them and
+    ``profile`` reports them.
+    """
+    v, a = line.v, line.a
+    ay_limit = np.interp(v, vehicle.ggv[:, 0], vehicle.ggv[:, 2])
+    ax_ggv = np.interp(v, vehicle.ggv[:, 0], vehicle.ggv[:, 1])
+    ax_eng = np.interp(
+        v, vehicle.ax_max_machines[:, 0], vehicle.ax_max_machines[:, 1]
+    )
+    ax_limit = np.where(a > 0, np.minimum(ax_ggv, ax_eng), ax_ggv)
+    return {
+        "ay_limit": ay_limit,
+        "ay_ratio": v**2 * np.abs(line.kappa) / ay_limit,
+        "ax_limit": ax_limit,
+        "ax_ratio": np.where(
+            a > 0, a / np.minimum(ax_ggv, ax_eng), -a / ax_ggv
+        ),
+    }
+
+
+def profile(
+    line: Raceline,
+    vehicle: VehicleLimits,
+    walls: Sequence[tuple[WallSet, float]],
+) -> dict[str, np.ndarray]:
+    """Everything ``verify`` judges, per point, for the diagnostics.
+
+    ``s``, ``x``, ``y``, ``v``, ``a``, ``kappa``, ``kappa_geometry``,
+    ``ay_limit``, ``ay_ratio``, ``ax_limit``, ``ax_ratio``, and for each wall
+    set ``clearance_<name>`` (signed, negative beyond a wall) with its scalar
+    ``required_<name>``. The clearance is the polygon's; a sharp tip's relief
+    (``_judge``) is a verdict, not a profile.
+    """
+    out = {
+        "s": line.s,
+        "x": line.x,
+        "y": line.y,
+        "v": line.v,
+        "a": line.a,
+        "kappa": line.kappa,
+        "kappa_geometry": _kappa_geometry(line.xy),
+        **_limit_ratios(line, vehicle),
+    }
+    for wall_set, required in walls:
+        out[f"clearance_{wall_set.name}"] = _signed_clearance(wall_set, line.xy)
+        out[f"required_{wall_set.name}"] = np.asarray(required, dtype=float)
+    return out
+
+
 def verify(
     line: Raceline,
     vehicle: VehicleLimits,
@@ -405,19 +459,15 @@ def verify(
         failures.append(
             f"speed: v outside (0, {vehicle.v_max}] at {_at(xy, i)}"
         )
-    ay = np.interp(v, vehicle.ggv[:, 0], vehicle.ggv[:, 2])
-    ay_ratio = v**2 * np.abs(kappa) / ay
+    limits = _limit_ratios(line, vehicle)
+    ay_ratio = limits["ay_ratio"]
     if ay_ratio.max() > 1.0 + LIMIT_TOL:
         i = int(np.argmax(ay_ratio))
         failures.append(
             f"a_y: v^2|kappa| is {ay_ratio.max():.6f} x the GGV limit at "
             f"{_at(xy, i)}"
         )
-    ax_ggv = np.interp(v, vehicle.ggv[:, 0], vehicle.ggv[:, 1])
-    ax_eng = np.interp(
-        v, vehicle.ax_max_machines[:, 0], vehicle.ax_max_machines[:, 1]
-    )
-    ax_ratio = np.where(a > 0, a / np.minimum(ax_ggv, ax_eng), -a / ax_ggv)
+    ax_ratio = limits["ax_ratio"]
     if ax_ratio.max() > 1.0 + LIMIT_TOL:
         i = int(np.argmax(ax_ratio))
         failures.append(

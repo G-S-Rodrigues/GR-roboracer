@@ -14,11 +14,12 @@ import test_verify
 import yaml
 from raceline.track import Track, write_track
 
-from raceline import optimize
+from raceline import diagnose, optimize
 
 VEHICLES = Path(__file__).resolve().parents[2] / "config" / "vehicles"
 DEFAULT = str(VEHICLES / "f1tenth_default.yaml")
 OPTIMIZER_PY = Path(optimize.__file__)
+REPO_ROOT = Path(__file__).resolve().parents[2]
 D9_KEYS = {
     "format_version",
     "track",
@@ -33,6 +34,21 @@ D9_KEYS = {
     "verdict",
     "command",
 }
+
+
+REAL_PLOT_WRITE = diagnose.write
+PNGS = diagnose.PNG_NAMES
+
+
+@pytest.fixture(autouse=True)
+def _no_plots(monkeypatch):
+    """The runner plots by default; these tests are about the rest, and a
+    plot costs seconds. The plot tests put the real writer back."""
+    calls = []
+    monkeypatch.setattr(
+        runner.diagnose, "write", lambda *a, **k: calls.append(a) or []
+    )
+    return calls
 
 
 def _feasible_tum(calls=None, shift=0.0):
@@ -280,3 +296,62 @@ def test_raceline_1388_a_ground_truth_map_needs_ground_truth_walls(
     assert "input:" in err and "--ground-truth-map" in err
     assert not (tmp_path / "out").exists()
     assert calls == []
+
+
+# -- plots (RACELINE-1470) ---------------------------------------------------
+
+
+def _plotted(directory: Path) -> bool:
+    return all((directory / name).is_file() for name in (*PNGS, "profile.npz"))
+
+
+def test_raceline_1470_a_written_line_is_plotted_to_the_plot_dir(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(runner.diagnose, "write", REAL_PLOT_WRITE)
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    plots = tmp_path / "plots"
+    oval = _oval_yaml(tmp_path)
+    argv = _argv(tmp_path, "--track", str(oval), "--plots", str(plots))
+    assert runner.main(argv) == 0
+    assert _plotted(plots)
+    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "tum_mincurv_iqp.csv",
+        "tum_mincurv_iqp.yaml",
+    ]
+
+
+def test_raceline_1470_a_rejected_line_is_plotted_and_not_written(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(runner.diagnose, "write", REAL_PLOT_WRITE)
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum(shift=20.0))
+    plots = tmp_path / "plots"
+    oval = _oval_yaml(tmp_path)
+    argv = _argv(tmp_path, "--track", str(oval), "--plots", str(plots))
+    assert runner.main(argv) == 2
+    assert _plotted(plots)
+    assert not (tmp_path / "out").exists()
+
+
+def test_raceline_1470_the_default_plot_dir_is_the_log_tree(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(runner.diagnose, "write", REAL_PLOT_WRITE)
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    monkeypatch.setattr(runner, "DEFAULT_PLOTS", tmp_path / "log")
+    oval = _oval_yaml(tmp_path)
+    assert runner.main(_argv(tmp_path, "--track", str(oval))) == 0
+    assert _plotted(
+        tmp_path / "log" / "oval" / "f1tenth-default-v1" / "tum_mincurv_iqp"
+    )
+    assert runner.DEFAULT_OUT not in runner.DEFAULT_PLOTS.parents
+
+
+def test_raceline_1470_no_plots_writes_none(monkeypatch, tmp_path, _no_plots):
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    oval = _oval_yaml(tmp_path)
+    argv = _argv(tmp_path, "--track", str(oval), "--no-plots")
+    assert runner.main(argv) == 0
+    assert _no_plots == []
