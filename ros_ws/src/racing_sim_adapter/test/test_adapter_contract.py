@@ -17,6 +17,7 @@ from f1tenth_gym_jax.envs.utils import Param
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset
 from rclpy.parameter import Parameter
+from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -417,4 +418,36 @@ class TestAdapterContract(unittest.TestCase):
         for earlier, later in zip(stamps_ns, stamps_ns[1:], strict=False):
             self.assertLessEqual(
                 earlier, later, "/clock must not rewind across a reset"
+            )
+
+    def test_adapt_2140_capabilities_are_declared_and_read_only(self):
+        """ADAPT-2140: the backend declares all five capability parameters,
+        each with a value in the vocabulary, and refuses to change them."""
+        self._require_adapter()
+        declared = conformance.declared_capabilities(self.node)
+        self.assertEqual(set(declared), set(conformance.CAPABILITY_PARAMETERS))
+        self.assertIn(
+            declared[conformance.CLOCK_PARAMETER], conformance.CLOCK_VALUES
+        )
+        self.assertIn(
+            declared[conformance.RESET_PARAMETER], conformance.RESET_VALUES
+        )
+        for name in conformance.BOOLEAN_PARAMETERS:
+            self.assertIsInstance(declared[name], bool, name)
+
+        client = AsyncParameterClient(self.node, ADAPTER_NODE)
+        self.assertTrue(client.wait_for_services(timeout_sec=5.0))
+        for name in conformance.CAPABILITY_PARAMETERS:
+            current = declared[name]
+            kind = (
+                Parameter.Type.BOOL
+                if isinstance(current, bool)
+                else Parameter.Type.STRING
+            )
+            future = client.set_parameters([Parameter(name, kind, current)])
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=3.0)
+            self.assertTrue(future.done(), f"set {name} timed out")
+            self.assertFalse(
+                future.result().results[0].successful,
+                f"{name} must be read-only",
             )

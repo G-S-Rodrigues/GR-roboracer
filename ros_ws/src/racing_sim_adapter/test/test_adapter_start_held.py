@@ -5,8 +5,10 @@ backend launched with `start_held: true`, and every case in one launch_test
 file shares one launch.
 """
 
+import sys
 import time
 import unittest
+from pathlib import Path
 
 import launch
 import launch_ros.actions
@@ -23,6 +25,10 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from rosgraph_msgs.msg import Clock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import conformance  # noqa: E402
 
 ADAPTER_NODE = "racing_sim"
 ODOMETRY_TOPIC = "/odom"
@@ -48,7 +54,14 @@ def generate_test_description():
     backend = launch_ros.actions.Node(
         package="racing_sim_gym_jax",
         executable="racing_sim_gym_jax_node",
-        parameters=[{"start_held": True}],
+        parameters=[
+            {
+                "start_held": True,
+                # ADAPT-2145: a capability is the backend's to declare;
+                # this override must be ignored.
+                "capability.clock": "free_running",
+            }
+        ],
         output="screen",
     )
     return launch.LaunchDescription(
@@ -141,3 +154,13 @@ class TestAdapterStartHeld(unittest.TestCase):
         stamps_ns = [_stamp_ns(message) for message in released]
         for earlier, later in zip(stamps_ns, stamps_ns[1:], strict=False):
             self.assertLess(earlier, later, "/clock must advance once released")
+
+    def test_adapt_2145_a_launch_override_of_a_capability_is_ignored(self):
+        """ADAPT-2145: this launch passes capability.clock=free_running; the
+        backend still reads back owns_clock, because a capability is what
+        the backend is, not something a launch can configure."""
+        self._require_adapter()
+        declared = conformance.declared_capabilities(self.node)
+        self.assertEqual(
+            declared[conformance.CLOCK_PARAMETER], conformance.OWNS_CLOCK
+        )
