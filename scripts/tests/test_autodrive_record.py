@@ -97,6 +97,11 @@ def test_check_1650_record_writer_round_trips_header_first(tmp_path) -> None:
     assert [e["dir"] for e in events] == ["sim", "bridge"]
     assert events[0] == {"t": 0.0, "dir": "sim", "data": sim}
     assert events[1]["data"] == bridge
+    # A recording is usable from 200 messages, like CHECK-1660; no rate.
+    assert tool.MIN_MESSAGES == 200
+    assert not tool.recording_usable(199)
+    assert tool.recording_usable(200)
+    assert not hasattr(tool, "EXPECTED_HZ")
 
 
 def _decode_ranges(encoded: str) -> list[float]:

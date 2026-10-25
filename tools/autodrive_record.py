@@ -38,8 +38,13 @@ from pathlib import Path
 
 SCHEDULE_ID = "porto-v1"
 SCHEDULE_END = 16.0
-EXPECTED_HZ = 20.0
-MIN_FRACTION = 0.8
+# The sim's rate follows host load (gotcha 31), so a recording is judged by
+# how many messages it holds, never by a rate.
+MIN_MESSAGES = 200
+
+
+def recording_usable(sims: int) -> bool:
+    return sims >= MIN_MESSAGES
 
 
 def _command(throttle: float, steering: float, reset: bool) -> dict[str, str]:
@@ -166,13 +171,12 @@ def main(argv: list[str] | None = None) -> int:
         sio.emit("Bridge", data=reply)
 
     print(f"recording to {args.out}; start the sim now", flush=True)
-    server.serve_forever()
-    writer.close()
-    expected = SCHEDULE_END * EXPECTED_HZ
-    print(
-        f"{state['sims']} sim messages (expected ~{expected:.0f})", flush=True
-    )
-    if state["sims"] < MIN_FRACTION * expected:
+    try:
+        server.serve_forever()
+    finally:
+        writer.close()
+    print(f"{state['sims']} sim messages (need {MIN_MESSAGES})", flush=True)
+    if not recording_usable(state["sims"]):
         print("too few messages; the recording is not usable", file=sys.stderr)
         return 1
     return 0
