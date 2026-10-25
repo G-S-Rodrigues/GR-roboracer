@@ -9,7 +9,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
-nvcc -std=c++20 -arch="sm_${CUDA_ARCH:-89}" "${here}/smoke.cu" \
+nvcc -std=c++20 -arch=native "${here}/smoke.cu" \
     -o "${work}/smoke"
 "${work}/smoke"
 

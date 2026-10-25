@@ -138,8 +138,6 @@ The vehicle-limits work added tier 1 `RACELINE-1210..1250`, `SIMJAX-1120/1130`, 
 `CHECK-1310/1320`.
 The importer-convention work added tier 1 `SIM-1030`.
 The image-pin work added tier 1 `CHECK-1330/1340`.
-
-The gpu-stage work added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
 The base-link work (part 3.1b) added tier 1 `SIMJAX-1140`, `DESC-1020`; tier 2 `ADAPT-2130`.
 The worktree-scope work added tier 1 `CHECK-1350` to `CHECK-1390`.
 The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/1170`.
@@ -156,6 +154,7 @@ The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHEC
 The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
 
 The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
+The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
 
 The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/1020/1030` (1030 also pins the exact guard shape, with a negative case), `SIMJAX-1150`; tier 2 `ADAPT-2140/2145/2150/2160`. Conformance tests select by the backend's declared capabilities (`racing_sim_adapter/test/conformance.py`); a not-applicable test prints `NOT APPLICABLE <id>: ...` and returns (no skip marker), and ADAPT-2150 pins the set.
 

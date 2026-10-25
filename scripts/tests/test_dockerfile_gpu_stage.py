@@ -8,6 +8,7 @@ GPU-3010 (docker/gpu/smoke.sh) is the manual half.
 from __future__ import annotations
 
 import re
+import shlex
 from pathlib import Path
 
 import yaml
@@ -46,6 +47,13 @@ def test_check_1900_stage_graph():
     assert not [n for n, s in found.items() if s.parent == "gpu"], (
         "no stage may derive from gpu"
     )
+    for name, stage in found.items():
+        if name == "gpu":
+            continue
+        for _, text in stage.instructions:
+            assert not re.search(r"--from=gpu\b", text), (
+                f"{name} copies from the gpu stage: {text[:80]}"
+            )
     for name in ("dev", "underlay", "base"):
         for _, text in _code(name):
             assert not re.search(r"cuda|nvidia", text, re.I), (
@@ -57,32 +65,56 @@ def test_check_1900_stage_graph():
         )
 
 
+def _is_apt_install(seg: list[str]) -> bool:
+    for i, tok in enumerate(seg):
+        if tok in ("apt-get", "apt") and "install" in seg[i + 1 :]:
+            return True
+    return False
+
+
 def test_check_1910_install_shape():
-    runs = _gpu_runs()
-    installs = [
-        (n, t) for n, t in runs if "apt-get install" in t or "apt install" in t
-    ]
-    assert len(installs) == 1, f"want one apt install RUN, got {len(installs)}"
-    number, text = installs[0]
-    assert not re.search(r"(^|\n)\s*#", text), "comment inside the RUN"
-    assert "COPY docker/gpu-apt-pins.txt" in " ".join(
-        t for _, t in _code("gpu")
-    ), "pin file is not COPY'd"
-    segs = segments(text)
-    xargs = [s for s in segs if s[:2] == ["xargs", "-a"]]
-    assert len(xargs) == 1, "install is not `xargs -a <list> apt-get install`"
-    tail = xargs[0][3:]
-    assert tail[:2] == ["apt-get", "install"], f"xargs runs {tail[:2]}"
-    assert "--no-install-recommends" in tail and "-y" in tail
-    after = segs[segs.index(xargs[0]) + 1 :]
-    query = [s for s in after if s and s[0] == "dpkg-query"]
-    assert query and "cuda-*" in query[0], "no dpkg-query over cuda-*"
-    assert re.search(r"dpkg-query[^|;&]*\|.*>\s*\S+", text), (
-        "dpkg-query output is not written to a file"
+    code = _code("gpu") if "gpu" in stages() else []
+    assert code, "no gpu stage"
+    copies = [t.split() for _, t in code if t.startswith("COPY ")]
+    pins = [c for c in copies if c[1:2] == ["docker/gpu-apt-pins.txt"]]
+    assert len(pins) == 1, "pin file is not COPY'd exactly once"
+    pins_dest = pins[0][-1]
+
+    installs = []
+    for number, text in _gpu_runs():
+        assert not [
+            t for t in shlex.split(text.removeprefix("RUN")) if t[:1] == "#"
+        ], f"comment inside the RUN at line {number}"
+        for seg in segments(text):
+            if _is_apt_install(seg):
+                installs.append((number, text, seg))
+    assert len(installs) == 1, f"want one apt install, got {len(installs)}"
+    _, text, seg = installs[0]
+    assert seg[:2] == ["xargs", "-a"], "install is not `xargs -a <list> ...`"
+    list_file = seg[2]
+    assert seg[3:5] == ["apt-get", "install"], f"xargs runs {seg[3:5]}"
+    assert "--no-install-recommends" in seg and "-y" in seg
+    assert "||" not in shlex.split(text.removeprefix("RUN")), (
+        "a `||` can swallow a failing step"
     )
-    diffs = [s for s in after if s and s[0] == "diff"]
-    assert diffs and len(diffs[0]) == 3, "no diff of two files"
-    for _, t in _code("gpu"):
+
+    made = re.search(
+        rf"grep -v '\^#' {re.escape(pins_dest)}[^&;]*>\s*(\S+)", text
+    )
+    assert made, f"list is not built from the COPY'd {pins_dest}"
+    assert made.group(1) == list_file, (
+        f"xargs reads {list_file}, not the list built from {pins_dest}"
+    )
+    queried = re.search(r"dpkg-query[^&;]*'cuda-\*'[^&;]*>\s*(\S+)", text)
+    assert queried, "no dpkg-query over cuda-* written to a file"
+    diffs = [s for s in segments(text) if s and s[0] == "diff"]
+    assert len(diffs) == 1, "want exactly one diff"
+    assert diffs[0][1:] == [list_file, queried.group(1)], (
+        f"diff compares {diffs[0][1:]}, not the pin list and the installed list"
+    )
+    after = text.index("xargs -a")
+    assert text.index("diff ", after) > text.index("dpkg-query", after)
+    for _, t in code:
         assert not re.search(r"\b(pip3?|uv)\b.*\binstall\b|\buv\s+pip\b", t), (
             f"gpu installs Python packages: {t[:80]}"
         )
@@ -147,6 +179,8 @@ def test_check_1940_compose_service():
             out[dst] = src
         return out
 
+    for vol, body in compose["volumes"].items():
+        assert not (body or {}).get("name"), f"{vol} sets name: (shared volume)"
     gm, dm = mounts(gpu), mounts(dev)
     for path in ("/ws/build", "/ws/install", "/ws/log"):
         assert path in gm, f"gpu does not mount {path}"
