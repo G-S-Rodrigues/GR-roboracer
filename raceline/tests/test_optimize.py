@@ -355,3 +355,243 @@ def test_raceline_1420_tyre_set_selects_its_values_and_extra_moves_the_width():
     ] == pytest.approx(1.11, abs=1e-12)
     with pytest.raises(ValueError, match="gym_fit"):
         optimize.tum_mintime_ini(vehicle, 0.40, "nope")
+
+
+# --- RACELINE-1440, 1425, 1435: the min-time chain --------------------------
+
+# Golden: today's between-pass widths on the oval, computed before the
+# extract by running the code that was at optimize.py (_tum_mincurv_iqp,
+# the `nearest_distance(xy, left, STEP_M)` block) on the oval with the line
+# shifted +0.05 in x: left/right = verify.offsets(track), 60 nodes.
+GOLDEN_IDX = (0, 7, 20, 45)
+GOLDEN_W_LEFT = (
+    1.5987096250982555,
+    1.6006811945755761,
+    1.6545731024872443,
+    1.5703498459766303,
+)
+GOLDEN_W_RIGHT = (
+    0.6000641242580672,
+    0.6011622636148851,
+    0.5498789288258393,
+    0.6262647174000601,
+)
+
+
+def test_raceline_1440_reference_from_line_keeps_the_between_pass_widths():
+    track = _oval_track()
+    xy = test_smoke._oval() + [0.05, 0.0]
+
+    reference = optimize._reference_from_line("oval-pass1", xy, track)
+
+    for i, left, right in zip(
+        GOLDEN_IDX, GOLDEN_W_LEFT, GOLDEN_W_RIGHT, strict=True
+    ):
+        assert reference.w_left[i] == pytest.approx(left, abs=1e-9)
+        assert reference.w_right[i] == pytest.approx(right, abs=1e-9)
+    assert reference.w_left.sum() == pytest.approx(96.10543918677993, abs=1e-9)
+    assert reference.w_right.sum() == pytest.approx(35.89151485416709, abs=1e-9)
+    assert reference.name == "oval-pass1"
+    assert np.array_equal(reference.xy, xy)
+
+
+SHIFT = 0.123456789012345  # more decimals than the 9 a CSV keeps
+
+
+def _fake_mintime(calls, status=None):
+    """A run_tum_mintime stand-in that records what it was handed."""
+
+    def fake(track_csv, inputs_dir, safety_width, seed_csv, options, timeout):
+        calls.append(
+            {
+                "track": np.loadtxt(track_csv, delimiter=","),
+                "ini": (Path(inputs_dir) / "racecar_f110.ini").read_text(),
+                "safety_width": safety_width,
+                "seed_path": Path(seed_csv),
+                "seed": np.loadtxt(seed_csv, delimiter=";"),
+                "options": dict(options),
+                "timeout": timeout,
+            }
+        )
+        rows = np.loadtxt(seed_csv, delimiter=";")
+        rows = np.vstack([rows, rows[:1]])
+        rows[:, 5] += 1.0  # a faster line than the reference
+        return rows, status or {"status": "Solve_Succeeded", "iterations": 5}
+
+    return fake
+
+
+def _chain(monkeypatch, tmp_path, **kwargs):
+    mincurv, mintime, loads = [], [], []
+    monkeypatch.setattr(optimize, "run_tum", _fabricated_tum(mincurv, SHIFT))
+    monkeypatch.setattr(optimize, "run_tum_mintime", _fake_mintime(mintime))
+    real_load = optimize.load_raceline_csv
+
+    def spy(path):
+        loads.append(Path(path))
+        return real_load(path)
+
+    monkeypatch.setattr(optimize, "load_raceline_csv", spy)
+    vehicle = load_vehicle(VEHICLES / "f1tenth_gym_limits.yaml")
+    out = tmp_path / "reference" / "ref.csv"
+    kwargs.setdefault("reference_out", out)
+    result = optimize.mintime_chain(
+        _oval_track(), vehicle, 0.40, 55.0, **kwargs
+    )
+    return vehicle, out, mincurv, mintime, loads, result
+
+
+def test_raceline_1425_chain_runs_mincurv_twice_then_mintime_once(
+    monkeypatch, tmp_path
+):
+    vehicle, out, mincurv, mintime, loads, (line, status) = _chain(
+        monkeypatch, tmp_path
+    )
+
+    assert len(mincurv) == 2
+    want = vehicle.safety_width(0.40)
+    assert [c["safety_width"] for c in mincurv] == [want, want]
+    assert len(mintime) == 1
+    call = mintime[0]
+    assert call["safety_width"] == want  # width_opt carries the extra
+    assert call["timeout"] == 55.0
+    assert status == {"status": "Solve_Succeeded", "iterations": 5}
+    assert isinstance(line, optimize.Raceline)
+    assert len(line.s) == len(_oval_track().xy)  # closing row dropped
+    assert np.allclose(line.v, 4.0)  # the fake's +1 on the reference's 3.0
+
+
+def test_raceline_1425_reference_is_written_and_read_back_before_use(
+    monkeypatch, tmp_path
+):
+    _, out, mincurv, mintime, loads, _ = _chain(monkeypatch, tmp_path)
+
+    call = mintime[0]
+    assert out.is_file()
+    assert call["seed_path"] == out
+    assert loads == [out]  # read back from disk, once
+    written = np.loadtxt(out, delimiter=";")
+    assert np.array_equal(call["seed"], written)
+    # the 9-decimal file, not the solver's floats, is what the chain used.
+    raw = test_smoke._oval()[:, 0] + SHIFT
+    assert not np.array_equal(written[:, 1], raw)
+    assert np.allclose(written[:, 1], raw, atol=1e-9)
+    # the min-time track is built from the read-back line.
+    want = optimize._reference_from_line("x", written[:, 1:3], _oval_track())
+    assert np.allclose(call["track"][:, :2], written[:, 1:3], atol=1e-8)
+    assert np.allclose(call["track"][:, 2], want.w_right, atol=1e-8)
+    assert np.allclose(call["track"][:, 3], want.w_left, atol=1e-8)
+
+
+def test_raceline_1425_options_and_ini_reach_the_solver(monkeypatch, tmp_path):
+    _, _, _, mintime, _, _ = _chain(monkeypatch, tmp_path)
+
+    call = mintime[0]
+    assert call["options"] == {
+        "mu_init": optimize.MINTIME_MU_INIT,
+        "max_iter": optimize.MINTIME_MAX_ITER,
+        "max_wall_time_s": optimize.MINTIME_MAX_WALL_S,
+        "threads": optimize.MINTIME_THREADS,
+    }
+    assert call["options"]["mu_init"] == 1e-3
+    assert "optim_opts_mintime" in call["ini"]
+
+
+def test_raceline_1425_a_given_reference_skips_the_mincurv_stages(
+    monkeypatch, tmp_path
+):
+    given = tmp_path / "given.csv"
+    xy = test_smoke._oval()
+    n = len(xy)
+    rows = np.column_stack(
+        [
+            np.arange(n) * 1.0,
+            xy,
+            np.zeros(n),
+            np.full(n, 0.1),
+            np.full(n, 3.0),
+            np.zeros(n),
+        ]
+    )
+    optimize.write_raceline_csv(optimize.Raceline(*rows.T), given)
+
+    _, out, mincurv, mintime, loads, _ = _chain(
+        monkeypatch, tmp_path, reference_csv=given, reference_out=None
+    )
+
+    assert mincurv == []
+    assert len(mintime) == 1
+    assert mintime[0]["seed_path"] == given
+    assert np.array_equal(mintime[0]["seed"], np.loadtxt(given, delimiter=";"))
+
+
+def test_raceline_1425_optimize_resolves_defaults_and_refuses_passes(
+    monkeypatch,
+):
+    mincurv, mintime = [], []
+    monkeypatch.setattr(optimize, "run_tum", _fabricated_tum(mincurv))
+    monkeypatch.setattr(optimize, "run_tum_mintime", _fake_mintime(mintime))
+    vehicle = load_vehicle(VEHICLES / "f1tenth_gym_limits.yaml")
+
+    line = optimize.optimize(_oval_track(), vehicle, "tum_mintime")
+
+    assert len(mincurv) == 2 and len(mintime) == 1
+    assert mincurv[0]["safety_width"] == vehicle.safety_width(0.40)
+    assert isinstance(line, optimize.Raceline)
+    with pytest.raises(ValueError, match="passes"):
+        optimize.optimize(_oval_track(), vehicle, "tum_mintime", passes=2)
+    with pytest.raises(ValueError, match="reference"):
+        optimize.optimize(
+            _oval_track(), vehicle, "tum_mincurv_iqp", reference=Path("x.csv")
+        )
+    assert optimize.DEFAULT_PASSES == {"tum_mincurv_iqp": 2, "tum_mintime": 1}
+    assert optimize.DEFAULT_MARGINS == {
+        "tum_mincurv_iqp": 0.30,
+        "tum_mintime": 0.40,
+    }
+
+
+# Measured 0.195 m on the oval (gym vehicle, margin 0.40); the nearest-point
+# comparison itself resolves ~0.05 m at TUM's 0.1 m spacing.
+MIN_DEPARTURE = 0.1
+
+
+def _closure_error(line):
+    """Interior arc length against the chord: max |ds - |dxy||.
+
+    The closing row (where TUM's exact-arc-length fix acts) is dropped from a
+    ``Raceline``, so the wrap is judged by the verifier's closing-gap check.
+    """
+    chord = np.hypot(*np.diff(line.xy, axis=0).T)
+    return float(np.abs(np.diff(line.s) - chord).max())
+
+
+def test_raceline_1435_real_chain_on_the_oval_passes_the_verifier(tmp_path):
+    vehicle = load_vehicle(VEHICLES / "f1tenth_gym_limits.yaml")
+    track = _oval_track()
+    margin = optimize.DEFAULT_MARGINS["tum_mintime"]
+
+    line, status = optimize.mintime_chain(
+        track, vehicle, margin, 300, reference_out=tmp_path / "reference.csv"
+    )
+    reference = optimize.load_raceline_csv(tmp_path / "reference.csv")
+    assert status["status"] in ("Solve_Succeeded", "Optimal")
+    print(f"solver: {status['status']}, {status['iterations']} iterations")
+
+    walls = verify.track_walls(track, "input")
+    required = vehicle.half_width + margin - verify.INPUT_BOUND_TOL
+    verdict = verify.verify(line, vehicle, [(walls, required)], track)
+    assert verdict.ok, verdict.failures
+    closure = _closure_error(line)
+    print(f"closure {closure:.3e}")
+    assert closure < 1e-4
+    # It is a different line from its seed, not the seed handed back. The
+    # two have different lengths (exact arc length), so compare by nearest
+    # point, not by index.
+    nearest = np.hypot(
+        line.x[:, None] - reference.x[None, :],
+        line.y[:, None] - reference.y[None, :],
+    ).min(axis=1)
+    print(f"max nearest-point gap {nearest.max():.4f} m")
+    print(f"v: seed {reference.v.mean():.3f}, line {line.v.mean():.3f}")
+    assert nearest.max() > MIN_DEPARTURE

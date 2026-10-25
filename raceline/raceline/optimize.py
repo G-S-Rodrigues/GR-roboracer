@@ -14,7 +14,7 @@ import numpy as np
 
 from raceline.geometry import nearest_distance
 from raceline.track import Track
-from raceline.tum import run_tum, write_tum_track
+from raceline.tum import run_tum, run_tum_mintime, write_tum_track
 from raceline.vehicle import (
     VehicleLimits,
     check_dynamics,
@@ -243,6 +243,45 @@ def write_tum_inputs(
     return out_dir
 
 
+def _reference_from_line(name: str, xy: np.ndarray, track: Track) -> Track:
+    """A line as the next reference: a track whose centerline it is.
+
+    Its widths are measured to the same walls rebuilt as ``xy +- w n`` (how
+    TUM reads widths, so the rebuilt walls are the conservative ones; folds
+    are not cut from them), raw, not the cleaned ground-truth walls.
+    """
+    from raceline.verify import offsets  # verify imports this module
+
+    left, right = offsets(track)
+    xy = np.asarray(xy)
+    return Track(
+        name,
+        xy,
+        np.zeros(len(xy)),
+        nearest_distance(xy, left, STEP_M),
+        nearest_distance(xy, right, STEP_M),
+    )
+
+
+def _raceline_from_tum(traj: np.ndarray) -> Raceline:
+    """A ``Raceline`` from TUM's 7-column trajectory (no closing row).
+
+    TUM's psi is 0 = north; the raceline's is ROS yaw.
+    """
+    psi = np.arctan2(
+        np.sin(traj[:, 3] + np.pi / 2), np.cos(traj[:, 3] + np.pi / 2)
+    )
+    return Raceline(
+        traj[:, 0],
+        traj[:, 1],
+        traj[:, 2],
+        psi,
+        traj[:, 4],
+        traj[:, 5],
+        traj[:, 6],
+    )
+
+
 def _tum_mincurv_iqp(
     track: Track,
     vehicle: VehicleLimits,
@@ -257,9 +296,6 @@ def _tum_mincurv_iqp(
     ``xy +- w n`` (how TUM reads widths, so the rebuilt walls are the
     conservative ones; folds are not cut from them).
     """
-    from raceline.verify import offsets  # verify imports this module
-
-    left, right = offsets(track)  # raw, not the cleaned ground-truth walls
     reference = track
     with tempfile.TemporaryDirectory() as tmp:
         inputs = write_tum_inputs(vehicle, Path(tmp) / "inputs")
@@ -278,32 +314,98 @@ def _tum_mincurv_iqp(
                 timeout,
             )[:-1]  # TUM repeats the first point at s = L
             if k + 1 < passes:
-                xy = traj[:, 1:3]
-                reference = Track(
-                    f"{track.name}-pass{k + 1}",
-                    xy,
-                    np.zeros(len(xy)),
-                    nearest_distance(xy, left, STEP_M),
-                    nearest_distance(xy, right, STEP_M),
+                reference = _reference_from_line(
+                    f"{track.name}-pass{k + 1}", traj[:, 1:3], track
                 )
-    psi = np.arctan2(
-        np.sin(traj[:, 3] + np.pi / 2), np.cos(traj[:, 3] + np.pi / 2)
-    )
-    return Raceline(
-        traj[:, 0],
-        traj[:, 1],
-        traj[:, 2],
-        psi,
-        traj[:, 4],
-        traj[:, 5],
-        traj[:, 6],
-    )
+    return _raceline_from_tum(traj)
 
 
-# An open set: part 8 adds "tum_mintime".
+def mintime_chain(
+    track: Track,
+    vehicle: VehicleLimits,
+    margin: float,
+    timeout: float | None,
+    *,
+    reference_csv: Path | None = None,
+    reference_out: Path | None = None,
+) -> tuple[Raceline, dict]:
+    """Map -> min-curv reference -> min-time seeded from it (R-SEED).
+
+    Without ``reference_csv`` the min-curv stages run at the min-time margin
+    (P8-R2: one margin) and their line is written to ``reference_out``. The
+    reference is then **always read back from disk**: the CSV keeps 9 decimals
+    and the solver's iteration path is sensitive at that level (817 vs 1715
+    iterations on the same optimum), so a run from the committed file and an
+    end-to-end run make the same computation. Returns the line and the
+    solver's status.
+    """
+    if reference_csv is None:
+        if reference_out is None:
+            raise ValueError("reference_out is needed without a reference_csv")
+        line = _tum_mincurv_iqp(
+            track,
+            vehicle,
+            margin,
+            DEFAULT_PASSES["tum_mincurv_iqp"],
+            timeout,
+        )
+        write_raceline_csv(line, reference_out)
+        reference_csv = Path(reference_out)
+    reference_csv = Path(reference_csv)
+    seed = load_raceline_csv(reference_csv)
+    reference = _reference_from_line(f"{track.name}-reference", seed.xy, track)
+    options = {
+        "mu_init": MINTIME_MU_INIT,
+        "max_iter": MINTIME_MAX_ITER,
+        "max_wall_time_s": MINTIME_MAX_WALL_S,
+        "threads": MINTIME_THREADS,
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        inputs = write_tum_inputs(
+            vehicle, Path(tmp) / "inputs", tum_mintime_ini(vehicle, margin)
+        )
+        csv_path = write_tum_track(
+            reference.xy,
+            reference.w_right,
+            reference.w_left,
+            Path(tmp) / "track.csv",
+        )
+        traj, status = run_tum_mintime(
+            csv_path,
+            inputs,
+            vehicle.safety_width(margin),
+            reference_csv,
+            options,
+            timeout,
+        )
+    return _raceline_from_tum(traj[:-1]), status  # TUM repeats row 0
+
+
+def _tum_mintime(track, vehicle, margin, passes, timeout, reference=None):
+    """The registry entry: the chain with a throwaway reference file."""
+    if passes != DEFAULT_PASSES["tum_mintime"]:
+        raise ValueError(
+            f"tum_mintime is one solve, passes must be 1, got {passes}"
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        line, _ = mintime_chain(
+            track,
+            vehicle,
+            margin,
+            timeout,
+            reference_csv=reference,
+            reference_out=Path(tmp) / "reference.csv",
+        )
+    return line
+
+
 OPTIMIZERS: dict[str, Callable[..., Raceline]] = {
-    "tum_mincurv_iqp": _tum_mincurv_iqp
+    "tum_mincurv_iqp": _tum_mincurv_iqp,
+    "tum_mintime": _tum_mintime,
 }
+# The min-curv passes feed one another; min-time is one solve seeded from a
+# min-curv line (R-SEED), so it has no passes of its own.
+DEFAULT_PASSES = {"tum_mincurv_iqp": 2, "tum_mintime": 1}
 
 
 def optimize(
@@ -311,14 +413,23 @@ def optimize(
     vehicle: VehicleLimits,
     optimizer: str,
     *,
-    margin: float = DEFAULT_MARGIN,
-    passes: int = 2,
+    margin: float | None = None,
+    passes: int | None = None,
     timeout: float | None = None,
+    reference: Path | None = None,
 ) -> Raceline:
     if optimizer not in OPTIMIZERS:
         raise ValueError(
             f"unknown optimizer {optimizer!r}; known: {sorted(OPTIMIZERS)}"
         )
+    margin = DEFAULT_MARGINS[optimizer] if margin is None else margin
+    passes = DEFAULT_PASSES[optimizer] if passes is None else passes
     if passes < 1:
         raise ValueError(f"passes must be >= 1, got {passes}")
-    return OPTIMIZERS[optimizer](track, vehicle, margin, passes, timeout)
+    if reference is None:
+        return OPTIMIZERS[optimizer](track, vehicle, margin, passes, timeout)
+    if optimizer != "tum_mintime":
+        raise ValueError(f"{optimizer} takes no reference line")
+    return OPTIMIZERS[optimizer](
+        track, vehicle, margin, passes, timeout, reference=reference
+    )
