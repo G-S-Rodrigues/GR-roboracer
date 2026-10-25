@@ -235,3 +235,27 @@ def test_raceline_1205_porto_is_wide_enough_everywhere():
         0.7 * track.w_right,
     )
     assert _too_narrow(thin), "widths x0.7 passed the minimum-width check"
+
+
+def test_raceline_1207_porto_scenario_points_at_the_porto_files():
+    """RACELINE-1207: the scenario resolves to Porto's track and map.
+
+    Reads the YAML only (no ROS import). SIMJAX-1060 additionally checks, for
+    every scenario, that ``parameters:`` set no gym ``Param`` field.
+    """
+    import yaml
+
+    doc = yaml.safe_load(SCENARIO.read_text())
+    assert doc["scenario_id"] == "porto"
+    assert doc["metrics"] == {
+        "scenario_id": "porto",
+        "track_version": "porto-v1",
+    }
+    track = (SCENARIO.parent / doc["track"]).resolve()
+    assert track == TRACK
+    from raceline.track import load_track
+
+    assert load_track(track).name == "Porto"
+    maps = (SCENARIO.parent / doc["map_directory"]).resolve()
+    assert (maps / doc["environment"]["map"] / "Porto.yaml").is_file()
+    assert "noise" not in doc
