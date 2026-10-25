@@ -151,8 +151,10 @@ class TestMetricsFinalize(unittest.TestCase):
         self._spin(1.0)
         self.assertEqual(len(self.received), 1)
         self.assertFalse(self.received[0].lap_completed)
+        self.assertEqual(self.received[0].lap_time, 0.0)
         document = json.loads(OUTPUT.read_text(encoding="utf-8"))
         self.assertFalse(document["lap_completed"])
+        self.assertEqual(document["lap_time"], 0.0)
 
         second = self._finalize()
         self.assertTrue(second.success, second.message)

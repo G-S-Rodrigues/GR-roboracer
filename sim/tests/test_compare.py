@@ -58,7 +58,7 @@ def test_metrics_1020_honours_per_field_tolerances() -> None:
     assert "Linux/x86_64" in report
 
 
-def test_metrics_1020_difference_equal_to_tolerance_passes() -> None:
+def test_metrics_1040_difference_equal_to_tolerance_passes() -> None:
     # |22.86 - 22.81| is 0.0500000000000007 in binary floats (nightly
     # 40075939673); a difference of exactly the tolerance is inside it.
     expected = metrics()
@@ -69,7 +69,7 @@ def test_metrics_1020_difference_equal_to_tolerance_passes() -> None:
     assert compare_metrics(expected, actual, {"lap_time": 0.05}) == []
 
 
-def test_metrics_1020_difference_beyond_tolerance_fails() -> None:
+def test_metrics_1040_difference_beyond_tolerance_fails() -> None:
     # One tick (0.01 s) past the tolerance is far outside tol + FLOAT_SLACK.
     expected = metrics()
     expected["lap_time"] = 22.81

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts.frozen_pose import FROZEN_EPSILON_M, FrozenPose
+from scripts.frozen_pose import FrozenPose
 
 STATE_TOPIC = "/ground_truth/track_relative_state"
 STATUS_TOPIC = "/safety/status"
@@ -26,9 +26,6 @@ COMMAND_PREFIX = ["python", "-m", "raceline"]
 # *not* latches: any clamp sets COMMAND_LIMIT (supervisor.cpp:45-81).
 LATCH_REASONS = frozenset({3, 4})
 CLAMP_ESTOP = 64
-# The frozen-pose rule lives in scripts/frozen_pose.py (a lap imports it);
-# FROZEN_EPSILON_M is re-exported from there.
-__all__ = ["FROZEN_EPSILON_M"]
 METRIC_FIELDS = (
     "lap_time",
     "minimum_wall_clearance",
