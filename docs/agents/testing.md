@@ -118,7 +118,10 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **187 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Current counts: **418 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Tier 1 is counted from a collection (2026-10-25, worktree overlay): `pytest --collect-only` over `scripts/tests` (171), `sim/tests` (20),
+`raceline/tests` (109) and the non-launch tests under `ros_ws/src` (85), plus 33 gtest `TEST` cases. Tiers 2-5 are test IDs, not items:
+a launch test is one pytest item holding several IDs.
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -149,7 +152,7 @@ The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).
 
 The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHECK-1420/1430`, `SIM-1080`; tier 2 `PP-2010`; tier 3 `SIM-3110`.
-The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1650` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
+The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
 
 The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
 
