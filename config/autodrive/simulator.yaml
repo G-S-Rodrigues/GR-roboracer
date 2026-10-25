@@ -18,7 +18,10 @@
 #   - the first message has no `V1 LIDAR Range Array`; every later one does
 #     (1081 ranges, base64 of gzip of "\n"-separated floats). `V1 Front Camera
 #     Image` is present on every message.
-#   - ~20 Hz when the host is idle; slower under load.
+#   - the message rate follows host load (9-60 Hz seen at load ~20), not a fixed 20 Hz.
+#   - Jazzy -> Humble DDS: first delivery 0-2.8 s after both ends are up (discovery);
+#     gaps over 100 ms afterwards also appear Jazzy -> Jazzy under the same load.
+#     See docs/agents/repo-gotchas.md 29-32.
 # The devkit is ROS 2 Humble; ROS_DISTRO in the image says so.
 x-autodrive:
   edition: 2026-iros-practice

@@ -30,7 +30,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Group | Method | Status | Scope |
 |---|---|---|---|
 | Simulation | [`f1tenth_gym_jax`](docs/workflows/racing.md#simulation) | Available | ROS 2 simulation and headless JAX rollouts. |
-| Simulation | AutoDRIVE | Planned | Future simulation workflow for mapped tracks without ground-truth centerlines. |
+| Simulation | AutoDRIVE | In development | Future simulation workflow for mapped tracks without ground-truth centerlines. |
 | Mapping and SLAM | [SLAM Toolbox survey mapping](docs/workflows/mapping.md#survey-mapping) | Available | Builds a map while the vehicle drives on ground truth. |
 | Mapping and SLAM | FAR-LIO / LiDAR-inertial methods | Exploratory | Research direction; no current implementation. |
 | Localization | [`ground_truth`](docs/workflows/racing.md#ground-truth-reference-stack) | Available | Exact simulator pose in the reference stack. |

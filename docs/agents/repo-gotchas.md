@@ -210,3 +210,45 @@ Traps any task in this repository can hit. Each one cost real time at least once
     under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
     `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
     the axle centre (a wheel radius higher), because every mesh is authored there.
+
+## AutoDRIVE
+
+29. **The official devkit stalls on a headless sim, silently.** Its `Bridge` handler reads every key
+    unguarded (`autodrive_bridge.py:309-375`). The first `-batchmode -nographics` message has no
+    `V1 LIDAR Range Array` (every later one does; `V1 Front Camera Image` is present on all), the
+    handler raises `KeyError`, sends no reply, and the lock-step exchange stops: topics exist, nothing
+    publishes. Seen live in `autodrive-devkit`'s log. Anything that stands in for the devkit must
+    reply to the first message too (the recorded stream, `ros_ws/src/racing_sim_autodrive/test/fixtures/`).
+
+30. **The sim connects once and never reconnects, and speaks an older Socket.IO than its URL says.** A
+    bridge started late or restarted gets nothing; restart the sim (`autodrive-sim` waits for the
+    bridge port for this). Its URL asks for `EIO=4`, but it sends Engine.IO v3 pings and no namespace
+    CONNECT packet. python-socketio 5.17 / python-engineio 4.14 accepts the socket and drops every
+    event ("None is not connected to namespace /"): no error, no data. python-socketio 4.2.0 /
+    python-engineio 3.13.0 (the devkit's pair; gevent 26.9.0 and gevent-websocket 0.10.1 on Python
+    3.12) held 200 s, 2782 messages, no disconnect. `tools/autodrive_record.py` pins that set.
+
+31. **The sim's message rate follows host load, and the first-frame lidar has `inf`.** A recording on a
+    busy host (load ~20 on 16 cores) ran 9-60 Hz, median period 18 ms, not 20 Hz: do not assert a
+    rate band on a recorded stream. Lidar ranges with no return are the string `inf`, in ~2% of
+    entries; they are not faults, `NaN` would be.
+
+32. **Jazzy-Humble DDS discovery is slow, and a loaded host drops 100+ ms of messages anyway.** With
+    the devkit's QoS (reliable, volatile, depth 1) a Jazzy publisher and a Humble subscriber needed 0
+    to 2.8 s after both were up before the first delivery (up to 55 messages lost; ~1/3 of 20 runs
+    above 1 s), and the `sequence size exceeds remaining buffer` warning appears once or more. After
+    the first delivery 20 Hz held but gaps over 100 ms occurred (max 1.4 s, ~3.6 per minute on a host
+    at load ~30); a Jazzy-to-Jazzy control under the same load had ~3 per minute (max 0.59 s), so
+    they are load, not the distro pair. The fix is waiting for the first delivery, never a longer
+    timeout (gotcha 19).
+
+33. **`/ws/setup.sh` sources `/ws/install/setup.bash`, not the worktree's.** In a `.scratch/<worktree>`
+    a build or test after `source setup.sh` can run on the main checkout's overlay, another branch's
+    code, with no error. `source /ws/.scratch/<worktree>/install/setup.bash` after it and check
+    `ros2 pkg prefix <pkg>` points under the worktree. (`check.sh` sources its own `repo_root`.)
+
+34. **Compose projects are shared across worktrees.** `docker/docker-compose.yaml` sets
+    `name: gr-roboracer`, so a worktree's compose file addresses the same containers as the main
+    checkout's. `up` with no service name, a changed `dev` definition, or `--remove-orphans` from a
+    worktree can recreate the shared `dev` container, mounted on the worktree as `/ws`. Always name the
+    autodrive service and pass `--no-deps`; never `down`.
