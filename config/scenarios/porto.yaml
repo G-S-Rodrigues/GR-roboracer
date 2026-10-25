@@ -1,0 +1,29 @@
+# AutoDRIVE's Porto practice track, for `simulator:=autodrive` (#44 part 8).
+# No simulator runs it yet: the gym has no Porto map (maps/Porto holds the
+# official map only, see its NOTICE.md), so the gym fields below exist because
+# the scenario loader requires them. AutoDRIVE has no sensor noise, so there is
+# no `noise` block (as in spielberg_survey.yaml). Part 8 may amend the fields
+# its backend reads.
+format_version: 1
+scenario_id: porto
+environment:
+  map: Porto
+  num_agents: 1
+  scans: true
+  collisions: true
+  rewards: [progress]
+  action:
+    longitudinal: velocity
+    steering: steeringangle
+  timestep_ratio: 1
+  max_steps: 30000
+  version: v0
+parameters:
+  num_beams: 64
+# The identity racing_metrics and racing_recording report for a run of this
+# scenario.
+metrics:
+  scenario_id: porto
+  track_version: porto-v1
+track: ../tracks/porto.yaml
+map_directory: maps

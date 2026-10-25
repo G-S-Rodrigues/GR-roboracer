@@ -15,7 +15,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | Tier | What it proves | Runner | Cost |
 |---|---|---|---|
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
-| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~8 s warm (the map extractor added ~2.5 s); measured idle 2026-10-21: raceline suite ~29 s with part 4 (101 tests; three real-TUM tests ~5 s each, RACELINE-1395 ~5 s; ~17 s on main, ~20 s with part 2.3), already over that target before 2.3 (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
+| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~8 s warm (the map extractor added ~2.5 s); measured idle 2026-10-21: raceline suite ~37 s (109 tests, measured 2026-10-25 on a loaded host, load ~20, `pytest raceline/tests`; ~29 s with part 4 at 101 tests; three real-TUM tests ~5 s each, RACELINE-1395 ~5 s; ~17 s on main, ~20 s with part 2.3), already over that target before 2.3 (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~201 s |
@@ -118,7 +118,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **175 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Current counts: **182 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -151,6 +151,8 @@ The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_l
 The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHECK-1420/1430`, `SIM-1080`; tier 2 `PP-2010`; tier 3 `SIM-3110`.
 
 The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
+
+The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
 
 ## The tests that matter most
 
