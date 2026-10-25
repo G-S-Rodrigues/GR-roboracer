@@ -1,8 +1,10 @@
 """Tier-2 conformance tests shared by every simulator backend."""
 
 import math
+import sys
 import time
 import unittest
+from pathlib import Path
 
 import launch
 import launch_ros.actions
@@ -13,7 +15,8 @@ import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from f1tenth_gym_jax.envs.utils import Param
 from nav_msgs.msg import Odometry
-from racing_interfaces.srv import Reset
+from racing_interfaces.srv import Reset, SetStepMode
+from rcl_interfaces.srv import SetParameters
 from rclpy.parameter import Parameter
 from rclpy.qos import (
     DurabilityPolicy,
@@ -27,6 +30,10 @@ from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, LaserScan
 from tf2_msgs.msg import TFMessage
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import conformance  # noqa: E402,F401  (the capability vocabulary)
+
 ADAPTER_NODE = "racing_sim"
 SCAN_TOPIC = "/scan"
 ODOMETRY_TOPIC = "/odom"
@@ -36,6 +43,7 @@ DRIVE_TOPIC = "/drive"
 IMU_TOPIC = "/imu"
 CLOCK_TOPIC = "/clock"
 RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
+STEP_MODE_SERVICE = f"/{ADAPTER_NODE}/step_mode"
 EXPECTED_RATE_HZ = 100.0
 RATE_TOLERANCE = 0.20
 
@@ -135,6 +143,9 @@ class TestAdapterContract(unittest.TestCase):
         self.assertIsNotNone(response)
         self.assertTrue(response.success, response.message)
         self.node.destroy_client(client)
+
+    def _applicable(self, test_id: str) -> bool:
+        return conformance.applicable(self, self.node, test_id)
 
     def test_adapt_2010_publishes_standard_sensor_types(self):
         """ADAPT-2010: scan, odometry, and IMU use standard ROS types."""
@@ -316,6 +327,8 @@ class TestAdapterContract(unittest.TestCase):
     def test_adapt_2050_seeded_reset_is_idempotent(self):
         """ADAPT-2050: equal reset seeds reproduce the initial state."""
         self._require_adapter()
+        if not self._applicable("ADAPT-2050"):
+            return
         self._reset(seed=2050, scenario_id="contract_test")
         first = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         self._reset(seed=2050, scenario_id="contract_test")
@@ -327,6 +340,8 @@ class TestAdapterContract(unittest.TestCase):
         """ADAPT-2070: /clock advances monotonically at time_scale x
         control_period, on a QoS profile a use_sim_time consumer accepts."""
         self._require_adapter()
+        if not self._applicable("ADAPT-2070"):
+            return
         publishers = self.node.get_publishers_info_by_topic(CLOCK_TOPIC)
         self.assertEqual(len(publishers), 1, "clock publisher missing")
         publisher_qos = publishers[0].qos_profile
@@ -361,6 +376,8 @@ class TestAdapterContract(unittest.TestCase):
         plan's one unproven assumption).
         """
         self._require_adapter()
+        if not self._applicable("ADAPT-2075"):
+            return
         self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
 
         consumer = rclpy.create_node(
@@ -404,6 +421,8 @@ class TestAdapterContract(unittest.TestCase):
         non-monotonic stamp for exactly this reason.
         """
         self._require_adapter()
+        if not self._applicable("ADAPT-2085"):
+            return
         before = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
         self._reset(seed=2085, scenario_id="")
         after = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
@@ -412,3 +431,98 @@ class TestAdapterContract(unittest.TestCase):
             self.assertLessEqual(
                 earlier, later, "/clock must not rewind across a reset"
             )
+
+    def test_adapt_2140_capabilities_are_declared_and_read_only(self):
+        """ADAPT-2140: the backend declares all five capability parameters,
+        each with a value in the vocabulary, and refuses to change them."""
+        self._require_adapter()
+        declared = conformance.declared_capabilities(self.node)
+        self.assertEqual(set(declared), set(conformance.CAPABILITY_PARAMETERS))
+        self.assertIn(
+            declared[conformance.CLOCK_PARAMETER], conformance.CLOCK_VALUES
+        )
+        self.assertIn(
+            declared[conformance.RESET_PARAMETER], conformance.RESET_VALUES
+        )
+        for name in conformance.BOOLEAN_PARAMETERS:
+            self.assertIsInstance(declared[name], bool, name)
+
+        client = self.node.create_client(
+            SetParameters, f"{ADAPTER_NODE}/set_parameters"
+        )
+        try:
+            self.assertTrue(client.wait_for_service(timeout_sec=20.0))
+            for name in conformance.CAPABILITY_PARAMETERS:
+                current = declared[name]
+                kind = (
+                    Parameter.Type.BOOL
+                    if isinstance(current, bool)
+                    else Parameter.Type.STRING
+                )
+                request = SetParameters.Request()
+                request.parameters = [
+                    Parameter(name, kind, current).to_parameter_msg()
+                ]
+                future = client.call_async(request)
+                rclpy.spin_until_future_complete(
+                    self.node, future, timeout_sec=20.0
+                )
+                self.assertTrue(future.done(), f"set {name} timed out")
+                self.assertFalse(
+                    future.result().results[0].successful,
+                    f"{name} must be read-only",
+                )
+        finally:
+            self.node.destroy_client(client)
+
+    def test_adapt_2150_not_applicable_set_is_the_expected_one(self):
+        """ADAPT-2150: the tests the running backend's declaration makes not
+        applicable are exactly conformance.BACKEND_EXPECTED_NOT_APPLICABLE
+        (empty for the gym, which has every capability), and each is named.
+        A gym test that silently stopped applying would fail here."""
+        self._require_adapter()
+        declared = conformance.declared_capabilities(self.node)
+        missing = conformance.not_applicable(conformance.REQUIREMENTS, declared)
+        for test_id, reason in sorted(missing.items()):
+            print(f"NOT APPLICABLE {test_id}: {reason}")
+        self.assertEqual(
+            set(missing), set(conformance.BACKEND_EXPECTED_NOT_APPLICABLE)
+        )
+
+    def _set_step_mode(self, mode: int) -> None:
+        client = self.node.create_client(SetStepMode, STEP_MODE_SERVICE)
+        self.assertTrue(
+            client.wait_for_service(timeout_sec=2.0), "step_mode unavailable"
+        )
+        future = client.call_async(SetStepMode.Request(mode=mode))
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=3.0)
+        self.assertTrue(future.done(), "step_mode timed out")
+        self.assertTrue(future.result().success, future.result().message)
+        self.node.destroy_client(client)
+
+    def test_adapt_2160_stepped_mode_holds_the_clock(self):
+        """ADAPT-2160: in STEPPED mode the backend does not advance on its
+        own, so /clock stops; back in CONTINUOUS it advances again. CONTINUOUS
+        is restored whatever happens, so no later case sees a held clock.
+        This case is last in the file for the same reason."""
+        self._require_adapter()
+        if not self._applicable("ADAPT-2160"):
+            return
+        try:
+            self._set_step_mode(SetStepMode.Request.STEPPED)
+            # Let a tick already in flight land before sampling.
+            self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 3)
+            held = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 10)
+            self.assertEqual(
+                len({_stamp_ns(message) for message in held}),
+                1,
+                "a stepped backend must hold /clock",
+            )
+        finally:
+            self._set_step_mode(SetStepMode.Request.CONTINUOUS)
+        running = [
+            _stamp_ns(message)
+            for message in self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 10)
+        ]
+        for earlier, later in zip(running, running[1:], strict=False):
+            self.assertLess(earlier, later, "/clock must advance again")

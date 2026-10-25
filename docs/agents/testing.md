@@ -118,7 +118,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **182 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Current counts: **187 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -154,6 +154,8 @@ The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`
 
 The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
 
+The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/1020/1030` (1030 also pins the exact guard shape, with a negative case), `SIMJAX-1150`; tier 2 `ADAPT-2140/2145/2150/2160`. Conformance tests select by the backend's declared capabilities (`racing_sim_adapter/test/conformance.py`); a not-applicable test prints `NOT APPLICABLE <id>: ...` and returns (no skip marker), and ADAPT-2150 pins the set.
+
 ## The tests that matter most
 
 - **COMMON-1060** — the gym_jax action mapping. It fails silently; this is the only thing that
@@ -174,8 +176,9 @@ The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205
 
 - **That the `racing_sim_adapter` contract is backend-neutral.** With one backend, tier 2 proves
   gym_jax satisfies the contract, not that the contract is general. ADAPT-2060 checks this
-  structurally (no gym_jax symbol in the headers); structure is not semantics. Genuinely resolved
-  only when a second backend lands.
+  structurally (no gym_jax symbol in the headers); structure is not semantics. Capability selection now exists
+  (ADAPT-1010..1030, 2140..2150), but neutrality is genuinely resolved only when a second backend
+  lands (part 7).
 - **RViz visual correctness.** A TF sign error passes every numeric test and is obvious to a human
   instantly. Manual — see `racing_vehicle_description/CLAUDE.md`.
 - **GPU passthrough.** Not assertable without a GPU runner. Manual.
