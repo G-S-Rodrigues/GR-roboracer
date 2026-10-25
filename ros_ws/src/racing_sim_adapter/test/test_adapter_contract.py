@@ -1,8 +1,10 @@
 """Tier-2 conformance tests shared by every simulator backend."""
 
 import math
+import sys
 import time
 import unittest
+from pathlib import Path
 
 import launch
 import launch_ros.actions
@@ -26,6 +28,10 @@ from rclpy.qos import (
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Imu, LaserScan
 from tf2_msgs.msg import TFMessage
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import conformance  # noqa: E402,F401  (the capability vocabulary)
 
 ADAPTER_NODE = "racing_sim"
 SCAN_TOPIC = "/scan"

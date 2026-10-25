@@ -11,6 +11,10 @@ if(BUILD_TESTING)
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   set_tests_properties(test_no_leak PROPERTIES LABELS "tier2")
+  ament_add_pytest_test(test_capabilities test/test_capabilities.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/test
+  )
+  set_tests_properties(test_capabilities PROPERTIES LABELS "tier1")
 
   find_package(launch_testing_ament_cmake REQUIRED)
   add_launch_test(test/test_adapter_contract.py

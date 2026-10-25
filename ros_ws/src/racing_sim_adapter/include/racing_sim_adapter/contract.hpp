@@ -24,6 +24,24 @@ inline constexpr std::string_view kDriveTopic{"/drive"};
 inline constexpr std::string_view kResetService{"/racing_sim/reset"};
 inline constexpr std::string_view kStepModeService{"/racing_sim/step_mode"};
 
+// What a backend can do. Each is a read-only parameter on kNodeName that the
+// backend declares itself; conformance tests select by them, and a test whose
+// capability is absent is reported not applicable by name.
+inline constexpr std::string_view kCapabilityClockParameter{"capability.clock"};
+inline constexpr std::string_view kClockOwnsClock{"owns_clock"};  // /clock
+inline constexpr std::string_view kClockFreeRunning{"free_running"};  // stamps
+inline constexpr std::string_view kCapabilityResetParameter{
+    "capability.reset"};
+inline constexpr std::string_view kResetSeededPose{"seeded_pose"};
+inline constexpr std::string_view kResetInitialPoseOnly{"initial_pose_only"};
+// The next three are booleans.
+inline constexpr std::string_view kCapabilityStepModeParameter{
+    "capability.step_mode"};
+inline constexpr std::string_view kCapabilityTimeScaleParameter{
+    "capability.time_scale"};
+inline constexpr std::string_view kCapabilityStartHeldParameter{
+    "capability.start_held"};
+
 inline constexpr std::string_view kMapFrame{"map"};
 inline constexpr std::string_view kOdomFrame{"odom"};
 inline constexpr std::string_view kBaseFrame{"base_link"};
