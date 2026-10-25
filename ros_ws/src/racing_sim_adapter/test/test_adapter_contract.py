@@ -15,7 +15,7 @@ import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from f1tenth_gym_jax.envs.utils import Param
 from nav_msgs.msg import Odometry
-from racing_interfaces.srv import Reset
+from racing_interfaces.srv import Reset, SetStepMode
 from rclpy.parameter import Parameter
 from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import (
@@ -43,6 +43,7 @@ DRIVE_TOPIC = "/drive"
 IMU_TOPIC = "/imu"
 CLOCK_TOPIC = "/clock"
 RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
+STEP_MODE_SERVICE = f"/{ADAPTER_NODE}/step_mode"
 EXPECTED_RATE_HZ = 100.0
 RATE_TOLERANCE = 0.20
 
@@ -476,3 +477,41 @@ class TestAdapterContract(unittest.TestCase):
         self.assertEqual(
             set(missing), set(conformance.BACKEND_EXPECTED_NOT_APPLICABLE)
         )
+
+    def _set_step_mode(self, mode: int) -> None:
+        client = self.node.create_client(SetStepMode, STEP_MODE_SERVICE)
+        self.assertTrue(
+            client.wait_for_service(timeout_sec=2.0), "step_mode unavailable"
+        )
+        future = client.call_async(SetStepMode.Request(mode=mode))
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=3.0)
+        self.assertTrue(future.done(), "step_mode timed out")
+        self.assertTrue(future.result().success, future.result().message)
+        self.node.destroy_client(client)
+
+    def test_adapt_2160_stepped_mode_holds_the_clock(self):
+        """ADAPT-2160: in STEPPED mode the backend does not advance on its
+        own, so /clock stops; back in CONTINUOUS it advances again. CONTINUOUS
+        is restored whatever happens, so no later case sees a held clock.
+        This case is last in the file for the same reason."""
+        self._require_adapter()
+        if not self._applicable("ADAPT-2160"):
+            return
+        try:
+            self._set_step_mode(SetStepMode.Request.STEPPED)
+            # Let a tick already in flight land before sampling.
+            self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 3)
+            held = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 10)
+            self.assertEqual(
+                len({_stamp_ns(message) for message in held}),
+                1,
+                "a stepped backend must hold /clock",
+            )
+        finally:
+            self._set_step_mode(SetStepMode.Request.CONTINUOUS)
+        running = [
+            _stamp_ns(message)
+            for message in self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 10)
+        ]
+        for earlier, later in zip(running, running[1:], strict=False):
+            self.assertLess(earlier, later, "/clock must advance again")
