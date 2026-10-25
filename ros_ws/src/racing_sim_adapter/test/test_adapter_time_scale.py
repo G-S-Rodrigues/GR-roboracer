@@ -5,8 +5,10 @@ A separate launch from `test_adapter_contract.py`, modelled on
 `time_scale: 5.0`, and every case in one launch_test file shares one launch.
 """
 
+import sys
 import time
 import unittest
+from pathlib import Path
 
 import launch
 import launch_ros.actions
@@ -21,6 +23,10 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from rosgraph_msgs.msg import Clock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import conformance  # noqa: E402
 
 ADAPTER_NODE = "racing_sim"
 CLOCK_TOPIC = "/clock"
@@ -98,6 +104,9 @@ class TestAdapterTimeScale(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.fail(f"node not found: {ADAPTER_NODE}")
 
+    def _applicable(self, test_id: str) -> bool:
+        return conformance.applicable(self, self.node, test_id)
+
     def test_adapt_2090_time_scale_propagates_to_clock_rate(self):
         """ADAPT-2090: launched with time_scale=5.0, /clock's steady-state
         simulated-seconds-per-wall-second rate is well above 1x.
@@ -110,6 +119,8 @@ class TestAdapterTimeScale(unittest.TestCase):
         time_scale=1.0.
         """
         self._require_adapter()
+        if not self._applicable("ADAPT-2090"):
+            return
         messages: list[Clock] = []
         wall_times: list[float] = []
 

@@ -15,6 +15,7 @@ from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import TrackRelativeState
 from racing_interfaces.srv import Reset, SetStepMode
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
@@ -28,6 +29,7 @@ from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import TransformBroadcaster
 
 from .backend import DriveCommand, GymBackend, Snapshot
+from .capabilities import CAPABILITIES
 from .clock import simulated_clock_message, step_due, wall_timer_period
 from .laser import (
     LaserMount,
@@ -76,6 +78,18 @@ class RacingSimNode(Node):
             / "scenarios"
             / "contract_test.yaml"
         )
+        # What this backend can do (racing_sim_adapter's contract). Read-only,
+        # and a launch override is ignored: a capability is not configuration.
+        for name, value in CAPABILITIES.items():
+            self.declare_parameter(
+                name,
+                value,
+                ParameterDescriptor(
+                    read_only=True,
+                    description="simulator capability (ADAPT-2140)",
+                ),
+                ignore_override=True,
+            )
         self.declare_parameter("scenario_path", str(default_scenario))
         self.declare_parameter("seed", 0)
         self.declare_parameter("time_scale", 1.0)
