@@ -97,5 +97,6 @@ def test_simjax_1510_the_sensor_variant_carve_out_cannot_widen(tmp_path):
             {field: "euler" if field == "integrator" else 7},
         )
         assert field in physics_differences(bad), field
-    other = scenario_named("elsewhere.yaml", {"num_beams": 1080})
-    assert "num_beams" in physics_differences(other)
+    for field, value in (("num_beams", 1080), ("fov", 4.712389)):
+        other = scenario_named("elsewhere.yaml", {field: value})
+        assert field in physics_differences(other), field
