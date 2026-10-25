@@ -1,0 +1,129 @@
+format_version: 1
+track: spielberg
+vehicle_version: f1tenth-default-v1
+optimizer: tum_mintime
+source:
+  path: config/scenarios/maps/Spielberg/slam/Spielberg.yaml
+  sha256: be4cc60b62e68db90b029ff9172590e06fc57d7b62c67cc30ec9215031b40b5c
+  image_sha256: 0344b011a2a0211b0e8c38ffc11d679b0dec437d6c6241019b1fcb70e0567145
+ground_truth:
+  path: config/tracks/spielberg.yaml
+  sha256: 712d2403909da9a8107ffc968d69cf6863e7dbd80fce4a2f74a5b4d9f9f4dcf8
+ground_truth_map:
+  path: config/scenarios/maps/Spielberg/Spielberg.yaml
+  sha256: b0367d0b806d46fd58588213e50b726150772dfea1d4c43bf243b3691117bffc
+  image_sha256: c3e2a362ce5faa5180317a7d5812be4c7e3ae22bb5c8b0d3f688f99fb6081cbb
+vehicle:
+  path: config/vehicles/f1tenth_default.yaml
+  sha256: ffe825d083c87fcacb588c34293069684adf633baddb09c24933dd5b3278cde9
+  ggv_sha256: 0ecbace704e9c30cfef04a08f6d43e8c99e4c85ad135ba0bd7b2497ed6d5c5c9
+  ax_max_machines_sha256: 0f17ea3c0efd599026ef7bebb1fd3325da39cf81689f8f7ad3bf473449b1bbd8
+  dynamics_sha256: 871ca6afe82117166c5bde9b975be141cf6c53aae65ae50d8501679201396d95
+  tyres_sha256: be0fe671b1476696396f1220d84293b00a38467c81133f1f64529c2d26618a3d
+code:
+  raceline/__main__.py: b76b3eeae7aa274feaba2fe2744e4bd2523c3bc0
+  raceline/extract.py: 9ba6b219cd34d0a72d6253b0267d47529c30b4c0
+  raceline/geometry.py: 4c585f7c0f19531314025a69f0401c4ccc41e6b1
+  raceline/optimize.py: 97f8053fa1a6caaaf2831a34d56df6716a9c0e65
+  raceline/track.py: a9f334b165f2bb0d5e24b5e8f1371388b7459510
+  raceline/tum.py: 605d04c92b05ddda157872287999c7a434ba79c1
+  raceline/vehicle.py: 8fa6042eb7a69ae58739315e4db561d6b3e1027c
+  raceline/verify.py: 4392abaeaeab73b762eaf130a3e6ec310d7202af
+  tum_env/pyproject.toml: a85e0123eb63160bad89f0d22a1dd7c739973ce7
+  tum_env/run_tum.py: 8d63a410134d23d0999b8ab55024529820fe9932
+  tum_env/run_tum_mintime.py: b1d41cc5530b38195eedfa69fb3bd95a12119ecb
+  tum_env/uv.lock: 3d5f178c30769350699cf0f2d7e1640e336e9260
+tum:
+  global-racetrajectory-optimization: global-racetrajectory-optimization @ git+https://github.com/G-S-Rodrigues/GR-roboracer-global_racetrajectory_optimization@8bedf4ca460c37efec2af251ce1ccd17ef377db2
+  trajectory-planning-helpers: trajectory-planning-helpers==0.78
+parameters:
+  margin: 0.4
+  safety_width: 1.1
+  passes: 1
+  allowance: 0.15
+  walls: observed
+  start_pose:
+  - 0.0
+  - 0.0
+  - -2.879
+  direction: cw
+  ini: "[GENERAL_OPTIONS]\nggv_file=\"ggv.csv\"\nax_max_machines_file=\"ax_max_machines.csv\"\
+    \nstepsize_opts={\"stepsize_prep\": 0.05,\n               \"stepsize_reg\": 0.5,\n\
+    \               \"stepsize_interp_after_opt\": 0.1}\nreg_smooth_opts={\"k_reg\"\
+    : 3,\n                 \"s_reg\": 1}\nveh_params={\"v_max\": 3.0,\n          \
+    \  \"length\": 0.58,\n            \"width\": 0.300000,\n            \"mass\":\
+    \ 3.74,\n            \"dragcoeff\": 0.0,\n            \"curvlim\": 1.281191572,\n\
+    \            \"g\": 9.81}\nvel_calc_opts={\"dyn_model_exp\": 1.0,\n          \
+    \     \"vel_profile_conv_filt_window\": null}\n\ncurv_calc_opts={\"d_preview_curv\"\
+    : 2.0, \"d_review_curv\": 2.0, \"d_preview_head\": 1.0, \"d_review_head\": 1.0}\n\
+    \n[OPTIMIZATION_OPTIONS]\noptim_opts_mincurv={\"width_opt\": 0.8,\n          \
+    \          \"iqp_iters_min\": 5,\n                    \"iqp_curverror_allowed\"\
+    : 0.1}\noptim_opts_mintime={\"width_opt\": 1.12, \"penalty_delta\": 1.0, \"penalty_F\"\
+    : 0.1, \"mue\": 1.027922, \"n_gauss\": 5, \"dn\": 0.025, \"limit_energy\": false,\
+    \ \"energy_limit\": 2.0, \"safe_traj\": false, \"ax_pos_safe\": null, \"ax_neg_safe\"\
+    : null, \"ay_safe\": null, \"w_tr_reopt\": 1.0, \"w_veh_reopt\": 0.8, \"w_add_spl_regr\"\
+    : 0.0, \"step_non_reg\": 0, \"eps_kappa\": 0.02}\nvehicle_params_mintime={\"wheelbase_front\"\
+    : 0.15875, \"wheelbase_rear\": 0.17145, \"track_width_front\": 0.281, \"track_width_rear\"\
+    : 0.281, \"cog_z\": 0.074, \"I_z\": 0.04712, \"liftcoeff_front\": 0.0, \"liftcoeff_rear\"\
+    : 0.0, \"k_brake_front\": 0.5, \"k_drive_front\": 0.0, \"k_roll\": 0.5, \"t_delta\"\
+    : 0.1, \"t_drive\": 0.1, \"t_brake\": 0.1, \"power_max\": 146.60800000000003,\
+    \ \"f_drive_max\": 7.3304, \"f_brake_max\": 7.3304, \"delta_max\": 0.4}\ntire_params_mintime={\"\
+    c_roll\": 0.0, \"f_z0\": 8.6, \"B_front\": 3.9316666666666666, \"C_front\": 1.2,\
+    \ \"eps_front\": -0.1, \"E_front\": 0.85, \"B_rear\": 4.546833333333334, \"C_rear\"\
+    : 1.2, \"eps_rear\": -0.1, \"E_rear\": 0.85}\npwr_params_mintime={\"pwr_behavior\"\
+    : false}\n"
+  tyre_set: gym_fit
+  solver_options:
+    mu_init: 0.001
+    max_iter: 3036
+    max_wall_time_s: 1200
+    threads: 3
+    exact_arc_length: true
+  reference:
+    path: config/racelines/spielberg/f1tenth-default-v1/reference/tum_mintime.csv
+    sha256: 135faf4b08a7f6dcc475823d34b1572d09e669ade7108b5d68da7f8f5b8f195a
+    margin: 0.4
+    passes: 2
+    ini: "[GENERAL_OPTIONS]\nggv_file=\"ggv.csv\"\nax_max_machines_file=\"ax_max_machines.csv\"\
+      \nstepsize_opts={\"stepsize_prep\": 0.05,\n               \"stepsize_reg\":\
+      \ 0.2,\n               \"stepsize_interp_after_opt\": 0.1}\nreg_smooth_opts={\"\
+      k_reg\": 3,\n                 \"s_reg\": 1}\nveh_params={\"v_max\": 3.0,\n \
+      \           \"length\": 0.58,\n            \"width\": 0.300000,\n          \
+      \  \"mass\": 3.74,\n            \"dragcoeff\": 0.0,\n            \"curvlim\"\
+      : 1.281191572,\n            \"g\": 9.81}\nvel_calc_opts={\"dyn_model_exp\":\
+      \ 1.0,\n               \"vel_profile_conv_filt_window\": null}\n\n[OPTIMIZATION_OPTIONS]\n\
+      optim_opts_mincurv={\"width_opt\": 0.8,\n                    \"iqp_iters_min\"\
+      : 5,\n                    \"iqp_curverror_allowed\": 0.1}\n"
+verdict:
+  ok: true
+  min_clearance:
+    input: 0.5308089080576156
+    ground_truth: 0.38391030454394653
+    ground_truth_tip_cells: 0.4222848902088586
+    ground_truth_judged: 0.4222848902088586
+  max_abs_kappa: 0.66351835568865
+  max_ay_ratio: 0.5803531665665035
+  max_ax_ratio: 3.25992263768513e-07
+  unobserved_share:
+    input: 0.0
+    ground_truth: 0.0
+  tips:
+    input: []
+    ground_truth:
+    - xy:
+      - -74.87772615428835
+      - 52.089891875686455
+      reach: 0.3259491014815601
+      cells_at_tip: 0.04027237641906007
+      observed: true
+      governs: 20
+      polygon_min: 0.38391030454394653
+      cells_min: 0.4222848902088586
+solver:
+  status: Solve_Succeeded
+  iterations: 170
+  wall_s: 41.949147172000266
+command: python -m raceline --map config/scenarios/maps/Spielberg/slam/Spielberg.yaml
+  --walls observed --start-pose 0 0 -2.879 --direction cw --ground-truth-track config/tracks/spielberg.yaml
+  --ground-truth-map config/scenarios/maps/Spielberg/Spielberg.yaml --vehicle config/vehicles/f1tenth_default.yaml
+  --optimizer tum_mintime --timeout 3000
