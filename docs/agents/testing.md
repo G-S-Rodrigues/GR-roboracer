@@ -118,10 +118,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **418 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
-Tier 1 is counted from a collection (2026-10-25, worktree overlay): `pytest --collect-only` over `scripts/tests` (171), `sim/tests` (20),
-`raceline/tests` (109) and the non-launch tests under `ros_ws/src` (85), plus 33 gtest `TEST` cases. Tiers 2-5 are test IDs, not items:
-a launch test is one pytest item holding several IDs.
+Current counts: **188 tier-1, 20 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
