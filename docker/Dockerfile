@@ -5,6 +5,8 @@
 #   base      ros:jazzy-ros-base + apt dependencies
 #   underlay  third-party ROS sources built into /opt/racing_underlay
 #   dev       underlay + toolchain; where all ROS nodes and colcon builds run
+#   gpu       dev + CUDA 12.8 (nvcc, cudart) for GPU ROS nodes; the gym stays on
+#             CPU; owner's machine only, never built in CI
 #   fast-sim  python + JAX/CUDA + f1tenth_gym_jax. NO ROS.
 #   runtime   ros:jazzy-ros-core + underlay + installed workspace, no toolchain
 #
@@ -16,6 +18,8 @@
 # /scan. Both SHAs come from the Step 1 spike (.scratch/.../spike-gym-jax.md).
 ARG GYM_JAX_SHA=1b4eb3f5161756bb925987753b965b549097742f
 ARG JAX_PF_SHA=1b1417d7d2afbf24a9c6594195c2e872a6b4460a
+# sha256 of NVIDIA's cuda-keyring_1.1-1_all.deb (ubuntu2404), used by `gpu`.
+ARG CUDA_KEYRING_SHA256=d2a6b11c096396d868758b86dab1823b25e14d70333f1dfa74da5ddaf6a06dba
 
 
 # --------------------------------------------------------------------------
@@ -122,6 +126,30 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["bash"]
 WORKDIR /ws
+
+
+# --------------------------------------------------------------------------
+# `gpu` derives from `dev` by owner ruling (2026-10-25, ADR 0002's amendment):
+# the owner develops, tests and runs the simulators here. `dev` must never
+# derive from `gpu` (gotcha #4). The gym's JAX stays on CPU: it is inherited
+# from `dev`, and nothing here installs a Python package (CHECK-1910).
+FROM dev AS gpu
+ARG CUDA_KEYRING_SHA256
+COPY docker/gpu-apt-pins.txt /tmp/gpu-apt-pins.txt
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    curl -fsSLo /tmp/cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+    && echo "${CUDA_KEYRING_SHA256}  /tmp/cuda-keyring.deb" | sha256sum -c - \
+    && dpkg -i /tmp/cuda-keyring.deb \
+    && apt-get update \
+    && grep -v '^#' /tmp/gpu-apt-pins.txt | grep . | sort > /tmp/gpu-pins.list \
+    && xargs -a /tmp/gpu-pins.list apt-get install -y --no-install-recommends \
+    && dpkg-query -W -f='${db:Status-Abbrev} ${Package}=${Version}\n' 'cuda-*' | grep '^ii ' | cut -c4- | sort > /tmp/gpu-installed.list \
+    && diff /tmp/gpu-pins.list /tmp/gpu-installed.list \
+    && rm -f /tmp/cuda-keyring.deb /tmp/gpu-pins.list /tmp/gpu-installed.list /tmp/gpu-apt-pins.txt
+ENV PATH=/usr/local/cuda-12.8/bin:${PATH} \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 
 # --------------------------------------------------------------------------

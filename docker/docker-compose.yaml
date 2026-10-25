@@ -3,6 +3,9 @@
 # All ROS nodes run in `dev`. There is deliberately no cross-container DDS and
 # no network_mode: host -- `fast-sim` is a separate container precisely because
 # it contains no ROS at all, so the two never need to discover each other.
+# `gpu` is the exception: it runs ROS on this same compose network, so it has
+# its own ROS_DOMAIN_ID. "No cross-container DDS" holds only because the
+# domains differ (gotcha #10's shape).
 name: gr-roboracer
 
 services:
@@ -71,7 +74,50 @@ services:
               count: all
               capabilities: [gpu]
 
+  # dev + CUDA, owner's machine only. Behind a profile so the devcontainer
+  # (no runServices) never builds or starts it; `build gpu` / `run gpu` still do.
+  gpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: gpu
+    image: gr-roboracer:gpu
+    container_name: gr-roboracer-gpu
+    profiles: ["gpu"]
+    working_dir: /ws
+    volumes:
+      - ..:/ws
+      # Own build trees: a colcon build against different libraries would
+      # strand dev's volumes, and the reverse (gotcha #21).
+      - ws-gpu-build:/ws/build
+      - ws-gpu-install:/ws/install
+      - ws-gpu-log:/ws/log
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /mnt/wslg:/mnt/wslg
+    environment:
+      ROS_DOMAIN_ID: "43"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /ws
+      DISPLAY: ${DISPLAY:-:0}
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-}
+      XDG_RUNTIME_DIR: /mnt/wslg/runtime-dir
+      PULSE_SERVER: ${PULSE_SERVER:-}
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
 volumes:
   ws-build:
   ws-install:
   ws-log:
+  ws-gpu-build:
+  ws-gpu-install:
+  ws-gpu-log:
