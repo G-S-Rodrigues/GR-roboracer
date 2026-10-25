@@ -228,19 +228,21 @@ Traps any task in this repository can hit. Each one cost real time at least once
     python-engineio 3.13.0 (the devkit's pair; gevent 26.9.0 and gevent-websocket 0.10.1 on Python
     3.12) held 200 s, 2782 messages, no disconnect. `tools/autodrive_record.py` pins that set.
 
-31. **The sim's message rate follows host load, and the first-frame lidar has `inf`.** A recording on a
-    busy host (load ~20 on 16 cores) ran 9-60 Hz, median period 18 ms, not 20 Hz: do not assert a
-    rate band on a recorded stream. Lidar ranges with no return are the string `inf`, in ~2% of
-    entries; they are not faults, `NaN` would be.
+31. **The sim's message rate follows host load, and every lidar frame after the first has `inf`.** A
+    recording on a busy host (load 20-30 on 16 cores) had a median period of 18.2 ms (~55 Hz), a
+    10-90 % range of 11-55 ms (~18-89 Hz) and a longest gap of 145 ms, not a fixed 20 Hz: do not
+    assert a rate band on a recorded stream. The first frame has no lidar at all. In every later
+    frame `inf` (no return) is ~1.9 % of the ranges; they are not faults, `NaN` would be.
 
 32. **Jazzy-Humble DDS discovery is slow, and a loaded host drops 100+ ms of messages anyway.** With
     the devkit's QoS (reliable, volatile, depth 1) a Jazzy publisher and a Humble subscriber needed 0
-    to 2.8 s after both were up before the first delivery (up to 55 messages lost; ~1/3 of 20 runs
-    above 1 s), and the `sequence size exceeds remaining buffer` warning appears once or more. After
-    the first delivery 20 Hz held but gaps over 100 ms occurred (max 1.4 s, ~3.6 per minute on a host
-    at load ~30); a Jazzy-to-Jazzy control under the same load had ~3 per minute (max 0.59 s), so
-    they are load, not the distro pair. The fix is waiting for the first delivery, never a longer
-    timeout (gotcha 19).
+    to 2.8 s after both were up before the first delivery (up to 55 messages lost). Some of the 20
+    probe runs took over 1 s; the per-run logs were not kept, so no fraction is claimed. The
+    `sequence size exceeds remaining buffer` warning appears once or more. After the first delivery
+    the probe's own 20 Hz publish timer held (that is the probe's rate, not the sim's) but gaps over
+    100 ms occurred (max 1.4 s, ~3.6 per minute on a host at load ~30); a Jazzy-to-Jazzy control
+    under the same load had ~3 per minute (max 0.59 s), so they are load, not the distro pair. The
+    fix is waiting for the first delivery, never a longer timeout (gotcha 19).
 
 33. **`/ws/setup.sh` sources `/ws/install/setup.bash`, not the worktree's.** In a `.scratch/<worktree>`
     a build or test after `source setup.sh` can run on the main checkout's overlay, another branch's
@@ -249,6 +251,8 @@ Traps any task in this repository can hit. Each one cost real time at least once
 
 34. **Compose projects are shared across worktrees.** `docker/docker-compose.yaml` sets
     `name: gr-roboracer`, so a worktree's compose file addresses the same containers as the main
-    checkout's. `up` with no service name, a changed `dev` definition, or `--remove-orphans` from a
-    worktree can recreate the shared `dev` container, mounted on the worktree as `/ws`. Always name the
+    checkout's. `docker compose ... up -d dev` or `--force-recreate dev` from a worktree remounts `dev`
+    onto that worktree, because `..` in the compose file resolves there. `up` with no service name or a
+    changed `dev` definition can recreate it too; `--remove-orphans` removes containers, it does not
+    recreate them. `dev` is the shared container, mounted on the worktree as `/ws`. Always name the
     autodrive service and pass `--no-deps`; never `down`.

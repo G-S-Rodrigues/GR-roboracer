@@ -95,7 +95,7 @@ services:
         until (exec 3<>/dev/tcp/$$AUTODRIVE_BRIDGE_HOST/4567) 2>/dev/null;
         do sleep 0.5; done;
         exec "./AutoDRIVE Simulator.x86_64" -batchmode -nographics
-        -ip $$(getent hosts $$AUTODRIVE_BRIDGE_HOST | cut -d' ' -f1)
+        -ip $$(getent hosts $$AUTODRIVE_BRIDGE_HOST | head -1 | cut -d' ' -f1)
         -port 4567
 
   # The official devkit (ROS 2 Humble) with its Socket.IO bridge, unmodified.
