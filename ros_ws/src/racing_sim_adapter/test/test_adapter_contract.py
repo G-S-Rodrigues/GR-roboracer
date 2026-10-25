@@ -143,6 +143,9 @@ class TestAdapterContract(unittest.TestCase):
         self.assertTrue(response.success, response.message)
         self.node.destroy_client(client)
 
+    def _applicable(self, test_id: str) -> bool:
+        return conformance.applicable(self, self.node, test_id)
+
     def test_adapt_2010_publishes_standard_sensor_types(self):
         """ADAPT-2010: scan, odometry, and IMU use standard ROS types."""
         self._require_adapter()
@@ -323,6 +326,8 @@ class TestAdapterContract(unittest.TestCase):
     def test_adapt_2050_seeded_reset_is_idempotent(self):
         """ADAPT-2050: equal reset seeds reproduce the initial state."""
         self._require_adapter()
+        if not self._applicable("ADAPT-2050"):
+            return
         self._reset(seed=2050, scenario_id="contract_test")
         first = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         self._reset(seed=2050, scenario_id="contract_test")
@@ -334,6 +339,8 @@ class TestAdapterContract(unittest.TestCase):
         """ADAPT-2070: /clock advances monotonically at time_scale x
         control_period, on a QoS profile a use_sim_time consumer accepts."""
         self._require_adapter()
+        if not self._applicable("ADAPT-2070"):
+            return
         publishers = self.node.get_publishers_info_by_topic(CLOCK_TOPIC)
         self.assertEqual(len(publishers), 1, "clock publisher missing")
         publisher_qos = publishers[0].qos_profile
@@ -368,6 +375,8 @@ class TestAdapterContract(unittest.TestCase):
         plan's one unproven assumption).
         """
         self._require_adapter()
+        if not self._applicable("ADAPT-2075"):
+            return
         self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
 
         consumer = rclpy.create_node(
@@ -411,6 +420,8 @@ class TestAdapterContract(unittest.TestCase):
         non-monotonic stamp for exactly this reason.
         """
         self._require_adapter()
+        if not self._applicable("ADAPT-2085"):
+            return
         before = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
         self._reset(seed=2085, scenario_id="")
         after = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
@@ -451,3 +462,17 @@ class TestAdapterContract(unittest.TestCase):
                 future.result().results[0].successful,
                 f"{name} must be read-only",
             )
+
+    def test_adapt_2150_not_applicable_set_is_the_expected_one(self):
+        """ADAPT-2150: the tests the running backend's declaration makes not
+        applicable are exactly conformance.BACKEND_EXPECTED_NOT_APPLICABLE
+        (empty for the gym, which has every capability), and each is named.
+        A gym test that silently stopped applying would fail here."""
+        self._require_adapter()
+        declared = conformance.declared_capabilities(self.node)
+        missing = conformance.not_applicable(conformance.REQUIREMENTS, declared)
+        for test_id, reason in sorted(missing.items()):
+            print(f"NOT APPLICABLE {test_id}: {reason}")
+        self.assertEqual(
+            set(missing), set(conformance.BACKEND_EXPECTED_NOT_APPLICABLE)
+        )

@@ -128,6 +128,9 @@ class TestAdapterStartHeld(unittest.TestCase):
         self.assertTrue(response.success, response.message)
         self.node.destroy_client(client)
 
+    def _applicable(self, test_id: str) -> bool:
+        return conformance.applicable(self, self.node, test_id)
+
     def test_adapt_2080_start_held_does_not_advance_until_reset(self):
         """ADAPT-2080: started held, /clock stays at 0 and the pose stays
         put - while still publishing, so consumers can be discovered - until
@@ -138,6 +141,8 @@ class TestAdapterStartHeld(unittest.TestCase):
         racing_metrics then aborts on a non-monotonic stamp.
         """
         self._require_adapter()
+        if not self._applicable("ADAPT-2080"):
+            return
         held_clock = self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 10)
         self.assertEqual(
             [_stamp_ns(message) for message in held_clock],

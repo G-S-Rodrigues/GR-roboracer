@@ -7,6 +7,7 @@ every sample is taken at one known pose.
 
 import math
 import statistics
+import sys
 import time
 import unittest
 from pathlib import Path
@@ -26,6 +27,10 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from sensor_msgs.msg import LaserScan
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import conformance  # noqa: E402
 
 ADAPTER_NODE = "racing_sim"
 VEHICLE_CONFIG = (
@@ -84,6 +89,9 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown()
 
+    def _applicable(self, test_id: str) -> bool:
+        return conformance.applicable(self, self.node, test_id)
+
     def _collect(self, topic: str) -> list[LaserScan]:
         messages: list[LaserScan] = []
         subscription = self.node.create_subscription(
@@ -118,6 +126,8 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         is a raster); cast from base_link, /scan read 0.0052 m. The 0.05 m
         delta is far from both the 0.275 and the 0 alternatives.
         """
+        if not self._applicable("ADAPT-2120"):
+            return
         truth = self._collect("/ground_truth/scan")
         noisy = self._collect("/scan")
         self.assertEqual(noisy[0].header.frame_id, "laser")
