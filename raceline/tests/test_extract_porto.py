@@ -9,9 +9,6 @@ direction are an assumption that part 10 checks against the simulator.
 import hashlib
 from pathlib import Path
 
-import numpy as np
-import pytest
-
 REPO = Path(__file__).resolve().parents[2]
 MAP_DIR = REPO / "config" / "scenarios" / "maps" / "Porto"
 MAP_YAML = MAP_DIR / "Porto.yaml"
@@ -56,3 +53,51 @@ def test_raceline_1180_official_map_is_byte_identical_to_upstream():
     got = _sha(block)
     assert got == SHA256["LICENSE"], f"licence block {got}"
     assert UPSTREAM_SHA.encode() in notice
+
+
+def _cli_args(out, start=("0", "0", "0")):
+    return [
+        "--map", str(MAP_YAML),
+        "--start-pose", *start,
+        "--direction", DIRECTION,
+        "--walls", "observed",
+        "--name", "Porto",
+        "--out", str(out),
+    ]  # fmt: skip
+
+
+def test_raceline_1185_cli_writes_what_the_extractor_extracts(tmp_path, capsys):
+    """RACELINE-1185: the CLI is write_track(extract_track(...)), nothing more.
+
+    The header names the command, the upstream commit and the assumed start.
+    A refusal exits 3 with the extractor's message on stderr.
+    """
+    from raceline.extract import Pose2D, extract_track, load_map
+    from raceline.track import write_track
+
+    from raceline import track_from_map
+
+    out = tmp_path / "porto.yaml"
+    note = "start (0, 0, 0) ccw assumed; checked in #44 part 10"
+    argv = _cli_args(out) + ["--source-note", note]
+    assert track_from_map.main(argv) == 0
+    text = out.read_text()
+    header = [ln for ln in text.splitlines() if ln.startswith("#")]
+    joined = "\n".join(header)
+    assert "raceline.track_from_map" in joined
+    assert "--start-pose 0.0 0.0 0.0" in joined and "--direction ccw" in joined
+    assert note in joined
+    grid = load_map(MAP_YAML)
+    track = extract_track(
+        grid, grid.resolution, grid.origin, Pose2D(*START), DIRECTION,
+        name="Porto", walls="observed",
+    )  # fmt: skip
+    expected = write_track(track, tmp_path / "expected.yaml", source="\n".join(
+        s[2:] for s in header))  # fmt: skip
+    assert out.read_text() == expected.read_text()
+
+    capsys.readouterr()
+    bad = tmp_path / "bad.yaml"
+    assert track_from_map.main(_cli_args(bad, ("5", "5", "0"))) == 3
+    assert not bad.exists()
+    assert capsys.readouterr().err.strip()
