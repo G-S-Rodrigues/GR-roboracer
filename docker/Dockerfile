@@ -144,7 +144,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update \
     && grep -v '^#' /tmp/gpu-apt-pins.txt | grep . | sort > /tmp/gpu-pins.list \
     && xargs -a /tmp/gpu-pins.list apt-get install -y --no-install-recommends \
-    && dpkg-query -W -f='${db:Status-Abbrev} ${Package}=${Version}\n' 'cuda-*' | grep '^ii ' | cut -c4- | sort > /tmp/gpu-installed.list \
+    && dpkg-query -W -f='${db:Status-Abbrev} ${Package}=${Version}\n' 'cuda-*' | grep '^ii ' | cut -c5- | sort > /tmp/gpu-installed.list \
     && diff /tmp/gpu-pins.list /tmp/gpu-installed.list \
     && rm -f /tmp/cuda-keyring.deb /tmp/gpu-pins.list /tmp/gpu-installed.list /tmp/gpu-apt-pins.txt
 ENV PATH=/usr/local/cuda-12.8/bin:${PATH} \
