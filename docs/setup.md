@@ -15,7 +15,8 @@ page does not repeat its build and launch sequence.
 - Optional: `git submodule update --init third_party/f1tenth_racetracks` fetches the upstream
   racetracks, which only the nightly raceline report reads (its upstream reference row). Nothing
   else needs it, and the report says "not available" without it.
-- Only the optional GPU simulator needs an NVIDIA GPU with the container toolkit.
+- Only the optional GPU simulator and the optional GPU image need an NVIDIA GPU with the container
+  toolkit.
 
 ## Display
 
@@ -37,6 +38,20 @@ docker compose -f docker/docker-compose.yaml run --rm fast-sim \
 
 The output must not be `CpuDevice`. That means the GPU setup failed and JAX fell back to the CPU,
 which gives correct results far more slowly. It is not a successful GPU run.
+
+## Optional: the GPU image
+
+The `gpu` image is `dev` plus the CUDA 12.8 compiler and runtime (nvcc, cudart), for ROS nodes that
+run on the GPU. Nothing you can select uses it yet. It is not built by default or by the devcontainer;
+build it on a machine with an NVIDIA GPU and check it with the smoke test:
+
+```bash
+docker compose -f docker/docker-compose.yaml build gpu
+docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh
+```
+
+The output must end with `GPU-3010 PASS`. The `gpu` service keeps its own build volumes
+(`ws-gpu-build`, `ws-gpu-install`), so build the workspace inside it separately from `dev`.
 
 ## Troubleshooting
 

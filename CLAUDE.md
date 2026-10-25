@@ -58,7 +58,8 @@ validation is built once a mapped-map workflow exists (AutoDRIVE), not before.
 Everything runs in containers. `docker compose -f docker/docker-compose.yaml up -d dev` starts the
 long-lived `dev` container; `test -f /.dockerenv` tells you whether you are inside one. ROS nodes,
 `colcon`, lint and every test tier run in `dev`. The headless GPU simulator runs in `fast-sim`, which
-has no ROS in it at all — that split is deliberate and load-bearing (ADR 0002, ADR 0003).
+has no ROS in it at all — that split is deliberate and load-bearing (ADR 0002, ADR 0003). GPU ROS
+nodes run in `gpu` (`dev` + CUDA), on the owner's machine only.
 
 ## Read before you do
 
@@ -105,7 +106,7 @@ config/         Tracks, scenarios, and one versioned vehicle parameter file.
 tests/          Tier 3 (pytest), tier 4 (Robot Framework), shared keywords, golden baseline.
 raceline/       Offline raceline generation (TUM optimizer). uv project, no ROS, runs in dev.
 scripts/        check.sh (the gate), run_scenario.py, compare_metrics.py.
-docker/         Multi-stage image: base → underlay → dev / fast-sim / runtime.
+docker/         Multi-stage image: base → underlay → dev (→ gpu) / fast-sim / runtime.
 docs/           ADRs, agent-facing notes, research.
 .scratch/       Grills, specs and plans. Gitignored; `git clean -e .scratch`.
 ```

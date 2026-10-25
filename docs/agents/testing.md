@@ -106,6 +106,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 1, `raceline/` | `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests -k raceline_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
+| manual, host | `docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh` (GPU-3010) |
 | 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
 
 A C++ edit reaches none of these until
@@ -118,7 +119,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **187 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Current counts: **192 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -137,6 +138,8 @@ The vehicle-limits work added tier 1 `RACELINE-1210..1250`, `SIMJAX-1120/1130`, 
 `CHECK-1310/1320`.
 The importer-convention work added tier 1 `SIM-1030`.
 The image-pin work added tier 1 `CHECK-1330/1340`.
+
+The gpu-stage work added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
 The base-link work (part 3.1b) added tier 1 `SIMJAX-1140`, `DESC-1020`; tier 2 `ADAPT-2130`.
 The worktree-scope work added tier 1 `CHECK-1350` to `CHECK-1390`.
 The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/1170`.
@@ -181,7 +184,8 @@ The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/
   lands (part 7).
 - **RViz visual correctness.** A TF sign error passes every numeric test and is obvious to a human
   instantly. Manual — see `racing_vehicle_description/CLAUDE.md`.
-- **GPU passthrough.** Not assertable without a GPU runner. Manual.
+- **GPU passthrough.** Not assertable without a GPU runner. Manual: `GPU-3010` in the `gpu` stage
+  (`docker/gpu/smoke.sh`).
 - **Cross-hardware determinism.** JAX is float32 and not bit-reproducible across GPUs or XLA
   versions. SIM-3030/3040 assert tolerances, never float equality — and each tolerance in
   `scripts/compare_metrics.py` carries the measurement that justifies its size.

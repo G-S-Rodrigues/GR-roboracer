@@ -4,7 +4,8 @@ The measurements on [Results](results.md) and the behaviour of each Available im
 README's capability matrix are backed by tests that run on every pull request or every night. Three
 things are not. The Mapping demonstration on Results is a recording, not a test. The failure of the
 TUM minimum-time optimization to converge on Spielberg is a single trial that no test gates (see
-`raceline/README.md`). GPU runs are not tested in CI. Rows marked Planned or Exploratory are not
+`raceline/README.md`). GPU runs are not tested in CI: the GPU image's structure is checked on every pull request, but
+building and running it is a manual check on a GPU machine. Rows marked Planned or Exploratory are not
 claims of working code. This page says what each of five layers proves, then how to run the checks.
 
 ## 1. Unit tests
