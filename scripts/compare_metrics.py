@@ -36,6 +36,11 @@ from typing import Any
 # field in FLOAT_TOLERANCES; on the 0.01-tolerance tracking errors it is 1% of
 # the tolerance. lap_time moves in whole 0.01 s ticks, so on lap_time it
 # admits exactly the 0.05 boundary and nothing past it.
+# What the slack is measured against: SIM-3040's live lap_time at seed 42,
+# 2026-10-25, six runs on a quiet host (CPU idle >= 85%): 22.83 x2, 22.84 x4,
+# against the golden's 22.81. The offset is 0.02-0.03 s, so the 0.05 tolerance
+# carries ~1.7x it and no live lap came near the 22.86 boundary. The 0.05 is
+# unchanged.
 FLOAT_SLACK = 1e-4
 
 FLOAT_TOLERANCES = {
