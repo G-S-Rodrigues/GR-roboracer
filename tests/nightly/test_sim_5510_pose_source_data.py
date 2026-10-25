@@ -35,8 +35,10 @@ report is the committed survey grid (amcl's prior) measured the same way.
 and a method that maps in its own start frame scores metres off until its
 part transforms the grid first.
 
-Timing: both scenarios lapped at 5x open loop with no latch in diagnostic
-runs (host load 15-28, so no wall-time figure is recorded here); the 400 s
+Timing: both scenarios lapped open loop with no latch in diagnostic
+runs (host load 15-28, so no wall-time figure is recorded here). 5x is the
+`time_scale` ceiling the sim does not reach there (step-bound, about 2x), so
+slam_toolbox's latency is not gated by sim time (SIM-3070); the 400 s
 timeout is SIM-5020's budget. The nightly time of this test is reported in
 the PR from a run at host load below 8.
 """
@@ -81,7 +83,9 @@ SURVEY = (
 )  # amcl's prior
 # Owner ruling O4: four seeds, as SIM-5050.
 SEEDS = (42, 1030, 7, 2026)
-# Both scenarios lap at 5x with no latch (measured above, step 1).
+# A ceiling, not the rate reached: the sim is step-bound (4-5 ms CPU per step
+# against a 2 ms period at 5x, diagnostic host), so it runs nearer 2x. Both
+# scenarios lap with no latch at this setting.
 TIME_SCALE = 5.0
 # SIM-5020's budget: the longest measured row was 220 s on a loaded host.
 TIMEOUT_SECONDS = 400.0
@@ -167,6 +171,7 @@ def one_run(source: str, scenario: str, seed: int, track_length, tmp: Path):
         rates,
         cpu.cpu_ms_per_scan(rate.scans),
         accuracy,
+        cpu_error=cpu.error,
     )
 
 

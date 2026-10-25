@@ -7,6 +7,8 @@ structure: nothing here (or in the module) ranks methods or bounds an error.
 from __future__ import annotations
 
 import math
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,10 @@ from scripts.pose_source_report import (
     single_match,
     structural_failures,
 )
+
+LIB_ROOT = Path(__file__).resolve().parents[2] / "tests" / "lib"
+if str(LIB_ROOT) not in sys.path:
+    sys.path.insert(0, str(LIB_ROOT))
 
 BOTH = ["slam_toolbox", "amcl"]
 SEEDS = (42, 7)
@@ -210,3 +216,35 @@ def test_check_1870_render_order_is_fixed_not_ranked() -> None:
     assert keys == expected
     mola = [line for line in lines if line.split("|")[1].strip() == "mola"]
     assert mola and all("absent" in line for line in mola)
+
+
+def test_check_1860_a_cpu_probe_that_errored_is_a_structural_failure() -> None:
+    """C1: a doubled or vanished estimator process must not pass silently."""
+    row = _done("amcl", "spielberg", 42, cpu_error="2 processes match 'x'")
+    assert row["cpu_error"] is not None
+    assert row["cpu_error"] == "2 processes match 'x'"
+    clean = _done("amcl", "spielberg", 42)
+    assert clean["cpu_error"] is None
+    records = _all_records()
+    records[records.index(clean_of(records))]["cpu_error"] = "boom"
+    failures = structural_failures(records, _expected())
+    assert any("cpu probe: boom" in f for f in failures)
+
+
+def clean_of(records) -> dict:
+    return next(r for r in records if r["source"] == "amcl")
+
+
+def test_check_1851_the_cpu_probe_records_a_doubled_process(tmp_path) -> None:
+    from racing_test_keywords.probes import ProcessCpuProbe
+
+    for pid in (11, 12):
+        directory = tmp_path / str(pid)
+        directory.mkdir()
+        (directory / "cmdline").write_bytes(b"/x/lib/slam_toolbox/node\0--a")
+        (directory / "stat").write_text("1 (n) S " + "0 " * 20)
+    probe = ProcessCpuProbe("lib/slam_toolbox/", proc=tmp_path)
+    probe.started()
+    probe.close()
+    assert probe.error is not None and "2 processes" in probe.error
+    assert probe.cpu_ms_per_scan(100) is None

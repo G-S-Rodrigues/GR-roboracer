@@ -651,9 +651,9 @@ def run_scenario(
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
         observer = _HangObserver(node)
-        for probe in probes:
-            probe.attach(node)
         try:
+            for probe in probes:
+                probe.attach(node)
             _reset_at_deterministic_t0(node, seed, timeout, pose_source)
             for probe in probes:
                 probe.started()

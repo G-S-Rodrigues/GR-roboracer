@@ -53,6 +53,7 @@ RECORD_FIELDS = (
     "tf_rate_hz",
     "scan_rate_hz",
     "cpu_ms_per_scan",
+    "cpu_error",
     "gpu",
     "map_kind",
     "map_wall_cells",
@@ -98,11 +99,14 @@ def absent_record(source, scenario, seed) -> dict:
     return row
 
 
-def record(source, scenario, seed, run, score, rates, cpu, map_accuracy):
+def record(
+    source, scenario, seed, run, score, rates, cpu, map_accuracy, cpu_error=None
+):
     """One run's record. ``run`` carries outcome, time_scale,
     drive_on_estimate, host_load_delta, error and (completed) metrics;
     ``score`` is a ``score_recording`` dict; ``rates`` holds the three
-    ``*_rate_hz``; ``map_accuracy`` is ``dataclasses.asdict(MapAccuracy)``."""
+    ``*_rate_hz``; ``map_accuracy`` is ``dataclasses.asdict(MapAccuracy)``;
+    ``cpu_error`` is the CPU probe's error text (a doubled or vanished process)."""
     row = _blank(source, scenario, seed)
     method = METHODS.get(source)
     metrics = run.get("metrics") or {}
@@ -119,6 +123,7 @@ def record(source, scenario, seed, run, score, rates, cpu, map_accuracy):
         lap_time=metrics.get("lap_time"),
         collision_count=metrics.get("collision_count"),
         cpu_ms_per_scan=cpu,
+        cpu_error=cpu_error,
     )
     for key in ("ate_rmse", "ate_maximum", "availability", "maximum_gap"):
         row[key] = (score or {}).get(key)
@@ -222,6 +227,10 @@ def structural_failures(records, expected) -> list[str]:
                         failures.append(
                             f"{label}: ate_rmse is not finite: "
                             f"{row['ate_rmse']!r}"
+                        )
+                    if row.get("cpu_error"):
+                        failures.append(
+                            f"{label}: cpu probe: {row['cpu_error']}"
                         )
                     if row["pose_rate_hz"] is None or (
                         row["scan_rate_hz"] is None
