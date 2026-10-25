@@ -28,10 +28,9 @@ inline constexpr std::string_view kStepModeService{"/racing_sim/step_mode"};
 // backend declares itself; conformance tests select by them, and a test whose
 // capability is absent is reported not applicable by name.
 inline constexpr std::string_view kCapabilityClockParameter{"capability.clock"};
-inline constexpr std::string_view kClockOwnsClock{"owns_clock"};  // /clock
+inline constexpr std::string_view kClockOwnsClock{"owns_clock"};      // /clock
 inline constexpr std::string_view kClockFreeRunning{"free_running"};  // stamps
-inline constexpr std::string_view kCapabilityResetParameter{
-    "capability.reset"};
+inline constexpr std::string_view kCapabilityResetParameter{"capability.reset"};
 inline constexpr std::string_view kResetSeededPose{"seeded_pose"};
 inline constexpr std::string_view kResetInitialPoseOnly{"initial_pose_only"};
 // The next three are booleans.
