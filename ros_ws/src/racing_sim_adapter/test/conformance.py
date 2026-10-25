@@ -42,22 +42,29 @@ def _value(parameter_value):
     return None
 
 
-def declared_capabilities(node, backend="racing_sim", timeout=10.0):
+def declared_capabilities(node, backend="racing_sim", timeout=20.0):
     """Read the backend's five capability parameters through ROS.
 
     Returns ``{name: value}``; a parameter the backend did not declare
     reads as ``None``.
     """
     import rclpy
-    from rclpy.parameter_client import AsyncParameterClient
+    from rcl_interfaces.srv import GetParameters
 
-    client = AsyncParameterClient(node, backend)
-    if not client.wait_for_services(timeout_sec=timeout):
-        raise RuntimeError(f"{backend} parameter services unavailable")
-    future = client.get_parameters(list(CAPABILITY_PARAMETERS))
-    rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
-    if not future.done():
-        raise RuntimeError(f"{backend} did not answer get_parameters")
+    # A bare service client, not AsyncParameterClient: Jazzy's has no destroy,
+    # and one left behind per call keeps its six clients on the node.
+    client = node.create_client(GetParameters, f"{backend}/get_parameters")
+    try:
+        if not client.wait_for_service(timeout_sec=timeout):
+            raise RuntimeError(f"{backend} parameter services unavailable")
+        request = GetParameters.Request()
+        request.names = list(CAPABILITY_PARAMETERS)
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout)
+        if not future.done():
+            raise RuntimeError(f"{backend} did not answer get_parameters")
+    finally:
+        node.destroy_client(client)
     # An undeclared parameter makes the service answer with fewer values.
     values = list(future.result().values)
     values += [None] * (len(CAPABILITY_PARAMETERS) - len(values))

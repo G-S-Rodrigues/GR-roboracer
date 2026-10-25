@@ -115,6 +115,75 @@ def _applicable_calls(method: ast.FunctionDef) -> list[str]:
     return ids
 
 
+def _has_guard(method: ast.FunctionDef, test_id: str) -> bool:
+    """True when the method's first statement (after the docstring and any
+    `self._require_adapter()`) is exactly `if not self._applicable(<id>):
+    return`, and it asks about no other id. An inverted guard, an `else`, or
+    a guard further down would pass a count of calls and never run the body."""
+    if _applicable_calls(method) != [test_id]:
+        return False
+    body = list(method.body)
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+    ):
+        body = body[1:]
+    while (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Call)
+        and ast.unparse(body[0].value) == "self._require_adapter()"
+    ):
+        body = body[1:]
+    if not body or not isinstance(body[0], ast.If):
+        return False
+    guard = body[0]
+    return (
+        ast.unparse(guard.test) == f"not self._applicable({test_id!r})"
+        and len(guard.body) == 1
+        and isinstance(guard.body[0], ast.Return)
+        and guard.body[0].value is None
+        and not guard.orelse
+    )
+
+
+def _parse_method(source: str) -> ast.FunctionDef:
+    function = ast.parse(source).body[0]
+    assert isinstance(function, ast.FunctionDef)
+    return function
+
+
+def test_adapt_1030_guard_shape_rejects_a_guard_that_would_not_run_the_body():
+    """ADAPT-1030: the guard check accepts `if not self._applicable(own id):
+    return` and rejects an inverted one (which returns early on the gym and
+    reads as a pass), a wrong id, an `else`, and a late guard."""
+    template = (
+        "def test_adapt_2050_x(self):\n"
+        '    """doc"""\n'
+        "    self._require_adapter()\n"
+        "{guard}"
+        "    self.work()\n"
+    )
+
+    def guard(condition: str, body: str = "return") -> str:
+        return f"    if {condition}:\n        {body}\n"
+
+    good = guard("not self._applicable('ADAPT-2050')")
+    assert _has_guard(_parse_method(template.format(guard=good)), "ADAPT-2050")
+    bad = {
+        "inverted": guard("self._applicable('ADAPT-2050')"),
+        "wrong id": guard("not self._applicable('ADAPT-2070')"),
+        "else": good + "    else:\n        pass\n",
+        "no return": guard("not self._applicable('ADAPT-2050')", "pass"),
+        "late": "    self.work()\n" + good,
+        "absent": "",
+    }
+    for name, guard in bad.items():
+        method = _parse_method(template.format(guard=guard))
+        assert not _has_guard(method, "ADAPT-2050"), name
+
+
 def test_adapt_1030_every_conformance_test_is_classified_and_guarded() -> None:
     """ADAPT-1030: each ADAPT-2xxx test is in REQUIREMENTS or UNGATED, never
     both; a gated one asks `_applicable` with its own id, an ungated one does
@@ -130,7 +199,7 @@ def test_adapt_1030_every_conformance_test_is_classified_and_guarded() -> None:
     unguarded = sorted(
         test_id
         for test_id in gated
-        if _applicable_calls(methods[test_id][1]) != [test_id]
+        if not _has_guard(methods[test_id][1], test_id)
     )
     assert not unguarded, f"gated without their own guard: {unguarded}"
     guarded = sorted(

@@ -89,7 +89,7 @@ on record is the one that is still true.
 `capability.clock` (a read-only parameter on `racing_sim`, `racing_sim_adapter`'s contract):
 `owns_clock` publishes `/clock` and is the case above; `free_running` is a source that has no
 clock of its own to hand the graph. AutoDRIVE is that: no timestamp, no step counter, a fixed
-20 Hz, and a real car is the same. For `free_running` the stack runs with `use_sim_time:=false` and
+20 Hz. A real car is free-running too. For `free_running` the stack runs with `use_sim_time:=false` and
 takes time from its source's stamps.
 
 The launch wiring for that arrives with `simulator:=` (autodrive-sim part 8). Until then every node

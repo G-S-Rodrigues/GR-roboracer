@@ -16,8 +16,8 @@ from ackermann_msgs.msg import AckermannDriveStamped
 from f1tenth_gym_jax.envs.utils import Param
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset, SetStepMode
+from rcl_interfaces.srv import SetParameters
 from rclpy.parameter import Parameter
-from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -447,22 +447,33 @@ class TestAdapterContract(unittest.TestCase):
         for name in conformance.BOOLEAN_PARAMETERS:
             self.assertIsInstance(declared[name], bool, name)
 
-        client = AsyncParameterClient(self.node, ADAPTER_NODE)
-        self.assertTrue(client.wait_for_services(timeout_sec=5.0))
-        for name in conformance.CAPABILITY_PARAMETERS:
-            current = declared[name]
-            kind = (
-                Parameter.Type.BOOL
-                if isinstance(current, bool)
-                else Parameter.Type.STRING
-            )
-            future = client.set_parameters([Parameter(name, kind, current)])
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=3.0)
-            self.assertTrue(future.done(), f"set {name} timed out")
-            self.assertFalse(
-                future.result().results[0].successful,
-                f"{name} must be read-only",
-            )
+        client = self.node.create_client(
+            SetParameters, f"{ADAPTER_NODE}/set_parameters"
+        )
+        try:
+            self.assertTrue(client.wait_for_service(timeout_sec=20.0))
+            for name in conformance.CAPABILITY_PARAMETERS:
+                current = declared[name]
+                kind = (
+                    Parameter.Type.BOOL
+                    if isinstance(current, bool)
+                    else Parameter.Type.STRING
+                )
+                request = SetParameters.Request()
+                request.parameters = [
+                    Parameter(name, kind, current).to_parameter_msg()
+                ]
+                future = client.call_async(request)
+                rclpy.spin_until_future_complete(
+                    self.node, future, timeout_sec=20.0
+                )
+                self.assertTrue(future.done(), f"set {name} timed out")
+                self.assertFalse(
+                    future.result().results[0].successful,
+                    f"{name} must be read-only",
+                )
+        finally:
+            self.node.destroy_client(client)
 
     def test_adapt_2150_not_applicable_set_is_the_expected_one(self):
         """ADAPT-2150: the tests the running backend's declaration makes not

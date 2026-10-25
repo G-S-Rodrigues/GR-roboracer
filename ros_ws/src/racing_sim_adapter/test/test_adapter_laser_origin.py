@@ -89,6 +89,16 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown()
 
+    def _require_adapter(self) -> None:
+        # The JAX backend compiles before it publishes and answers parameter
+        # requests only afterwards; wait for it before the first ROS call.
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            if self.node.get_publishers_info_by_topic("/scan"):
+                return
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        self.fail("no /scan publisher")
+
     def _applicable(self, test_id: str) -> bool:
         return conformance.applicable(self, self.node, test_id)
 
@@ -126,6 +136,7 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         is a raster); cast from base_link, /scan read 0.0052 m. The 0.05 m
         delta is far from both the 0.275 and the 0 alternatives.
         """
+        self._require_adapter()
         if not self._applicable("ADAPT-2120"):
             return
         truth = self._collect("/ground_truth/scan")
