@@ -1,0 +1,31 @@
+# The AutoDRIVE simulator edition this repo is built against, as a compose
+# fragment: docker/docker-compose.yaml's `autodrive-sim` and `autodrive-devkit`
+# services `extends:` it, so the images are named here and nowhere else.
+# CHECK-1610..1630 guard it. Bumping the edition is a reviewed diff: change
+# `edition`, both tags and both digests together (CHECK-1620), then re-record
+# ros_ws/src/racing_sim_autodrive/test/fixtures/porto_stream.jsonl.gz with
+# tools/autodrive_record.py.
+#
+# Measured for this edition (2026-10-25, headless `-batchmode -nographics`):
+#   - the sim is a Socket.IO *client* (Unity) and connects once, never again.
+#   - it speaks Engine.IO v3 framing with a Socket.IO v2 payload although its
+#     URL says EIO=4: the client sends the PINGs and sends no namespace CONNECT.
+#     python-socketio 5.17.0 / python-engineio 4.14.0 accepts the socket and
+#     drops every event ("None is not connected to namespace /"): no reply, no
+#     data. python-socketio 4.2.0 / python-engineio 3.13.0 (the devkit's own
+#     pair) with gevent 26.9.0 + gevent-websocket 0.10.1 on Python 3.12 held a
+#     200 s run, 2782 messages, no disconnect, replying to each.
+#   - the first message has no `V1 LIDAR Range Array`; every later one does
+#     (1081 ranges, base64 of gzip of "\n"-separated floats). `V1 Front Camera
+#     Image` is present on every message.
+#   - ~20 Hz when the host is idle; slower under load.
+# The devkit is ROS 2 Humble; ROS_DISTRO in the image says so.
+x-autodrive:
+  edition: 2026-iros-practice
+  bridge_port: 4567
+
+services:
+  sim:
+    image: autodriveecosystem/autodrive_roboracer_sim:2026-iros-practice@sha256:b4bbda41fdb1da7a2eadba4350ed3a0cb5020e7eb783454e78399ef5852dbd76
+  devkit:
+    image: autodriveecosystem/autodrive_roboracer_api:2026-iros-practice@sha256:6e4c29536b7283a1a7322473d46dab2d4ad5513cf40d1bdfc908ee9d408e26e9
