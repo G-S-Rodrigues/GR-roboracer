@@ -16,16 +16,20 @@ The official AutoDRIVE map, copied byte-for-byte (sha256 below, pinned by RACELI
 ```bash
 env -u PYTHONPATH uv run --project raceline --locked python -m raceline.track_from_map \
   --map config/scenarios/maps/Porto/Porto.yaml --start-pose 0 0 0 --direction ccw \
-  --walls observed --name Porto --out config/tracks/porto.yaml
+  --walls observed --name Porto --out config/tracks/porto.yaml \
+  --source-note "$(sed -n 2p config/tracks/porto.yaml | cut -c3-)"
 ```
+
+(`--source-note` is the header's second line; the header records the whole command.)
 
 **Assumption (not measured):** AutoDRIVE spawns at the map origin with heading +x, so the racing
 direction is `ccw` and `s = 0` is the loop point nearest (0, 0). The map has no direction marker.
 #44 part 10 checks this against AutoDRIVE's lap counter; if it is wrong, regenerate with
 `--start-pose 0 0 3.14159 --direction cw`.
 
-The gym cannot run this directory: there is no `Porto.png` and there are no CSVs, and the gym
-importer's `Porto.yaml` would collide with the official one.
+The gym cannot run this directory as it is: its track loader raises "At least centerline file is
+expected" because there is no `Porto_centerline.csv` (f1tenth_gym_jax `track.py`, the
+`<stem>_centerline.csv` branch), and the gym importer's `Porto.yaml` would collide with the official one.
 
 ## Licence
 
