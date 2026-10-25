@@ -335,18 +335,44 @@ def structural_failures(runs: list[dict], expected: dict) -> list[str]:
 
 
 def normalise_command(command: str) -> str:
-    """``command`` without ``--out-dir <x>``, so original and rerun compare."""
+    """``command`` without ``--out-dir <x>`` and ``--reference <x>``.
+
+    The out dir differs between original and rerun by construction, and a
+    min-time rerun is handed the committed reference line by path while the
+    original wrote its own (CHECK-1560); what the reference *is* is compared
+    through ``parameters.reference.sha256``.
+    """
     tokens = shlex.split(command)
     kept = []
     skip = False
     for token in tokens:
         if skip:
             skip = False
-        elif token == "--out-dir":
+        elif token in ("--out-dir", "--reference"):
             skip = True
         else:
             kept.append(token)
     return shlex.join(kept)
+
+
+def mintime_code_changed(doc: dict, current: dict) -> list[str]:
+    """What differs between the code a committed min-time line was proven with
+    and the code now (CHECK-1570): ``tum:<name>`` for a dependency pin and
+    ``code:<path>`` for a blob. ``current`` has the yaml's own ``tum`` and
+    ``code`` shape, ``code`` holding the files that count. Empty = unchanged.
+    """
+    changed = [
+        f"tum:{name}"
+        for name in sorted(set(doc.get("tum", {})) | set(current["tum"]))
+        if doc.get("tum", {}).get(name) != current["tum"].get(name)
+    ]
+    old = doc.get("code", {})
+    changed += [
+        f"code:{path}"
+        for path in sorted(current["code"])
+        if old.get(path) != current["code"][path]
+    ]
+    return changed
 
 
 def read_regeneration(path: Path, not_before: float) -> dict:

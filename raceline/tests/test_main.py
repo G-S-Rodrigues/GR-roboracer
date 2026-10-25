@@ -355,3 +355,197 @@ def test_raceline_1470_no_plots_writes_none(monkeypatch, tmp_path, _no_plots):
     argv = _argv(tmp_path, "--track", str(oval), "--no-plots")
     assert runner.main(argv) == 0
     assert _no_plots == []
+
+
+# -- the min-time optimizer through the CLI (RACELINE-1445, 1450) -------------
+
+SOLVER = {"status": "Solve_Succeeded", "iterations": 7, "wall_time_s": 1.5}
+
+
+def _feasible_mintime(calls=None):
+    """A run_tum_mintime stand-in: the line is the reference track's own."""
+
+    def fake(track_csv, inputs_dir, safety_width, seed_csv, options, timeout):
+        if calls is not None:
+            calls.append(Path(seed_csv))
+        rows = _feasible_tum()(track_csv, inputs_dir, "mintime", safety_width)
+        return rows, dict(SOLVER)
+
+    return fake
+
+
+def _mintime_argv(tmp_path, out, *extra):
+    return [
+        "--vehicle",
+        DEFAULT,
+        "--optimizer",
+        "tum_mintime",
+        "--out-dir",
+        str(out),
+        *extra,
+    ]
+
+
+def _run_mintime(monkeypatch, tmp_path, out, *extra):
+    mincurv_calls, mintime_calls = [], []
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum(mincurv_calls))
+    monkeypatch.setattr(
+        optimize, "run_tum_mintime", _feasible_mintime(mintime_calls)
+    )
+    oval = _oval_yaml(tmp_path)
+    code = runner.main(
+        _mintime_argv(tmp_path, out, "--track", str(oval), *extra)
+    )
+    assert code == 0
+    folder = out / "oval" / "f1tenth-default-v1"
+    doc = yaml.safe_load((folder / "tum_mintime.yaml").read_text())
+    return folder, doc, mincurv_calls, mintime_calls
+
+
+def _sha(path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def test_raceline_1445_a_mintime_run_writes_line_reference_and_provenance(
+    monkeypatch, tmp_path
+):
+    out = tmp_path / "out"
+    folder, doc, mincurv_calls, mintime_calls = _run_mintime(
+        monkeypatch, tmp_path, out
+    )
+    assert (folder / "tum_mintime.csv").is_file()
+    reference = folder / "reference" / "tum_mintime.csv"
+    assert reference.is_file()
+    # default margin of the optimizer, one solve, the min-curv stage first
+    assert doc["parameters"]["margin"] == 0.40
+    assert doc["parameters"]["passes"] == 1
+    assert len(mincurv_calls) == 2 and len(mintime_calls) == 1
+    ref = doc["parameters"]["reference"]
+    assert ref["sha256"] == _sha(reference)
+    assert ref["margin"] == 0.40
+    assert ref["passes"] == 2
+    assert "[GENERAL_OPTIONS]" in ref["ini"]
+    assert "optim_opts_mintime" not in ref["ini"]
+    assert "optim_opts_mintime" in doc["parameters"]["ini"]
+    assert doc["parameters"]["tyre_set"] == "gym_fit"
+    assert doc["parameters"]["solver_options"]["max_iter"] == 3036
+    assert doc["solver"] == {
+        "status": "Solve_Succeeded",
+        "iterations": 7,
+        "wall_s": 1.5,
+    }
+    vehicle = VEHICLES / "f1tenth_default"
+    assert doc["vehicle"]["dynamics_sha256"] == _sha(
+        vehicle / "tum_mintime.yaml"
+    )
+    assert doc["vehicle"]["tyres_sha256"] == _sha(
+        vehicle / "tum_mintime_tyres_gym_fit.yaml"
+    )
+    assert doc["verdict"]["ok"] is True
+    # inside the repo the path is repo-relative, else as written
+    assert doc["parameters"]["reference"]["path"] == str(reference)
+
+
+def test_raceline_1445_a_reference_run_records_the_same_parameters(
+    monkeypatch, tmp_path
+):
+    first, doc1, _, _ = _run_mintime(monkeypatch, tmp_path, tmp_path / "a")
+    reference = first / "reference" / "tum_mintime.csv"
+    second, doc2, mincurv_calls, mintime_calls = _run_mintime(
+        monkeypatch, tmp_path, tmp_path / "b", "--reference", str(reference)
+    )
+    assert doc2["parameters"] == doc1["parameters"]
+    assert doc2["vehicle"] == doc1["vehicle"]
+    assert mincurv_calls == []  # stages 1-2 skipped
+    assert mintime_calls == [reference]  # seeded from the file as given
+    assert not (second / "reference").exists()
+    # the command differs only by --reference (CHECK-1560 drops it)
+    assert doc1["command"] != doc2["command"]
+    assert "--reference" in doc2["command"]
+    assert "--reference" not in doc1["command"]
+
+
+def test_raceline_1445_the_repo_relative_reference_path(monkeypatch, tmp_path):
+    out = REPO_ROOT / "log" / "pytest-1445" / "out"
+    try:
+        folder, doc, _, _ = _run_mintime(monkeypatch, tmp_path, out)
+        assert doc["parameters"]["reference"]["path"] == (
+            "log/pytest-1445/out/oval/f1tenth-default-v1/reference/"
+            "tum_mintime.csv"
+        )
+    finally:
+        import shutil
+
+        shutil.rmtree(REPO_ROOT / "log" / "pytest-1445", ignore_errors=True)
+
+
+def test_raceline_1445_a_mincurv_yaml_is_unchanged_by_the_new_optimizer(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    oval = _oval_yaml(tmp_path)
+    argv = [
+        "--vehicle",
+        DEFAULT,
+        "--optimizer",
+        "tum_mincurv_iqp",
+        "--out-dir",
+        str(tmp_path / "out"),
+        "--track",
+        str(oval),
+    ]
+    assert runner.main(argv) == 0
+    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
+    assert set(doc) == D9_KEYS | {"ground_truth_map"}
+    assert doc["parameters"]["margin"] == 0.30  # no --margin: today's default
+    assert doc["parameters"]["passes"] == 2
+    assert set(doc["vehicle"]) == {
+        "path",
+        "sha256",
+        "ggv_sha256",
+        "ax_max_machines_sha256",
+    }
+    assert "reference" not in doc["parameters"]
+    assert not (folder / "reference").exists()
+
+
+def test_raceline_1445_reference_is_refused_with_mincurv(monkeypatch, tmp_path):
+    oval = _oval_yaml(tmp_path)
+    ref = tmp_path / "ref.csv"
+    ref.write_text("")
+    with pytest.raises(SystemExit, match="tum_mintime"):
+        runner.main(
+            _argv(tmp_path, "--track", str(oval), "--reference", str(ref))
+        )
+
+
+def test_raceline_1445_mintime_is_one_solve(monkeypatch, tmp_path):
+    oval = _oval_yaml(tmp_path)
+    with pytest.raises(SystemExit, match="one solve"):
+        runner.main(
+            _mintime_argv(
+                tmp_path, tmp_path / "o", "--track", str(oval), "--passes", "2"
+            )
+        )
+
+
+def test_raceline_1450_the_code_files_cover_the_min_time_optimizer(
+    monkeypatch, tmp_path
+):
+    for name in (
+        "tum_env/run_tum_mintime.py",
+        "tum_env/pyproject.toml",
+        "tum_env/uv.lock",
+        "tum_env/run_tum.py",
+        "raceline/tum.py",
+        "raceline/optimize.py",
+    ):
+        assert name in runner.CODE_FILES
+        assert name in runner.MINTIME_CODE_FILES
+        assert (runner.PACKAGE / name).is_file(), name
+    # E-3: every file that shapes the min-time inputs counts
+    assert tuple(runner.MINTIME_CODE_FILES) == tuple(runner.CODE_FILES)
+    _, doc, _, _ = _run_mintime(monkeypatch, tmp_path, tmp_path / "out")
+    for name in runner.MINTIME_CODE_FILES:
+        assert doc["code"][name] == _blob(runner.PACKAGE / name), name
