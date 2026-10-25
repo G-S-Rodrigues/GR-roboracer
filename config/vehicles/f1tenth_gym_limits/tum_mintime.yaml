@@ -1,0 +1,17 @@
+mass: 3.74
+I_z: 0.04712
+wheelbase_front: 0.15875
+wheelbase_rear: 0.17145
+cog_z: 0.074
+length: 0.58
+track_width_front: 0.281
+track_width_rear: 0.281
+k_brake_front: 0.5
+k_drive_front: 0.0
+k_roll: 0.5
+t_delta: 0.1
+t_drive: 0.1
+t_brake: 0.1
+c_roll: 0.0
+liftcoeff_front: 0.0
+liftcoeff_rear: 0.0

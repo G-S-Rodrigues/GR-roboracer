@@ -1,0 +1,40 @@
+# Reference for the TUM minimum-time parameter files, one per vehicle:
+#   <vehicle>/tum_mintime.yaml                    the "dynamics" keys below
+#   <vehicle>/tum_mintime_tyres_<set>.yaml        the "tyres" keys below
+# This file documents them and carries no values; the loader never reads it,
+# and RACELINE-1410 asserts its key sets equal every runtime file's, both ways.
+# The runtime files carry no comments, so the numbers are read as data.
+# Names are TUM's (racecar_f110.ini [vehicle_params_mintime] and
+# [tire_params_mintime]). Derived quantities (mue, f_drive_max, f_brake_max,
+# power_max, delta_max) are not stored: raceline.optimize derives them from
+# the vehicle's GGV tables and steering limit.
+# Source for every dynamics value, both vehicles: f1tenth_gym_jax Param
+# @1b4eb3f (raceline/README.md "Gym vehicle parameters"), unless noted.
+dynamics:
+  mass:  # kg, total mass; Param.m 3.74
+  I_z:  # kg m^2, yaw inertia; Param.I 0.04712
+  wheelbase_front:  # m, CoG to front axle; Param.lf
+  wheelbase_rear:  # m, CoG to rear axle; Param.lr. lf + lr is 0.3302; the default vehicle file says wheelbase 0.33 (0.2 mm)
+  cog_z:  # m, CoG height; Param.h 0.074
+  length:  # m, body length; Param.length 0.58
+  track_width_front:  # m, front track; part-8 harness constant 0.281 (step1.py), both vehicles
+  track_width_rear:  # m, rear track; as track_width_front
+  k_brake_front:  # 1, share of brake force on the front axle; ForzaETH f110 ini 0.5
+  k_drive_front:  # 1, share of drive force on the front axle; 0.0, the gym car is rear driven
+  k_roll:  # 1, share of roll stiffness on the front axle; ForzaETH f110 ini 0.5
+  t_delta:  # s, steering actuator time constant; ForzaETH f110 ini 0.1
+  t_drive:  # s, drive force time constant; ForzaETH f110 ini 0.1
+  t_brake:  # s, brake force time constant; ForzaETH f110 ini 0.1
+  c_roll:  # 1, rolling resistance coefficient; 0.0, the gym has none
+  liftcoeff_front:  # kg/m, front downforce coefficient; 0.0, the gym has no aerodynamics
+  liftcoeff_rear:  # kg/m, rear downforce coefficient; 0.0, the gym has no aerodynamics
+tyres:
+  f_z0:  # N, nominal wheel load of the Pacejka fit; ForzaETH f110 ini 8.6, both sets
+  B_front:  # 1, Pacejka stiffness factor; set forzaeth_f110 7.4 (identified on the real car), set gym_fit Param.C_Sf / C = 4.718 / 1.2
+  C_front:  # 1, Pacejka shape factor; 1.2, both sets
+  eps_front:  # 1, load sensitivity of the friction coefficient; -0.1, both sets
+  E_front:  # 1, Pacejka curvature factor; 0.85, both sets
+  B_rear:  # 1, Pacejka stiffness factor; set forzaeth_f110 7.4, set gym_fit Param.C_Sr / C = 5.4562 / 1.2
+  C_rear:  # 1, Pacejka shape factor; 1.2, both sets
+  eps_rear:  # 1, load sensitivity of the friction coefficient; -0.1, both sets
+  E_rear:  # 1, Pacejka curvature factor; 0.85, both sets

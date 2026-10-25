@@ -43,6 +43,8 @@ neutral_paths:
   # so editing it stays whole tree.
   - config/vehicles/f1tenth_gym_limits*
   - config/vehicles/f1tenth_default/*
+  # the min-time parameter files and their reference: raceline/ reads them
+  - config/vehicles/tum_mintime/*
 roles:
   simulator:
     implementation: f1tenth_gym_jax

@@ -9,7 +9,7 @@ tum_env/), so the table checks below mirror tph's ``import_veh_dyn_info`` and
 ``calc_vel_profile``; RACELINE-1250 proves TUM accepts the committed tables.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +18,54 @@ import yaml
 # tph.import_veh_dyn_info: ggv accelerations <= 50, machines <= 20.
 _TPH_GGV_MAX = 50.0
 _TPH_MACHINES_MAX = 20.0
+
+
+@dataclass(frozen=True)
+class VehicleDynamics:
+    """TUM's minimum-time vehicle model, ``<stem>/tum_mintime.yaml``.
+
+    Field names are the file's keys, which are TUM's ``vehicle_params_mintime``
+    names. Documented in ``config/vehicles/tum_mintime.reference.yaml``.
+    """
+
+    mass: float
+    I_z: float
+    wheelbase_front: float
+    wheelbase_rear: float
+    cog_z: float
+    length: float
+    track_width_front: float
+    track_width_rear: float
+    k_brake_front: float
+    k_drive_front: float
+    k_roll: float
+    t_delta: float
+    t_drive: float
+    t_brake: float
+    c_roll: float
+    liftcoeff_front: float
+    liftcoeff_rear: float
+
+
+@dataclass(frozen=True)
+class TyreSet:
+    """A Pacejka tyre set, ``<stem>/tum_mintime_tyres_<name>.yaml``."""
+
+    name: str
+    path: Path
+    f_z0: float
+    B_front: float
+    C_front: float
+    eps_front: float
+    E_front: float
+    B_rear: float
+    C_rear: float
+    eps_rear: float
+    E_rear: float
+
+
+# Q3 (owner, 2026-10-22): both sets are committed.
+TYRE_SETS = ("forzaeth_f110", "gym_fit")
 
 
 @dataclass(frozen=True)
@@ -33,6 +81,8 @@ class VehicleLimits:
     ax_max_machines: np.ndarray  # (m, 2): v, ax
     ggv_path: Path
     ax_max_machines_path: Path
+    dynamics: VehicleDynamics
+    dynamics_path: Path
 
     def safety_width(self, margin: float) -> float:
         """TUM's ``safety_width``: the car's width plus a wall margin per side.
@@ -65,6 +115,65 @@ def _table(path: Path, columns: int, name: str) -> np.ndarray:
             f"{path}: {name} needs {columns} columns, has {table.shape[1]}"
         )
     return table
+
+
+def _flat_file(path: Path, cls, what: str) -> dict:
+    """A values-only yaml whose keys are exactly ``cls``'s fields."""
+    if not path.is_file():
+        raise ValueError(f"{what} file not found: {path}")
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError(f"{path}: expected a mapping of key: value")
+    wanted = {f.name for f in fields(cls)} - {"name", "path"}
+    for key in sorted(wanted - set(document)):
+        raise ValueError(f"{path}: missing key {key!r}")
+    for key in sorted(set(document) - wanted):
+        raise ValueError(f"{path}: unknown key {key!r}")
+    try:
+        return {key: float(value) for key, value in document.items()}
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{path}: a value is not a number: {error}") from error
+
+
+# The default vehicle file says wheelbase 0.33 and the gym's lf + lr is
+# 0.3302 (0.2 mm, see f1tenth_gym_limits.yaml's header); 1 mm separates that
+# from a mistyped lf or lr, which is centimetres.
+_WHEELBASE_TOL = 1e-3
+
+
+def load_dynamics(path: Path) -> VehicleDynamics:
+    """Load ``tum_mintime.yaml``; raise ``ValueError`` naming the bad key."""
+    path = Path(path)
+    dynamics = VehicleDynamics(**_flat_file(path, VehicleDynamics, "dynamics"))
+    for key in ("mass", "I_z"):
+        if getattr(dynamics, key) <= 0:
+            raise ValueError(f"{path}: {key} must be > 0")
+    return dynamics
+
+
+def check_dynamics(vehicle: "VehicleLimits") -> None:
+    """Cross-check the dynamics against the vehicle's wheelbase.
+
+    Lazy, not in ``load_vehicle``: only the minimum-time path reads the
+    dynamics, so a wheelbase edit must not break the min-curv loader.
+    """
+    dynamics = vehicle.dynamics
+    reach = dynamics.wheelbase_front + dynamics.wheelbase_rear
+    if abs(reach - vehicle.wheelbase) > _WHEELBASE_TOL:
+        raise ValueError(
+            f"{vehicle.dynamics_path}: wheelbase_front + wheelbase_rear = "
+            f"{reach} is not the vehicle's wheelbase {vehicle.wheelbase}"
+        )
+
+
+def load_tyres(vehicle: "VehicleLimits", name: str) -> TyreSet:
+    """Load the named Pacejka set that sits beside the vehicle's tables."""
+    if name not in TYRE_SETS:
+        raise ValueError(
+            f"unknown tyre set {name!r}; known sets: {', '.join(TYRE_SETS)}"
+        )
+    path = vehicle.dynamics_path.parent / f"tum_mintime_tyres_{name}.yaml"
+    return TyreSet(name=name, path=path, **_flat_file(path, TyreSet, "tyre"))
 
 
 def load_vehicle(path: Path) -> VehicleLimits:
@@ -148,4 +257,6 @@ def load_vehicle(path: Path) -> VehicleLimits:
         ax_max_machines=machines,
         ggv_path=ggv_path,
         ax_max_machines_path=machines_path,
+        dynamics=load_dynamics(tables / "tum_mintime.yaml"),
+        dynamics_path=tables / "tum_mintime.yaml",
     )
