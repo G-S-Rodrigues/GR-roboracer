@@ -106,7 +106,7 @@ def record(
     drive_on_estimate, host_load_delta, error and (completed) metrics;
     ``score`` is a ``score_recording`` dict; ``rates`` holds the three
     ``*_rate_hz``; ``map_accuracy`` is ``dataclasses.asdict(MapAccuracy)``;
-    ``cpu_error`` is the CPU probe's error text (doubled or vanished process)."""
+    ``cpu_error`` is the CPU probe's error text (a doubled process, say)."""
     row = _blank(source, scenario, seed)
     method = METHODS.get(source)
     metrics = run.get("metrics") or {}
