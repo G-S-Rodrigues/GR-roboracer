@@ -98,7 +98,9 @@ loop is the closed skeleton contour near `start_pose` that encloses the largest
 area. `start_pose.yaw` is the gym/ROS yaw (0 = +x), not TUM's psi. Per the
 spec, part 4's runner takes its input from `extract_track` on the map (with
 `walls="observed"`); the
-committed `config/tracks/` file stays the gym's world.
+committed `config/tracks/` file stays the gym's world, except where a map has no
+upstream centerline: `config/tracks/porto.yaml` is extracted from AutoDRIVE's
+official Porto map (`config/scenarios/maps/Porto/NOTICE.md`) and committed unedited.
 
 ```python
 from pathlib import Path
@@ -108,6 +110,15 @@ grid = load_map(Path("config/scenarios/maps/Spielberg/Spielberg.yaml"))
 track = extract_track(
     grid, grid.resolution, grid.origin, Pose2D(0.0, 0.0, -2.879), "cw"
 )
+```
+
+To write a track YAML from a map (how `porto.yaml` was made; exit 3 when the
+extractor refuses):
+
+```bash
+env -u PYTHONPATH uv run --project raceline --locked python -m raceline.track_from_map \
+  --map config/scenarios/maps/Porto/Porto.yaml --start-pose 0 0 0 --direction ccw \
+  --walls observed --name Porto --out config/tracks/porto.yaml
 ```
 
 **What it is judged against.** The committed `spielberg.yaml` centerline is

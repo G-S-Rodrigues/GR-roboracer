@@ -116,7 +116,7 @@ is a reviewed diff. The example writes to `log/maps/Spielberg` so following it i
 # Racing: one lap with a selected stack.
 schema_version: 1  # Available: 1
 workflow: racing  # Available: mapping, racing
-scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/contract_test.yaml (no localization)
+scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/contract_test.yaml (no localization). Committed but not runnable: config/scenarios/porto.yaml (AutoDRIVE practice track; no simulator runs it until `simulator:=autodrive`)
 vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
