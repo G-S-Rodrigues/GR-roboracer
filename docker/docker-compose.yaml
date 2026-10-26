@@ -1,11 +1,15 @@
 # Named docker-compose.yaml, not compose.yaml. Compose v2 reads both.
 #
-# All ROS nodes run in `dev`. There is deliberately no cross-container DDS and
-# no network_mode: host -- `fast-sim` is a separate container precisely because
-# it contains no ROS at all, so the two never need to discover each other.
-# `gpu` is the exception: it runs ROS on this same compose network, so it has
-# its own ROS_DOMAIN_ID. "No cross-container DDS" holds only because the
-# domains differ (gotcha #10's shape).
+# All ROS nodes run in `dev`. The default services have deliberately no
+# cross-container DDS and no network_mode: host -- `fast-sim` is a separate
+# container precisely because it contains no ROS at all, so the two never need
+# to discover each other. Two services are the exception. `gpu` runs ROS on
+# this same compose network, so it has its own ROS_DOMAIN_ID: "no
+# cross-container DDS" holds only because the domains differ (gotcha #10's
+# shape). The `autodrive` profile's devkit is a ROS 2 Humble container that
+# talks DDS to `dev` (Jazzy). Start its services by name with --no-deps, never
+# a bare `up`: the project name is shared and a bare `up` from a worktree can
+# recreate the shared `dev` container.
 name: gr-roboracer
 
 services:
@@ -113,6 +117,47 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  # The official AutoDRIVE RoboRacer simulator, headless, by digest (see
+  # config/autodrive/simulator.yaml). It is a Socket.IO client that connects
+  # once and never retries, so it waits for the bridge port first. Every shell
+  # `$` is `$$`: compose interpolates a bare `$` from the host's environment.
+  # The image's entrypoint is /bin/bash, hence the leading -c.
+  autodrive-sim:
+    extends:
+      file: ../config/autodrive/simulator.yaml
+      service: sim
+    profiles: [autodrive]
+    container_name: gr-roboracer-autodrive-sim
+    working_dir: /home/autodrive_simulator
+    environment:
+      AUTODRIVE_BRIDGE_HOST: ${AUTODRIVE_BRIDGE_HOST:-autodrive-devkit}
+    command:
+      - -c
+      - >-
+        until (exec 3<>/dev/tcp/$$AUTODRIVE_BRIDGE_HOST/4567) 2>/dev/null;
+        do sleep 0.5; done;
+        exec "./AutoDRIVE Simulator.x86_64" -batchmode -nographics
+        -ip $$(getent hosts $$AUTODRIVE_BRIDGE_HOST | head -1 | cut -d' ' -f1)
+        -port 4567
+
+  # The official devkit (ROS 2 Humble) with its Socket.IO bridge, unmodified.
+  # Its default domain is dev's 42; override AUTODRIVE_ROS_DOMAIN_ID to keep a
+  # second stack off it.
+  autodrive-devkit:
+    extends:
+      file: ../config/autodrive/simulator.yaml
+      service: devkit
+    profiles: [autodrive]
+    container_name: gr-roboracer-autodrive-devkit
+    working_dir: /home/autodrive_devkit
+    environment:
+      ROS_DOMAIN_ID: ${AUTODRIVE_ROS_DOMAIN_ID:-42}
+    command:
+      - -c
+      - >-
+        source /opt/ros/humble/setup.bash && source install/setup.bash &&
+        exec ros2 launch autodrive_roboracer bringup_headless.launch.py
 
 volumes:
   ws-build:
