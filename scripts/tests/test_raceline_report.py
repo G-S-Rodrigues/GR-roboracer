@@ -19,6 +19,7 @@ from scripts.raceline_report import (
     raceline_geometry,
     read_manifest,
     read_recording_tolerant,
+    read_regeneration,
     regeneration_argv,
     run_outcome,
     structural_failures,
@@ -119,8 +120,14 @@ def test_check_1450_frozen_tail_without_latch_is_dnf() -> None:
     assert result["distance_m"] == pytest.approx(3.0 * (20.0 - 0.5), abs=1e-6)
 
 
-def test_check_1450_command_limit_with_frozen_tail_is_dnf() -> None:
-    events = driving_then_frozen() + [status(10.0, 2, 4), status(30.0, 2, 4)]
+@pytest.mark.parametrize(("reason", "clamps"), [(2, 4), (0, 4)])
+def test_check_1450_command_limit_with_frozen_tail_is_dnf(
+    reason, clamps
+) -> None:
+    events = driving_then_frozen() + [
+        status(10.0, reason, clamps),
+        status(30.0, reason, clamps),
+    ]
     assert outcome_of(events)["outcome"] == "dnf"
 
 
@@ -135,6 +142,15 @@ def test_check_1450_track_limit_with_frozen_tail_is_dnf() -> None:
 def test_check_1450_supervisor_latch_is_latched(reason, clamps) -> None:
     events = driving_then_frozen() + [status(12.0, reason, clamps)]
     assert outcome_of(events)["outcome"] == "latched"
+
+
+def test_check_1450_status_from_the_clock_zero_hold_is_ignored() -> None:
+    """N1: a latch reason published during the hold (stamp 0) is not the
+    run's; the same reason after the reset is."""
+    held = driving_then_frozen() + [status(0.0, 3)]
+    assert outcome_of(held)["outcome"] == "dnf"
+    after = driving_then_frozen() + [status(0.0, 3), status(12.0, 4)]
+    assert outcome_of(after)["outcome"] == "latched"
 
 
 def test_check_1450_observer_text_is_never_read() -> None:
@@ -510,3 +526,18 @@ def test_check_1500_headerless_file_parses_the_same(tmp_path: Path) -> None:
     circle_csv(folder / "Spielberg_raceline.csv", header_lines=0)
     reference = upstream_reference(tmp_path, "Spielberg")
     assert reference["lap_estimate_s"] == pytest.approx(math.pi * 5.0, rel=5e-4)
+
+
+# CHECK-1550 -------------------------------------------------------------
+
+
+def test_check_1550_regeneration_record_must_be_fresh(tmp_path: Path) -> None:
+    import os
+
+    path = tmp_path / "regeneration.json"
+    assert read_regeneration(path, 0.0) == {}
+    path.write_text(json.dumps({"line": {"ok": True}}), encoding="utf-8")
+    os.utime(path, (1000.0, 1000.0))
+    assert read_regeneration(path, 2000.0) == {}
+    assert read_regeneration(path, 1000.0) == {"line": {"ok": True}}
+    assert read_regeneration(path, 500.0) == {"line": {"ok": True}}

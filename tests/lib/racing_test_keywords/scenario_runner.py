@@ -500,6 +500,64 @@ def _reset_at_deterministic_t0(
     node.destroy_client(client)
 
 
+FINALIZE_SERVICE = "/racing_metrics/finalize"
+STATE_TOPIC = "/ground_truth/track_relative_state"
+
+
+def _wait_for_metrics_or_frozen_pose(
+    node: Any, timeout: float, window_s: float, track_length: float
+) -> Any:
+    """``wait_for_message`` for ``/scenario/metrics`` that also ends a run
+    whose pose froze.
+
+    Once the pose (s and d) has stood still for ``window_s`` of sim time, the
+    metrics node is asked to publish once (``~/finalize``, ``lap_completed``
+    false) and the wait goes on for that message until the original deadline.
+    Raises the same ``TimeoutError`` ``wait_for_message`` does, so a caller
+    that classifies by its text is unchanged. Imported lazily: tier 4 runs
+    ``robot --pythonpath tests/lib``, where ``scripts`` is not importable
+    until the repository root is put on the path.
+    """
+    if str(REPOSITORY_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPOSITORY_ROOT))
+    from racing_interfaces.msg import TrackRelativeState
+    from std_srvs.srv import Trigger
+
+    from scripts.frozen_pose import FrozenPose
+
+    pose = FrozenPose(window_s, track_length)
+    messages: list[Any] = []
+    pending: list[Any] = []
+
+    def _on_state(message: Any) -> None:
+        stamp = message.header.stamp
+        t = stamp.sec + stamp.nanosec * 1e-9
+        # Stamp 0 is the clock-0 hold; the run starts after ~/reset.
+        if t > 0.0 and pose.update(t, message.s, message.d) and not pending:
+            pending.append(client.call_async(Trigger.Request()))
+
+    client = node.create_client(Trigger, FINALIZE_SERVICE)
+    subscriptions = [
+        node.create_subscription(
+            ScenarioMetrics, METRICS_TOPIC, messages.append, METRICS_QOS
+        ),
+        node.create_subscription(
+            TrackRelativeState, STATE_TOPIC, _on_state, RELIABLE_QOS
+        ),
+    ]
+    deadline = time.monotonic() + timeout
+    try:
+        while not messages and time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.05)
+    finally:
+        for subscription in subscriptions:
+            node.destroy_subscription(subscription)
+        node.destroy_client(client)
+    if not messages:
+        raise TimeoutError(f"no message on {METRICS_TOPIC} within {timeout}s")
+    return messages[0]
+
+
 def run_scenario(
     seed: int,
     scenario: str | None = None,
@@ -508,6 +566,9 @@ def run_scenario(
     pose_source: str = "ground_truth",
     drive_on_estimate: bool = True,
     launch_arguments: Mapping[str, str] | None = None,
+    *,
+    stop_on_frozen_pose: float | None = None,
+    track_length: float | None = None,
 ) -> dict[str, Any]:
     """Launch the full stack headlessly, run a seeded scenario, return metrics.
 
@@ -532,7 +593,16 @@ def run_scenario(
     ``launch_arguments`` passes further launch arguments through (e.g.
     ``recording_path``, ``estimate_topic``); it cannot override the ones
     this function owns.
+
+    ``stop_on_frozen_pose`` (sim seconds) is opt-in: once the pose has stood
+    still that long, ``/racing_metrics/finalize`` is called and the partial
+    metrics (``lap_completed`` false) are returned instead of waiting out
+    ``timeout``. It needs ``track_length`` (the caller's, from the track the
+    scenario drives; the scenario names a map, not a track file) and raises
+    ``ValueError`` without it. ``None`` leaves the wait untouched.
     """
+    if stop_on_frozen_pose is not None and track_length is None:
+        raise ValueError("stop_on_frozen_pose needs track_length")
     if timeout is None:
         timeout = timeout_for_time_scale(time_scale)
     ensure_rclpy_initialized()
@@ -575,9 +645,14 @@ def run_scenario(
         observer = _HangObserver(node)
         try:
             _reset_at_deterministic_t0(node, seed, timeout, pose_source)
-            message = wait_for_message(
-                node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
-            )
+            if stop_on_frozen_pose is None:
+                message = wait_for_message(
+                    node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
+                )
+            else:
+                message = _wait_for_metrics_or_frozen_pose(
+                    node, timeout, stop_on_frozen_pose, track_length
+                )
             outcome.update(metrics_to_dict(message))
         except TimeoutError as error:
             failure.append(TimeoutError(f"{error} [{observer.describe()}]"))

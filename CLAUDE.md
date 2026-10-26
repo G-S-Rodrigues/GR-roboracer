@@ -106,6 +106,7 @@ tests/          Tier 3 (pytest), tier 4 (Robot Framework), shared keywords, gold
 raceline/       Offline raceline generation (TUM optimizer). uv project, no ROS, runs in dev.
 scripts/        check.sh (the gate), run_scenario.py, compare_metrics.py.
 docker/         Multi-stage image: base → underlay → dev / fast-sim / runtime.
+third_party/    Referenced upstream sources (git submodules); NOTICE.md says what and why.
 docs/           ADRs, agent-facing notes, research.
 .scratch/       Grills, specs and plans. Gitignored; `git clean -e .scratch`.
 ```
