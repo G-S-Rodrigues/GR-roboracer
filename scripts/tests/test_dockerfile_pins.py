@@ -8,44 +8,14 @@ reproducibility, E2).
 from __future__ import annotations
 
 import re
-import shlex
 from pathlib import Path
 
+from scripts.dockerfile_parse import instructions as _instructions
+from scripts.dockerfile_parse import segments as _segments
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
 PIN_LINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*==[0-9][0-9A-Za-z.+!-]*$")
-OPERATORS = {"&&", "||", ";", "|"}
 TOOLS = {"robotframework", "robotframework-tidy", "ruff", "pre-commit"}
-
-
-def _instructions() -> list[tuple[int, str]]:
-    """(first line number, text) per instruction, continuations joined."""
-    out: list[tuple[int, str]] = []
-    buf: list[str] = []
-    start = 0
-    for number, raw in enumerate(DOCKERFILE.read_text().splitlines(), 1):
-        if not buf:
-            start = number
-        line = raw.rstrip()
-        if line.endswith("\\"):
-            buf.append(line[:-1])
-            continue
-        buf.append(line)
-        out.append((start, " ".join(buf)))
-        buf = []
-    return out
-
-
-def _segments(text: str) -> list[list[str]]:
-    """Split a RUN's shell command into commands at shell operators."""
-    tokens = shlex.split(text.removeprefix("RUN").strip())
-    segments: list[list[str]] = [[]]
-    for token in tokens:
-        if token in OPERATORS:
-            segments.append([])
-        else:
-            segments[-1].append(token)
-    return [s for s in segments if s]
 
 
 def _is_pip_install(segment: list[str]) -> bool:

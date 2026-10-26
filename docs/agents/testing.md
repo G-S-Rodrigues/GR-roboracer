@@ -106,6 +106,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 1, `raceline/` | `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests -k raceline_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
+| manual, host | `docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh` (GPU-3010) |
 | 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
 
 A C++ edit reaches none of these until
@@ -118,7 +119,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **193 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Current counts: **198 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -149,14 +150,16 @@ The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).
 
 The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHECK-1420/1430`, `SIM-1080`; tier 2 `PP-2010`; tier 3 `SIM-3110`.
-The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
 
 The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
 
 The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
+The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
 
 The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/1020/1030` (1030 also pins the exact guard shape, with a negative case), `SIMJAX-1150`; tier 2 `ADAPT-2140/2145/2150/2160`. Conformance tests select by the backend's declared capabilities (`racing_sim_adapter/test/conformance.py`); a not-applicable test prints `NOT APPLICABLE <id>: ...` and returns (no skip marker), and ADAPT-2150 pins the set.
 The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
+
+The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
 
 ## The tests that matter most
 
@@ -183,7 +186,8 @@ The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts
   lands (part 7).
 - **RViz visual correctness.** A TF sign error passes every numeric test and is obvious to a human
   instantly. Manual — see `racing_vehicle_description/CLAUDE.md`.
-- **GPU passthrough.** Not assertable without a GPU runner. Manual.
+- **GPU passthrough.** Not assertable without a GPU runner. Manual: `GPU-3010` in the `gpu` stage
+  (`docker/gpu/smoke.sh`).
 - **Cross-hardware determinism.** JAX is float32 and not bit-reproducible across GPUs or XLA
   versions. SIM-3030/3040 assert tolerances, never float equality — and each tolerance in
   `scripts/compare_metrics.py` carries the measurement that justifies its size.

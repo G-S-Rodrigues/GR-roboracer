@@ -3,10 +3,13 @@
 # All ROS nodes run in `dev`. The default services have deliberately no
 # cross-container DDS and no network_mode: host -- `fast-sim` is a separate
 # container precisely because it contains no ROS at all, so the two never need
-# to discover each other. The `autodrive` profile is the one exception: its
-# devkit is a ROS 2 Humble container that talks DDS to `dev` (Jazzy). Start its
-# services by name with --no-deps, never a bare `up`: the project name is shared
-# and a bare `up` from a worktree can recreate the shared `dev` container.
+# to discover each other. Two services are the exception. `gpu` runs ROS on
+# this same compose network, so it has its own ROS_DOMAIN_ID: "no
+# cross-container DDS" holds only because the domains differ (gotcha #10's
+# shape). The `autodrive` profile's devkit is a ROS 2 Humble container that
+# talks DDS to `dev` (Jazzy). Start its services by name with --no-deps, never
+# a bare `up`: the project name is shared and a bare `up` from a worktree can
+# recreate the shared `dev` container.
 name: gr-roboracer
 
 services:
@@ -75,6 +78,46 @@ services:
               count: all
               capabilities: [gpu]
 
+  # dev + CUDA, owner's machine only. Behind a profile so the devcontainer
+  # (no runServices) never builds or starts it; `build gpu` / `run gpu` still do.
+  gpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: gpu
+    image: gr-roboracer:gpu
+    container_name: gr-roboracer-gpu
+    profiles: ["gpu"]
+    working_dir: /ws
+    volumes:
+      - ..:/ws
+      # Own build trees: a colcon build against different libraries would
+      # strand dev's volumes, and the reverse (gotcha #21).
+      - ws-gpu-build:/ws/build
+      - ws-gpu-install:/ws/install
+      - ws-gpu-log:/ws/log
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /mnt/wslg:/mnt/wslg
+    environment:
+      ROS_DOMAIN_ID: "43"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /ws
+      DISPLAY: ${DISPLAY:-:0}
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-}
+      XDG_RUNTIME_DIR: /mnt/wslg/runtime-dir
+      PULSE_SERVER: ${PULSE_SERVER:-}
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   # The official AutoDRIVE RoboRacer simulator, headless, by digest (see
   # config/autodrive/simulator.yaml). It is a Socket.IO client that connects
   # once and never retries, so it waits for the bridge port first. Every shell
@@ -120,3 +163,6 @@ volumes:
   ws-build:
   ws-install:
   ws-log:
+  ws-gpu-build:
+  ws-gpu-install:
+  ws-gpu-log:

@@ -17,13 +17,18 @@ Traps any task in this repository can hit. Each one cost real time at least once
    results far more slowly. Assert the backend (`jax.default_backend() == "gpu"`), never just that
    the import worked. `sim/rollout.py` does this and refuses to run otherwise.
 
-4. **CUDA belongs in `fast-sim`, not in `dev`.** This was tried and measured: on the committed
-   one-agent/64-beam scenario the GPU is **5x slower per step** (8.36 ms vs 1.62 ms) — close enough
-   to the 10 ms period to drop `/odom` below its rate. That measurement is the entire reason, and
-   under ADR 0006's `time_scale > 1` it binds harder, because a slower step is what bounds an
-   accelerated run. (Until 2026-09-10 this gotcha also argued that a wall-clock-timed sim node means
-   a GPU cannot speed up a tier-3 run. `time_scale` ended that; the measurement above is what
-   carries the decision now.) See ADR 0002, ADR 0006, and the plan's D29.
+4. **`dev` stays CPU; CUDA goes in `gpu` or `fast-sim`; the gym's JAX stays on CPU in both `dev` and
+   `gpu`.** This was tried and measured: on the committed one-agent/64-beam scenario the GPU is **5x
+   slower per step** (8.36 ms vs 1.62 ms) — close enough to the 10 ms period to drop `/odom` below
+   its rate. That measurement is the entire reason, and under ADR 0006's `time_scale > 1` it binds
+   harder, because a slower step is what bounds an accelerated run. It is why `dev` stays CPU, and
+   also why the gym node's JAX stays on CPU inside `gpu`, which is `FROM dev` by owner ruling. Its
+   JAX is pinned to CPU by `docker/gym-cpu-overrides.txt`, and `gpu` installs no Python package
+   (CHECK-1910; GPU-3010 asserts `cpu`). `gpu` exists for ROS nodes whose kernels are large enough to
+   win, such as FAR-LIO's GICP. Installing a CUDA jaxlib into `gpu` would bring back the 5x step. (Until
+   2026-09-10 this gotcha also argued that a wall-clock-timed sim node means a GPU cannot speed up a
+   tier-3 run. `time_scale` ended that; the measurement above carries the decision now.) See ADR 0002
+   and its 2026-10-25 amendment, ADR 0006, and the plan's D29.
 
 5. **Clone with the SSH URL.** `gh auth`'s `Git operations protocol: ssh` does not rewrite an
    existing HTTPS remote; an HTTPS clone prompts for a username and password forever. Fix with
@@ -41,7 +46,8 @@ Traps any task in this repository can hit. Each one cost real time at least once
     Jazzy binaries, so a rebuild may bump a library the overlay linked against (seen: `libfastcdr`
     2.2.7 -> 2.2.8). `build/` and `install/` are named volumes that survive the rebuild, and the next
     `colcon build` fails with `No rule to make target '/opt/ros/jazzy/lib/libfastcdr.so.2.2.7'`.
-    After any image rebuild, `rm -rf build/* install/*` inside `dev` before building.
+    After any image rebuild, `rm -rf build/* install/*` inside `dev` before building. The `gpu` service
+    has its own volumes (`ws-gpu-build`, `ws-gpu-install`), so the same remedy applies inside it.
 
 27. **An unpinned install in the image is latent until the layer cache misses.** CI's gha cache
     replays a resolve from whenever the layer last ran (here 2026-10-02), so drift surfaces only when
@@ -50,7 +56,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     could not replace Debian's `packaging 24.0` (no RECORD file); three nightlies failed at "Build the
     dev image" before any test ran. Symptom: a Dockerfile untouched for weeks fails to build. Remedy:
     the dev tools are a full closure in `docker/dev-tools-requirements.txt`, installed `--no-deps`,
-    then `pip3 check`; CHECK-1330/1340 guard it. Bumps are reviewed diffs.
+    then `pip3 check`; CHECK-1330/1340 guard it. Bumps are reviewed diffs. The `gpu` stage's apt closure
+    follows the same rule (`docker/gpu-apt-pins.txt`, CHECK-1910/1920), and the trap was measured:
+    unversioned `cuda-toolkit-config-common` resolved to 13.4.92 on 2026-10-25.
 
 ## ROS
 
