@@ -12,6 +12,12 @@ VEHICLE_CONFIG = (
     REPOSITORY_ROOT / "config" / "vehicles" / "f1tenth_default.yaml"
 )
 VEHICLE_FILES = sorted((REPOSITORY_ROOT / "config" / "vehicles").glob("*.yaml"))
+# Vehicle files the gym never runs: the sim casts nothing for them, so the
+# URDF's laser mount (the gym car's) is not their premise. Each one's mount is
+# pinned to its own source instead (CHECK-1790). A name here must be a
+# committed file, or the exclusion silently outlives the file.
+NOT_GYM_CAST = frozenset({"autodrive_roboracer"})
+GYM_CAST_FILES = [p for p in VEHICLE_FILES if p.stem not in NOT_GYM_CAST]
 
 
 def _literal_keyword(call: ast.Call, name: str) -> str | None:
@@ -307,7 +313,7 @@ def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
         assert tags == expected, test_id
 
 
-@pytest.mark.parametrize("vehicle_file", VEHICLE_FILES, ids=lambda p: p.stem)
+@pytest.mark.parametrize("vehicle_file", GYM_CAST_FILES, ids=lambda p: p.stem)
 def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     vehicle_file: Path,
 ) -> None:
@@ -324,6 +330,10 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     shape): a mismatch shifts every scan point by the difference, and reads
     as localization error, never as a fault. The sim is planar, so a mount
     it cannot represent (roll, pitch) fails here too.
+    Only the vehicle files the gym casts for: NOT_GYM_CAST lists the rest
+    (the AutoDRIVE car, whose lidar is the simulator's own and whose true
+    mount differs from the URDF's by about 14 mm until part 8), and
+    test_bringup_1055 keeps that list honest.
     """
     import xml.etree.ElementTree as ElementTree
 
@@ -465,6 +475,26 @@ def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
     module, context = _launch_context(vehicle="config/vehicles/no_such.yaml")
     with pytest.raises(RuntimeError, match="no_such.yaml"):
         module._launch_nodes(context, "", "")
+
+
+def test_bringup_1055_the_exclusion_list_names_only_committed_files() -> None:
+    """BRINGUP-1055: NOT_GYM_CAST excludes real vehicle files, and no file the
+    gym casts for hides in it.
+
+    Negative case: a stale name, or a gym vehicle added to the list, must be
+    caught here, because 1050 would otherwise skip it with no error.
+    """
+    committed = {p.stem for p in VEHICLE_FILES}
+    assert committed >= NOT_GYM_CAST
+    assert {"f1tenth_default", "f1tenth_gym_limits"}.isdisjoint(NOT_GYM_CAST)
+
+    def stale(exclusions: set[str]) -> set[str]:
+        return exclusions - committed
+
+    assert stale({"autodrive_roboracer", "no_such_vehicle"}) == {
+        "no_such_vehicle"
+    }
+    assert {p.stem for p in GYM_CAST_FILES} | NOT_GYM_CAST == committed
 
 
 def test_bringup_1100_every_vehicle_file_covers_the_defaults_keys() -> None:

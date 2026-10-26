@@ -1,0 +1,17 @@
+# v_mps,ax_max_mps2,ay_max_mps2
+# AutoDRIVE RoboRacer, edition 2026-iros-practice (source.yaml, identified.yaml).
+# ax = min(supervisor cap 2.0, measured machine 5.2 m/s^2 over the first 0.25 s);
+# ay = mu * g, mu = 1.0 from the prefab: a MODELLING BOUND, not measured (no
+# skidpad on Porto). Top speed is not measured on Porto (highest steady 2.977
+# m/s at throttle 0.12), and braking depends on speed, so no table carries either.
+0.0,2.000000,9.810000
+1.0,2.000000,9.810000
+2.0,2.000000,9.810000
+3.0,2.000000,9.810000
+4.0,2.000000,9.810000
+5.0,2.000000,9.810000
+6.0,2.000000,9.810000
+7.0,2.000000,9.810000
+8.0,2.000000,9.810000
+9.0,2.000000,9.810000
+10.0,2.000000,9.810000
