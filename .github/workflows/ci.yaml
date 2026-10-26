@@ -144,6 +144,15 @@ jobs:
           path: log/raceline-report/
           if-no-files-found: ignore
 
+      # SIM-5510 is tier 5, so it runs on slam/42 alone and writes there.
+      - name: Upload the pose-source report
+        if: always() && matrix.region == 'slam' && matrix.seed == 42
+        uses: actions/upload-artifact@v4
+        with:
+          name: pose-source-report
+          path: log/pose-source-report/
+          if-no-files-found: ignore
+
       # After check.sh, whose build produced the overlay the lap needs (the
       # bind mount carries build/ and install/ across).
       - name: One seeded lap on this matrix seed

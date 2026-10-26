@@ -40,6 +40,16 @@ The denser surveys beside the committed grid, measured against the track's groun
 95th-percentile wall deviation of 0.067 m at 0.05 m cells, 0.049 m at 0.025 m and 0.046 m at 0.02 m
 (`config/scenarios/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers hold the full figures).
 
+## Pose-source data
+
+The nightly records every pose source on `spielberg` (64 beams) and `spielberg_1080` (1080 beams over
+270 degrees), per seed, as `report.md` and `report.json` in the `pose-source-report` artifact of the
+`slam` seed-42 job (SIM-5510 in [Verification](verification.md#5-nightly-coverage)). It reports the
+estimate's error and availability, the rate of changed poses, the scan rate, CPU per scan and the produced
+map's distance to the true walls. The wall distance is the raw distance from each occupied cell's centre
+to the gym map image's wall faces, so a perfect map at 0.05 m cells scores 0.025 m, not 0. The report is
+data: it ranks nothing and bounds no value. No numbers are published here until a nightly produces them.
+
 ## Mapping demonstration
 
 The recording shows the real simulator, ROS and SLAM Toolbox path building the Spielberg grid
