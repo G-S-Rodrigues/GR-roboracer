@@ -169,6 +169,9 @@ REST_SPEED = 0.01
 MIN_RUN = 1.0
 # A stop is measured from at least this speed (probe: 0.5 m/s at throttle 0.02).
 MIN_BRAKE_SPEED = 0.4
+# The sim clock is compared with the wall clock over segments this long.
+CLOCK_FROM = 1.0
+MIN_CLOCK_SPAN = 2.0
 BRAKE_HIGH = 0.9
 BRAKE_LOW = 0.1
 
@@ -190,6 +193,7 @@ class Sample:
     wz: float
     collisions: int
     cmd_steering: float | None = None
+    wall: float = math.nan  # arrival time: only for the clock-ratio check
 
 
 @dataclass(frozen=True)
@@ -227,7 +231,9 @@ def _floats(text: str) -> list[float]:
 
 
 def parse_frame(
-    data: dict[str, str], cmd_steering: float | None = None
+    data: dict[str, str],
+    cmd_steering: float | None = None,
+    wall: float = math.nan,
 ) -> Sample:
     x, y, z = _floats(data["V1 Position"])
     vx, vy, _ = _floats(data["V1 Linear Velocity"])
@@ -244,6 +250,7 @@ def parse_frame(
         wz=_floats(data["V1 Angular Velocity"])[2],
         collisions=int(float(data["V1 Collisions"])),
         cmd_steering=cmd_steering,
+        wall=wall,
     )
 
 
@@ -256,7 +263,7 @@ def samples_from_events(events: list[dict]) -> list[Sample]:
         if event["dir"] == "bridge":
             command = float(event["data"]["V1 Steering"])
         elif event["dir"] == "sim":
-            samples.append(parse_frame(event["data"], command))
+            samples.append(parse_frame(event["data"], command, event["t"]))
     return samples
 
 
@@ -313,14 +320,11 @@ def _tail(run: list[Sample], seconds: float) -> list[Sample]:
     return [s for s in run if s.lap_time >= run[-1].lap_time - seconds]
 
 
-def throttle_gain(segs: list[list[Sample]]) -> Estimate:
-    """Speed per unit throttle.
-
-    Windows are the last STEADY_WINDOW seconds of a run at one throttle with
-    the reported steering at zero (a steady turn is 0.7 % slower), kept when
-    the speed varies by less than STEADY_REL. The gain is the least-squares
-    slope through the origin of window speed on throttle.
-    """
+def steady_windows(segs: list[list[Sample]]) -> list[tuple[float, float]]:
+    """(throttle, mean speed) of every steady window: the last STEADY_WINDOW
+    seconds of a run at one throttle with the reported steering at zero (a
+    steady turn is 0.7 % slower), kept when the speed varies by less than
+    STEADY_REL."""
     points: list[tuple[float, float]] = []
     for seg in segs:
         for run in _runs(seg, lambda s: (s.throttle, s.steering == 0.0)):
@@ -335,18 +339,21 @@ def throttle_gain(segs: list[list[Sample]]) -> Estimate:
             if mean <= 0 or (max(speeds) - min(speeds)) / mean >= STEADY_REL:
                 continue
             points.append((first.throttle, mean))
+    return points
+
+
+def throttle_gain(segs: list[list[Sample]]) -> Estimate:
+    """Speed per unit throttle: the least-squares slope through the origin of
+    the steady windows' speed on throttle; `spread` is the widest relative
+    spread of one throttle's gain over its repeats."""
+    points = steady_windows(segs)
     if not points:
         return Estimate(math.nan, 0)
     value = sum(t * v for t, v in points) / sum(t * t for t, _ in points)
     by_throttle: dict[float, list[float]] = {}
     for throttle, speed in points:
         by_throttle.setdefault(throttle, []).append(speed / throttle)
-    groups = list(by_throttle.values())
-    spread = 0.0
-    for group in groups:
-        mean = statistics.fmean(group)
-        if len(group) > 1:
-            spread = max(spread, (max(group) - min(group)) / mean)
+    spread = _estimate([value], list(by_throttle.values())).spread
     return Estimate(value, len(points), spread)
 
 
@@ -360,10 +367,10 @@ def _crossing(frames: list[Sample], level: float) -> float | None:
     return None
 
 
-def braking(segs: list[list[Sample]]) -> Estimate:
-    """Mean deceleration between the 90 % and 10 % crossings of the speed the
-    car left throttle at, over every throttle-to-zero that coasts to a stop."""
-    rates: list[float] = []
+def brake_events(segs: list[list[Sample]]) -> list[tuple[float, float]]:
+    """(speed left throttle at, mean deceleration between the 90 % and 10 %
+    crossings of it) for every throttle-to-zero that coasts to a stop."""
+    events: list[tuple[float, float]] = []
     for seg in segs:
         for i in range(1, len(seg)):
             if not (seg[i - 1].throttle > 0.0 and seg[i].throttle == 0.0):
@@ -380,10 +387,18 @@ def braking(segs: list[list[Sample]]) -> Estimate:
             low = _crossing(frames, BRAKE_LOW * v0)
             if high is None or low is None or low <= high:
                 continue
-            rates.append((BRAKE_HIGH - BRAKE_LOW) * v0 / (low - high))
+            events.append((v0, (BRAKE_HIGH - BRAKE_LOW) * v0 / (low - high)))
+    return events
+
+
+def braking(segs: list[list[Sample]]) -> Estimate:
+    """Mean of the brake events' decelerations. It is not constant (about 5.6
+    then 9 m/s^2 within one stop) and depends on the speed: `spread` is
+    therefore 0 here and the repeat spread is taken in `analyse`."""
+    rates = [rate for _, rate in brake_events(segs)]
     if not rates:
         return Estimate(math.nan, 0)
-    return _estimate(rates, [rates])
+    return Estimate(statistics.fmean(rates), len(rates))
 
 
 def _slew_rates(seg: list[Sample]) -> list[float]:
@@ -565,6 +580,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     rec = _recorder()
     header = rec._header(args.config, SCHEDULE_ID)
     header["host_load"] = list(os.getloadavg())
+    header["repeats"] = REPEATS
     args.out.parent.mkdir(parents=True, exist_ok=True)
     writer = rec.RecordWriter(args.out, header)
     handler = rec.BridgeHandler(
@@ -582,6 +598,188 @@ def cmd_record(args: argparse.Namespace) -> int:
     return 0
 
 
+def _clean(value):
+    """Plain, rounded, YAML-safe values: NaN becomes None, floats keep 6
+    decimals (the sim reports 4)."""
+    if isinstance(value, float):
+        return None if math.isnan(value) else round(value, 6)
+    if isinstance(value, dict):
+        return {str(k): _clean(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_clean(v) for v in value]
+    return value
+
+
+def _est(estimate: Estimate | None) -> dict | None:
+    if estimate is None:
+        return None
+    return {
+        "value": estimate.value,
+        "n": estimate.n,
+        "spread": estimate.spread,
+    }
+
+
+def _by_repeat(segs: list[list[Sample]], repeats: int) -> list[list]:
+    """The segments of each repeat of the schedule, or [] when collisions or
+    a missed reset broke the one-segment-per-manoeuvre layout."""
+    per = len(MANOEUVRES)
+    if len(segs) != per * repeats:
+        return []
+    return [segs[i * per : (i + 1) * per] for i in range(repeats)]
+
+
+def _spread(values: list[float]) -> float | None:
+    values = [v for v in values if not math.isnan(v)]
+    if len(values) < 2:
+        return None
+    mean = statistics.fmean(values)
+    return (max(values) - min(values)) / abs(mean) if mean else None
+
+
+def analyse(recording: Path, source: Path) -> dict:
+    """The contents of identified.yaml, from the recording and source.yaml
+    alone (nothing about the analysing host)."""
+    import hashlib
+
+    import yaml
+
+    rec = _recorder()
+    header, events = rec.read_records(recording)
+    com_z = yaml.safe_load(source.read_text())["values"][
+        "com_z_above_rear_axle_m"
+    ]["value"]
+    samples = samples_from_events(events)
+    segs = segments(samples)
+    groups = _by_repeat(segs, header.get("repeats", REPEATS))
+
+    gain = throttle_gain(segs)
+    windows = steady_windows(segs)
+    top_throttle, top_speed = max(windows) if windows else (math.nan,) * 2
+    by_throttle: dict[float, list[float]] = {}
+    for throttle, speed in windows:
+        by_throttle.setdefault(throttle, []).append(speed)
+    brake = braking(segs)
+    steer = steering(segs)
+    yaw = yaw_response(segs)
+    height = rest_height(segs, com_z)
+    points = reference_points(segs)
+
+    def over_repeats(measure) -> dict:
+        values = [measure(group) for group in groups]
+        return {"values": values, "spread": _spread(values)}
+
+    repeats = (
+        {
+            "throttle_gain": over_repeats(lambda g: throttle_gain(g).value),
+            "braking": over_repeats(lambda g: braking(g).value),
+            "steering_slew": over_repeats(lambda g: steering(g).slew.value),
+            "effective_wheelbase": over_repeats(
+                lambda g: yaw_response(g).wheelbase.value
+            ),
+            "height": over_repeats(lambda g: rest_height(g, com_z).value),
+        }
+        if groups
+        else None
+    )
+    # Frames before lap time 1 s include the reset pulse, where the clock
+    # sits near 0 while the wall clock runs.
+    ratios = []
+    for seg in segs:
+        run = [s for s in seg if s.lap_time >= CLOCK_FROM]
+        if (
+            len(run) > 1
+            and run[-1].lap_time - run[0].lap_time >= MIN_CLOCK_SPAN
+        ):
+            ratios.append(
+                (run[-1].lap_time - run[0].lap_time)
+                / (run[-1].wall - run[0].wall)
+            )
+    out = {
+        "provenance": {
+            "edition": header["edition"],
+            "images": header["images"],
+            "libraries": header["libraries"],
+            "schedule": header["schedule"],
+            "recorded_at": header["recorded_at"],
+            "host_load": header.get("host_load"),
+            "recording_sha256": hashlib.sha256(
+                recording.read_bytes()
+            ).hexdigest(),
+            "sim_frames": len(samples),
+            "segments": len(segs),
+            "collisions": max((s.collisions for s in samples), default=0),
+            "lap_time_per_wall": {
+                "min": min(ratios) if ratios else None,
+                "max": max(ratios) if ratios else None,
+            },
+        },
+        "measurements": {
+            "throttle_gain": {
+                **_est(gain),
+                "unit": "m/s per unit throttle",
+                "by_throttle": {
+                    str(t): statistics.fmean(v) / t
+                    for t, v in sorted(by_throttle.items())
+                },
+            },
+            "highest_steady_speed": {
+                "value": top_speed,
+                "at_throttle": top_throttle,
+            },
+            "braking_deceleration": {
+                **_est(brake),
+                "unit": "m/s^2",
+                "by_initial_speed": [
+                    {"speed": v0, "deceleration": rate}
+                    for v0, rate in sorted(brake_events(segs))
+                ],
+            },
+            "steering": {
+                "limit": {**_est(steer.limit), "unit": "rad"},
+                "slew": {**_est(steer.slew), "unit": "rad/s"},
+                "sign": steer.sign,
+            },
+            "yaw_response": {
+                "effective_wheelbase": {
+                    **_est(yaw.wheelbase),
+                    "unit": "m",
+                },
+                "rise_time": (
+                    {**_est(yaw.rise_time), "unit": "s"}
+                    if yaw.rise_time
+                    else None
+                ),
+            },
+            "rest_height": {
+                **_est(height),
+                "unit": "m",
+                "com_z_above_rear_axle": com_z,
+            },
+            "reference_points": {
+                "pose_lateral_speed": points.pose_lateral_speed,
+                "velocity_lever": points.velocity_lever,
+                "n": points.n,
+            },
+            "repeats": repeats,
+        },
+    }
+    return _clean(out)
+
+
+def cmd_analyse(args: argparse.Namespace) -> int:
+    import yaml
+
+    result = analyse(args.recording, args.source)
+    args.out.write_text(
+        "# Written by tools/autodrive_identify.py analyse; never edit by\n"
+        "# hand (CHECK-1780 re-derives it from the committed recording).\n"
+        + yaml.safe_dump(result, sort_keys=False)
+    )
+    print(f"wrote {args.out}", flush=True)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -590,6 +788,13 @@ def main(argv: list[str] | None = None) -> int:
     record.add_argument("--out", type=Path, required=True)
     record.add_argument("--port", type=int, default=4567)
     record.set_defaults(func=cmd_record)
+    analyse_parser = sub.add_parser(
+        "analyse", help="analyse a recording into identified.yaml"
+    )
+    analyse_parser.add_argument("--recording", type=Path, required=True)
+    analyse_parser.add_argument("--source", type=Path, required=True)
+    analyse_parser.add_argument("--out", type=Path, required=True)
+    analyse_parser.set_defaults(func=cmd_analyse)
     args = parser.parse_args(argv)
     return args.func(args)
 

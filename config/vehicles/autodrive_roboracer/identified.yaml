@@ -1,0 +1,151 @@
+# Written by tools/autodrive_identify.py analyse; never edit by
+# hand (CHECK-1780 re-derives it from the committed recording).
+provenance:
+  edition: 2026-iros-practice
+  images:
+    sim: autodriveecosystem/autodrive_roboracer_sim:2026-iros-practice@sha256:b4bbda41fdb1da7a2eadba4350ed3a0cb5020e7eb783454e78399ef5852dbd76
+    devkit: autodriveecosystem/autodrive_roboracer_api:2026-iros-practice@sha256:6e4c29536b7283a1a7322473d46dab2d4ad5513cf40d1bdfc908ee9d408e26e9
+  libraries:
+    python-socketio: 4.2.0
+    python-engineio: 3.13.0
+    gevent: 26.9.0
+    gevent-websocket: 0.10.1
+  schedule: porto-identify-v1
+  recorded_at: '2026-10-26T01:32:29.358593+00:00'
+  host_load:
+  - 5.61084
+  - 5.195312
+  - 7.334473
+  recording_sha256: 576f91bd65cf06589d974b5f817a692becee2efee71e0fdcb6642a071065f5d8
+  sim_frames: 20839
+  segments: 24
+  collisions: 0
+  lap_time_per_wall:
+    min: 0.980375
+    max: 1.016631
+measurements:
+  throttle_gain:
+    value: 24.859772
+    n: 12
+    spread: 5.9e-05
+    unit: m/s per unit throttle
+    by_throttle:
+      '0.02': 25.0808
+      '0.04': 25.024436
+      '0.08': 24.914228
+      '0.12': 24.811134
+  highest_steady_speed:
+    value: 2.977416
+    at_throttle: 0.12
+  braking_deceleration:
+    value: 6.336012
+    n: 21
+    spread: 0.0
+    unit: m/s^2
+    by_initial_speed:
+    - speed: 0.5016
+      deceleration: 8.285098
+    - speed: 0.5016
+      deceleration: 8.618981
+    - speed: 0.5016
+      deceleration: 8.619819
+    - speed: 0.9937
+      deceleration: 6.184903
+    - speed: 0.9937
+      deceleration: 6.20467
+    - speed: 0.9937
+      deceleration: 6.210317
+    - speed: 1.0009
+      deceleration: 6.186919
+    - speed: 1.0009
+      deceleration: 6.211924
+    - speed: 1.0009
+      deceleration: 6.332116
+    - speed: 1.5344
+      deceleration: 5.897791
+    - speed: 1.5542
+      deceleration: 5.794204
+    - speed: 1.5542
+      deceleration: 5.810506
+    - speed: 1.993
+      deceleration: 5.705379
+    - speed: 1.993
+      deceleration: 5.719906
+    - speed: 1.993
+      deceleration: 5.81371
+    - speed: 2.9769
+      deceleration: 5.781986
+    - speed: 2.9769
+      deceleration: 5.782122
+    - speed: 2.9769
+      deceleration: 5.782356
+    - speed: 4.9225
+      deceleration: 6.037813
+    - speed: 4.9225
+      deceleration: 6.037842
+    - speed: 4.9226
+      deceleration: 6.037884
+  steering:
+    limit:
+      value: 0.523633
+      n: 12
+      spread: 0.000127
+      unit: rad
+    slew:
+      value: 3.2
+      n: 295
+      spread: 0.0
+      unit: rad/s
+    sign: 1
+  yaw_response:
+    effective_wheelbase:
+      value: 0.338802
+      n: 558
+      spread: 0.0
+      unit: m
+    rise_time:
+      value: 0.039192
+      n: 3
+      spread: 0.0
+      unit: s
+  rest_height:
+    value: 0.07354
+    n: 12242
+    spread: 0.0
+    unit: m
+    com_z_above_rear_axle: 0.01434
+  reference_points:
+    pose_lateral_speed: 0.000279
+    velocity_lever: 0.159707
+    n: 558
+  repeats:
+    throttle_gain:
+      values:
+      - 24.860271
+      - 24.85983
+      - 24.859214
+      spread: 4.3e-05
+    braking:
+      values:
+      - 6.301396
+      - 6.358861
+      - 6.347778
+      spread: 0.009069
+    steering_slew:
+      values:
+      - 3.2
+      - 3.2
+      - 3.2
+      spread: 0.0
+    effective_wheelbase:
+      values:
+      - 0.338782
+      - 0.338802
+      - 0.338802
+      spread: 5.7e-05
+    height:
+      values:
+      - 0.07354
+      - 0.07354
+      - 0.07354
+      spread: 0.0

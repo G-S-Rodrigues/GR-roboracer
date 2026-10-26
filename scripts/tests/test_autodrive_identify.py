@@ -307,3 +307,33 @@ def test_check_1775_pose_is_the_rear_axle_velocity_is_the_body() -> None:
         for seg in segs
     ]
     assert abs(tool.reference_points(shifted).pose_lateral_speed) > 0.03
+
+
+# --- the committed identification ------------------------------------------
+
+VEHICLE_DIR = REPO_ROOT / "config" / "vehicles" / "autodrive_roboracer"
+RECORDING = VEHICLE_DIR / "identification" / "2026-iros-practice.jsonl.gz"
+SOURCE = VEHICLE_DIR / "source.yaml"
+IDENTIFIED = VEHICLE_DIR / "identified.yaml"
+
+
+def test_check_1780_committed_recording_reanalyses_to_identified() -> None:
+    """CHECK-1780: `identified.yaml` is exactly what the tool computes from the
+    committed recording and `source.yaml` - no hand edit survives, and nothing
+    in it comes from the analysing host (provenance is the recording's header
+    and bytes). The live run is a sample (wall-clock, unseeded); this pins the
+    analysis to it."""
+    import hashlib
+
+    import yaml
+
+    tool = _tool()
+    first = tool.analyse(RECORDING, SOURCE)
+    assert first == tool.analyse(RECORDING, SOURCE), "not deterministic"
+    committed = yaml.safe_load(IDENTIFIED.read_text())
+    assert first == committed
+    provenance = committed["provenance"]
+    digest = hashlib.sha256(RECORDING.read_bytes()).hexdigest()
+    assert provenance["recording_sha256"] == digest
+    assert provenance["schedule"] == tool.SCHEDULE_ID
+    assert "@sha256:" in provenance["images"]["sim"]
