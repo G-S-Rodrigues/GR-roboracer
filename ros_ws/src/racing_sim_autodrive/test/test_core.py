@@ -204,3 +204,101 @@ def test_simad_1090_encoder_speed_matches_linear_velocity():
     # encoders jumping backwards is a reset, never a negative speed
     fast = [f for _, f in frames if f.encoder_angles[0] > 1.0][0]
     assert core.encoder_speed(fast, frames[0][1], WHEEL_RADIUS, 0.05) is None
+
+
+def test_simad_1100_throttle_loop_feedforward_zero_and_clamp():
+    """SIMAD-1100: feedforward exact; v_cmd 0 is exactly 0.0; output clamped."""
+    ff = control.ThrottleLoop(gain=24.9, kp=0.0, ki=0.0)
+    assert ff.update(2.49, 1.0, 0.02) == pytest.approx(0.1)
+    assert ff.update(2.49, None, None) == pytest.approx(0.1)
+    assert ff.update(100.0, 0.0, 0.02) == 1.0
+    assert ff.update(-100.0, 0.0, 0.02) == -1.0
+    loop = control.ThrottleLoop(gain=24.9, kp=0.0, ki=1.0)
+    for _ in range(20):
+        loop.update(5.0, 0.0, 0.02)
+    assert loop.integral > 0.0
+    assert loop.update(0.0, 3.0, 0.02) == 0.0
+    assert loop.integral == 0.0
+    with pytest.raises(ValueError):
+        control.ThrottleLoop(gain=0.0, kp=0.0, ki=0.0)
+
+
+def test_simad_1110_anti_windup_and_closed_loop_with_wrong_gain():
+    """SIMAD-1110: no windup while saturated; a 20 % wrong gain still settles."""
+    # v_cmd / gain = 0.4 < limit, so the feedforward alone never saturates;
+    # kp * e = 2.0 does.
+    loop = control.ThrottleLoop(gain=24.9, kp=0.2, ki=0.5)
+    for _ in range(50):
+        assert loop.update(10.0, 0.0, 0.02) == 1.0
+    assert abs(loop.integral) < 0.1
+    out = loop.update(10.0, 11.0, 0.02)  # error reverses: e = -1
+    assert out < 1.0
+    # first-order plant, true gain 24.9 m/s per unit throttle, tau 0.3 s;
+    # the loop is told a gain 20 % too high.
+    true_gain, tau, dt = 24.9, 0.3, 0.02
+    loop = control.ThrottleLoop(gain=true_gain * 1.2, kp=0.02, ki=0.1)
+    speed = 0.0
+    for _ in range(int(3.0 / dt)):
+        u = loop.update(3.0, speed, dt)
+        speed += dt / tau * (true_gain * u - speed)
+    assert speed == pytest.approx(3.0, rel=0.01)
+
+
+# 0.5236 rad: the sim echoes +0.1571 for a commanded +0.3, i.e. 0.3 x 0.5236.
+# A fixture-derived test input, not a vehicle value (part 4 measures that).
+MAX_STEER = 0.5236
+
+
+def test_simad_1120_steering_to_normalized():
+    """SIMAD-1120: plain ratio, clamped, sign kept; the echo maps back."""
+    assert control.steering_to_normalized(0.2618, MAX_STEER) == pytest.approx(
+        0.5, abs=1e-4
+    )
+    assert control.steering_to_normalized(9.0, MAX_STEER) == 1.0
+    assert control.steering_to_normalized(-9.0, MAX_STEER) == -1.0
+    with pytest.raises(ValueError):
+        control.steering_to_normalized(0.1, 0.0)
+    frames = [core.decode_frame(raw) for _, raw in _sim_events()]
+    # The echo plateaus at {0, +-0.1571} (>= 97 frames each) and ramps
+    # between them through 6 single-frame values: 0.1571 is the 0.3 x
+    # 0.5236 the schedule commanded.
+    echoes = [f.steering_echo for f in frames]
+    plateaus = {
+        round(control.steering_to_normalized(e, MAX_STEER), 2)
+        for e in set(echoes)
+        if echoes.count(e) >= 10
+    }
+    assert plateaus == {0.0, 0.3, -0.3}
+    peak = max(abs(control.steering_to_normalized(e, MAX_STEER)) for e in echoes)
+    assert peak == pytest.approx(0.3, abs=1e-3)
+    moving = [f for f in frames if f.linear_velocity[0] > 0.5]
+    positive = [f for f in moving if f.steering_echo > 0.1]
+    assert positive
+    assert all(f.angular_velocity[2] >= 0.0 for f in positive)
+
+
+def test_simad_1130_reset_latch_rising_edge():
+    """SIMAD-1130: one True per rising edge of the recorded reset level.
+
+    The fixture held the level for 59 replies, so this does not show that
+    one True alone resets the sim; that is verified live in part 7.
+    """
+    events = _read_records(FIXTURE)[1]
+    levels = [
+        (e["t"], e["data"]["V1 Reset"] == "True")
+        for e in events
+        if e["dir"] == "bridge"
+    ]
+    assert sum(1 for _, level in levels if level) == 59
+    latch = control.ResetLatch()
+    fired = [t for t, level in levels if latch.next(level)]
+    assert len(fired) == 1
+    assert latch.next(False) is False
+    assert latch.next(True) is True
+    assert latch.next(True) is False
+    sim = [(t, core.decode_frame(e)) for t, e in _sim_events()]
+    after = [f for t, f in sim if t > fired[0]]
+    spawn = after[1]  # the sim acts within two frames
+    assert spawn.encoder_angles == (0.0, 0.0)
+    assert spawn.rear_axle[0] == pytest.approx(0.8, abs=0.05)
+    assert spawn.rear_axle[1] == pytest.approx(3.16, abs=0.05)
