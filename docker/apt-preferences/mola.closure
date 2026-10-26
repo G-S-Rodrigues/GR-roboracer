@@ -1,0 +1,56 @@
+# MOLA / mp2p-icp / MRPT closure of `apt-get -s install ros-jazzy-mola-lidar-odometry`,
+# measured in gr-roboracer-dev-slam-p1 on 2026-10-25 (Jazzy index of 2026-10-01).
+# One `<package> <version>` per line; docker/apt-preferences/mola.pref pins each
+# by name and CHECK-1880 holds the two in agreement.
+ros-jazzy-mola-bridge-ros2 3.3.0-1noble.20261001.232205
+ros-jazzy-mola-common 0.6.1-1noble.20260518.214217
+ros-jazzy-mola-gtsam-factors 3.0.2-1noble.20261001.232007
+ros-jazzy-mola-imu-preintegration 3.0.0-1noble.20260930.020606
+ros-jazzy-mola-input-kitti-dataset 3.1.0-1noble.20260930.021728
+ros-jazzy-mola-input-kitti360-dataset 3.1.0-1noble.20260930.021742
+ros-jazzy-mola-input-mulran-dataset 3.1.0-1noble.20260930.021719
+ros-jazzy-mola-input-paris-luco-dataset 3.1.0-1noble.20260930.021725
+ros-jazzy-mola-input-rawlog 3.3.0-1noble.20260930.021931
+ros-jazzy-mola-input-rosbag1 0.5.0-1noble.20260930.021928
+ros-jazzy-mola-input-rosbag2 3.3.0-1noble.20260930.021934
+ros-jazzy-mola-kernel 3.3.0-1noble.20260930.021432
+ros-jazzy-mola-launcher 3.3.0-1noble.20260930.021727
+ros-jazzy-mola-lidar-odometry 3.3.0-1noble.20261001.233519
+ros-jazzy-mola-msgs 3.3.0-1noble.20260924.144247
+ros-jazzy-mola-pose-list 3.3.0-1noble.20260930.021423
+ros-jazzy-mola-state-estimation-simple 3.0.2-1noble.20261001.231201
+ros-jazzy-mola-state-estimation-smoother 3.0.2-1noble.20261001.232904
+ros-jazzy-mola-viz 3.3.0-1noble.20260930.021748
+ros-jazzy-mola-viz-imgui 3.3.0-1noble.20260930.021826
+ros-jazzy-mola-yaml 3.3.0-1noble.20260930.011921
+ros-jazzy-mp2p-icp 3.0.0-1noble.20260930.024555
+ros-jazzy-mp2p-icp-core 3.0.0-1noble.20260930.021424
+ros-jazzy-mp2p-icp-viz 3.0.0-1noble.20260930.023925
+ros-jazzy-mrpt-bayes 3.3.1-1noble.20260930.013450
+ros-jazzy-mrpt-common 3.3.1-1noble.20260930.003733
+ros-jazzy-mrpt-config 3.3.1-1noble.20260930.012228
+ros-jazzy-mrpt-containers 3.3.1-1noble.20260930.010451
+ros-jazzy-mrpt-core 3.3.1-1noble.20260930.004054
+ros-jazzy-mrpt-expr 3.3.1-1noble.20260930.011854
+ros-jazzy-mrpt-graphs 3.3.1-1noble.20260930.015315
+ros-jazzy-mrpt-gui 3.3.1-1noble.20260930.015649
+ros-jazzy-mrpt-img 3.3.1-1noble.20260930.013616
+ros-jazzy-mrpt-imgui 3.3.1-1noble.20260930.015658
+ros-jazzy-mrpt-imgui-vendor 3.3.1-1noble.20260930.004226
+ros-jazzy-mrpt-io 3.3.1-1noble.20260930.011855
+ros-jazzy-mrpt-libros-bridge 4.0.0-1noble.20260930.021423
+ros-jazzy-mrpt-maps 3.3.1-1noble.20260930.020714
+ros-jazzy-mrpt-math 3.3.1-1noble.20260930.011857
+ros-jazzy-mrpt-msgs 0.6.0-1noble.20260911.141857
+ros-jazzy-mrpt-nav-interfaces 2.6.0-1noble.20261001.231517
+ros-jazzy-mrpt-obs 3.3.1-1noble.20260930.015308
+ros-jazzy-mrpt-opengl 3.3.1-1noble.20260930.015313
+ros-jazzy-mrpt-poses 3.3.1-1noble.20260930.013548
+ros-jazzy-mrpt-random 3.3.1-1noble.20260930.005936
+ros-jazzy-mrpt-rtti 3.3.1-1noble.20260930.010504
+ros-jazzy-mrpt-serialization 3.3.1-1noble.20260930.010726
+ros-jazzy-mrpt-system 3.3.1-1noble.20260930.011542
+ros-jazzy-mrpt-tfest 3.3.1-1noble.20260930.014249
+ros-jazzy-mrpt-topography 3.3.1-1noble.20260930.013422
+ros-jazzy-mrpt-typemeta 3.3.1-1noble.20260930.010156
+ros-jazzy-mrpt-viz 3.3.1-1noble.20260930.014811
