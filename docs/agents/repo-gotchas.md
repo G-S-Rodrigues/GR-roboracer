@@ -264,3 +264,12 @@ Traps any task in this repository can hit. Each one cost real time at least once
     changed `dev` definition can recreate it too; `--remove-orphans` removes containers, it does not
     recreate them. `dev` is the shared container, mounted on the worktree as `/ws`. Always name the
     autodrive service and pass `--no-deps`; never `down`.
+
+36. **AutoDRIVE's pose, velocity and steering are three different things.** `V1 Position` is the rear
+    axle (the frame `roboracer_1`), `V1 Linear Velocity` is the body's (about the CoG, 0.155 m ahead)
+    velocity in the car frame, and `V1 Steering` is the slewed actual angle, not the command. Measured
+    on the identification recording: pose lateral speed 0.0003 m/s, vy/omega 0.160 m. A converter or
+    speed loop that treats them as one point is wrong by lr and nothing errors. The same file also
+    cannot measure a top speed on Porto (about 8 m of straight; highest steady 2.977 m/s), and its
+    braking depends on speed (8.4 / 5.8 / 6.0 m/s^2 from 0.5 / 3 / 4.9 m/s): never read one number
+    from `identified.yaml` as the car's. (Part 5 claims 35; renumber if it lands first.)

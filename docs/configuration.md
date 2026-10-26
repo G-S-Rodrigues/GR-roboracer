@@ -48,6 +48,21 @@ mismatched line is an error: the launch never falls back to the centerline. Expl
 The reference default is the composition every new implementation is verified in. Its names come
 from `config/reference_stack.yaml`, which is a test map, not this schema.
 
+## The AutoDRIVE vehicle
+
+`config/vehicles/autodrive_roboracer.yaml` is the league car's file for `simulator:=autodrive`; the
+gym cannot run it (it simulates a different car). Its geometry is read from the sim's own prefab and
+guide (`config/vehicles/autodrive_roboracer/source.yaml`, every value anchored to a pinned line) and
+its measurements are written only by `tools/autodrive_identify.py` (`identified.yaml`). Its speed,
+acceleration and steering-rate caps are the default's, and its laser mount is the true 0.2733 m, which
+differs from the shared URDF's by about 14 mm until the AutoDRIVE description lands (part 8). Top
+speed is not measured (Porto has about 8 m of straight; the highest steady speed is 2.977 m/s), and
+braking depends on speed (mean 6.34 m/s^2), so neither is a single number in the file.
+
+To redo the identification for a new edition, with the sim up and the bridge port free:
+`tools/autodrive_identify.py record` drives the schedule and writes the recording, and
+`tools/autodrive_identify.py analyse` rewrites `identified.yaml` from it.
+
 ## Runtime controls
 
 - `seed` and `time_scale` (the ratio of simulated time to wall clock).
@@ -79,7 +94,7 @@ scored, and its default already follows the pose source. Both stay today-only ad
 schema_version: 1  # Available: 1
 workflow: mapping  # Available: mapping, racing
 scenario: config/scenarios/spielberg_survey.yaml  # Available: config/scenarios/spielberg_survey.yaml (exact sensors)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml, config/vehicles/autodrive_roboracer.yaml (committed, for `simulator:=autodrive`; not for the gym, which simulates a different car)
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
   pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
@@ -117,7 +132,7 @@ is a reviewed diff. The example writes to `log/maps/Spielberg` so following it i
 schema_version: 1  # Available: 1
 workflow: racing  # Available: mapping, racing
 scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Committed but not runnable: config/scenarios/porto.yaml (AutoDRIVE practice track; no simulator runs it until `simulator:=autodrive`)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml, config/vehicles/autodrive_roboracer.yaml (committed, for `simulator:=autodrive`; not for the gym, which simulates a different car)
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
   pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl
