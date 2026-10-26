@@ -9,7 +9,7 @@ radius, gains) are arguments; this module has no defaults for them.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -20,9 +20,11 @@ from racing_sim_autodrive.lidar import decode_lidar
 __all__ = [
     "FrameError",
     "Pose2D",
+    "DevkitSample",
     "SimFrame",
     "decode_frame",
     "encoder_speed",
+    "frame_from_devkit",
     "frame_pose",
     "rear_axle_to_cog",
     "sim_dt",
@@ -38,13 +40,13 @@ class FrameError(ValueError):
 
 @dataclass(frozen=True)
 class SimFrame:
-    """One sim state sample. Compare fields, not frames: `ranges` is an array."""
+    """One sim state sample. Compare fields: `ranges` is an array."""
 
     throttle_echo: float  # V1 Throttle, as the sim reports it
     steering_echo: float  # V1 Steering, rad
     encoder_angles: tuple[float, float]  # left, right, rad, accumulated
     encoder_ticks: tuple[int, int] | None  # None from the devkit path
-    rear_axle: tuple[float, float, float]  # V1 Position: NOT the CoG
+    rear_axle: tuple[float, float, float]  # V1 Position, not the CoG
     orientation: tuple[float, float, float, float]  # x y z w
     yaw: float  # from the quaternion, wrapped to (-pi, pi]
     linear_velocity: tuple[float, float, float]  # body frame, as reported
@@ -67,9 +69,7 @@ def _wrap(angle: float) -> float:
 
 def yaw_from_quaternion(x: float, y: float, z: float, w: float) -> float:
     """Yaw (rotation about z) of a unit quaternion, in (-pi, pi]."""
-    return math.atan2(
-        2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)
-    )
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
 
 def _text(raw: Mapping[str, str], key: str) -> str:
@@ -170,7 +170,64 @@ def encoder_speed(
     """
     if dt is None or not dt > 0.0:
         return None
-    deltas = [c - p for p, c in zip(prev.encoder_angles, cur.encoder_angles)]
+    deltas = [
+        c - p
+        for p, c in zip(prev.encoder_angles, cur.encoder_angles, strict=True)
+    ]
     if any(d < 0.0 for d in deltas):
         return None
     return sum(deltas) / len(deltas) * wheel_radius / dt
+
+
+@dataclass(frozen=True)
+class DevkitSample:
+    """Plain values part 9's node pulls out of the devkit's ROS messages.
+
+    Names what the core needs, not the wire: no ROS import here. The devkit
+    publishes encoder angles only, so there are no ticks.
+    """
+
+    throttle: float
+    steering: float
+    left_encoder: float  # JointState.position[0]
+    right_encoder: float
+    ips: tuple[float, float, float]  # Point: the rear axle
+    imu_orientation: tuple[float, float, float, float]  # x y z w
+    imu_angular_velocity: tuple[float, float, float]
+    imu_linear_acceleration: tuple[float, float, float]
+    linear_velocity: tuple[float, float, float]  # odom twist.linear
+    ranges: Sequence[float]
+    scan_time: float  # LaserScan.scan_time; scan rate is its inverse
+    lap_count: int
+    lap_time: float
+    last_lap_time: float
+    best_lap_time: float
+    collisions: int
+
+
+def frame_from_devkit(sample: DevkitSample) -> SimFrame:
+    """DevkitSample -> SimFrame; ticks are None on this path."""
+    ranges = np.asarray(sample.ranges, dtype=np.float64)
+    if np.isnan(ranges).any() or (ranges < 0).any():
+        raise FrameError("lidar ranges contain NaN or a negative value")
+    if not sample.scan_time > 0.0:
+        raise FrameError(f"scan_time must be > 0, got {sample.scan_time}")
+    return SimFrame(
+        throttle_echo=sample.throttle,
+        steering_echo=sample.steering,
+        encoder_angles=(sample.left_encoder, sample.right_encoder),
+        encoder_ticks=None,
+        rear_axle=tuple(sample.ips),
+        orientation=tuple(sample.imu_orientation),
+        yaw=_wrap(yaw_from_quaternion(*sample.imu_orientation)),
+        linear_velocity=tuple(sample.linear_velocity),
+        angular_velocity=tuple(sample.imu_angular_velocity),
+        linear_acceleration=tuple(sample.imu_linear_acceleration),
+        lidar_scan_rate=1.0 / sample.scan_time,
+        ranges=ranges,
+        lap_count=sample.lap_count,
+        lap_time=sample.lap_time,
+        last_lap_time=sample.last_lap_time,
+        best_lap_time=sample.best_lap_time,
+        collisions=sample.collisions,
+    )

@@ -10,7 +10,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from racing_sim_autodrive import control, core, lidar  # noqa: F401
 
 REPO = Path(__file__).resolve().parents[4]
@@ -164,7 +163,7 @@ def test_simad_1080_sim_dt_none_when_lap_time_does_not_increase():
     frames = [(t, core.decode_frame(raw)) for t, raw in events]
     none_at = []
     positive = 0
-    for (_, prev), (t, cur) in zip(frames, frames[1:]):
+    for (_, prev), (t, cur) in zip(frames, frames[1:], strict=False):
         dt = core.sim_dt(prev, cur)
         if dt is None:
             none_at.append(t)
@@ -190,7 +189,7 @@ def test_simad_1090_encoder_speed_matches_linear_velocity():
     """SIMAD-1090: encoder speed with the sim's dt tracks V1 Linear Velocity."""
     frames = [(t, core.decode_frame(raw)) for t, raw in _sim_events()]
     checked = 0
-    for (_, prev), (t, cur) in zip(frames, frames[1:]):
+    for (_, prev), (t, cur) in zip(frames, frames[1:], strict=False):
         if not 3.5 <= t <= 4.9:
             continue
         dt = core.sim_dt(prev, cur)
@@ -224,7 +223,7 @@ def test_simad_1100_throttle_loop_feedforward_zero_and_clamp():
 
 
 def test_simad_1110_anti_windup_and_closed_loop_with_wrong_gain():
-    """SIMAD-1110: no windup while saturated; a 20 % wrong gain still settles."""
+    """SIMAD-1110: no windup while saturated; a 20 % wrong gain settles."""
     # v_cmd / gain = 0.4 < limit, so the feedforward alone never saturates;
     # kp * e = 2.0 does.
     loop = control.ThrottleLoop(gain=24.9, kp=0.2, ki=0.5)
@@ -269,7 +268,9 @@ def test_simad_1120_steering_to_normalized():
         if echoes.count(e) >= 10
     }
     assert plateaus == {0.0, 0.3, -0.3}
-    peak = max(abs(control.steering_to_normalized(e, MAX_STEER)) for e in echoes)
+    peak = max(
+        abs(control.steering_to_normalized(e, MAX_STEER)) for e in echoes
+    )
     assert peak == pytest.approx(0.3, abs=1e-3)
     moving = [f for f in frames if f.linear_velocity[0] > 0.5]
     positive = [f for f in moving if f.steering_echo > 0.1]
@@ -302,3 +303,84 @@ def test_simad_1130_reset_latch_rising_edge():
     assert spawn.encoder_angles == (0.0, 0.0)
     assert spawn.rear_axle[0] == pytest.approx(0.8, abs=0.05)
     assert spawn.rear_axle[1] == pytest.approx(3.16, abs=0.05)
+
+
+# 1e-4: the telemetry prints 4 decimals and std_msgs carries float32, so the
+# two paths differ by at most the float32 rounding of a value < 1e3.
+DEVKIT_TOL = 1e-4
+
+
+def _f32(values):
+    return tuple(float(np.float32(v)) for v in values)
+
+
+def _devkit_sample(raw):
+    """Build a DevkitSample the way autodrive_bridge.py:320-342 parses it."""
+
+    def vec(key):
+        return np.fromstring(raw[key], dtype=float, sep=" ")
+
+    angles = vec("V1 Encoder Angles")
+    rate = float(raw["V1 LIDAR Scan Rate"])
+    ranges = lidar.decode_lidar(raw[LIDAR_KEY])
+    return core.DevkitSample(
+        throttle=float(np.float32(float(raw["V1 Throttle"]))),
+        steering=float(np.float32(float(raw["V1 Steering"]))),
+        left_encoder=float(np.float32(angles[0])),
+        right_encoder=float(np.float32(angles[1])),
+        ips=_f32(vec("V1 Position")),
+        imu_orientation=_f32(vec("V1 Orientation Quaternion")),
+        imu_angular_velocity=_f32(vec("V1 Angular Velocity")),
+        imu_linear_acceleration=_f32(vec("V1 Linear Acceleration")),
+        linear_velocity=_f32(vec("V1 Linear Velocity")),
+        ranges=[float(np.float32(r)) for r in ranges],
+        scan_time=float(np.float32(1.0 / rate)),
+        lap_count=int(float(raw["V1 Lap Count"])),
+        lap_time=float(raw["V1 Lap Time"]),
+        last_lap_time=float(raw["V1 Last Lap Time"]),
+        best_lap_time=float(raw["V1 Best Lap Time"]),
+        collisions=int(float(raw["V1 Collisions"])),
+    )
+
+
+def test_simad_1140_devkit_path_equals_socketio_path():
+    """SIMAD-1140: frame_from_devkit agrees with decode_frame, ticks None."""
+    _, sim, _ = _fixture()
+    for raw in sim[1:]:
+        want = core.decode_frame(raw)
+        got = core.frame_from_devkit(_devkit_sample(raw))
+        assert got.encoder_ticks is None
+        assert got.encoder_angles == pytest.approx(
+            want.encoder_angles, abs=DEVKIT_TOL
+        )
+        assert got.rear_axle == pytest.approx(want.rear_axle, abs=DEVKIT_TOL)
+        assert got.orientation == pytest.approx(
+            want.orientation, abs=DEVKIT_TOL
+        )
+        assert got.yaw == pytest.approx(want.yaw, abs=DEVKIT_TOL)
+        assert got.linear_velocity == pytest.approx(
+            want.linear_velocity, abs=DEVKIT_TOL
+        )
+        assert got.angular_velocity == pytest.approx(
+            want.angular_velocity, abs=DEVKIT_TOL
+        )
+        assert got.linear_acceleration == pytest.approx(
+            want.linear_acceleration, abs=DEVKIT_TOL
+        )
+        assert got.throttle_echo == pytest.approx(
+            want.throttle_echo, abs=DEVKIT_TOL
+        )
+        assert got.steering_echo == pytest.approx(
+            want.steering_echo, abs=DEVKIT_TOL
+        )
+        assert got.lidar_scan_rate == pytest.approx(
+            want.lidar_scan_rate, abs=1e-3
+        )
+        assert np.allclose(got.ranges, want.ranges, atol=DEVKIT_TOL)
+        assert (got.lap_count, got.collisions) == (
+            want.lap_count,
+            want.collisions,
+        )
+        assert got.lap_time == pytest.approx(want.lap_time, abs=DEVKIT_TOL)
+        assert got.last_lap_time == want.last_lap_time
+        assert got.best_lap_time == want.best_lap_time
