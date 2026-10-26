@@ -60,9 +60,11 @@ jobs:
   # Split by region of interest (owner, 2026-10-22) so a region's tier 5 grows
   # inside its own timeout: one job per region x seed. tests/nightly_regions.yaml
   # assigns every tier 3-5 test to one region and CHECK-1510 proves the union is
-  # the whole nightly; `static` is tiers 0-2 and owns no test. The seed reaches
-  # only the seeded lap (control) and tier 5 (seed 42), so tiers 3-4 repeat on
-  # every seed leg on purpose: that is the flake detector.
+  # the whole nightly; `static` is tiers 0-2 and owns no test. Tiers 0-2 read
+  # no seed, so they run once, on `static`/42 (owner Q-A, 2026-10-24); tiers 3-4
+  # still repeat on every seed leg on purpose: that is the flake detector. The
+  # short regions get 60 minutes (owner Q-B) against measured legs of at most
+  # 12 minutes; slam and path_planning keep 180. That is 17 jobs.
   nightly:
     name: Nightly ${{ matrix.region }}, seed ${{ matrix.seed }}
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -78,12 +80,16 @@ jobs:
         # exist so a controller that only survives the seeds it was tuned
         # against fails here rather than on a track.
         seed: [42, 1030, 7, 2026]
+        exclude:
+          - {region: static, seed: 1030}
+          - {region: static, seed: 7}
+          - {region: static, seed: 2026}
         include:
-          - {region: static, timeout: 180}
+          - {region: static, timeout: 60}
           - {region: slam, timeout: 180}
           - {region: path_planning, timeout: 180}
-          - {region: control, timeout: 180}
-          - {region: shared, timeout: 180}
+          - {region: control, timeout: 60}
+          - {region: shared, timeout: 60}
     steps:
       # The submodule is read only by SIM-5050's upstream reference row, so
       # only the path_planning legs fetch it (third_party/NOTICE.md).
@@ -93,7 +99,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # Only one job exports the layer cache, so twenty concurrent jobs do not
+      # Only one job exports the layer cache, so seventeen concurrent jobs do not
       # write it at once; every job reads it.
       - name: Build the dev image
         uses: docker/build-push-action@v6

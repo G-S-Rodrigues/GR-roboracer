@@ -56,7 +56,9 @@ Black-box cases on the composed stack, one per behaviour a user can name:
 
 The nightly runs on a schedule, never in a pull request. It runs one job per region of interest and
 seed: five regions (`static`, `slam`, `path_planning`, `control` and `shared`) and the seeds 42, 1030, 7
-and 2026, so twenty jobs. `static` is build and lint with the layer 1 and 2 tests; the other four split
+and 2026. `static` is build and lint with the layer 1 and 2 tests, which read no seed, so it runs once
+(seed 42); the other four run every seed, so seventeen jobs. The short regions (`static`, `control`,
+`shared`) have a 60-minute timeout, `slam` and `path_planning` 180. The other four split
 layers 3 and 4 between them, and the file [`tests/nightly_regions.yaml`](../tests/nightly_regions.yaml)
 names which region owns each test. The `control` job also runs one seeded lap on the job's seed. The
 tests keep their own pinned seeds, so the seed only changes that lap and layer 5. Layer 5, the

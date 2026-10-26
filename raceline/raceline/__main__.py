@@ -35,6 +35,7 @@ from raceline.vehicle import VehicleLimits, load_vehicle
 PACKAGE = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = PACKAGE.parent / "config" / "racelines"
 CODE_FILES = (
+    "raceline/__main__.py",
     "raceline/extract.py",
     "raceline/geometry.py",
     "raceline/optimize.py",

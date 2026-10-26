@@ -26,7 +26,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 **Tier 5 exists** (`tests/nightly/`, `check.sh --nightly`), built with the SLAM/localization phase.
 ADR 0005 places the expensive cross-product there so that `--fast`, `--ci` and `--full` do not grow
 as implementations accumulate: `--nightly` runs everything `--full` does and then the cross-product,
-and the scheduled CI job runs `--nightly-region <region>` per region x seed, with `NIGHTLY_TIER5=1` on seed 42, so tier 5 runs in the seed-42 job of each region that owns a tier-5 test. Nothing in tier 5 is part of "done" — a test
+and the scheduled CI job runs `--nightly-region <region>` per region x seed (`static` on seed 42 only, because tiers 0-2 read no seed; 17 jobs; 60-minute timeouts for `static`, `control` and `shared`, 180 for `slam` and `path_planning`), with `NIGHTLY_TIER5=1` on seed 42, so tier 5 runs in the seed-42 job of each region that owns a tier-5 test. Nothing in tier 5 is part of "done" — a test
 belongs there when its cost is laps rather than seconds and what it catches is a regression only a
 combination shows.
 
@@ -157,6 +157,7 @@ The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205
 The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
 
 The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/1020/1030` (1030 also pins the exact guard shape, with a negative case), `SIMJAX-1150`; tier 2 `ADAPT-2140/2145/2150/2160`. Conformance tests select by the backend's declared capabilities (`racing_sim_adapter/test/conformance.py`); a not-applicable test prints `NOT APPLICABLE <id>: ...` and returns (no skip marker), and ADAPT-2150 pins the set.
+The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
 
 ## The tests that matter most
 

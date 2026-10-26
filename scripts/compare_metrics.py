@@ -30,6 +30,19 @@ from typing import Any
 # offset from the headless golden: those seed-42 runs sit up to 0.0196 m
 # above baseline.json's 1.723440. 0.05 carries ~2.5x that offset, so it was
 # re-justified rather than tightened.
+# A tolerance is inclusive; the slack absorbs binary rounding of decimal
+# values, never a real difference (owner ruling 2026-10-24; nightly
+# 40075939673: |22.86 - 22.81| = 0.0500000000000007). It applies to every
+# field in FLOAT_TOLERANCES; on the 0.01-tolerance tracking errors it is 1% of
+# the tolerance. lap_time moves in whole 0.01 s ticks, so on lap_time it
+# admits exactly the 0.05 boundary and nothing past it.
+# What the slack is measured against: SIM-3040's live lap_time at seed 42,
+# 2026-10-25, six runs on a quiet host (CPU idle >= 85%): 22.83 x2, 22.84 x4,
+# against the golden's 22.81. The offset is 0.02-0.03 s, so the 0.05 tolerance
+# carries ~1.7x it and no live lap came near the 22.86 boundary. The 0.05 is
+# unchanged.
+FLOAT_SLACK = 1e-4
+
 FLOAT_TOLERANCES = {
     "lap_time": 0.05,
     "minimum_wall_clearance": 0.05,
@@ -125,7 +138,7 @@ def compare_metrics(
         if (
             not math.isfinite(expected_float)
             or not math.isfinite(actual_float)
-            or abs(actual_float - expected_float) > tolerance
+            or abs(actual_float - expected_float) > tolerance + FLOAT_SLACK
         ):
             differences.append(
                 Difference(field, expected_value, actual_value, tolerance)
