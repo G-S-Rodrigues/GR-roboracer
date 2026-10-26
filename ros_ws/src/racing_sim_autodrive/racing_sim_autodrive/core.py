@@ -22,6 +22,10 @@ __all__ = [
     "Pose2D",
     "SimFrame",
     "decode_frame",
+    "encoder_speed",
+    "frame_pose",
+    "rear_axle_to_cog",
+    "sim_dt",
     "yaw_from_quaternion",
 ]
 
@@ -124,3 +128,49 @@ def decode_frame(raw: Mapping[str, str]) -> SimFrame:
         best_lap_time=_scalar(raw, "V1 Best Lap Time"),
         collisions=int(_scalar(raw, "V1 Collisions")),
     )
+
+
+def rear_axle_to_cog(pose: Pose2D, lr: float) -> Pose2D:
+    """Move a rear-axle pose lr ahead along its heading (gotcha 26).
+
+    Returns a new pose; the argument is not touched (CartesianPose is
+    mutable).
+    """
+    return Pose2D(
+        pose.x + lr * math.cos(pose.psi),
+        pose.y + lr * math.sin(pose.psi),
+        pose.psi,
+    )
+
+
+def frame_pose(frame: SimFrame) -> Pose2D:
+    """The frame's rear-axle pose (x, y, yaw). z is the front end's job."""
+    return Pose2D(frame.rear_axle[0], frame.rear_axle[1], frame.yaw)
+
+
+def sim_dt(prev: SimFrame, cur: SimFrame) -> float | None:
+    """Sim time between two frames, from `V1 Lap Time`; None if not > 0.
+
+    The lap clock falls while a reset is held, so a None marks a reset (or
+    a repeated frame), never a negative step.
+    """
+    dt = cur.lap_time - prev.lap_time
+    if math.isfinite(dt) and dt > 0.0:
+        return dt
+    return None
+
+
+def encoder_speed(
+    prev: SimFrame, cur: SimFrame, wheel_radius: float, dt: float | None
+) -> float | None:
+    """Mean wheel speed from the encoder angle deltas, m/s.
+
+    None when dt is missing or not positive, or when either wheel's angle
+    went backwards (the encoders zero on a reset): never a negative speed.
+    """
+    if dt is None or not dt > 0.0:
+        return None
+    deltas = [c - p for p, c in zip(prev.encoder_angles, cur.encoder_angles)]
+    if any(d < 0.0 for d in deltas):
+        return None
+    return sum(deltas) / len(deltas) * wheel_radius / dt

@@ -38,6 +38,12 @@ def _fixture():
     return header, sim, bridge
 
 
+def _sim_events():
+    """(t, raw) of every sim frame."""
+    _, events = _read_records(FIXTURE)
+    return [(e["t"], e["data"]) for e in events if e["dir"] == "sim"]
+
+
 def _encode_lidar(values):
     text = "\n".join(str(v) for v in values)
     return base64.b64encode(gzip.compress(text.encode())).decode()
@@ -123,3 +129,78 @@ def test_simad_1060_quaternion_yaw_matches_euler_yaw():
         want = math.remainder(euler_yaw, math.tau)
         got = core.decode_frame(raw).yaw
         assert abs(math.remainder(got - want, math.tau)) < YAW_TOL
+
+
+def _pose(x, y, psi):
+    return core.Pose2D(x, y, psi)
+
+
+def test_simad_1070_rear_axle_to_cog_moves_lr_along_yaw():
+    """SIMAD-1070: CoG = rear axle + lr along heading; input untouched."""
+    lr = 0.17145
+    for psi, dx, dy in [
+        (0.0, lr, 0.0),
+        (math.pi / 2, 0.0, lr),
+        (-math.pi, -lr, 0.0),
+    ]:
+        pose = _pose(1.0, 2.0, psi)
+        cog = core.rear_axle_to_cog(pose, lr)
+        assert cog.x == pytest.approx(1.0 + dx, abs=1e-12)
+        assert cog.y == pytest.approx(2.0 + dy, abs=1e-12)
+        assert cog.psi == psi
+        assert (pose.x, pose.y, pose.psi) == (1.0, 2.0, psi)
+    same = core.rear_axle_to_cog(_pose(1.0, 2.0, 0.7), 0.0)
+    assert (same.x, same.y, same.psi) == (1.0, 2.0, 0.7)
+    _, sim, _ = _fixture()
+    spawn = core.frame_pose(core.decode_frame(sim[0]))
+    cog = core.rear_axle_to_cog(spawn, lr)
+    assert cog.x == pytest.approx(0.8, abs=1e-3)
+    assert cog.y == pytest.approx(3.1599 - lr, abs=1e-3)
+
+
+def test_simad_1080_sim_dt_none_when_lap_time_does_not_increase():
+    """SIMAD-1080: dt from the sim's lap clock; None across the reset."""
+    events = _sim_events()
+    frames = [(t, core.decode_frame(raw)) for t, raw in events]
+    none_at = []
+    positive = 0
+    for (_, prev), (t, cur) in zip(frames, frames[1:]):
+        dt = core.sim_dt(prev, cur)
+        if dt is None:
+            none_at.append(t)
+        else:
+            assert dt > 0
+            positive += 1
+    # Measured on the fixture: 25 drops + 15 repeats, all while the reset
+    # level was held (13.03-13.51 s).
+    assert len(none_at) == 40
+    assert positive == 576
+    assert min(none_at) >= 13.03 and max(none_at) <= 13.51
+
+
+# 0.02 m/s: lap-time dt measured 0.006 median / 0.008 max against
+# V1 Linear Velocity x on the 3.5-4.9 s straight (16 pairs, r = 0.059).
+# Receive-time dt measured 0.106 median / 0.305 max on the same pairs
+# (gotcha 35), which is why dt is the caller's and not read here.
+SPEED_TOL = 0.02
+WHEEL_RADIUS = 0.059  # test input only: z of V1 Position at rest
+
+
+def test_simad_1090_encoder_speed_matches_linear_velocity():
+    """SIMAD-1090: encoder speed with the sim's dt tracks V1 Linear Velocity."""
+    frames = [(t, core.decode_frame(raw)) for t, raw in _sim_events()]
+    checked = 0
+    for (_, prev), (t, cur) in zip(frames, frames[1:]):
+        if not 3.5 <= t <= 4.9:
+            continue
+        dt = core.sim_dt(prev, cur)
+        speed = core.encoder_speed(prev, cur, WHEEL_RADIUS, dt)
+        assert speed == pytest.approx(cur.linear_velocity[0], abs=SPEED_TOL)
+        checked += 1
+    assert checked >= 10
+    a, b = frames[10][1], frames[11][1]
+    assert core.encoder_speed(a, b, WHEEL_RADIUS, None) is None
+    assert core.encoder_speed(a, b, WHEEL_RADIUS, 0.0) is None
+    # encoders jumping backwards is a reset, never a negative speed
+    fast = [f for _, f in frames if f.encoder_angles[0] > 1.0][0]
+    assert core.encoder_speed(fast, frames[0][1], WHEEL_RADIUS, 0.05) is None
