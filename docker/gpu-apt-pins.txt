@@ -1,0 +1,18 @@
+# The `gpu` stage's CUDA closure: cuda-nvcc-12-8 + cuda-cudart-dev-12-8 and
+# every package they pull in, from NVIDIA's ubuntu2404/x86_64 apt index
+# (walked 2026-10-25). Pinning the two top-level packages is not a pin: three
+# edges are unversioned, and apt would take cuda-toolkit-config-common
+# 13.4.92-1 today (gotcha #27). The Dockerfile installs exactly these lines
+# and fails the build if any installed cuda-* package differs. Bumps are
+# reviewed diffs of this file.
+cuda-keyring=1.1-1
+cuda-nvcc-12-8=12.8.93-1
+cuda-nvvm-12-8=12.8.93-1
+cuda-crt-12-8=12.8.93-1
+cuda-cudart-dev-12-8=12.8.90-1
+cuda-cudart-12-8=12.8.90-1
+cuda-cccl-12-8=12.8.90-1
+cuda-driver-dev-12-8=12.8.90-1
+cuda-toolkit-12-8-config-common=12.8.90-1
+cuda-toolkit-12-config-common=12.8.90-1
+cuda-toolkit-config-common=12.8.90-1

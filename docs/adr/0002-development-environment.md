@@ -4,6 +4,7 @@
 **Date:** 2026-09-06
 **Supersedes:** none
 **Amended:** 2026-10-13 — §4, by issue #12 part 1 (a ROS-free `raceline/` uv project may run in `dev`).
+**Amended:** 2026-10-25 — §4, by issue #47 part 3 (a `gpu` stage).
 
 ## Context
 
@@ -39,6 +40,22 @@ image is unchanged: "nothing here creates a venv" in the Dockerfile stays true. 
 venvs (`raceline/.venv`, `raceline/tum_env/.venv`) sit on the bind mount, root-owned, outside the
 named volumes §3 uses for generated files.
 
+*Amendment (2026-10-25, issue #47 part 3).* A `gpu` stage exists: **`dev` plus a pinned CUDA 12.8
+toolkit subset (nvcc, cudart)**, for GPU ROS nodes, starting with FAR-LIO's CUDA build in part 5. It
+derives from `dev` by owner ruling (2026-10-25) so the owner can develop, test and run the simulators
+in it. Conditions: (a) `dev` stays CPU-only and never derives from `gpu`, and the gym's JAX stays on
+CPU inside `gpu` too. It is inherited from `dev`, pinned by `docker/gym-cpu-overrides.txt`, and `gpu`
+installs no Python package. The reason is gotcha 4's measurement: on the 64-beam scenario a GPU step
+takes 8.36 ms against 1.62 ms on the CPU, close enough to the 10 ms period to drop `/odom`. So the GPU
+serves nodes whose kernels are large enough to win, never the sim step. (b) `fast-sim` stays ROS-free
+(ADR 0003 unchanged). (c) It is built and tested on the owner's machine, never in PR CI (no GPU
+runner); CI holds its structure (CHECK-1900 to CHECK-1940). (d) Its apt installs are a full pinned
+closure (`docker/gpu-apt-pins.txt`) with an install-time diff (gotcha 27). (e) It has its own named
+volumes (§3, gotcha 21) and its own `ROS_DOMAIN_ID`, because it shares the compose network with `dev`.
+The costs: `gpu` carries everything in `dev`, including its uv and the CPU gym, and adds CUDA; a CUDA
+bug in a GPU node is caught by the owner's hand run (GPU-3010), not by CI; and a `dev` rebuild
+invalidates `gpu`.
+
 ## Consequences
 
 Underlay-in-image makes the image digest a genuine reproducibility record, which is what lets spec
@@ -55,6 +72,9 @@ The `dev`/`fast-sim` split means a change to the pinned gym SHA rebuilds only `f
 The cost of the split is that anything wanting both ROS and JAX in one process has nowhere to run.
 That is deliberate: `racing_sim_gym_jax` is the single exception, and it runs in `dev` against a
 CPU-resident env, which is why Step 9 carries a warm-up requirement rather than a GPU one.
+
+Anything wanting both ROS and CUDA now has a place, `gpu` (amendment 2026-10-25). ROS plus JAX is still
+only the `racing_sim_gym_jax` CPU exception, unchanged in `gpu`.
 
 ## Alternatives rejected
 
