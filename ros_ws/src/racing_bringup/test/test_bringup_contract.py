@@ -816,3 +816,40 @@ def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
         module, context = _launch_context(**overrides)
         with pytest.raises(RuntimeError):
             module._launch_nodes(context, "", "")
+
+
+def test_bringup_1180_every_raceline_optimizer_resolves_per_vehicle(
+    monkeypatch,
+) -> None:
+    """BRINGUP-1180: `raceline_optimizer:=` offers exactly the optimizers
+    whose lines are committed (the stems of
+    `config/racelines/spielberg/*/*.csv`), the launch's choices are that
+    tuple, and each value resolves to its own existing line for both
+    vehicles. A committed line the tuple omits, or a value with no line,
+    fails here rather than at launch time.
+    """
+    from racing_bringup.scenario_parameters import RACELINE_OPTIMIZERS
+
+    committed = REPOSITORY_ROOT / "config" / "racelines" / "spielberg"
+    assert set(RACELINE_OPTIMIZERS) == {
+        line.stem for line in committed.glob("*/*.csv")
+    }
+
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    scenario = "config/scenarios/spielberg.yaml"
+    vehicles = [
+        f"config/vehicles/{stem}.yaml"
+        for stem in ("f1tenth_default", "f1tenth_gym_limits")
+    ]
+    for optimizer in RACELINE_OPTIMIZERS:
+        for vehicle in vehicles:
+            module, context = _launch_context(
+                scenario=scenario,
+                vehicle=vehicle,
+                planner="optimized_raceline",
+                raceline_optimizer=optimizer,
+            )
+            support = _launched(context, module, "racing_bringup")
+            line = Path(support["raceline_path"])
+            assert line.name == f"{optimizer}.csv"
+            assert line.is_file(), (optimizer, vehicle)

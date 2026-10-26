@@ -20,7 +20,7 @@ REPORTING_KEYS = ("scenario_id", "track_version")
 
 
 PLANNERS = ("track_centerline", "optimized_raceline")
-RACELINE_OPTIMIZERS = ("tum_mincurv_iqp",)
+RACELINE_OPTIMIZERS = ("tum_mincurv_iqp", "tum_mintime")
 
 
 def _vehicle_version(vehicle_path: Path) -> str:
