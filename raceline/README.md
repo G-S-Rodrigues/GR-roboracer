@@ -23,8 +23,18 @@ Two projects live here:
 
 - `raceline/` (Python 3.12, numpy 2): our code. `raceline.tum` is the seam.
 - `raceline/tum_env/` (Python 3.8, numpy 1.18.1): ForzaETH's
-  `global_racetrajectory_optimization` @ b1b38ec, unmodified, run by
-  `tum_env/run_tum.py` as a subprocess; the two exchange CSV files.
+  `global_racetrajectory_optimization`, run by `tum_env/run_tum.py` (minimum
+  curvature) and `tum_env/run_tum_mintime.py` (minimum time) as subprocesses;
+  the exchange is CSV files. The minimum-curvature code is unmodified; the
+  pin is now the owner's fork
+  (`G-S-Rodrigues/GR-roboracer-global_racetrajectory_optimization`) at full
+  SHA `8bedf4ca460c37efec2af251ce1ccd17ef377db2`, whose minimum-curvature path
+  is byte-identical to upstream's b1b38ec (proved in the fork, TUMFORK-4010).
+  What the fork adds, all minimum-time only: a solve seeded from a
+  minimum-curvature line and its speed (`seed_line`, `mu_init` 1e-3, so a cold
+  start's stall on Spielberg is avoided), exact arc-length for the closure,
+  and a periodic speed interpolation so the last row does not jump back to the
+  first.
 
 ## The install decision (spike, 2026-10-13)
 
@@ -54,9 +64,10 @@ then a fork. Measured on Spielberg (`mincurv_iqp`, `config/tracks/spielberg.yaml
    length 339.04 m, max |kappa| 0.653 rad/m, speed 4.29..15.0 m/s (v_max 15 from
    the ForzaETH ini), final IQP curvature error 0.0257 rad/m, wall time 447.8 s
    (old scipy is slow; hence the tests use a small oval).
-4. **`mintime`** on Spielberg in that env, tried once, not gated (spec): IPOPT
-   did not converge in 25 min (still in its restoration phase, no result),
-   killed by the 1500 s timeout. Part 8 owns making it work.
+4. **`mintime`** on Spielberg in that env (unseeded, upstream code), tried
+   once: IPOPT did not converge in 25 min (still in its restoration phase, no
+   result), killed by the 1500 s timeout. Part 8 made it work: on the fork,
+   seeded from the minimum-curvature line, it converges (see "Racelines").
 5. **RACELINE-1010** (60 m asymmetric oval, `mincurv_iqp`) takes about 5 s.
    Worst overshoot of the corridor bound between QP nodes: 0.0009 m.
 
@@ -70,7 +81,7 @@ Read 2026-10-13 from `f1tenth_gym_jax/envs/utils.py:61-78` (class `Param`)
 
 - Part 3 (limits): mu 1.0489, a_max 9.51 m/s^2, v_max 20.0 m/s, s_max 0.4189 rad,
   sv_max 3.2 rad/s.
-- Part 8 (minimum time): m 3.74 kg, I 0.04712, C_Sf 4.718, C_Sr 5.4562, h 0.074,
+- Minimum time (`config/vehicles/tum_mintime/`): m 3.74 kg, I 0.04712, C_Sf 4.718, C_Sr 5.4562, h 0.074,
   lf 0.15875, lr 0.17145, width 0.31, length 0.58.
 - lf + lr = 0.3302 against the default vehicle file's 0.33. Part 3 sets the
   gym-limits file to 0.3302; its header records the reference point (the gym's
@@ -298,7 +309,8 @@ done
 - *Two passes.* Pass 1 is `mincurv_iqp` on the extracted track; its line becomes
   the centerline of pass 2, widths measured to the same walls. This follows the
   spec; ForzaETH's shipped global line is one pass (`--passes 1`).
-- *Margin.* `--margin` (default 0.30 m per side): the survey extraction
+- *Margin.* `--margin` (default 0.30 m per side for `tum_mincurv_iqp`, 0.40 m
+  for `tum_mintime`): the survey extraction
   allowance 0.15 plus 0.15 for Pure Pursuit's tracking error. TUM gets
   `safety_width = 2 (half_width + margin)`. Part 6's lap rules the value.
 - *What the verifier checks* (TUM's own `check_traj` only prints warnings):
@@ -333,11 +345,39 @@ done
   112.89 s, length 338.66 m, max |kappa| 0.5017. Step 1 (fresh TUM, gym-limits
   inputs): kappa sign matches the geometry, psi offset pi/2 to 0.0005 rad,
   |ds - |dxy|| <= 7e-5 m, a_y and a_x at the GGV limit exactly.
+- *Minimum time (`--optimizer tum_mintime`).* One command, end to end: the
+  track is extracted, the minimum-curvature reference is made at the min-time
+  margin (two passes), written to disk and read back, then one seeded
+  minimum-time solve runs on the fork. It writes `tum_mintime.{csv,yaml}` and
+  the reference it was seeded from, `reference/tum_mintime.csv`, beside them.
+  `--passes` must be 1 for it. `--reference LINE.csv` skips the reference
+  stages and seeds from that line (SIM-5060 uses it with the committed
+  reference); `--margin` and `--passes` default per optimizer. Vehicle
+  dynamics and tyre sets come from `config/vehicles/<vehicle>/tum_mintime.yaml`
+  and the tyre files beside it (set `gym_fit` by default; the keys are listed,
+  values-free and commented, in `config/vehicles/tum_mintime/reference.yaml`).
+  The solver's outcome is the yaml's top-level `solver:` (status, iterations,
+  wall time), outside the inputs a regeneration must reproduce. The solve is
+  bounded at 3036 iterations and 1200 s. A width extra of 0.01 m per side is
+  added to the corridor so the line passes the verifier's input-wall check.
+  Spielberg: default vehicle 170 iterations, 42 s of solve, ~16 min for the
+  command, TUM's lap estimate 111.88 s (measured in the sim: 112.12 s, SIM-3120);
+  gym-limits 1518 iterations, 328 s of solve, ~20 min, estimate 32.37 s.
+- *Plots.* The CLI writes diagnostic plots (overview, curvature, usage,
+  clearance and speed, and what binds each node: wall bound, tyre or speed
+  cap) on success and when the verifier rejects, to `log/raceline/<track>/
+  <vehicle>/<optimizer>/` (`--plots DIR`, `--no-plots`), never under
+  `config/racelines/`. `python -m raceline.diagnose LINE.csv --vehicle
+  config/vehicles/<v>.yaml (--track T.yaml | --map M.yaml ...)` plots a
+  committed line.
 - *Regeneration.* RACELINE-1395 turns red when the survey, the gym PNG, the
   vehicle or the tables change. The fix is a reviewed regeneration (gotcha 14),
   never a hash edit.
-- *Nightly regeneration.* SIM-5040 re-runs every committed line's recorded
-  `command:` each night. It compares the inputs exactly and the line within a
+- *Nightly regeneration.* SIM-5040 re-runs every committed minimum-curvature
+  line's recorded `command:` each night. SIM-5060 does the same for the
+  minimum-time lines, from their committed reference, but only on a night the
+  optimizer code changed (the fork pin or `MINTIME_CODE_FILES`); otherwise it
+  records that it did not run. It compares the inputs exactly and the line within a
   measured tolerance (nearest point, position and speed); `verdict` deltas and
   `code:` drift are reported, not asserted.
 

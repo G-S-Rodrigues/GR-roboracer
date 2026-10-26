@@ -26,7 +26,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 **Tier 5 exists** (`tests/nightly/`, `check.sh --nightly`), built with the SLAM/localization phase.
 ADR 0005 places the expensive cross-product there so that `--fast`, `--ci` and `--full` do not grow
 as implementations accumulate: `--nightly` runs everything `--full` does and then the cross-product,
-and the scheduled CI job runs `--nightly-region <region>` per region x seed (`static` on seed 42 only, because tiers 0-2 read no seed; 17 jobs; 60-minute timeouts for `static`, `control` and `shared`, 180 for `slam` and `path_planning`), with `NIGHTLY_TIER5=1` on seed 42, so tier 5 runs in the seed-42 job of each region that owns a tier-5 test. Nothing in tier 5 is part of "done" — a test
+and the scheduled CI job runs `--nightly-region <region>` per region x seed (`static` on seed 42 only, because tiers 0-2 read no seed; 21 jobs; 60-minute timeouts for `static`, `control` and `shared`, 120 for `path_planning_mintime`, 180 for `slam` and `path_planning`), with `NIGHTLY_TIER5=1` on seed 42, so tier 5 runs in the seed-42 job of each region that owns a tier-5 test. Nothing in tier 5 is part of "done" — a test
 belongs there when its cost is laps rather than seconds and what it catches is a regression only a
 combination shows.
 
@@ -46,7 +46,7 @@ bound are in the test).
 ./scripts/check.sh --ready  # scoped tiers 0-2, SIM-3020, and the tier-3/4 tests the map selects. Done. ~5-7 min.
 ./scripts/check.sh --full   # tiers 0-4, whole tree. The nightly's gate. ~13 min.
 ./scripts/check.sh --nightly # + tier 5, the whole nightly in one command. CI runs --nightly-region instead; not part of done.
-./scripts/check.sh --nightly-region <static|slam|path_planning|control|shared>  # one nightly job (NIGHTLY_TIER5=1 adds its tier 5)
+./scripts/check.sh --nightly-region <static|slam|path_planning|path_planning_mintime|control|shared>  # one nightly job (NIGHTLY_TIER5=1 adds its tier 5)
 ```
 
 `--fast` diffs the branch against `main` (plus index, worktree and untracked files) and lints and tests
@@ -119,7 +119,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **198 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Current counts: **212 tier-1, 24 tier-2, 12 tier-3, 4 tier-4, 6 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -160,6 +160,8 @@ The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/
 The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
 
 The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
+
+The min-time work (part 8) added tier 1 `RACELINE-1410/1415/1420/1425/1430/1435/1440/1445/1450/1465/1470` (`raceline/tests`; 1435 is the real chain on the oval, a few seconds), `CHECK-1560/1570`, `BRINGUP-1180` and an extension of `CHECK-1510/1520` for the `path_planning_mintime` region; tier 3 `SIM-3120`; tier 5 `SIM-5060`, which runs a solve only on a night the optimizer code changed (it records that it did not otherwise).
 
 ## The tests that matter most
 

@@ -1,10 +1,8 @@
 # Verification
 
 The measurements on [Results](results.md) and the behaviour of each Available implementation in the
-README's capability matrix are backed by tests that run on every pull request or every night. Three
-things are not. The Mapping demonstration on Results is a recording, not a test. The failure of the
-TUM minimum-time optimization to converge on Spielberg is a single trial that no test gates (see
-`raceline/README.md`). GPU runs are not tested in CI: the GPU image's structure is checked on every pull request, but
+README's capability matrix are backed by tests that run on every pull request or every night. Two
+things are not. The Mapping demonstration on Results is a recording, not a test. GPU runs are not tested in CI: the GPU image's structure is checked on every pull request, but
 building and running it is a manual check on a GPU machine. Rows marked Planned or Exploratory are
 not claims of working code. This page says what each of five layers proves, then how to run the checks.
 
@@ -40,6 +38,7 @@ bound it against ground truth.
 - SIM-3040: live metrics match `tests/golden/baseline.json` within tolerance.
 - SIM-3090: the Spielberg lap matches `tests/golden/spielberg_baseline.json`.
 - SIM-3110: the Spielberg lap on the committed minimum-curvature line (`planner:=optimized_raceline speed_source:=trajectory`, default vehicle, seed 42) completes with 0 collisions and 0 saturation events, at its own measured lap time of 113.08 s (tolerance 0.05 s).
+- SIM-3120: the same lap on the committed minimum-time line (`raceline_optimizer:=tum_mintime`), at its own measured lap time of 112.12 s (tolerance 0.05 s).
 - SIM-3070: with the car driving on ground truth, `slam_toolbox` publishes an estimate whose RMSE against ground truth is within 4.0 m. The test is open loop and does not claim the estimate is good.
 - SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate is available in at least 0.99 of samples and its position RMSE is within 0.65 m (the seed-42 bound).
 
@@ -55,10 +54,10 @@ Black-box cases on the composed stack, one per behaviour a user can name:
 ## 5. Nightly coverage
 
 The nightly runs on a schedule, never in a pull request. It runs one job per region of interest and
-seed: five regions (`static`, `slam`, `path_planning`, `control` and `shared`) and the seeds 42, 1030, 7
+seed: six regions (`static`, `slam`, `path_planning`, `path_planning_mintime`, `control` and `shared`) and the seeds 42, 1030, 7
 and 2026. `static` is build and lint with the layer 1 and 2 tests, which read no seed, so it runs once
-(seed 42); the other four run every seed, so seventeen jobs. The short regions (`static`, `control`,
-`shared`) have a 60-minute timeout, `slam` and `path_planning` 180. The other four split
+(seed 42); the other five run every seed, so twenty-one jobs. The short regions (`static`, `control`,
+`shared`) have a 60-minute timeout, `slam` and `path_planning` 180, `path_planning_mintime` 120. The other five split
 layers 3 and 4 between them, and the file [`tests/nightly_regions.yaml`](../tests/nightly_regions.yaml)
 names which region owns each test. The `control` job also runs one seeded lap on the job's seed. The
 tests keep their own pinned seeds, so the seed only changes that lap and layer 5. Layer 5, the
@@ -68,7 +67,8 @@ layer 5 test. Its track dimension is Spielberg alone today.
 - SIM-5010: the committed occupancy grid regenerates from the survey.
 - SIM-5020: `slam_toolbox` and `amcl` over seeds 42 and 1030 on Spielberg.
 - SIM-5030: the `amcl` run-to-run spread, over seeds 42, 1030, 1, 7, 99, 123 and 3, with 5 runs per seed.
-- SIM-5040: every committed raceline regenerates from its recorded command. The inputs (survey map, vehicle, TUM pins, parameters) must match exactly and the line must land within a measured tolerance of the committed one.
+- SIM-5040: every committed minimum-curvature raceline regenerates from its recorded command. The inputs (survey map, vehicle, TUM pins, parameters) must match exactly and the line must land within a measured tolerance of the committed one.
+- SIM-5060: each committed minimum-time line regenerates from its committed reference line (inputs exact, line within the same tolerance as SIM-5040), but only on a night the optimizer code changed (the fork pin or the wrapper's files); on any other night it records that it did not run and passes.
 - SIM-5050: the raceline comparison report, both vehicles by every committed line by seeds 42, 1030, 7 and 2026. A gym-limits run that does not finish is recorded with the distance it reached; a default-vehicle run that does not finish fails the test. No lap time or ranking is asserted.
 
 ## Running the checks
@@ -81,7 +81,7 @@ is layer 2, and so on up to tier 5 for layer 5. Tier 0 is build and lint.
 - `--ready`: the definition of done for a change. It runs the scoped unit and contract tests, the seeded lap (SIM-3020) and the system and acceptance tests for the implementations the change touched.
 - `--full`: tiers 0 to 4, which is layers 1 to 4 plus build and lint, over the whole tree.
 - `--nightly`: `--full` plus layer 5, the cross-product. It takes minutes to hours. The schedule runs `--nightly-region` per job, and `--nightly` is the one-command local equivalent of the whole nightly.
-- `--nightly-region <region>`: what one nightly job runs, one of `static`, `slam`, `path_planning`, `control` or `shared`. Together the regions cover what `--full` and `--nightly` cover. Set `NIGHTLY_TIER5=1` to add the region's layer 5 tests.
+- `--nightly-region <region>`: what one nightly job runs, one of `static`, `slam`, `path_planning`, `path_planning_mintime`, `control` or `shared`. Together the regions cover what `--full` and `--nightly` cover. Set `NIGHTLY_TIER5=1` to add the region's layer 5 tests.
 
 Run the definition of done in the container from the [Quick Start](quick-start.md):
 

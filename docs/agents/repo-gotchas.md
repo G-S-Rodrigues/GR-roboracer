@@ -264,3 +264,10 @@ Traps any task in this repository can hit. Each one cost real time at least once
     changed `dev` definition can recreate it too; `--remove-orphans` removes containers, it does not
     recreate them. `dev` is the shared container, mounted on the worktree as `/ws`. Always name the
     autodrive service and pass `--no-deps`; never `down`.
+
+35. **A reference CSV's rounding changes IPOPT's iteration path, and nothing errors.** The same
+    minimum-time optimum took 817 iterations from the in-memory reference and 1715 from the one read
+    back from a CSV (1e-9 rounding), then 1518 with the 0.01 m width extra. All converge to the same
+    line, so a test that checks only the result never notices. Hence the chain always writes the
+    reference and seeds from the file on disk, and any iteration bound (`MINTIME_MAX_ITER`) is
+    measured in `gr-roboracer-dev`, the nightly's image, never copied from the fork's container.

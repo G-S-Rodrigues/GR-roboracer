@@ -69,29 +69,49 @@ Selected by `planner:=`, which is `track_centerline` by default.
 
 - `track_centerline` publishes the scenario's `<map>_raceline.csv` on `/trajectory`, which is the
   centerline at constant speed. (It was called `track_raceline` before part 6 of issue #12.)
-- `optimized_raceline` publishes the committed minimum-curvature line
+- `optimized_raceline` publishes the committed line
   `config/racelines/<track>/<vehicle_version>/<raceline_optimizer>.csv`, with
-  `raceline_optimizer:=tum_mincurv_iqp` (the only optimizer). A missing line, an unknown name or a
+  `raceline_optimizer:=tum_mincurv_iqp` (minimum curvature, the default) or `raceline_optimizer:=tum_mintime` (minimum time). A missing line, an unknown name or a
   line whose sidecar `.yaml` disagrees is an error; the launch never falls back to the centerline.
 
 ```bash
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory seed:=42
 ```
 
-`speed_source:=trajectory` makes the car follow the line's own speed, a flat 3.0 m/s for the
-default vehicle. Without it the controller keeps its curvature schedule, whatever the line. On
-Spielberg, ground truth, seed 42, 5x, that lap measured 113.08 s (test SIM-3110) against 120.41 s
-for the centerline lap on the curvature schedule. The gym-limits vehicle's line resolves, but no
-gate lap drives it.
+`speed_source:=trajectory` makes the car follow the line's own speed: a flat 3.0 m/s on the
+default vehicle, whose speed limit is 3.0 m/s, for both lines (the minimum-time line is shorter, not faster). Without it the controller keeps its curvature schedule, whatever the line. On
+Spielberg, ground truth, seed 42, 5x, that lap measured 113.08 s on the minimum-curvature line
+(test SIM-3110) and 112.12 s on the minimum-time line (test SIM-3120), against 120.41 s for the
+centerline lap on the curvature schedule. The minimum-time line is selected with:
 
-Available, offline: map centerline extraction and the TUM minimum-curvature wrapper in
-`raceline/`. `env -u PYTHONPATH uv run --project raceline --locked python -m raceline` optimizes a
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mintime speed_source:=trajectory seed:=42
+```
+
+The gym-limits vehicle's lines resolve, but no gate lap drives them.
+
+Available, offline: map centerline extraction and the TUM minimum-curvature and minimum-time
+wrappers in `raceline/` (minimum time runs on the owner's TUM fork, pinned by commit). `env -u PYTHONPATH uv run --project raceline --locked python -m raceline` optimizes a
 line from a map or track, verifies it and writes
-`config/racelines/<track>/<vehicle_version>/<optimizer>.{csv,yaml}`; min-curvature racelines for
+`config/racelines/<track>/<vehicle_version>/<optimizer>.{csv,yaml}`; racelines of both optimizers for
 Spielberg are committed under `config/racelines/spielberg/`. See the
 [raceline README](../../raceline/README.md#racelines-part-4) and [Path planning](../path-planning.md).
 
-Minimum-time optimization has not converged (see [Verification](../verification.md)).
+The minimum-time line takes one command, end to end: it extracts the track, makes the
+minimum-curvature reference at the same margin (0.40 m), then solves once, seeded from that line.
+Run from the repo root in `dev`, one TUM process at a time, for each vehicle file (`$v` is
+`f1tenth_default` or `f1tenth_gym_limits`):
+
+```bash
+env -u PYTHONPATH uv run --project raceline --locked python -m raceline --map config/scenarios/maps/Spielberg/slam/Spielberg.yaml --walls observed --start-pose 0 0 -2.879 --direction cw --ground-truth-track config/tracks/spielberg.yaml --ground-truth-map config/scenarios/maps/Spielberg/Spielberg.yaml --vehicle config/vehicles/$v.yaml --optimizer tum_mintime --timeout 3000
+```
+
+It saves `tum_mintime.csv` and `tum_mintime.yaml` beside the other lines and the minimum-curvature
+reference it was seeded from in `reference/tum_mintime.csv`. On the default vehicle IPOPT converges
+in 170 iterations (42 s of solve, about 16 minutes for the whole command); on the gym-limits vehicle
+in 1518 iterations (328 s of solve, about 20 minutes). To look at a line, `python -m raceline.diagnose`
+plots where it is bound by a wall, the tyres or the speed cap (see the
+[raceline README](../../raceline/README.md#racelines-part-4)).
 
 ## Control
 
