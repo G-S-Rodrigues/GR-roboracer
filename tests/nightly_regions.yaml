@@ -15,9 +15,11 @@ slam:
   - SIM-5030
 path_planning:
   - SIM-3110
-  - SIM-3120
   - SIM-5040
   - SIM-5050
+path_planning_mintime:
+  - SIM-3120
+  - SIM-5060
 control:
   - SIM-3010
   - SIM-3020

@@ -22,7 +22,8 @@ Usage: check.sh --fast|--ci|--ready|--full|--nightly|--nightly-region <region>
             schedule, never in the development loop.
   --nightly-region <region>
             what one nightly job runs: static (tiers 0-2, whole tree), or
-            slam, path_planning, control, shared (the build, then that
+            slam, path_planning, path_planning_mintime, control,
+            shared (the build, then that
             region's tier-3/4 tests from tests/nightly_regions.yaml).
             NIGHTLY_TIER5=1 adds the region's tier-5 tests. A region the
             selector refuses exits 1; it never runs the whole tree.
