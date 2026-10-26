@@ -261,3 +261,25 @@ def test_check_1510_ci_matrix() -> None:
         assert isinstance(timeouts.get(region), int), (
             f"no timeout for region {region}"
         )
+    assert all(
+        set(entry) == {"region", "timeout"} for entry in matrix["include"]
+    )
+
+    # Owner Q-A/Q-B (2026-10-24): tiers 0-2 run once, so `static` keeps only
+    # seed 42 (the cache exporter); every other region runs every seed.
+    seeds = [42, 1030, 7, 2026]
+    assert matrix["seed"] == seeds
+    excluded = {(e["region"], e["seed"]) for e in matrix.get("exclude", [])}
+    combos = {
+        (region, seed) for region in matrix["region"] for seed in matrix["seed"]
+    } - excluded
+    assert {s for r, s in combos if r == "static"} == {42}
+    for region in set(matrix["region"]) - {"static"}:
+        assert {s for r, s in combos if r == region} == set(seeds)
+    assert timeouts == {
+        "static": 60,
+        "control": 60,
+        "shared": 60,
+        "slam": 180,
+        "path_planning": 180,
+    }

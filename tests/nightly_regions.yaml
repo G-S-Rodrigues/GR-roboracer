@@ -2,6 +2,8 @@
 # The nightly runs one job per region x seed; scripts/nightly_regions.py
 # refuses a map that drops, duplicates or invents an ID (CHECK-1510/1520).
 # `static` (tiers 0-2) holds no IDs and is not listed.
+# Confirmed as tabled; `static` and `shared` stay separate jobs (owner Q-C,
+# 2026-10-24).
 slam:
   - SIM-3070
   - SIM-3080

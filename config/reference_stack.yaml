@@ -33,6 +33,10 @@ neutral_paths:
   # raceline/ is offline: its output reaches a lap only through files committed
   # under config/racelines/ (mapped to the optimized_raceline planner).
   - raceline/*
+  # read only by tier 5 (SIM-5040/5050) and its tier-1 test; no lap imports it
+  # (C8, owner 2026-10-24). Keep it lap-free: the frozen-pose rule a lap uses
+  # lives in scripts/frozen_pose.py, which stays whole tree.
+  - scripts/raceline_report.py
   # No gate test launches the gym-limits vehicle (owner ruling 2026-10-11: it
   # runs nightly only) and only raceline/ reads the GGV tables. The default
   # vehicle's yaml is not matched (the patterns need the "/" or "_limits"),
