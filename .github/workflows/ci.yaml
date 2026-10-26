@@ -72,10 +72,12 @@ jobs:
   # lap) on an ASSUMED 20 minute build/setup (E-5). That is 21 jobs.
   #
   # E-5 RECORD: the setup time of a leg (job start through the image build,
-  # i.e. to the check.sh step; check.sh's own colcon build is timed in its
-  # log) is written to each leg's job summary by the "Build/setup seconds"
-  # step. First measured run: <not yet measured>; record it here from the
-  # summary of the first workflow_dispatch and compare with the assumed 20.
+  # i.e. to the check.sh step) is written to each leg's job summary by the
+  # "Build/setup seconds" step. check.sh's own colcon build is not in that
+  # number: the recorded figure is that summary line PLUS the build time in
+  # colcon's "Summary: N packages finished [Xs]" line in the leg's log.
+  # First measured run: <not yet measured>; record the sum here from the
+  # first workflow_dispatch and compare with the assumed 20 minutes.
   nightly:
     name: Nightly ${{ matrix.region }}, seed ${{ matrix.seed }}
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

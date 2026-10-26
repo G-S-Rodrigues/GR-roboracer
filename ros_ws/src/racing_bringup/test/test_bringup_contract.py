@@ -823,10 +823,9 @@ def test_bringup_1180_every_raceline_optimizer_resolves_per_vehicle(
 ) -> None:
     """BRINGUP-1180: `raceline_optimizer:=` offers exactly the optimizers
     whose lines are committed (the stems of
-    `config/racelines/spielberg/*/*.csv`), the launch's choices are that
-    tuple, and each value resolves to its own existing line for both
-    vehicles. A committed line the tuple omits, or a value with no line,
-    fails here rather than at launch time.
+    `config/racelines/spielberg/*/*.csv`), and each value resolves to its
+    own existing line for both vehicles. A committed line the tuple omits,
+    or a value with no line, fails here rather than at launch time.
     """
     from racing_bringup.scenario_parameters import RACELINE_OPTIMIZERS
 

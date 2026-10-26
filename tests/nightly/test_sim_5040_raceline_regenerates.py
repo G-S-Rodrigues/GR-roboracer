@@ -1,4 +1,6 @@
-"""SIM-5040: every committed raceline regenerates from its recorded command.
+"""SIM-5040: every committed min-curvature raceline regenerates.
+
+Min-time lines are SIM-5060's.
 
 A committed line is only evidence while the command in its yaml still
 produces it. This test re-runs each recorded `command:` (with an `--out-dir`

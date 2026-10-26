@@ -356,6 +356,9 @@ done
   dynamics and tyre sets come from `config/vehicles/<vehicle>/tum_mintime.yaml`
   and the tyre files beside it (set `gym_fit` by default; the keys are listed,
   values-free and commented, in `config/vehicles/tum_mintime/reference.yaml`).
+  A new vehicle needs `config/vehicles/<stem>.yaml` and its own directory
+  `config/vehicles/<stem>/` holding `tum_mintime.yaml` (`load_vehicle` reads
+  the tables from the yaml path minus `.yaml`).
   The solver's outcome is the yaml's top-level `solver:` (status, iterations,
   wall time), outside the inputs a regeneration must reproduce. The solve is
   bounded at 3036 iterations and 1200 s. A width extra of 0.01 m per side is

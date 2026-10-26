@@ -65,7 +65,9 @@ RECORDS: dict[str, dict] = {}
 
 def current_fingerprint() -> dict:
     """The `tum:` pins and `MINTIME_CODE_FILES` blobs as the CLI would record
-    them now. Module-level so the RED test can replace it."""
+    them now. Module-level so a test can replace it.
+    No RED test is committed: four throwaway stand-in tests were run once
+    (see `regenerate`)."""
     program = (
         "import json\n"
         "from raceline import __main__ as m\n"
@@ -96,8 +98,11 @@ def current_fingerprint() -> dict:
 
 def regenerate(doc: dict, out_dir: Path) -> tuple[Path, dict, float]:
     """Run the recorded command from the committed reference; returns
-    (fresh csv, fresh yaml, seconds). Module-level so the RED mutation can
-    replace it with a stand-in that pays for no solve."""
+    (fresh csv, fresh yaml, seconds). Module-level so a stand-in can
+    replace it and pay for no solve. No RED test is committed; four throwaway
+    stand-in tests were run once: unchanged code returns early, a changed
+    but identical line passes, a line shifted 0.05 m fails, and a `tum:` diff
+    is tolerated while another input diff fails."""
     argv = regeneration_argv(doc, out_dir) + [
         "--reference",
         doc["parameters"]["reference"]["path"],

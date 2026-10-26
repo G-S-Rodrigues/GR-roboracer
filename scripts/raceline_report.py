@@ -350,6 +350,8 @@ def normalise_command(command: str) -> str:
             skip = False
         elif token in ("--out-dir", "--reference"):
             skip = True
+        elif token.startswith(("--out-dir=", "--reference=")):
+            continue
         else:
             kept.append(token)
     return shlex.join(kept)

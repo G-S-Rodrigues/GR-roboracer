@@ -505,6 +505,10 @@ def test_check_1560_reference_is_dropped_like_out_dir() -> None:
     assert normalise_command(base + " --out-dir /t --reference r.csv") == (
         normalise_command(base)
     )
+    # The `=` spelling is dropped the same way.
+    assert normalise_command(
+        base + " --out-dir=/t --reference=r.csv"
+    ) == normalise_command(base)
     # A neighbouring option is kept, and so is a value that merely looks alike.
     other = base + " --timeout 1800 --name reference"
     assert normalise_command(other) == other
