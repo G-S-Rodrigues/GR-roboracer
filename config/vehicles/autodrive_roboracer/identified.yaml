@@ -34,14 +34,24 @@ measurements:
       '0.04': 25.024436
       '0.08': 24.914228
       '0.12': 24.811134
-  highest_steady_speed:
-    value: 2.977416
+  top_speed:
+    measured: false
+    highest_steady_speed: 2.977416
     at_throttle: 0.12
+    reason: Porto's longest straight (about 8 m) is too short to reach a steady speed
+      above the highest recorded
+  burst_acceleration:
+    value: 5.19865
+    n: 3
+    spread: 0.0
+    unit: m/s^2
+    window_s: 0.25
   braking_deceleration:
     value: 6.336012
     n: 21
     spread: 0.0
     unit: m/s^2
+    depends_on_speed: true
     by_initial_speed:
     - speed: 0.5016
       deceleration: 8.285098

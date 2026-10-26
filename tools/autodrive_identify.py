@@ -172,6 +172,9 @@ MIN_BRAKE_SPEED = 0.4
 # The sim clock is compared with the wall clock over segments this long.
 CLOCK_FROM = 1.0
 MIN_CLOCK_SPAN = 2.0
+# A burst is full throttle from rest; its acceleration is read over this long.
+FULL_THROTTLE = 0.99
+BURST_WINDOW = 0.25
 BRAKE_HIGH = 0.9
 BRAKE_LOW = 0.1
 
@@ -396,6 +399,34 @@ def braking(segs: list[list[Sample]]) -> Estimate:
     then 9 m/s^2 within one stop) and depends on the speed: `spread` is
     therefore 0 here and the repeat spread is taken in `analyse`."""
     rates = [rate for _, rate in brake_events(segs)]
+    if not rates:
+        return Estimate(math.nan, 0)
+    return Estimate(statistics.fmean(rates), len(rates))
+
+
+def burst_acceleration(segs: list[list[Sample]]) -> Estimate:
+    """Mean acceleration over the first BURST_WINDOW seconds of every
+    full-throttle run that starts from rest (the machine's, as the sim lets
+    the car use it)."""
+    rates: list[float] = []
+    for seg in segs:
+        for i in range(1, len(seg)):
+            if not (
+                seg[i].throttle >= FULL_THROTTLE
+                and seg[i - 1].throttle < FULL_THROTTLE
+                and abs(seg[i - 1].vx) < MIN_BRAKE_SPEED
+            ):
+                continue
+            window = []
+            for sample in seg[i:]:
+                if sample.throttle < FULL_THROTTLE:
+                    break
+                if sample.lap_time - seg[i].lap_time > BURST_WINDOW:
+                    break
+                window.append(sample)
+            span = window[-1].lap_time - window[0].lap_time
+            if span >= 0.8 * BURST_WINDOW:
+                rates.append((window[-1].vx - window[0].vx) / span)
     if not rates:
         return Estimate(math.nan, 0)
     return Estimate(statistics.fmean(rates), len(rates))
@@ -660,6 +691,7 @@ def analyse(recording: Path, source: Path) -> dict:
     for throttle, speed in windows:
         by_throttle.setdefault(throttle, []).append(speed)
     brake = braking(segs)
+    burst = burst_acceleration(segs)
     steer = steering(segs)
     yaw = yaw_response(segs)
     height = rest_height(segs, com_z)
@@ -723,13 +755,26 @@ def analyse(recording: Path, source: Path) -> dict:
                     for t, v in sorted(by_throttle.items())
                 },
             },
-            "highest_steady_speed": {
-                "value": top_speed,
+            # Porto has no straight long enough: 22.88 m/s (the guide's,
+            # source.yaml) at about 25 m/s per unit needs tens of metres, and
+            # throttle 0.2 was still accelerating at 4.9 m/s.
+            "top_speed": {
+                "measured": False,
+                "highest_steady_speed": top_speed,
                 "at_throttle": top_throttle,
+                "reason": "Porto's longest straight (about 8 m) is too "
+                "short to reach a steady speed above the highest recorded",
+            },
+            "burst_acceleration": {
+                **_est(burst),
+                "unit": "m/s^2",
+                "window_s": BURST_WINDOW,
             },
             "braking_deceleration": {
                 **_est(brake),
                 "unit": "m/s^2",
+                # Not one number: it depends on the speed the car brakes from.
+                "depends_on_speed": True,
                 "by_initial_speed": [
                     {"speed": v0, "deceleration": rate}
                     for v0, rate in sorted(brake_events(segs))

@@ -232,6 +232,35 @@ def test_check_1740_throttle_gain_from_steering_zero_windows() -> None:
     assert _approx(scaled.value, gain.value * 1.1, 0.002), scaled
 
 
+def test_check_1745_burst_acceleration_from_rest() -> None:
+    """CHECK-1745: the machine's acceleration is the speed gained in the first
+    BURST_WINDOW seconds of a full-throttle run that starts from rest (the
+    drive's 0.3 s burst: v 0.08 to 1.4 m/s in 0.25 s, about 5 m/s^2). Lower
+    throttles are not a burst; the fixture has none; speeds x 2 give x 2."""
+    import dataclasses
+
+    tool = _tool()
+
+    def frame(t: float, v: float, throttle: float):
+        return tool.Sample(
+            lap_time=t, throttle=throttle, steering=0.0, x=0.0, y=0.0,
+            z=0.06, yaw=0.0, vx=v, vy=0.0, wz=0.0, collisions=0,
+        )  # fmt: skip
+
+    rest = [frame(i * 0.02, 0.0, 0.0) for i in range(5)]
+    burst = [frame(0.1 + i * 0.02, 4.0 * i * 0.02, 1.0) for i in range(30)]
+    coast = [frame(0.7 + i * 0.02, 0.5, 0.0) for i in range(5)]
+    seg = rest + burst + coast
+    accel = tool.burst_acceleration([seg])
+    assert accel.n == 1
+    assert abs(accel.value - 4.0) < 1e-6, accel
+    doubled = [dataclasses.replace(f, vx=f.vx * 2) for f in seg]
+    assert abs(tool.burst_acceleration([doubled]).value - 8.0) < 1e-6
+    gentle = [dataclasses.replace(f, throttle=f.throttle * 0.5) for f in seg]
+    assert tool.burst_acceleration([gentle]).n == 0
+    assert tool.burst_acceleration(_segments(tool)).n == 0
+
+
 def test_check_1750_braking_deceleration_between_90_and_10_percent() -> None:
     """CHECK-1750: mean deceleration between the 90 % and 10 % crossings of
     the speed the car left throttle at (linear interpolation between frames,
@@ -337,3 +366,83 @@ def test_check_1780_committed_recording_reanalyses_to_identified() -> None:
     assert provenance["recording_sha256"] == digest
     assert provenance["schedule"] == tool.SCHEDULE_ID
     assert "@sha256:" in provenance["images"]["sim"]
+
+
+VEHICLE_YAML = REPO_ROOT / "config" / "vehicles" / "autodrive_roboracer.yaml"
+DEFAULT_YAML = REPO_ROOT / "config" / "vehicles" / "f1tenth_default.yaml"
+GRAVITY = 9.81
+
+
+def _node(path: Path, node: str) -> dict:
+    import yaml
+
+    return yaml.safe_load(path.read_text())[node]["ros__parameters"]
+
+
+def test_check_1790_vehicle_file_states_the_autodrive_car() -> None:
+    """CHECK-1790: the vehicle file's numbers are the ones `source.yaml`
+    read (geometry, laser mount) or the default's reference-stack caps
+    (speed, acceleration, steering rate: owner ruling D2), the tables are
+    TUM's, and nothing in them claims a top speed or a single deceleration
+    the identification did not establish (owner rulings D3, D4)."""
+    import numpy as np
+    import yaml
+
+    values = yaml.safe_load(SOURCE.read_text())["values"]
+
+    def read(name: str) -> float:
+        return float(values[name]["value"])
+
+    sim = _node(VEHICLE_YAML, "racing_sim")
+    assert (sim["laser_x"], sim["laser_y"], sim["laser_yaw"]) == (
+        read("lidar_x_m"),
+        read("lidar_y_m"),
+        read("lidar_yaw_rad"),
+    )
+    controller = _node(VEHICLE_YAML, "racing_controller_baseline")
+    supervisor = _node(VEHICLE_YAML, "racing_safety_supervisor")
+    assert controller["wheelbase"] == read("wheelbase_m")
+    assert supervisor["vehicle_half_width"] == read("half_width_m")
+    assert supervisor["maximum_steering_angle"] == read("steering_limit_rad")
+    default_controller = _node(DEFAULT_YAML, "racing_controller_baseline")
+    default_supervisor = _node(DEFAULT_YAML, "racing_safety_supervisor")
+    for key in (
+        "maximum_speed",
+        "maximum_acceleration",
+        "maximum_steering_rate",
+    ):
+        assert supervisor[key] == default_supervisor[key], key
+    assert controller["maximum_speed"] == default_controller["maximum_speed"]
+    assert supervisor["stale_input_timeout_ms"] == 100
+    for node in ("racing_metrics", "racing_recording"):
+        version = _node(VEHICLE_YAML, node)["vehicle_parameter_version"]
+        assert version == "autodrive-roboracer-v1", node
+
+    # The tables: ax is the cap (the measured machine, 5.2 m/s^2 over the
+    # first 0.25 s, is above it); ay is mu * g with mu from the prefab.
+    identified = yaml.safe_load(IDENTIFIED.read_text())["measurements"]
+    machine = identified["burst_acceleration"]["value"]
+    cap = supervisor["maximum_acceleration"]
+    mu = read("mu_lateral")
+    tables = VEHICLE_DIR
+    ggv = np.loadtxt(tables / "ggv.csv", delimiter=",", comments="#")
+    machines = np.loadtxt(
+        tables / "ax_max_machines.csv", delimiter=",", comments="#"
+    )
+    assert ggv[0, 0] == 0.0 and ggv[-1, 0] == 10.0
+    assert np.allclose(ggv[:, 1], min(cap, machine))
+    assert np.allclose(ggv[:, 2], mu * GRAVITY, atol=1e-5)
+    assert np.allclose(machines[:, 1], min(cap, machine))
+
+    # D4: the top speed is recorded as not measured, and braking is not a
+    # single number.
+    top = identified["top_speed"]
+    assert top["measured"] is False
+    assert top["highest_steady_speed"] < 3.0
+    assert identified["braking_deceleration"]["depends_on_speed"] is True
+    header = (tables / "ggv.csv").read_text().splitlines()[:6]
+    assert any("not measured" in line for line in header)
+    import re
+
+    text = re.sub(r"\s*#\s*", " ", VEHICLE_YAML.read_text())
+    assert "not measured" in text and "depends on speed" in text
