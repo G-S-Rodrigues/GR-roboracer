@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 import test_verify
 import yaml
+from raceline.optimize import load_raceline_csv
 
 from raceline import diagnose, verify
-from raceline.optimize import load_raceline_csv
 
 REPO = Path(__file__).resolve().parents[2]
 COMMITTED = REPO / "config" / "racelines" / "spielberg"
