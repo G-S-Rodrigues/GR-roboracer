@@ -107,7 +107,8 @@ def decode_frame(raw: Mapping[str, str]) -> SimFrame:
     if LIDAR_KEY in raw:
         try:
             ranges = decode_lidar(raw[LIDAR_KEY])
-        except ValueError as error:
+        except (ValueError, OSError, EOFError) as error:
+            # BadGzipFile is an OSError, a cut payload an EOFError
             raise FrameError(f"{LIDAR_KEY!r}: {error}") from None
     return SimFrame(
         throttle_echo=_scalar(raw, "V1 Throttle"),
@@ -165,9 +166,12 @@ def encoder_speed(
 ) -> float | None:
     """Mean wheel speed from the encoder angle deltas, m/s.
 
-    None when dt is missing or not positive, or when either wheel's angle
-    went backwards (the encoders zero on a reset): never a negative speed.
+    Raises ValueError on a wheel radius <= 0. None when dt is missing or not
+    positive, or when either wheel's angle went backwards (the encoders zero
+    on a reset): never a negative speed.
     """
+    if not wheel_radius > 0.0:
+        raise ValueError(f"wheel_radius must be > 0, got {wheel_radius}")
     if dt is None or not dt > 0.0:
         return None
     deltas = [

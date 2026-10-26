@@ -73,8 +73,17 @@ def test_simad_1050_decode_lidar_reads_count_keeps_inf_rejects_bad():
     for bad in ("nan", "-0.5"):
         with pytest.raises(ValueError):
             lidar.decode_lidar(_encode_lidar([1.0, bad, 2.0]))
+    # a corrupt or truncated payload is a FrameError from decode_frame, not
+    # a BadGzipFile / EOFError escaping into the caller's receive loop
     _, sim, _ = _fixture()
-    real = lidar.decode_lidar(sim[1][LIDAR_KEY])
+    good = sim[1][LIDAR_KEY]
+    raw = base64.b64decode(good)
+    corrupt = base64.b64encode(b"\x00" * 40).decode()
+    truncated = base64.b64encode(raw[: len(raw) // 2]).decode()
+    for broken in (corrupt, truncated):
+        with pytest.raises(core.FrameError):
+            core.decode_frame({**sim[1], LIDAR_KEY: broken})
+    real = lidar.decode_lidar(good)
     assert real.shape == (1081,)
     assert np.isinf(real).any()
 
@@ -200,6 +209,9 @@ def test_simad_1090_encoder_speed_matches_linear_velocity():
     a, b = frames[10][1], frames[11][1]
     assert core.encoder_speed(a, b, WHEEL_RADIUS, None) is None
     assert core.encoder_speed(a, b, WHEEL_RADIUS, 0.0) is None
+    for radius in (0.0, -0.059):
+        with pytest.raises(ValueError):
+            core.encoder_speed(a, b, radius, 0.02)
     # encoders jumping backwards is a reset, never a negative speed
     fast = [f for _, f in frames if f.encoder_angles[0] > 1.0][0]
     assert core.encoder_speed(fast, frames[0][1], WHEEL_RADIUS, 0.05) is None
@@ -218,6 +230,12 @@ def test_simad_1100_throttle_loop_feedforward_zero_and_clamp():
     assert loop.integral > 0.0
     assert loop.update(0.0, 3.0, 0.02) == 0.0
     assert loop.integral == 0.0
+    # speed given but no usable dt: feedforward + P, integral held
+    pi = control.ThrottleLoop(gain=24.9, kp=0.2, ki=1.0)
+    for dt in (None, 0.0):
+        out = pi.update(2.49, 2.0, dt)
+        assert out == pytest.approx(0.1 + 0.2 * 0.49)
+        assert pi.integral == 0.0
     with pytest.raises(ValueError):
         control.ThrottleLoop(gain=0.0, kp=0.0, ki=0.0)
 
@@ -258,16 +276,23 @@ def test_simad_1120_steering_to_normalized():
     with pytest.raises(ValueError):
         control.steering_to_normalized(0.1, 0.0)
     frames = [core.decode_frame(raw) for _, raw in _sim_events()]
-    # The echo plateaus at {0, +-0.1571} (>= 97 frames each) and ramps
-    # between them through 6 single-frame values: 0.1571 is the 0.3 x
-    # 0.5236 the schedule commanded.
+    # The echo plateaus at the recorded `V1 Steering` commands (>= 97 frames
+    # each) and ramps between them through single-frame values.
+    _, _, bridge = _fixture()
+    commanded = {
+        round(abs(float(m["V1 Steering"])), 2)
+        for m in bridge
+        if "V1 Steering" in m
+    }
+    expected = {0.0} | {c for c in commanded} | {-c for c in commanded}
     echoes = [f.steering_echo for f in frames]
     plateaus = {
         round(control.steering_to_normalized(e, MAX_STEER), 2)
         for e in set(echoes)
         if echoes.count(e) >= 10
     }
-    assert plateaus == {0.0, 0.3, -0.3}
+    assert plateaus == expected
+    assert len(plateaus) >= 3
     peak = max(
         abs(control.steering_to_normalized(e, MAX_STEER)) for e in echoes
     )
