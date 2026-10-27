@@ -104,6 +104,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 1, `sim/` | `python3 -m pytest sim/tests -k sim_1010` |
 | 1, `scripts/` | `python3 -m pytest scripts/tests -k check_1010` |
 | 1, `raceline/` | `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests -k raceline_1010` |
+| 1, ament_python | `python3 -m pytest ros_ws/src/racing_sim_autodrive/test -k simad_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
 | manual, host | `docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh` (GPU-3010) |
@@ -119,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **215 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 6 tier-5.**
+Current counts: **229 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 6 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -162,6 +163,8 @@ The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/
 The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
 
 The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
+
+The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
 
 ## The tests that matter most
 
