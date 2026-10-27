@@ -526,7 +526,8 @@ def _rise_time(seg: list[Sample]) -> list[float]:
                 (
                     r
                     for r in _runs(run, lambda s: s.steering)
-                    if len(r) >= MIN_HELD and abs(r[0].steering) > TURN_MIN_ANGLE
+                    if len(r) >= MIN_HELD
+                    and abs(r[0].steering) > TURN_MIN_ANGLE
                 ),
                 None,
             )
