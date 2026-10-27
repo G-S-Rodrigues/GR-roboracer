@@ -334,9 +334,18 @@ def test_check_1770_rise_time_is_the_step_not_the_reversal() -> None:
         frames.append(((105 + i) * dt, -0.3, wz))
     seg = [
         tool.Sample(
-            lap_time=t, throttle=0.1, steering=angle, x=0.0, y=0.0,
-            z=0.06, yaw=0.0, vx=1.0, vy=0.0, wz=w, collisions=0,
-        )  # fmt: skip
+            lap_time=t,
+            throttle=0.1,
+            steering=angle,
+            x=0.0,
+            y=0.0,
+            z=0.06,
+            yaw=0.0,
+            vx=1.0,
+            vy=0.0,
+            wz=w,
+            collisions=0,
+        )
         for t, angle, w in frames
     ]
     yaw = tool.yaw_response([seg])
