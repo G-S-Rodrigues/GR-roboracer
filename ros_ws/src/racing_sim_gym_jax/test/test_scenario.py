@@ -77,3 +77,40 @@ def test_simjax_1055_noise_section_is_optional_and_validated(tmp_path):
     quiet.write_text(yaml.safe_dump(document), encoding="utf-8")
     with pytest.raises(ValueError, match="noise"):
         load_scenario(quiet)
+
+
+def _flatten(node, prefix=""):
+    if isinstance(node, dict):
+        out = {}
+        for key, value in node.items():
+            out.update(_flatten(value, f"{prefix}{key}."))
+        return out
+    return {prefix[:-1]: node}
+
+
+def test_simjax_1500_the_1080_scenario_differs_only_in_the_lidar():
+    """SIMJAX-1500: spielberg_1080 is spielberg with a 1080-beam, exactly
+    270 degree lidar (UST-10LX class), so a method's 64-vs-1080 row differs
+    in the sensor and nothing else (noise, track, map, timestep)."""
+    root = Path(__file__).resolve().parents[4] / "config" / "scenarios"
+    base = _flatten(
+        yaml.safe_load((root / "spielberg.yaml").read_text(encoding="utf-8"))
+    )
+    wide = _flatten(
+        yaml.safe_load(
+            (root / "spielberg_1080.yaml").read_text(encoding="utf-8")
+        )
+    )
+    differing = {
+        key
+        for key in base.keys() | wide.keys()
+        if base.get(key, "<absent>") != wide.get(key, "<absent>")
+    }
+    assert differing == {
+        "scenario_id",
+        "metrics.scenario_id",
+        "parameters.num_beams",
+        "parameters.fov",
+    }
+    assert wide["parameters.num_beams"] == 1080
+    assert wide["parameters.fov"] == pytest.approx(4.712389)
