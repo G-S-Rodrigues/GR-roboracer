@@ -311,6 +311,39 @@ def test_check_1770_yaw_response_and_rest_height() -> None:
     assert abs(higher.value - (height.value + 0.01)) < 1e-4, higher
 
 
+def test_check_1770_rise_time_is_the_step_not_the_reversal() -> None:
+    """CHECK-1770 (rise time): the drive steps +0.3 for 0.5 s and then
+    reverses to -0.3, both inside the 1.0 s window after the angle leaves
+    zero. The 10-90 % rise time is the step's: a first-order yaw response
+    with tau 0.05 s rises in 0.05 ln 9 = 0.110 s (the tool's plateau is the
+    mean of the frames it calls steady, so it reads a little under: 0.097).
+    The reversal here is three times slower (tau 0.15 s, 0.33 s), so a
+    plateau taken from the last angle in the window - the reversal's -
+    reports 0.19 s, not under 0.15."""
+    import math
+
+    tool = _tool()
+    dt = 0.005
+    frames = [(i * dt, 0.0, 0.0) for i in range(5)]
+    wz = 0.0
+    for i in range(100):  # the step, to +0.9 rad/s
+        wz += (0.9 - wz) * (1 - math.exp(-dt / 0.05))
+        frames.append(((5 + i) * dt, 0.3, wz))
+    for i in range(100):  # the reversal, to -0.9 rad/s, slower
+        wz += (-0.9 - wz) * (1 - math.exp(-dt / 0.15))
+        frames.append(((105 + i) * dt, -0.3, wz))
+    seg = [
+        tool.Sample(
+            lap_time=t, throttle=0.1, steering=angle, x=0.0, y=0.0,
+            z=0.06, yaw=0.0, vx=1.0, vy=0.0, wz=w, collisions=0,
+        )  # fmt: skip
+        for t, angle, w in frames
+    ]
+    yaw = tool.yaw_response([seg])
+    assert yaw.rise_time is not None
+    assert 0.07 < yaw.rise_time.value < 0.15, yaw.rise_time
+
+
 def test_check_1775_pose_is_the_rear_axle_velocity_is_the_body() -> None:
     """CHECK-1775: in a steady turn the pose point has no lateral speed in the
     body frame (it is the rear axle: < 0.01 m/s) while `V1 Linear Velocity`
@@ -366,6 +399,12 @@ def test_check_1780_committed_recording_reanalyses_to_identified() -> None:
     assert provenance["recording_sha256"] == digest
     assert provenance["schedule"] == tool.SCHEDULE_ID
     assert "@sha256:" in provenance["images"]["sim"]
+    # The burst's spread is measured over the repeats like the others', not
+    # the Estimate default of 0.0.
+    burst = committed["measurements"]["burst_acceleration"]
+    repeats = committed["measurements"]["repeats"]["burst_acceleration"]
+    assert len(repeats["values"]) == 3
+    assert burst["spread"] == repeats["spread"]
 
 
 VEHICLE_YAML = REPO_ROOT / "config" / "vehicles" / "autodrive_roboracer.yaml"

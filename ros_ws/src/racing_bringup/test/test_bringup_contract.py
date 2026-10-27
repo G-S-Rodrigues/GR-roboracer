@@ -481,20 +481,16 @@ def test_bringup_1055_the_exclusion_list_names_only_committed_files() -> None:
     """BRINGUP-1055: NOT_GYM_CAST excludes real vehicle files, and no file the
     gym casts for hides in it.
 
-    Negative case: a stale name, or a gym vehicle added to the list, must be
-    caught here, because 1050 would otherwise skip it with no error.
+    Each assert reads the module's own list. The first fails when an excluded
+    name is stale or renamed (BRINGUP-1050 would then quietly cover one file
+    fewer than it claims). The second fails when either of the two files the
+    gym casts for is added to NOT_GYM_CAST (1050 would then skip it with no
+    error). A third gym vehicle file added to the list is not caught: only
+    these two names are known to be the gym's.
     """
     committed = {p.stem for p in VEHICLE_FILES}
     assert committed >= NOT_GYM_CAST
     assert {"f1tenth_default", "f1tenth_gym_limits"}.isdisjoint(NOT_GYM_CAST)
-
-    def stale(exclusions: set[str]) -> set[str]:
-        return exclusions - committed
-
-    assert stale({"autodrive_roboracer", "no_such_vehicle"}) == {
-        "no_such_vehicle"
-    }
-    assert {p.stem for p in GYM_CAST_FILES} | NOT_GYM_CAST == committed
 
 
 def test_bringup_1100_every_vehicle_file_covers_the_defaults_keys() -> None:
