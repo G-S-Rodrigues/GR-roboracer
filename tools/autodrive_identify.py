@@ -33,6 +33,7 @@ gotcha 31).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import importlib.util
 import math
 import os
@@ -492,6 +493,8 @@ def steering(segs: list[list[Sample]]) -> SteeringEstimate:
 TURN_MIN_ANGLE = 0.05
 TURN_MIN_SPEED = 0.3
 TURN_MIN_RATE = 0.1
+# Frames an angle must stay put to be the step's plateau, not a ramp value.
+MIN_HELD = 3
 
 
 def _steady_turns(seg: list[Sample]) -> list[Sample]:
@@ -509,14 +512,25 @@ def _steady_turns(seg: list[Sample]) -> list[Sample]:
 
 
 def _rise_time(seg: list[Sample]) -> list[float]:
-    """10-90 % rise time of the yaw rate after the angle leaves zero."""
+    """10-90 % rise time of the yaw rate after the angle leaves zero, to the
+    plateau of the first angle held (the step, not a later reversal)."""
     times = []
     i = 0
     while i < len(seg) - 1:
         if abs(seg[i].steering) < 1e-6 and abs(seg[i + 1].steering) > 1e-6:
             start = seg[i].lap_time
             run = [s for s in seg[i + 1 :] if s.lap_time - start < 1.0]
-            held = [s for s in run if s.steering == run[-1].steering]
+            # The plateau is the first angle the drive holds (the step), not
+            # the last one in the window (the reversal that follows it).
+            first = next(
+                (
+                    r
+                    for r in _runs(run, lambda s: s.steering)
+                    if len(r) >= MIN_HELD and abs(r[0].steering) > TURN_MIN_ANGLE
+                ),
+                None,
+            )
+            held = first or []
             steady = _steady_turns(held)
             if steady:
                 plateau = statistics.fmean(s.wz for s in steady)
@@ -705,6 +719,9 @@ def analyse(recording: Path, source: Path) -> dict:
         {
             "throttle_gain": over_repeats(lambda g: throttle_gain(g).value),
             "braking": over_repeats(lambda g: braking(g).value),
+            "burst_acceleration": over_repeats(
+                lambda g: burst_acceleration(g).value
+            ),
             "steering_slew": over_repeats(lambda g: steering(g).slew.value),
             "effective_wheelbase": over_repeats(
                 lambda g: yaw_response(g).wheelbase.value
@@ -714,6 +731,11 @@ def analyse(recording: Path, source: Path) -> dict:
         if groups
         else None
     )
+    if repeats and repeats["burst_acceleration"]["spread"] is not None:
+        # The burst is one value per repeat: its spread is the repeats'.
+        burst = dataclasses.replace(
+            burst, spread=repeats["burst_acceleration"]["spread"]
+        )
     # Frames before lap time 1 s include the reset pulse, where the clock
     # sits near 0 while the wall clock runs.
     ratios = []

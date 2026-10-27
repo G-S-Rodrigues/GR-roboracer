@@ -272,4 +272,4 @@ Traps any task in this repository can hit. Each one cost real time at least once
     speed loop that treats them as one point is wrong by lr and nothing errors. The same file also
     cannot measure a top speed on Porto (about 8 m of straight; highest steady 2.977 m/s), and its
     braking depends on speed (8.4 / 5.8 / 6.0 m/s^2 from 0.5 / 3 / 4.9 m/s): never read one number
-    from `identified.yaml` as the car's. (Part 5 claims 35; renumber if it lands first.)
+    from `identified.yaml` as the car's.

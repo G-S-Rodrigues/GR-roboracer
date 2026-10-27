@@ -43,7 +43,7 @@ measurements:
   burst_acceleration:
     value: 5.19865
     n: 3
-    spread: 0.0
+    spread: 0.000783
     unit: m/s^2
     window_s: 0.25
   braking_deceleration:
@@ -114,7 +114,7 @@ measurements:
       spread: 0.0
       unit: m
     rise_time:
-      value: 0.039192
+      value: 0.039113
       n: 3
       spread: 0.0
       unit: s
@@ -141,6 +141,12 @@ measurements:
       - 6.358861
       - 6.347778
       spread: 0.009069
+    burst_acceleration:
+      values:
+      - 5.1992
+      - 5.20041
+      - 5.196341
+      spread: 0.000783
     steering_slew:
       values:
       - 3.2
