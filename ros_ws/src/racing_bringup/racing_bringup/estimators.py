@@ -185,6 +185,10 @@ def mola(configuration: str, grid_yaml: str) -> list:
         Node(
             package="tf2_ros",
             executable="static_transform_publisher",
+            # The stock executable lives under /opt/ros, so the documented
+            # `pkill -f install/racing_` never matched it; the name is on its
+            # command line (gotcha #10).
+            name="racing_mola_map_alignment",
             arguments=mola_alignment_arguments(provenance),
             parameters=[{"use_sim_time": True}],
             output="screen",

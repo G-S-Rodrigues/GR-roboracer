@@ -68,7 +68,7 @@ MOLA_SIMPLEMAP_OUTPUT=$simplemap ros2 launch mola_lidar_odometry \
 mola=$!
 # Match the node executables' path, never a bare "mola": pkill -f would also
 # kill any shell whose command line merely mentions it.
-trap 'kill -TERM "$mola" "$launch" 2>/dev/null || true; sleep 5; pkill -f lib/mola_launcher/ || true; pkill -f install/racing_ || true; pkill -f robot_state_publisher || true' EXIT
+trap 'kill -TERM "$mola" "$launch" 2>/dev/null || true; sleep 5; pkill -f lib/mola_launcher/ || true; pkill -f install/racing_ || true; pkill -f racing_mola_map_alignment || true; pkill -f robot_state_publisher || true' EXIT
 
 # Deterministic t=0: the sim is held at clock 0 and republishes its snapshot.
 # Wait for MOLA to subscribe /scan and process its first scan - which it logs

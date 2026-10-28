@@ -118,3 +118,23 @@ def test_bringup_1540_the_mapping_script_never_fails_silently() -> None:
     assert script.index("topic echo") < script.index(
         "ros2 service call /racing_sim/reset"
     )
+
+
+def test_bringup_1550_the_alignment_publisher_is_killable_by_name() -> None:
+    """The stock `static_transform_publisher` lives under /opt/ros, so
+    `pkill -f install/racing_` never matched it and it outlived the stack
+    (gotcha #10). It carries a racing_ node name, which is on its command
+    line, and the pattern is in the documented kill lists."""
+    from racing_bringup.estimators import mola
+    from racing_bringup.scenario_parameters import track_parameters
+
+    scenario = REPOSITORY_ROOT / "config/scenarios/spielberg.yaml"
+    grid = track_parameters(str(scenario))["map_server"]["yaml_filename"]
+    configuration = REPOSITORY_ROOT / "config/localization/mola_lidar2d.yaml"
+    static, _ = mola(str(configuration), grid)
+    name = static._Node__node_name  # not expanded before launch
+    assert name == "racing_mola_map_alignment"
+    script = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()
+    assert "pkill -f racing_mola_map_alignment" in script
+    gotchas = (REPOSITORY_ROOT / "docs/agents/repo-gotchas.md").read_text()
+    assert "racing_mola_map_alignment" in gotchas

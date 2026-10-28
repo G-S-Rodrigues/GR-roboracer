@@ -87,7 +87,7 @@ Traps any task in this repository can hit. Each one cost real time at least once
 10. **A stale ROS graph outlives the launch that started it.** `pkill -f 'ros2 launch'` kills the
     launcher and leaves every node running; they keep publishing on the same `ROS_DOMAIN_ID` and
     contaminate the next run with a *second* supervisor and controller. Symptom: impossible message
-    rates, or an emergency stop latched before your run began. Kill `install/racing_` too, and note
+    rates, or an emergency stop latched before your run began. Kill `install/racing_` too, and `racing_mola_map_alignment` (`pose_source:=mola`'s `map -> mola_map` static_transform_publisher lives under `/opt/ros`, so the first pattern never matched it), and note
     that `ros2 node list` shows stale discovery entries for a few seconds after.
 
 ## Simulation
