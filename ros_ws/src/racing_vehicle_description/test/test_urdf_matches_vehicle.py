@@ -88,7 +88,7 @@ def test_desc_1020_the_drawing_is_authored_in_the_rear_axle_frame() -> None:
     links = {link.attrib["name"]: link for link in root.findall("link")}
     assert links["base_link"].find("visual") is None, "base_link has a visual"
     not_identity = {
-        "laser",
+        "lidar",
         "left_rear_wheel",
         "right_rear_wheel",
         "left_front_wheel",
