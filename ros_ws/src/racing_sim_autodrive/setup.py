@@ -22,4 +22,9 @@ setup(
     description="ROS-free core of the AutoDRIVE simulator backend.",
     license="MIT",
     tests_require=["pytest"],
+    entry_points={
+        "console_scripts": [
+            "racing_sim_autodrive_replay = racing_sim_autodrive.replay:main",
+        ],
+    },
 )
