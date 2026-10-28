@@ -138,3 +138,34 @@ def test_bringup_1550_the_alignment_publisher_is_killable_by_name() -> None:
     assert "pkill -f racing_mola_map_alignment" in script
     gotchas = (REPOSITORY_ROOT / "docs/agents/repo-gotchas.md").read_text()
     assert "racing_mola_map_alignment" in gotchas
+
+
+def test_bringup_1560_localization_pipeline_differs_by_two_values() -> None:
+    """The mapping pipeline made the committed map and stays unchanged; the
+    localization copy narrows ICP's search window and nothing else, so the
+    map keeps coming from the committed mapping pipeline."""
+
+    def values(name: str) -> list[str]:
+        text = (REPOSITORY_ROOT / "config" / "localization" / name).read_text()
+        lines = (line.split(" #")[0].rstrip() for line in text.splitlines())
+        return [
+            line
+            for line in lines
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+
+    mapping = values("mola_lidar2d_pipeline.yaml")
+    localization = values("mola_lidar2d_localization_pipeline.yaml")
+    assert len(mapping) == len(localization)
+    differing = [
+        (a.strip(), b.strip())
+        for a, b in zip(mapping, localization, strict=True)
+        if a != b
+    ]
+    assert differing == [
+        ("maximum_sigma: 1.0", "maximum_sigma: 0.5"),
+        (
+            'threshold: "2.0*ADAPTIVE_THRESHOLD_SIGMA"',
+            'threshold: "1.0*ADAPTIVE_THRESHOLD_SIGMA"',
+        ),
+    ]

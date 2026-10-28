@@ -14,7 +14,7 @@
 #   because the sim's odom -> base_link already exists.
 lidar_topic_name: /scan
 lidar_topic_type: LaserScan
-mola_lo_pipeline: mola_lidar2d_pipeline.yaml
+mola_lo_pipeline: mola_lidar2d_localization_pipeline.yaml
 use_rviz: "False"
 use_mola_gui: "False"
 use_sim_time: "True"

@@ -847,7 +847,7 @@ def test_bringup_1520_mola_runs_localization_only_on_the_derived_map() -> None:
     assert arguments["lidar_topic_type"] == "LaserScan"
     assert Path(arguments["mola_lo_pipeline"]).is_file()
     assert Path(arguments["mola_lo_pipeline"]).name == (
-        "mola_lidar2d_pipeline.yaml"
+        "mola_lidar2d_localization_pipeline.yaml"
     )
     assert arguments["start_mapping_enabled"] == "False"
     assert arguments["use_rviz"] == "False"
