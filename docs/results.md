@@ -52,6 +52,18 @@ map's distance to the true walls. The wall distance is the raw distance from eac
 to the gym map image's wall faces, so a perfect map at 0.05 m cells scores 0.025 m, not 0. The report is
 data: it ranks nothing and bounds no value. No numbers are published here until a nightly produces them.
 
+## AutoDRIVE car identification
+
+`tools/autodrive_identify.py` drives the AutoDRIVE RoboRacer on the Porto practice track and writes its
+measurements to `config/vehicles/autodrive_roboracer/identified.yaml` from the committed recording
+(`identification/2026-iros-practice.jsonl.gz`, three repeats of the schedule; CHECK-1780 re-derives the
+file from it). Top speed is not measured: Porto has about 8 m of straight, and the highest steady speed
+is 2.977 m/s at throttle 0.12. Braking depends on the speed it starts from (8.4, 5.8 and 6.0 m/s^2 from
+0.5, 3 and 4.9 m/s; mean 6.34 m/s^2), so no single number describes it. The full-throttle burst
+accelerates at 5.2 m/s^2 (spread 0.08 % over the repeats), and the throttle gain is 24.86 m/s per unit
+throttle. The file is data about the simulator's car, not a result of the stack. To redo it, see
+[The AutoDRIVE vehicle](configuration.md#the-autodrive-vehicle).
+
 ## Mapping demonstration
 
 The recording shows the real simulator, ROS and SLAM Toolbox path building the Spielberg grid

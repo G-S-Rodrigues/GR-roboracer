@@ -274,3 +274,12 @@ Traps any task in this repository can hit. Each one cost real time at least once
     it is `None` whenever the lap clock does not rise (40 pairs in the fixture, all while the reset
     level was held; a drop at the lap line is presumed, not recorded). Lap time is not a race-time
     input. Which clock a front end feeds the throttle loop is open topic autodrive-clock-for-dt.
+
+36. **AutoDRIVE's pose, velocity and steering are three different things.** `V1 Position` is the rear
+    axle (the frame `roboracer_1`), `V1 Linear Velocity` is the body's (about the CoG, 0.155 m ahead)
+    velocity in the car frame, and `V1 Steering` is the slewed actual angle, not the command. Measured
+    on the identification recording: pose lateral speed 0.0003 m/s, vy/omega 0.160 m. A converter or
+    speed loop that treats them as one point is wrong by lr and nothing errors. The same file also
+    cannot measure a top speed on Porto (about 8 m of straight; highest steady 2.977 m/s), and its
+    braking depends on speed (8.4 / 5.8 / 6.0 m/s^2 from 0.5 / 3 / 4.9 m/s): never read one number
+    from `identified.yaml` as the car's.
