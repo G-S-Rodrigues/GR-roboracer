@@ -1,19 +1,18 @@
 """Tier-2 conformance tests shared by every simulator backend."""
 
 import math
+import statistics
 import sys
 import time
 import unittest
 from pathlib import Path
 
 import launch
-import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 import pytest
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
-from f1tenth_gym_jax.envs.utils import Param
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset, SetStepMode
 from rcl_interfaces.srv import SetParameters
@@ -72,13 +71,11 @@ CLOCK_QOS = QoSProfile(
 
 @pytest.mark.launch_test
 def generate_test_description():
-    backend = launch_ros.actions.Node(
-        package="racing_sim_gym_jax",
-        executable="racing_sim_gym_jax_node",
-        output="screen",
-    )
     return launch.LaunchDescription(
-        [backend, launch_testing.actions.ReadyToTest()]
+        [
+            *conformance.backend().actions(),
+            launch_testing.actions.ReadyToTest(),
+        ]
     )
 
 
@@ -175,12 +172,13 @@ class TestAdapterContract(unittest.TestCase):
         """ADAPT-2130: base_link is the centre of gravity, at height h.
 
         `/odom`, `/ground_truth/odom` and TF odom -> base_link all carry
-        z = the gym's `Param.h`. The car is planar, so z is that constant;
+        z = the backend's h (the gym's `Param.h`; the h the autodrive launch
+        passes). The car is planar, so z is that constant;
         without it RViz draws the URDF's base_link on the ground and the
         wheels sink 0.074 m into the map plane.
         """
         self._require_adapter()
-        height = Param().h
+        height = conformance.backend().expected_h()
         odometry = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         truth = self._collect(
             Odometry, GROUND_TRUTH_ODOMETRY_TOPIC, STATE_QOS, 1
@@ -263,9 +261,25 @@ class TestAdapterContract(unittest.TestCase):
         self.assertGreater(drift, 1e-4, "odometry equals ground truth")
 
     def test_adapt_2030_publish_rate_is_within_tolerance(self):
-        """ADAPT-2030: the backend publishes at its configured 100 Hz rate."""
+        """ADAPT-2030: the backend publishes /odom at its expected rate.
+
+        The gym keeps the literal check: mean rate over 25 stamps within
+        20 % of 100 Hz. A backend whose row sets odom_max_median_period_s
+        (autodrive: 50 ms, the spec's nominal 20 Hz) is held to a median
+        stamp period at most that: one-sided, and on replay it measures the
+        replay's pacing, one publish per frame.
+        """
         self._require_adapter()
         messages = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 25)
+        limit = conformance.backend().odom_max_median_period_s
+        if limit is not None:
+            stamps = [
+                m.header.stamp.sec + m.header.stamp.nanosec / 1e9
+                for m in messages
+            ]
+            periods = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
+            self.assertLessEqual(statistics.median(periods), limit)
+            return
         first = messages[0].header.stamp
         last = messages[-1].header.stamp
         elapsed = (last.sec - first.sec) + (last.nanosec - first.nanosec) / 1e9
@@ -477,8 +491,9 @@ class TestAdapterContract(unittest.TestCase):
 
     def test_adapt_2150_not_applicable_set_is_the_expected_one(self):
         """ADAPT-2150: the tests the running backend's declaration makes not
-        applicable are exactly conformance.BACKEND_EXPECTED_NOT_APPLICABLE
-        (empty for the gym, which has every capability), and each is named.
+        applicable are exactly the running backend row's
+        expected_not_applicable (empty for the gym, which has every
+        capability), and each is named.
         A gym test that silently stopped applying would fail here."""
         self._require_adapter()
         declared = conformance.declared_capabilities(self.node)
@@ -486,7 +501,7 @@ class TestAdapterContract(unittest.TestCase):
         for test_id, reason in sorted(missing.items()):
             print(f"NOT APPLICABLE {test_id}: {reason}")
         self.assertEqual(
-            set(missing), set(conformance.BACKEND_EXPECTED_NOT_APPLICABLE)
+            set(missing), set(conformance.backend().expected_not_applicable)
         )
 
     def _set_step_mode(self, mode: int) -> None:

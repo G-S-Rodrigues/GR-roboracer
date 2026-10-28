@@ -206,3 +206,76 @@ def test_adapt_1030_every_conformance_test_is_classified_and_guarded() -> None:
         test_id for test_id in ungated if _applicable_calls(methods[test_id][1])
     )
     assert not guarded, f"ungated but guarded: {guarded}"
+
+
+def _capabilities_by_path(path: Path) -> dict:
+    """A backend's stdlib-only capabilities.py, loaded with no ROS and no
+    package import (the gym's package pulls JAX in)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CAPABILITIES
+
+
+SOURCES = Path(__file__).parents[2]
+BACKEND_CAPABILITIES = {
+    conformance.GYM: SOURCES
+    / "racing_sim_gym_jax"
+    / "racing_sim_gym_jax"
+    / "capabilities.py",
+    conformance.AUTODRIVE: SOURCES
+    / "racing_sim_autodrive"
+    / "racing_sim_autodrive"
+    / "capabilities.py",
+}
+
+
+def _mismatches(backends: dict) -> dict[str, set[str]]:
+    """Row name -> ids where its expected_not_applicable differs from what
+    its capabilities module makes not applicable."""
+    found = {}
+    for name, row in backends.items():
+        declared = _capabilities_by_path(BACKEND_CAPABILITIES[name])
+        computed = set(
+            conformance.not_applicable(conformance.REQUIREMENTS, declared)
+        )
+        if computed != set(row.expected_not_applicable):
+            found[name] = computed ^ set(row.expected_not_applicable)
+    return found
+
+
+def test_adapt_1040_each_backend_row_expects_what_its_capabilities_imply():
+    """ADAPT-1040: for every BACKENDS row, expected_not_applicable equals
+    not_applicable(REQUIREMENTS, that backend's capabilities module). A row
+    cannot drift from what the backend declares, and an extra id is named."""
+    from dataclasses import replace
+
+    assert set(conformance.BACKENDS) == set(BACKEND_CAPABILITIES)
+    assert _mismatches(conformance.BACKENDS) == {}
+    extra = dict(conformance.BACKENDS)
+    extra[conformance.AUTODRIVE] = replace(
+        extra[conformance.AUTODRIVE],
+        expected_not_applicable=extra[
+            conformance.AUTODRIVE
+        ].expected_not_applicable
+        | {"ADAPT-2010"},
+    )
+    assert _mismatches(extra) == {conformance.AUTODRIVE: {"ADAPT-2010"}}
+
+
+def test_adapt_1040_backend_selection_defaults_to_the_gym_and_rejects_unknown(
+    monkeypatch,
+):
+    """ADAPT-1040: RACING_SIM_BACKEND unset is the gym; a name not in the
+    table raises rather than silently running the gym."""
+    import pytest
+
+    monkeypatch.delenv("RACING_SIM_BACKEND", raising=False)
+    assert conformance.backend().name == conformance.GYM
+    monkeypatch.setenv("RACING_SIM_BACKEND", conformance.AUTODRIVE)
+    assert conformance.backend().name == conformance.AUTODRIVE
+    monkeypatch.setenv("RACING_SIM_BACKEND", "nope")
+    with pytest.raises(ValueError, match="nope"):
+        conformance.backend()

@@ -17,22 +17,64 @@ if(BUILD_TESTING)
   set_tests_properties(test_capabilities PROPERTIES LABELS "tier1")
 
   find_package(launch_testing_ament_cmake REQUIRED)
+  # add_launch_test has no ENV argument: it swallows it into LABELS (seen in
+  # CTestTestfile.cmake), so the backend is set as a test property instead.
+  # RACING_SIM_BACKEND is set on every registration so an exported variable
+  # cannot turn a gym target into an autodrive run.
   add_launch_test(test/test_adapter_contract.py
     TIMEOUT 30
     LABELS "tier2"
   )
+  set_property(TEST test_test_adapter_contract.py APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=f1tenth_gym_jax)
   add_launch_test(test/test_adapter_start_held.py
     TIMEOUT 30
     LABELS "tier2"
   )
+  set_property(TEST test_test_adapter_start_held.py APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=f1tenth_gym_jax)
   add_launch_test(test/test_adapter_laser_origin.py
     TIMEOUT 30
     LABELS "tier2"
   )
+  set_property(TEST test_test_adapter_laser_origin.py APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=f1tenth_gym_jax)
   add_launch_test(test/test_adapter_time_scale.py
     TIMEOUT 30
     LABELS "tier2"
   )
+  set_property(TEST test_test_adapter_time_scale.py APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=f1tenth_gym_jax)
+  # The same four files against the AutoDRIVE server node fed by the replay
+  # (D6), after all the gym registrations.
+  add_launch_test(test/test_adapter_contract.py
+    TARGET test_adapter_contract_autodrive
+    TIMEOUT 30
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_contract_autodrive APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive)
+  add_launch_test(test/test_adapter_start_held.py
+    TARGET test_adapter_start_held_autodrive
+    TIMEOUT 30
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_start_held_autodrive APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive)
+  add_launch_test(test/test_adapter_laser_origin.py
+    TARGET test_adapter_laser_origin_autodrive
+    TIMEOUT 30
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_laser_origin_autodrive APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive)
+  add_launch_test(test/test_adapter_time_scale.py
+    TARGET test_adapter_time_scale_autodrive
+    TIMEOUT 30
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_time_scale_autodrive APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive)
 endif()
 
 ament_export_include_directories(include)

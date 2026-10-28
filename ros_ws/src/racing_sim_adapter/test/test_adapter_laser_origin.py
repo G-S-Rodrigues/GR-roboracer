@@ -13,13 +13,11 @@ import unittest
 from pathlib import Path
 
 import launch
-import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 import pytest
 import rclpy
 import yaml
-from f1tenth_gym_jax.envs.utils import Param
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -56,14 +54,13 @@ def _mount_x() -> float:
 
 @pytest.mark.launch_test
 def generate_test_description():
-    backend = launch_ros.actions.Node(
-        package="racing_sim_gym_jax",
-        executable="racing_sim_gym_jax_node",
-        parameters=[str(VEHICLE_CONFIG), {"start_held": True}],
-        output="screen",
-    )
     return launch.LaunchDescription(
-        [backend, launch_testing.actions.ReadyToTest()]
+        [
+            *conformance.backend().actions(
+                [str(VEHICLE_CONFIG), {"start_held": True}]
+            ),
+            launch_testing.actions.ReadyToTest(),
+        ]
     )
 
 
@@ -144,6 +141,8 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         self.assertEqual(noisy[0].header.frame_id, "laser")
         # Labelled where it was cast from, so the label is honest.
         self.assertEqual(truth[0].header.frame_id, "base_link")
+
+        from f1tenth_gym_jax.envs.utils import Param  # the gym row only
 
         truth_range = statistics.median(_forward_range(m) for m in truth)
         laser_range = statistics.median(_forward_range(m) for m in noisy)
