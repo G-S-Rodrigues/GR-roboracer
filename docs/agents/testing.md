@@ -106,6 +106,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 1, `raceline/` | `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests -k raceline_1010` |
 | 1, ament_python | `python3 -m pytest ros_ws/src/racing_sim_autodrive/test -k simad_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
+| 2, ament_python | `ROS_DOMAIN_ID=<n> python3 -m pytest ros_ws/src/racing_sim_autodrive/test/test_server_node.py` (pytest collects the `@pytest.mark.launch_test` file; `colcon test` runs the same) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
 | manual, host | `docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh` (GPU-3010) |
 | 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
@@ -120,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **252 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **265 tier-1, 30 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -168,6 +169,8 @@ The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen ID
 
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
 
+The AutoDRIVE part-7 work (our Socket.IO server) added tier 1 `SIMAD-1150` to `SIMAD-1260` (twelve IDs: the Socket.IO pins, the ROS-free bridge session, the replay schedule) and `ADAPT-1040`, and tier 2 `SIMAD-2010` to `SIMAD-2050` (the server node against `racing_sim_autodrive.replay`, on an ephemeral port, never the sim's 4567). The four `racing_sim_adapter` launch files are registered a second time (`test_adapter_<name>_autodrive`) with `RACING_SIM_BACKEND=autodrive`; `conformance.BACKENDS` holds each backend's launch, its expected not-applicable set and its per-backend expectations (ADAPT-2030 rate, 2130 h, 2145 clock), and the variable defaults to the gym. The tier-1 and tier-2 AutoDRIVE tests need the Socket.IO closure (`docker/dev-tools-requirements.txt`) on `PYTHONPATH`. The live sim run (port 4567) is a recorded manual step, not a gate.
+
 ## The tests that matter most
 
 - **COMMON-1060** — the gym_jax action mapping. It fails silently; this is the only thing that
@@ -189,8 +192,8 @@ The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src
 - **That the `racing_sim_adapter` contract is backend-neutral.** With one backend, tier 2 proves
   gym_jax satisfies the contract, not that the contract is general. ADAPT-2060 checks this
   structurally (no gym_jax symbol in the headers); structure is not semantics. Capability selection now exists
-  (ADAPT-1010..1030, 2140..2150), but neutrality is genuinely resolved only when a second backend
-  lands (part 7).
+  (ADAPT-1010..1030, 2140..2150), but a second backend (the AutoDRIVE server, replayed) now runs the same files
+  (`RACING_SIM_BACKEND`); neutrality against the live sim is the recorded manual step.
 - **RViz visual correctness.** A TF sign error passes every numeric test and is obvious to a human
   instantly. Manual — see `racing_vehicle_description/CLAUDE.md`.
 - **GPU passthrough.** Not assertable without a GPU runner. Manual: `GPU-3010` in the `gpu` stage
