@@ -230,7 +230,7 @@ class SupportNode(Node):
         # holds again. Judged from the estimator's own output against the
         # pose it was told (read back from initial_pose_topic), so it holds on a
         # car with no ground truth
-        # (BRINGUP-2030).
+        # (BRINGUP-2500).
         self.declare_parameter("hold_estimate_until_initial_pose", False)
 
         track_path = Path(
@@ -313,7 +313,7 @@ class SupportNode(Node):
         if initial_pose_topic:
             # The start pose is whatever is published here: the sim's own
             # latched publish loops back, and on a car it is the operator's
-            # RViz pose, with no ground truth anywhere (BRINGUP-2030).
+            # RViz pose, with no ground truth anywhere (BRINGUP-2500).
             self.create_subscription(
                 PoseWithCovarianceStamped,
                 initial_pose_topic,

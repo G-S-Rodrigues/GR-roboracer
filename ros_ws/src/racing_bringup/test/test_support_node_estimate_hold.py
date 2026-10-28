@@ -1,4 +1,4 @@
-"""BRINGUP-2030: no estimate is composed until the estimator has applied
+"""BRINGUP-2500: no estimate is composed until the estimator has applied
 the start pose.
 
 MOLA-LO takes /initialpose only after the ICP of its first scan, so until
@@ -102,7 +102,7 @@ def _run(hold: bool):
             f"hold_estimate_until_initial_pose:={str(hold).lower()}",
         ],
     )
-    probe = rclpy.create_node("bringup_2030_probe", context=context)
+    probe = rclpy.create_node("bringup_2500_probe", context=context)
     executor = SingleThreadedExecutor(context=context)
     executor.add_node(support)
     executor.add_node(probe)
@@ -165,19 +165,19 @@ def _scenario(hold: bool, start: str = "truth") -> list[float]:
         rclpy.shutdown(context=context)
 
 
-def test_bringup_2030_withholds_the_estimate_until_the_start_pose_is_applied():
+def test_bringup_2500_withholds_the_estimate_until_the_start_pose_is_applied():
     xs = _scenario(hold=True)
     assert xs == [pytest.approx(0.5)], (
         f"the pre-/initialpose estimate was composed: {xs}"
     )
 
 
-def test_bringup_2030_off_by_default_composes_every_estimate():
+def test_bringup_2500_off_by_default_composes_every_estimate():
     xs = _scenario(hold=False)
     assert xs[0] == pytest.approx(34.0) and math.isclose(xs[-1], 0.5)
 
 
-def test_bringup_2030_takes_the_start_pose_from_initialpose_without_truth():
+def test_bringup_2500_takes_the_start_pose_from_initialpose_without_truth():
     """A real car has no /ground_truth/odom: the operator's /initialpose is
     the only start pose, and the hold must still release on it."""
     xs = _scenario(hold=True, start="initialpose")
