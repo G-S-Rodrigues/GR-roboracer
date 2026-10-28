@@ -485,7 +485,11 @@ def _reset_at_deterministic_t0(
         # which (hypothesis, untested) needs motion before it emits, never
         # produced /localization/odom while held - measured as a 394 s
         # timeout on SIM-3070, while SIM-3080 passes with this wait.
-        if pose_source in ("amcl", "mola"):
+        # mola is left with the scan wait too: the support node withholds
+        # the estimate until MOLA has applied /initialpose (BRINGUP-2030),
+        # and MOLA drops a held sim's stamp-0 scans, so that estimate does
+        # not exist until time advances.
+        if pose_source == "amcl":
             wait_for_message(
                 node, Odometry, ESTIMATE_TOPIC, RELIABLE_QOS, _remaining()
             )

@@ -154,6 +154,8 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
                     if pose_source in ("amcl", "mola")
                     else ""
                 ),
+                # MOLA applies it after its first scan (BRINGUP-2030).
+                "hold_estimate_until_initial_pose": pose_source == "mola",
             },
         ],
     )
