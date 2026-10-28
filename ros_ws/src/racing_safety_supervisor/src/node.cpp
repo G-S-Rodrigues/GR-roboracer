@@ -8,6 +8,7 @@
 #include <racing_interfaces/msg/safety_status.hpp>
 #include <rclcpp/create_timer.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rosgraph_msgs/msg/clock.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <stdexcept>
 #include <string>
@@ -103,6 +104,29 @@ class SafetySupervisorNode : public rclcpp::Node {
                                message->pose.pose.position.y,
                                yaw_from_odometry(*message)};
             });
+        // F1: rclcpp's TimeSource reader is invisible to node code, and a held
+        // sim's /clock = 0 leaves now() at 0, so nothing else can say whether
+        // this node has heard /clock. A test harness releasing t=0 before that
+        // point gets a first evaluation past the stale window and a latched
+        // STOP (repo-gotchas #19; F1 finding). Inert without use_sim_time (a
+        // real car). A stand-in for the TimeSource reader: that one is created
+        // in the Node base constructor, before this, so it is matched no later
+        // than this one.
+        if (get_parameter("use_sim_time").as_bool()) {
+            clock_received_publisher_ =
+                create_publisher<rosgraph_msgs::msg::Clock>(
+                    "~/clock_received",
+                    rclcpp::QoS(1).reliable().transient_local());
+            clock_subscription_ =
+                create_subscription<rosgraph_msgs::msg::Clock>(
+                    "/clock", rclcpp::ClockQoS(),
+                    [this](const rosgraph_msgs::msg::Clock::ConstSharedPtr
+                               &message) {
+                        clock_received_publisher_->publish(*message);
+                        // Once; the executor holds its own reference.
+                        clock_subscription_.reset();
+                    });
+        }
         emergency_stop_service_ = create_service<std_srvs::srv::Trigger>(
             "~/emergency_stop",
             [this](
@@ -174,6 +198,10 @@ class SafetySupervisorNode : public rclcpp::Node {
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr emergency_stop_service_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr
         clear_emergency_stop_service_;
+    rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr
+        clock_received_publisher_;
+    rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr
+        clock_subscription_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 
