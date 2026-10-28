@@ -140,7 +140,7 @@ def test_bringup_1550_the_alignment_publisher_is_killable_by_name() -> None:
     assert "racing_mola_map_alignment" in gotchas
 
 
-def test_bringup_1560_localization_pipeline_differs_by_two_values() -> None:
+def test_bringup_1560_localization_pipeline_differs_by_three_values() -> None:
     """The mapping pipeline made the committed map and stays unchanged; the
     localization copy narrows ICP's search window and nothing else, so the
     map keeps coming from the committed mapping pipeline."""
@@ -163,6 +163,8 @@ def test_bringup_1560_localization_pipeline_differs_by_two_values() -> None:
         if a != b
     ]
     assert differing == [
+        # Part 2's tuned mapping value; localization keeps MOLA's default.
+        ("icp_prior_weight: 50.0", "icp_prior_weight: 1.0"),
         ("maximum_sigma: 1.0", "maximum_sigma: 0.5"),
         (
             'threshold: "2.0*ADAPTIVE_THRESHOLD_SIGMA"',

@@ -57,8 +57,12 @@ start_watchdog() {
     watchdog=$!
 }
 stop_watchdog() {
-    pkill -P "$watchdog" 2>/dev/null || true
+    # Subshell first, so it cannot go on to the kill when its sleep dies.
+    local children
+    children=$(pgrep -P "$watchdog" 2>/dev/null || true)
     kill "$watchdog" 2>/dev/null || true
+    # shellcheck disable=SC2086
+    [ -z "$children" ] || kill $children 2>/dev/null || true
 }
 
 ros2 launch racing_bringup sim_pure_pursuit.launch.py \

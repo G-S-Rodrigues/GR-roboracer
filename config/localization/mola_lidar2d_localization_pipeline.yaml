@@ -1,6 +1,7 @@
 # LOCALIZATION copy of mola_lidar2d_pipeline.yaml (which stays the MAPPING
 # pipeline, so the committed .mm is still made by the committed mapping
-# pipeline). Two values differ from it, both about the ICP search window:
+# pipeline). Two values differ from it about the ICP search window, and the
+# mapping pipeline's icp_prior_weight 50.0 is spelled out here as MOLA's default 1.0:
 #   adaptive_threshold.maximum_sigma  1.0 -> 0.5 m
 #   Matcher_Points_DistanceThreshold.threshold  2.0*sigma -> 1.0*sigma
 # Why (SIM-3510, seed 42, 1080 beams, 1x, open loop): on a map from another run
@@ -93,6 +94,7 @@ params:
 
   # Minimum ICP quality to insert it into the map:
   min_icp_goodness: 0.25
+  icp_prior_weight: 1.0 # (mapping pipeline: 50.0; 1.0 is MOLA's default)
 
   # Adaptive threshold:
   adaptive_threshold:
