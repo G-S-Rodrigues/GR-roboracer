@@ -315,6 +315,9 @@ class AutoDriveServer(Node):
             socketio.WSGIApp(self.sio),
             handler_class=WebSocketHandler,
         )
+        # Bound before the handlers and the log line: a signal arriving ahead
+        # of start() would stop an unstarted server and crash serve_forever.
+        server.start()
         gevent.signal_handler(signal.SIGINT, server.stop)
         gevent.signal_handler(signal.SIGTERM, server.stop)
         self.get_logger().info(f"listening on {self._host}:{self._port}")
@@ -340,6 +343,7 @@ def main(args=None) -> None:
         node.serve()
     finally:
         executor.shutdown()
+        thread.join(timeout=5.0)  # a spin left running aborts at exit
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
