@@ -27,11 +27,11 @@ class Method:
 
 
 # Fixed order = render order; never sorted by value. A None entry is a method
-# whose part has not landed (parts 1 and 5 replace them).
+# whose part has not landed (part 5 replaces far_lio).
 METHODS: dict[str, Method | None] = {
     "slam_toolbox": Method(process="lib/slam_toolbox/", map_kind="online"),
     "amcl": Method(process="lib/nav2_amcl/amcl", map_kind="prior"),
-    "mola": None,
+    "mola": Method(process="lib/mola_launcher/mola-cli", map_kind="prior"),
     "far_lio": None,
 }
 SCENARIOS = {
