@@ -271,6 +271,41 @@ def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
     assert named == set(scenario_parameters.PLANNERS)
 
 
+def test_bringup_1530_launch_pose_sources_are_the_reference_ones() -> None:
+    """BRINGUP-1530: the `pose_source` values the launch accepts are exactly
+    the implementations `reference_stack.yaml` names for that role (the
+    default plus its alternatives). A guard: it passes when the two agree
+    and names the difference when one gains an estimator the other lacks."""
+    import yaml
+
+    roles = yaml.safe_load(
+        (REPOSITORY_ROOT / "config" / "reference_stack.yaml").read_text(
+            encoding="utf-8"
+        )
+    )["roles"]
+    pose_source = roles["pose_source"]
+    named = {
+        pose_source["implementation"],
+        *(a["implementation"] for a in pose_source.get("alternatives", [])),
+    }
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    configs = next(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "POSE_SOURCE_CONFIGS"
+    )
+    accepted = {
+        key.value for key in configs.keys if isinstance(key, ast.Constant)
+    } | {pose_source["implementation"]}
+    assert accepted == named, (
+        f"launch only: {sorted(accepted - named)}; "
+        f"reference_stack only: {sorted(named - accepted)}"
+    )
+
+
 def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
     """BRINGUP-1080: the reference-stack map and the tier-3/4 tests agree.
 
