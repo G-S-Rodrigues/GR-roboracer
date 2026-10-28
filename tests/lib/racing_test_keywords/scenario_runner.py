@@ -130,6 +130,7 @@ PARTICIPANT_NODES = (
 POSE_SOURCE_NODES = {
     "slam_toolbox": ("slam_toolbox", "/scan"),
     "amcl": ("amcl", "/scan"),
+    "mola": ("mola_bridge_ros2", "/scan"),
 }
 
 # `racing_metrics` only starts accumulating once these best-effort/reliable

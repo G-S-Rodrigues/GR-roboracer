@@ -816,3 +816,67 @@ def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
         module, context = _launch_context(**overrides)
         with pytest.raises(RuntimeError):
             module._launch_nodes(context, "", "")
+
+
+MOLA_CONFIGURATION = (
+    REPOSITORY_ROOT / "config" / "localization" / "mola_lidar2d.yaml"
+)
+
+
+def test_bringup_1520_mola_runs_localization_only_on_the_derived_map() -> None:
+    """BRINGUP-1520: `pose_source:=mola` starts MOLA-LO's lidar2d pipeline in
+    localization-only mode on the scenario's own committed map, headless, on
+    simulated time, with its frames renamed so that it owns exactly
+    `mola_map -> odom` and a static `map -> mola_map` (the provenance's T)
+    puts that into the world frame. No value reads `/ground_truth` (AC6), and
+    describing the nodes starts no process."""
+    import yaml
+    from racing_bringup.estimators import (
+        mola,
+        mola_alignment_arguments,
+        mola_launch_arguments,
+        mola_map_files,
+    )
+    from racing_bringup.scenario_parameters import track_parameters
+
+    grid = track_parameters(SPIELBERG_SCENARIO)["map_server"]["yaml_filename"]
+    mm, provenance = mola_map_files(grid)
+    arguments = mola_launch_arguments(str(MOLA_CONFIGURATION), mm)
+
+    assert arguments["lidar_topic_name"] == "/scan"
+    assert arguments["lidar_topic_type"] == "LaserScan"
+    assert Path(arguments["mola_lo_pipeline"]).is_file()
+    assert Path(arguments["mola_lo_pipeline"]).name == (
+        "mola_lidar2d_pipeline.yaml"
+    )
+    assert arguments["start_mapping_enabled"] == "False"
+    assert arguments["use_rviz"] == "False"
+    assert arguments["use_mola_gui"] == "False"
+    assert arguments["use_sim_time"] == "True"
+    assert arguments["mola_state_estimator_reference_frame"] == "mola_map"
+    assert arguments["mola_lo_reference_frame"] == "mola_map"
+    assert arguments["mola_initial_map_mm_file"] == mm
+    assert all("ground_truth" not in str(v) for v in arguments.values())
+
+    transform = yaml.safe_load(Path(provenance).read_text(encoding="utf-8"))[
+        "T_map_mola"
+    ]
+    assert mola_alignment_arguments(provenance) == [
+        "--x",
+        str(transform["x"]),
+        "--y",
+        str(transform["y"]),
+        "--z",
+        str(transform["z"]),
+        "--yaw",
+        str(transform["yaw"]),
+        "--frame-id",
+        "map",
+        "--child-frame-id",
+        "mola_map",
+    ]
+
+    static, include = mola(str(MOLA_CONFIGURATION), grid)
+    assert static.node_package == "tf2_ros"
+    assert static.node_executable == "static_transform_publisher"
+    assert type(include).__name__ == "IncludeLaunchDescription"

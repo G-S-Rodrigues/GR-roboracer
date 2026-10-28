@@ -14,8 +14,17 @@ used rather than a second hand-rolled copy of the event chain above.
 
 from __future__ import annotations
 
-from launch.actions import EmitEvent, RegisterEventHandler
+from pathlib import Path
+
+import yaml
+from ament_index_python.packages import get_package_share_directory
+from launch.actions import (
+    EmitEvent,
+    IncludeLaunchDescription,
+    RegisterEventHandler,
+)
 from launch.events import matches_action
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
@@ -94,5 +103,98 @@ def amcl(parameters: list, map_yaml: str) -> list:
             name="amcl_lifecycle_manager",
             parameters=parameters,
             output="screen",
+        ),
+    ]
+
+
+def mola_map_files(grid_yaml: str) -> tuple[str, str]:
+    """(.mm, provenance yaml) of the MOLA map that belongs to `grid_yaml`.
+
+    `grid_yaml` is the scenario's occupancy grid,
+    config/scenarios/maps/<map>/slam/<map>.yaml; MOLA's own map lives beside
+    it in maps/<map>/mola/<map>.{mm,yaml}. Derived from the scenario, as
+    amcl's grid is, so a run can only be localized on its own track. Raises
+    FileNotFoundError, naming the script that builds it, when it is absent.
+    """
+    grid = Path(grid_yaml)
+    mola_dir = grid.parent.parent / "mola"
+    mm = mola_dir / f"{grid.stem}.mm"
+    provenance = mola_dir / f"{grid.stem}.yaml"
+    for path in (mm, provenance):
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"no MOLA map {path}; build it with scripts/mola_map_track.sh"
+            )
+    return str(mm), str(provenance)
+
+
+def mola_launch_arguments(configuration: str, mm_file: str) -> dict:
+    """The launch arguments of MOLA-LO's ros2-lidar-odometry launch file.
+
+    `configuration` is config/localization/mola_lidar2d.yaml; a relative
+    `mola_lo_pipeline` in it is relative to that file. `mm_file` is the map
+    MOLA localizes on. Pure: it reads committed files and starts nothing.
+    """
+    path = Path(configuration).resolve()
+    arguments = {
+        key: str(value)
+        for key, value in yaml.safe_load(path.read_text("utf-8")).items()
+    }
+    arguments["mola_lo_pipeline"] = str(
+        path.parent / arguments["mola_lo_pipeline"]
+    )
+    arguments["mola_initial_map_mm_file"] = mm_file
+    return arguments
+
+
+def mola_alignment_arguments(provenance_yaml: str) -> list[str]:
+    """`static_transform_publisher` arguments for `map -> mola_map`: the
+    provenance's T, which relates MOLA's map frame (wherever its mapping lap
+    started) to the world frame. Used to score against ground truth, and the
+    only way `/initialpose` (frame `map`) reaches MOLA."""
+    transform = yaml.safe_load(Path(provenance_yaml).read_text("utf-8"))[
+        "T_map_mola"
+    ]
+    return [
+        "--x",
+        str(transform["x"]),
+        "--y",
+        str(transform["y"]),
+        "--z",
+        str(transform["z"]),
+        "--yaw",
+        str(transform["yaw"]),
+        "--frame-id",
+        "map",
+        "--child-frame-id",
+        "mola_map",
+    ]
+
+
+def mola(configuration: str, grid_yaml: str) -> list:
+    """MOLA-LO localizing on the map it built itself for `grid_yaml`'s track.
+
+    MOLA owns `mola_map -> odom`; the static `map -> mola_map` joins that to
+    the world frame (BRINGUP-2010), so the support node's `map -> odom`
+    lookup resolves through the chain unchanged. Reads committed files only
+    and spawns nothing at description time.
+    """
+    mm_file, provenance = mola_map_files(grid_yaml)
+    share = Path(get_package_share_directory("mola_lidar_odometry"))
+    return [
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            arguments=mola_alignment_arguments(provenance),
+            parameters=[{"use_sim_time": True}],
+            output="screen",
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                str(share / "ros2-launchs" / "ros2-lidar-odometry.launch.py")
+            ),
+            launch_arguments=mola_launch_arguments(
+                configuration, mm_file
+            ).items(),
         ),
     ]
