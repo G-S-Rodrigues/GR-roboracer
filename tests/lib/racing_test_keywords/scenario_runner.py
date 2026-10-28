@@ -64,12 +64,13 @@ BRINGUP_LAUNCH_FILE = (
     / "sim_pure_pursuit.launch.py"
 )
 METRICS_TOPIC = "/scenario/metrics"
-METRICS_QOS = QoSProfile(
+LATCHED_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=1,
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
+METRICS_QOS = LATCHED_QOS
 
 # The supervisor's pose input: ground truth, not the dead reckoning on /odom
 # (racing_safety_supervisor/src/node.cpp says why).
@@ -103,6 +104,13 @@ CLOCK_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,
 )
+
+# The supervisor's own report that it has received a /clock message (latched,
+# only under use_sim_time; racing_safety_supervisor/src/node.cpp). Its
+# /clock reader is rclcpp's internal one, which no other node can observe,
+# and a held sim's /clock = 0 leaves now() at 0, so an endpoint wait cannot
+# say it is in step. F1 Step 1 and Step A; repo-gotchas #19, #32.
+SUPERVISOR_CLOCK_TOPIC = "/racing_safety_supervisor/clock_received"
 
 RESET_SERVICE = "/racing_sim/reset"
 # Where an active pose source puts the pose the controller may drive on:
@@ -446,6 +454,11 @@ def _reset_at_deterministic_t0(
     `timeout` per participant or per topic - so one slow participant cannot
     hand every later wait a full fresh budget on top of the time already
     spent.
+
+    The last wait is different in kind: the supervisor's own latched
+    ``~/clock_received``, the first /clock message its reader delivered. The
+    waits above prove discovery; this one proves delivery, and only the
+    supervisor can see its own reader.
     """
     deadline = time.monotonic() + timeout
 
@@ -493,6 +506,21 @@ def _reset_at_deterministic_t0(
             wait_for_message(
                 node, Odometry, ESTIMATE_TOPIC, RELIABLE_QOS, _remaining()
             )
+
+    # A first delivery, reported by the supervisor itself: the endpoint waits
+    # above prove discovery, not that its /clock reader is matched, and a
+    # supervisor released before that stamps its first evaluation past the
+    # stale window (gotcha #19). The wait shares the deadline; it is not a
+    # retry and not a longer timeout.
+    try:
+        wait_for_message(
+            node, Clock, SUPERVISOR_CLOCK_TOPIC, LATCHED_QOS, _remaining()
+        )
+    except TimeoutError as error:
+        raise TimeoutError(
+            "racing_safety_supervisor heard no /clock before t=0 "
+            f"(verdict=supervisor-clock-unheard): {error}"
+        ) from error
 
     client = node.create_client(Reset, RESET_SERVICE)
     if not client.wait_for_service(timeout_sec=_remaining()):
