@@ -6,6 +6,7 @@ SIMAD-2010..2040. The server listens on an ephemeral port (never 4567) and
 """
 
 import json
+import re
 import subprocess
 import sys
 import time
@@ -139,6 +140,13 @@ class TestServerNode(unittest.TestCase):
         self.assertGreaterEqual(len(got["/scan"]), int(0.98 * (FRAMES - 1)))
         self.assertLessEqual(len(got["/scan"]), FRAMES - 1)
         self.assertEqual(len(got["/scan"][0].ranges), 1081)
+        header = (
+            launch_support.REPO
+            / "ros_ws/src/racing_sim_adapter/include/racing_sim_adapter"
+            / "contract.hpp"
+        ).read_text()
+        frame = re.search(r'kLaserFrame\{"([^"]+)"\}', header).group(1)
+        self.assertEqual(got["/scan"][0].header.frame_id, frame)
 
     def test_simad_2020_drive_commands_reach_the_reply(self):
         """SIMAD-2020: /drive 2.0 m/s, 0.1 rad -> replies carry throttle > 0

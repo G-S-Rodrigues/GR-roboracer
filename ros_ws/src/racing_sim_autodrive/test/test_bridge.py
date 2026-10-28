@@ -12,6 +12,7 @@ UNTUNED test values (no gains exist yet; tuning is part 10).
 """
 
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -289,12 +290,20 @@ def test_simad_1210_dead_reckoning_drifts_but_stays_bounded(raws):
     assert worst < 2 * MEASURED
 
 
-def test_simad_1220_scan_geometry_is_the_devkits_in_frame_lidar():
+def test_simad_1220_scan_geometry_is_the_devkits_in_the_contract_frame():
     """SIMAD-1220: 1081 beams over the devkit's +-2.35619 rad at
-    0.004363323 rad, range 0.06..10.0, frame_id `lidar` (owner ruling D8,
-    2026-10-28: matches the official devkit). N comes from the array."""
+    0.004363323 rad, range 0.06..10.0, in the contract's scan frame
+    (contract.hpp kLaserFrame, parsed here; owner ruling 2026-10-28: the
+    frame is `lidar` everywhere once part R1 renames it, and this follows
+    the header). N comes from the array."""
+    header = (
+        REPO
+        / "ros_ws/src/racing_sim_adapter/include/racing_sim_adapter"
+        / "contract.hpp"
+    ).read_text()
+    contract_frame = re.search(r'kLaserFrame\{"([^"]+)"\}', header).group(1)
     geometry = bridge.scan_geometry(1081)
-    assert geometry.frame_id == "lidar"
+    assert geometry.frame_id == contract_frame
     assert geometry.angle_increment == pytest.approx(0.004363323)
     assert geometry.angle_min == pytest.approx(-2.35619, abs=1e-5)
     assert geometry.angle_max == pytest.approx(2.35619, abs=1e-5)

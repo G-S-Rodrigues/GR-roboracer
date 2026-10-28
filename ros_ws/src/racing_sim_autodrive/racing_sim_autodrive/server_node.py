@@ -63,12 +63,7 @@ STATE_QOS = QoSProfile(
     durability=DurabilityPolicy.VOLATILE,
 )
 
-# PENDING OWNER DECISION (reported to the coordinator): contract.hpp's
-# kLaserFrame is "laser" and ADAPT-2020 asserts it on /scan; the D8 ruling
-# says "lidar". /scan keeps the contract's name here; /ground_truth/scan takes
-# the ruling's (bridge.SCAN_FRAME_ID).
-SCAN_FRAME_ID = "laser"
-GROUND_TRUTH_SCAN_FRAME_ID = bridge.SCAN_FRAME_ID
+SCAN_FRAME_ID = bridge.SCAN_FRAME_ID  # both scans, the contract name
 
 VEHICLE_PARAMETERS = (
     "lr",
@@ -241,7 +236,7 @@ class AutoDriveServer(Node):
             geometry = bridge.scan_geometry(len(ranges))
             for publisher, frame_id in (
                 (self._scan_publisher, SCAN_FRAME_ID),
-                (self._truth_scan_publisher, GROUND_TRUTH_SCAN_FRAME_ID),
+                (self._truth_scan_publisher, SCAN_FRAME_ID),
             ):
                 scan = LaserScan()
                 scan.header.stamp = stamp
