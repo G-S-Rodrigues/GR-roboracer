@@ -292,3 +292,161 @@ def test_bringup_1730_the_script_drives_the_mapping_launch() -> None:
     )
     # Every tool step runs under `set -e` and the ERR trap names its line.
     assert re.search(r"^trap 'echo .*LINENO.*' ERR$", script, re.MULTILINE)
+
+
+# BRINGUP-1740..1760: the committed grid. Bounds are measured (Step 5/6 of
+# the plan) and written beside the constants; None means not measured yet.
+GRID_YAML = MOLA_DIR / "Spielberg_grid.yaml"
+GRID_PNG = MOLA_DIR / "Spielberg_grid.png"
+GRID_PROVENANCE_KEYS = (
+    "loop_closure",
+    "grid_image",
+    "grid_sha256",
+    "grid_bytes",
+    "grid_pipeline",
+)
+MAP_SERVER_KEYS = {
+    "image",
+    "resolution",
+    "origin",
+    "negate",
+    "occupied_thresh",
+    "free_thresh",
+}
+FRAME_P95_BOUND = None
+GRID_VOXEL_P95_BOUND = None
+
+
+def check_grid_provenance(provenance_path: Path, directory: Path) -> None:
+    """The provenance's grid keys agree with the grid files in `directory`
+    and the grid yaml has map_server's key set; raises AssertionError naming
+    what disagrees."""
+    from racing_evaluation.map_accuracy import load_grid
+
+    provenance = yaml.safe_load(provenance_path.read_text())
+    for key in GRID_PROVENANCE_KEYS:
+        assert key in provenance, f"provenance lacks {key}"
+    png = directory / provenance["grid_image"]
+    assert png.is_file(), f"{png} is missing"
+    data = png.read_bytes()
+    assert provenance["grid_bytes"] == len(data), "grid_bytes disagrees"
+    assert provenance["grid_sha256"] == hashlib.sha256(data).hexdigest(), (
+        "grid_sha256 disagrees with the grid image"
+    )
+    grid_yaml = directory / (png.stem + ".yaml")
+    document = yaml.safe_load(grid_yaml.read_text())
+    assert set(document) >= MAP_SERVER_KEYS, set(document)
+    assert document["image"] == png.name
+    assert document["resolution"] == pytest.approx(0.05)
+    assert load_grid(grid_yaml).occupied.any()
+
+
+def test_bringup_1740_the_provenance_agrees_with_the_grid_files(
+    tmp_path,
+) -> None:
+    """BRINGUP-1740: `loop_closure`, `grid_image`, `grid_sha256`,
+    `grid_bytes` and `grid_pipeline` agree with the committed grid; the grid
+    yaml has map_server's keys, resolution 0.05, and `load_grid` reads it.
+    Bite proof: one hex digit of `grid_sha256` changed goes red naming it."""
+    check_grid_provenance(MOLA_DIR / "Spielberg.yaml", MOLA_DIR)
+    document = yaml.safe_load((MOLA_DIR / "Spielberg.yaml").read_text())
+    assert document["loop_closure"] is False
+    assert (REPOSITORY_ROOT / document["grid_pipeline"]).is_file()
+    sha = document["grid_sha256"]
+    document["grid_sha256"] = ("0" if sha[0] != "0" else "1") + sha[1:]
+    mutated = tmp_path / "Spielberg.yaml"
+    mutated.write_text(yaml.safe_dump(document))
+    with pytest.raises(AssertionError, match="grid_sha256"):
+        check_grid_provenance(mutated, MOLA_DIR)
+
+
+def _rotated_90(grid):
+    """`grid` rotated 90 degrees about its centre."""
+    import numpy as np
+    from racing_evaluation.map_accuracy import Grid
+
+    height, width = grid.occupied.shape
+    centre = (
+        grid.origin[0] + width * grid.resolution / 2,
+        grid.origin[1] + height * grid.resolution / 2,
+    )
+    return Grid(
+        np.rot90(grid.occupied).copy(),
+        np.rot90(grid.free).copy(),
+        grid.resolution,
+        (
+            centre[0] - height * grid.resolution / 2,
+            centre[1] - width * grid.resolution / 2,
+        ),
+    )
+
+
+def test_bringup_1750_the_grid_is_in_the_world_frame() -> None:
+    """BRINGUP-1750: the committed grid's wall p95 against the gym map is
+    within `FRAME_P95_BOUND`, so a grid left in `mola_map`, or placed with a
+    wrong T, is caught in seconds. The bound is this test's own, copied as a
+    number from SIM-3530's five seed-42 laps. Bite proof: the grid rotated
+    90 degrees about its centre is at least 3x the bound."""
+    from racing_evaluation.map_accuracy import (
+        load_grid,
+        map_to_wall,
+        scenario_truth_grid,
+    )
+
+    assert FRAME_P95_BOUND is not None, "FRAME_P95_BOUND is not measured yet"
+    truth = scenario_truth_grid(SCENARIOS / "spielberg_1080.yaml")
+    grid = load_grid(GRID_YAML)
+    assert map_to_wall(grid, truth).p95 <= FRAME_P95_BOUND
+    rotated = map_to_wall(_rotated_90(grid), truth).p95
+    assert rotated >= 3 * FRAME_P95_BOUND, rotated
+
+
+def _frame_deltas(grid, points, transform) -> tuple[float, float]:
+    """(grid -> voxels, voxels -> grid) nearest-neighbour p95 in metres,
+    the voxel centres moved into the world by `transform` (x, y, yaw)."""
+    import numpy as np
+    from racing_evaluation.map_accuracy import nearest_p95
+
+    x, y, yaw = transform
+    c, s = np.cos(yaw), np.sin(yaw)
+    world = np.column_stack(
+        [
+            c * points[:, 0] - s * points[:, 1] + x,
+            s * points[:, 0] + c * points[:, 1] + y,
+        ]
+    )
+    rows, cols = np.nonzero(grid.occupied)
+    cells = np.column_stack(
+        [
+            grid.origin[0] + (cols + 0.5) * grid.resolution,
+            grid.origin[1] + (rows + 0.5) * grid.resolution,
+        ]
+    )
+    return nearest_p95(cells, world), nearest_p95(world, cells)
+
+
+def test_bringup_1760_the_grid_and_the_mm_agree_under_the_provenance_t(
+    tmp_path,
+) -> None:
+    """BRINGUP-1760 (no ground truth): the grid's occupied cell centres and
+    the `.mm` `localmap` voxel centres moved by the provenance's T agree
+    within `GRID_VOXEL_P95_BOUND`, in both directions. On a real car T is the
+    identity and the check holds unchanged. Bite proofs: T taken as the
+    identity, and T with its yaw's sign flipped, are at least 3x the bound."""
+    from racing_evaluation.map_accuracy import load_grid, mm_layer_points
+
+    assert GRID_VOXEL_P95_BOUND is not None, "bound is not measured yet"
+    provenance = yaml.safe_load((MOLA_DIR / "Spielberg.yaml").read_text())
+    t = provenance["T_map_mola"]
+    grid = load_grid(GRID_YAML)
+    points = mm_layer_points(MOLA_DIR / "Spielberg.mm", "localmap", tmp_path)
+    right = _frame_deltas(grid, points, (t["x"], t["y"], t["yaw"]))
+    print(f"BRINGUP-1760 grid->voxel, voxel->grid p95: {right}")
+    assert max(right) <= GRID_VOXEL_P95_BOUND, right
+    for name, wrong in (
+        ("identity", (0.0, 0.0, 0.0)),
+        ("flipped yaw", (t["x"], t["y"], -t["yaw"])),
+    ):
+        deltas = _frame_deltas(grid, points, wrong)
+        print(f"BRINGUP-1760 bite {name}: {deltas}")
+        assert min(deltas) >= 3 * GRID_VOXEL_P95_BOUND, (name, deltas)
