@@ -77,14 +77,18 @@ class RacingTestKeywords:
         seed: int = 42,
         drive_on_estimate: str = "false",
         scenario: str = LOCALIZATION_SCENARIO,
+        time_scale: str = str(LOCALIZATION_TIME_SCALE),
     ) -> None:
         """Run one Spielberg lap with `pose_source` owning map -> odom.
 
         Open loop by default: the controller keeps ground truth and the
         estimator is scored beside it, which is the only way a pose source
         the car cannot yet drive on (slam_toolbox, plan D7) is measurable
-        at all. `drive_on_estimate=true` closes the loop.
+        at all. `drive_on_estimate=true` closes the loop. `scenario` and
+        `time_scale` default to the amcl/slam_toolbox lap; MOLA runs the
+        1080-beam scenario at 1x (its scan matching is wall-clock work).
         """
+        scale = float(time_scale)
         closed_loop = str(drive_on_estimate).strip().lower() in (
             "true",
             "1",
@@ -104,8 +108,8 @@ class RacingTestKeywords:
         self._metrics = run_scenario(
             seed=int(seed),
             scenario=scenario,
-            time_scale=LOCALIZATION_TIME_SCALE,
-            timeout=LOCALIZATION_TIMEOUT_SECONDS,
+            time_scale=scale,
+            timeout=LOCALIZATION_TIMEOUT_SECONDS * max(1.0, 5.0 / scale),
             pose_source=pose_source,
             drive_on_estimate=closed_loop,
             launch_arguments={"recording_path": str(recording)},

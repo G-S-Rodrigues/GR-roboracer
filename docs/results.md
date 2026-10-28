@@ -33,7 +33,9 @@ To reproduce a record and compare it, see [Running a scenario](running.md#runnin
 
 There is no golden for localization. The acceptance cases bound the estimate against ground truth on
 Spielberg: `slam_toolbox` within 4.0 m RMSE and `amcl` within 0.65 m, each with availability above
-0.99 (ACC-4030). A further case drives a full lap on the `amcl` estimate with zero collisions
+0.99 (ACC-4030). `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
+loop: ATE RMSE 1.547-1.556 m (median 1.552) and maximum 3.076-3.097 m over five laps, availability
+0.9974 or better, bounded at 2.5 m RMSE (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
 (ACC-4040). See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
 
 The denser surveys beside the committed grid, measured against the track's ground-truth walls, have a

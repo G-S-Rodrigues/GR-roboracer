@@ -129,3 +129,84 @@ def test_check_1340_requirement_files_are_exact_unique_pins() -> None:
                     f"{source}: missing {TOOLS - set(names)}"
                 )
     assert seen, "pip install reads no -r requirements file"
+
+
+APT_DIR = REPO_ROOT / "docker" / "apt-preferences"
+MOLA_FAMILY = re.compile(r"^ros-jazzy-(mola|mp2p-icp|mrpt)")
+CATCH_ALL = "ros-jazzy-mola* ros-jazzy-mp2p-icp* ros-jazzy-mrpt*"
+
+
+def _stanzas(path: Path) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for block in re.split(r"\n\s*\n", path.read_text()):
+        fields = {}
+        for line in block.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and ":" in line:
+                key, _, value = line.partition(":")
+                fields[key.strip()] = value.strip()
+        if fields:
+            out.append(fields)
+    return out
+
+
+def _closure() -> dict[str, str]:
+    out = {}
+    for line in (APT_DIR / "mola.closure").read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            name, version = line.split()
+            out[name] = version
+    return out
+
+
+def test_check_1880_mola_closure_is_pinned_by_name() -> None:
+    """CHECK-1880: the Dockerfile COPYs docker/apt-preferences/mola.pref
+    before the RUN that installs ros-jazzy-mola-lidar-odometry; every MOLA,
+    mp2p-icp and MRPT package of the recorded closure (mola.closure) has
+    exactly one by-name `Pin: version` stanza matching its version; no
+    version stanza uses a glob; the last stanza is the -1 catch-all."""
+    install = copy = None
+    for number, text in _instructions():
+        if text.startswith("COPY ") and "mola.pref" in text:
+            copy = number
+            assert "/etc/apt/preferences.d/" in text, text
+        if text.startswith("RUN ") and "ros-jazzy-mola-lidar-odometry" in text:
+            install = number
+    assert install, "no RUN installs ros-jazzy-mola-lidar-odometry"
+    assert copy, "mola.pref is not COPY'd into the image"
+    assert copy < install, "mola.pref is COPY'd after the install"
+
+    closure = _closure()
+    assert "ros-jazzy-mola-lidar-odometry" in closure
+    assert all(MOLA_FAMILY.match(name) for name in closure), closure
+    stanzas = _stanzas(APT_DIR / "mola.pref")
+    last = stanzas[-1]
+    assert last["Package"] == CATCH_ALL, last
+    assert last["Pin"] == "version *", last
+    assert last["Pin-Priority"] == "-1", last
+
+    pinned: dict[str, list[str]] = {}
+    for stanza in stanzas[:-1]:
+        assert "*" not in stanza["Package"], f"glob in {stanza['Package']!r}"
+        assert stanza["Pin-Priority"] == "1001", stanza
+        match = re.fullmatch(r"version (\S+)", stanza["Pin"])
+        assert match, stanza
+        for name in stanza["Package"].split():
+            pinned.setdefault(name, []).append(match.group(1))
+    problems = []
+    for name, version in sorted(closure.items()):
+        got = pinned.get(name, [])
+        if len(got) != 1:
+            problems.append(f"{name}: {len(got)} stanzas")
+        elif not (
+            got[0] == version
+            or got[0].endswith("*")
+            and version.startswith(got[0][:-1])
+        ):
+            problems.append(f"{name}: pin {got[0]} vs closure {version}")
+    problems += [
+        f"{n}: pinned but not in closure"
+        for n in sorted(pinned.keys() - closure.keys())
+    ]
+    assert not problems, "; ".join(problems)

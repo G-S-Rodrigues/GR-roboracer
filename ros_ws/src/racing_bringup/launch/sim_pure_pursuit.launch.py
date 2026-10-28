@@ -13,15 +13,17 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
+from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from racing_bringup.estimators import amcl, slam_toolbox
+from racing_bringup.estimators import amcl, mola, slam_toolbox
 from racing_bringup.scenario_parameters import (
     PLANNERS,
     RACELINE_OPTIMIZERS,
     track_parameters,
 )
 
+LOGGER = get_logger("sim_pure_pursuit.launch")
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
 # How the controller's command speed is chosen: its own curvature schedule, or
@@ -41,18 +43,23 @@ ESTIMATED_POSE = "/localization/odom"
 # slam_toolbox maps online, with no prior map (plan D7): `map` is then the
 # pose it starts at, which is the true start pose. nav2_amcl instead
 # localizes against the track's committed occupancy grid, which the scenario
-# names (scenario_parameters.track_parameters).
+# names (scenario_parameters.track_parameters). MOLA-LO localizes on the .mm
+# it built itself in a mapping lap (scripts/mola_map_track.sh), found beside
+# that grid in maps/<map>/mola/.
 POSE_SOURCE_CONFIGS = {
     "slam_toolbox": "config/localization/slam_toolbox_online.yaml",
     "amcl": "config/localization/amcl.yaml",
+    "mola": "config/localization/mola_lidar2d.yaml",
 }
-# Where nav2_amcl's initial pose comes from. The sim places the car at an
-# arc length drawn from the run's seed (f110_env.reset), so no static pose
-# can be configured; the support node publishes the first ground-truth pose
+# Where nav2_amcl's and MOLA's initial pose comes from. The sim places the
+# car at an arc length drawn from the run's seed (f110_env.reset), so no
+# static pose can be configured; the support node publishes the first
+# ground-truth pose
 # here, once and latched, with the covariance of a human placing the car
 # roughly - the simulation's stand-in for RViz's 2D Pose Estimate
-# (BRINGUP-2020). slam_toolbox needs none: it defines `map` as where it
-# starts.
+# (BRINGUP-2020). MOLA's bridge transforms it into `mola_map` through the
+# static map -> mola_map edge. slam_toolbox needs none: it defines `map` as
+# where it starts.
 INITIAL_POSE_TOPIC = "/initialpose"
 
 
@@ -83,6 +90,16 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     driving_on_estimate = estimating and LaunchConfiguration(
         "drive_on_estimate"
     ).perform(context) in ("true", "True", "1")
+    if pose_source == "mola" and driving_on_estimate:
+        # Warned, not refused: a closed-loop experiment stays possible
+        # (ADR 0005).
+        LOGGER.warning(
+            "pose_source:=mola with drive_on_estimate:=true: no closed-loop "
+            "lap is backed for MOLA (worst open-loop error 3.1 m), and the "
+            "controller may latch a stop before the estimate is held to the "
+            "start pose (repo-gotchas #19). Pass drive_on_estimate:=false "
+            "to score it open loop."
+        )
     # The estimate scored and recorded is the pose the controller drives
     # on, unless the caller named another topic.
     if estimating and estimate_topic.perform(context) == GROUND_TRUTH_POSE:
@@ -143,10 +160,14 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
                 # then composes it with /odom into the control-rate pose.
                 "publish_map_to_odom": not estimating,
                 "composed_odometry_topic": ESTIMATED_POSE if estimating else "",
-                # Only AMCL needs to be told where it starts.
+                # Only AMCL and MOLA need to be told where they start.
                 "initial_pose_topic": (
-                    INITIAL_POSE_TOPIC if pose_source == "amcl" else ""
+                    INITIAL_POSE_TOPIC
+                    if pose_source in ("amcl", "mola")
+                    else ""
                 ),
+                # MOLA applies it after its first scan (BRINGUP-2500).
+                "hold_estimate_until_initial_pose": pose_source == "mola",
             },
         ],
     )
@@ -251,6 +272,9 @@ def _pose_source_nodes(pose_source: str, tracks: dict) -> list:
         # which world this is, and localizing against another track's walls
         # is silent, not an error.
         return amcl([configuration], tracks["map_server"]["yaml_filename"])
+    if pose_source == "mola":
+        # MOLA's map is derived from the same grid, for the same reason.
+        return mola(configuration, tracks["map_server"]["yaml_filename"])
     return slam_toolbox("mapping", [configuration])
 
 

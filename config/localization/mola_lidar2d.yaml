@@ -1,0 +1,26 @@
+# Launch arguments of ros-jazzy-mola-lidar-odometry 3.3.0's
+# ros2-launchs/ros2-lidar-odometry.launch.py for `pose_source:=mola`:
+# localization only, on the .mm MOLA built itself in a mapping lap
+# (config/scenarios/maps/<map>/mola/, scripts/mola_map_track.sh). Read by
+# racing_bringup.estimators.mola_launch_arguments, which adds
+# mola_initial_map_mm_file. A relative `mola_lo_pipeline` is relative to this
+# file. MOLA reads /scan and /odom, never /ground_truth/*.
+#
+# mola_lo_reference_frame / mola_state_estimator_reference_frame:
+#   MOLA's map frame is `mola_map`, so it owns exactly `mola_map -> odom`; a
+#   static `map -> mola_map` (the provenance's T) joins it to the world frame
+#   and `/initialpose` (frame `map`) reaches it through that transform.
+# mola_bridge_odometry_frame is not set here: the default `odom` applies, and
+#   MOLA owns `mola_map -> odom`. Only the mapping config sets it
+#   (mola_lidar2d_mapping.yaml: `mola_odom`).
+lidar_topic_name: /scan
+lidar_topic_type: LaserScan
+mola_lo_pipeline: mola_lidar2d_localization_pipeline.yaml
+use_rviz: "False"
+use_mola_gui: "False"
+use_sim_time: "True"
+enforce_planar_motion: "True"
+odom_topic_name: /odom
+mola_state_estimator_reference_frame: mola_map
+mola_lo_reference_frame: mola_map
+start_mapping_enabled: "False"
