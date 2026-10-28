@@ -27,6 +27,7 @@ seed=${3:-7}
 lap_wait=${LAP_WAIT:-300}
 time_scale=1.0
 
+trap 'echo "mola_map_track.sh: failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 cd "$(dirname "$0")/.."
 # colcon's setup scripts read unset variables.
 set +u
@@ -67,7 +68,7 @@ MOLA_SIMPLEMAP_OUTPUT=$simplemap ros2 launch mola_lidar_odometry \
 mola=$!
 # Match the node executables' path, never a bare "mola": pkill -f would also
 # kill any shell whose command line merely mentions it.
-trap 'kill -INT "$mola" "$launch" 2>/dev/null; sleep 5; pkill -f lib/mola_launcher/ || true; pkill -f install/racing_ || true; pkill -f robot_state_publisher || true' EXIT
+trap 'kill -TERM "$mola" "$launch" 2>/dev/null || true; sleep 5; pkill -f lib/mola_launcher/ || true; pkill -f install/racing_ || true; pkill -f robot_state_publisher || true' EXIT
 
 # Deterministic t=0: the sim is held at clock 0 and republishes its snapshot.
 # Wait for MOLA to subscribe /scan and process its first scan - which it logs
@@ -81,25 +82,40 @@ for _ in $(seq 1 120); do
     sleep 2
 done
 grep -q "Initial re-localization done" log/mola_mapping_mola.log
-ros2 service call /racing_sim/reset racing_interfaces/srv/Reset \
-    "{seed: $seed, scenario_id: \"\"}" >log/mola_mapping_reset.log
-
+# Subscribe to the metrics while the sim is still held, so that the CLI's
+# start-up and DDS discovery do not land in the first seconds of the lap, where
+# a stall would latch STALE_INPUT (gotcha #19).
 timeout "$lap_wait" ros2 topic echo --once \
     --qos-durability transient_local --qos-reliability reliable \
     /scenario/metrics racing_interfaces/msg/ScenarioMetrics \
-    >log/mola_mapping_metrics.txt
+    >log/mola_mapping_metrics.txt &
+echo_pid=$!
+sleep 5
+ros2 service call /racing_sim/reset racing_interfaces/srv/Reset \
+    "{seed: $seed, scenario_id: \"\"}" >log/mola_mapping_reset.log
+wait "$echo_pid"
 grep -E "lap_completed|lap_time|collision_count" log/mola_mapping_metrics.txt
 grep -q "lap_completed: true" log/mola_mapping_metrics.txt
 
-# A clean MOLA shutdown writes the simplemap, and with a lap's ~5000
-# keyframes that takes minutes (measured: 130 s), so wait for the process.
-kill -INT "$mola"
-for _ in $(seq 1 300); do
-    pgrep -f lib/mola_launcher/ >/dev/null || break
-    sleep 2
-done
-! pgrep -f lib/mola_launcher/ >/dev/null
-test -s "$simplemap"
+# A clean MOLA shutdown writes the simplemap before the launch exits; wait on
+# the launch's own pid (a watchdog kills it if the save hangs).
+# SIGINT goes to mola-cli itself: sent only to `ros2 launch` it was measured to
+# leave mola-cli running for 15 minutes, never saving.
+kill -INT "$mola" 2>/dev/null || true
+pkill -INT -f lib/mola_launcher/mola-cli || true
+( sleep 900; kill -KILL "$mola" 2>/dev/null ) &
+watchdog=$!
+wait "$mola" || true
+kill "$watchdog" 2>/dev/null || true
+test -s "$simplemap" || { echo "no simplemap written" >&2; exit 1; }
+# Stop the stack, so the recording the provenance reads is complete.
+# SIGTERM: a background job of a non-interactive shell starts with SIGINT
+# ignored, so a SIGINT sent to `ros2 launch` does nothing.
+kill -TERM "$launch" 2>/dev/null || true
+( sleep 120; kill -KILL "$launch" 2>/dev/null ) &
+watchdog=$!
+wait "$launch" || true
+kill "$watchdog" 2>/dev/null || true
 sm2mm -i "$simplemap" -o "$output.mm" -p config/localization/mola_sm2mm.yaml
 
 python3 - "$output" "$scenario" "$seed" "$time_scale" "$first_stamp" "$stem" <<'PY'
@@ -110,7 +126,10 @@ output, scenario, seed, time_scale, first_stamp, stem = sys.argv[1:]
 first_stamp = float(first_stamp)
 truth = None
 for line in open("log/mola_mapping.jsonl"):
-    record = json.loads(line)
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        continue  # the stack was stopped mid-write: a cut last line
     if record.get("topic") != "/ground_truth/odom":
         continue
     stamp = record["stamp"]["sec"] + record["stamp"]["nanosec"] * 1e-9

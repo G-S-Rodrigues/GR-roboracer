@@ -89,3 +89,32 @@ def test_bringup_1510_the_provenance_is_complete_and_true_to_the_files() -> (
     assert provenance["seed"] != LOCALIZATION_SEED
     assert not provenance["scenario"].endswith("_survey")
     assert (REPOSITORY_ROOT / provenance["scenario"]).is_file()
+
+
+def test_bringup_1540_the_mapping_script_never_fails_silently() -> None:
+    """Under `set -e` a bare failing test left the script exiting with no
+    message after the lap (seen once). Every exit names its line, and the
+    shutdown wait follows MOLA's own pid rather than a process-name match."""
+    script = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()
+    assert re.search(r"^trap 'echo .*LINENO.*' ERR$", script, re.MULTILINE)
+    assert 'wait "$mola"' in script
+    assert "pgrep" not in script
+    # `ros2 launch` was measured to leave mola-cli running for 15 minutes
+    # after a SIGINT (it never saved the simplemap): the signal goes to
+    # mola-cli itself, which saves on SIGINT.
+    assert "pkill -INT -f lib/mola_launcher/mola-cli" in script
+    # The recording is read for T only after the stack that writes it has
+    # exited: read while it ran, its last line was cut mid-write and the
+    # provenance step died on a JSONDecodeError.
+    assert script.index('wait "$launch"') < script.index('mola_mapping.jsonl"')
+    # Under `set -e` a failing kill ended the EXIT trap before its pkills ran
+    # and left the stack running (gotcha #10); SIGINT to a background job is
+    # ignored, so the launch is stopped with SIGTERM.
+    assert 'kill -INT "$launch"' not in script
+    assert 'kill -TERM "$mola" "$launch" 2>/dev/null || true' in script
+    # The stack is stopped mid-write, so the recording's last line is cut.
+    assert "json.JSONDecodeError" in script
+    # The metrics subscriber starts while the sim is held, not after t=0.
+    assert script.index("topic echo") < script.index(
+        "ros2 service call /racing_sim/reset"
+    )
