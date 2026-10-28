@@ -264,3 +264,13 @@ Traps any task in this repository can hit. Each one cost real time at least once
     changed `dev` definition can recreate it too; `--remove-orphans` removes containers, it does not
     recreate them. `dev` is the shared container, mounted on the worktree as `/ws`. Always name the
     autodrive service and pass `--no-deps`; never `down`.
+
+35. **Receive time is not the AutoDRIVE sim's time.** Encoder speed on the recorded 3.5-4.9 s straight
+    (16 frame pairs, wheel radius 0.059) differs from `V1 Linear Velocity` x by a median 0.006 m/s (max
+    0.007) when dt is the `V1 Lap Time` delta, and by 0.106 (max 0.305) when dt is the receive time of
+    the frame, 0.069 (max 0.214) over windows of at least 0.5 s. Sim time over wall time, over sliding 3 s
+    windows within each stretch where the lap time rises (296 windows), ran 0.90-1.04, and the frame period was ~80 ms there against an 18 ms median overall. Nothing
+    errors: a wall-clock dt gives a plausible speed. `racing_sim_autodrive.sim_dt` is the lap-time delta;
+    it is `None` whenever the lap clock does not rise (40 pairs in the fixture, all while the reset
+    level was held; a drop at the lap line is presumed, not recorded). Lap time is not a race-time
+    input. Which clock a front end feeds the throttle loop is open topic autodrive-clock-for-dt.
