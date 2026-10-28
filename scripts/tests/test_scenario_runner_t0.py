@@ -78,6 +78,14 @@ def _observer():
     return scenario_runner._HangObserver(_FakeNode([]))
 
 
+def test_check_1950_first_ever_stale_past_the_window_is_clock_late():
+    observer = _observer()
+    observer._on_drive(_drive(0.45))
+    observer._on_drive(_drive(0.50))
+    observer._on_status(_status(0.50, SafetyStatus.REASON_STALE_INPUT))
+    assert observer.verdict() == "supervisor-clock-late"
+
+
 def test_check_1960_a_status_skip_with_commands_is_supervisor_lag():
     observer = _observer()
     for tick in range(10):

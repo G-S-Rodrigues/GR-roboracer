@@ -274,6 +274,7 @@ class _HangObserver:
         self.first_latch = None
         self.stale_count = 0
         self.clock = None
+        self._statuses_before_latch = 0
         self._node = node
         self._drive_stamps: deque[float] = deque()
         self._status_stamps: deque[float] = deque()
@@ -327,6 +328,8 @@ class _HangObserver:
         seconds = self._seconds(message.header.stamp)
         if message.reason != SafetyStatus.REASON_NONE:
             self.first_latch = message
+        else:
+            self._statuses_before_latch += 1
         if self._last_status is not None:
             self._max_status_gap = max(
                 self._max_status_gap, seconds - self._last_status
@@ -370,7 +373,14 @@ class _HangObserver:
         yet the supervisor's own status stamps skip at least that window - it
         judged a queue it had not read. ``controller-silent``: the status
         stamps are continuous and no command is stamped inside the window.
-        Anything else is ``unclassified``.
+        ``supervisor-clock-late``: the first status the supervisor ever
+        published is already STALE_INPUT, stamped at or past the window, with
+        commands inside it - its clock stood at 0 while the drive stream ran
+        and then jumped (F1). With the t=0 wait on ``~/clock_received`` in
+        place this means the supervisor had heard /clock before release yet
+        its clock did not advance through the window. This observer's own
+        subscription can also be late, so it is a verdict about the first
+        status seen, not proof. Anything else is ``unclassified``.
         """
         if self.first_latch is None:
             return "no-latch"
@@ -381,6 +391,13 @@ class _HangObserver:
             if latch - STALE_INPUT_WINDOW_SECONDS < stamp <= latch
         ]
         status_skipped = self._max_status_gap >= STALE_INPUT_WINDOW_SECONDS
+        if (
+            self.first_latch.reason == SafetyStatus.REASON_STALE_INPUT
+            and self._statuses_before_latch == 0
+            and latch >= STALE_INPUT_WINDOW_SECONDS - 1e-9
+            and in_window
+        ):
+            return "supervisor-clock-late"
         if in_window and status_skipped:
             return "supervisor-lag"
         if not in_window and not status_skipped:
