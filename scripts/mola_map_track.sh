@@ -1,29 +1,34 @@
 #!/bin/bash
-# Regenerate a track's committed MOLA map (part 1 of the MOLA plan).
+# Regenerate a track's committed MOLA map (MOLA plan, parts 1 and 2).
 #
-# One lap of the reference stack on ground truth at 1x, seed 7 by default,
-# while MOLA-LO's lidar2d pipeline (config/localization/
-# mola_lidar2d_pipeline.yaml) runs in mapping mode beside it, reading /scan
+# One lap of the reference stack on ground truth at 1x while MOLA-LO's
+# lidar2d pipeline (config/localization/mola_lidar2d_pipeline.yaml) maps
+# beside it, through racing_bringup's mola_mapping.launch.py: it reads /scan
 # and /odom and nothing from /ground_truth. The start is held; this script
 # waits for MOLA to subscribe /scan and publish, then calls the sim's
 # ~/reset, so MOLA's origin is the car's pose at t=0 (repo-gotchas #19). MOLA
 # writes a simplemap; sm2mm turns it into the native .mm (a 5 cm CVoxelMap
-# layer named `localmap`, config/localization/mola_sm2mm.yaml).
+# layer named `localmap`, config/localization/mola_sm2mm.yaml), and the grid
+# is exported beside it: the simplemap moved into the world frame by T
+# (`sm-cli tf`), a COccupancyGridMap2D layer (config/localization/
+# mola_sm2grid.yaml) and mm2grid, so the extractor, amcl and map_accuracy read
+# <stem>_grid.{png,yaml} unchanged.
 # Run in the dev container, from /ws, after a colcon build:
 #
 #   ./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml \
 #       config/scenarios/maps/Spielberg/mola/Spielberg 7
 #
-# The output is <stem>.mm + <stem>.yaml (the provenance, with the alignment T
-# from the map frame to the world frame: the /ground_truth/odom pose at the
-# stamp of MOLA's first processed scan), owned by the container's user: chown
-# it back before committing it as a reviewed diff. MOLA is multi-threaded, so
-# two runs are close but not identical.
+# The output is <stem>.mm, <stem>_grid.{png,yaml} and <stem>.yaml (the
+# provenance, with the alignment T from the map frame to the world frame: the
+# /ground_truth/odom pose at the stamp of MOLA's first processed scan), owned
+# by the container's user: chown it back before committing it as a reviewed
+# diff. MOLA is multi-threaded, so two runs are close but not identical.
 set -euo pipefail
 
-scenario=${1:?usage: mola_map_track.sh <scenario.yaml> <output-stem> [seed]}
-stem=${2:?usage: mola_map_track.sh <scenario.yaml> <output-stem> [seed]}
-seed=${3:-7}
+usage="usage: mola_map_track.sh <scenario.yaml> <output-stem> <seed>"
+scenario=${1:?$usage}
+stem=${2:?$usage}
+seed=${3:?$usage}
 lap_wait=${LAP_WAIT:-300}
 time_scale=1.0
 
@@ -43,28 +48,13 @@ esac
 simplemap=$(pwd)/log/mola_mapping.simplemap
 rm -f "$simplemap"
 
-mola_args=$(python3 - <<'PY'
-from pathlib import Path
-
-import yaml
-
-config = Path("config/localization/mola_lidar2d_mapping.yaml").resolve()
-for key, value in yaml.safe_load(config.read_text()).items():
-    if key == "mola_lo_pipeline":
-        value = config.parent / value
-    print(f"{key}:={value}")
-PY
-)
-
 ros2 launch racing_bringup sim_pure_pursuit.launch.py \
     scenario:="$scenario" use_rviz:=false seed:="$seed" start_held:=true \
     time_scale:="$time_scale" recording_path:=log/mola_mapping.jsonl \
     >log/mola_mapping_launch.log 2>&1 &
 launch=$!
-# shellcheck disable=SC2086
-MOLA_SIMPLEMAP_OUTPUT=$simplemap ros2 launch mola_lidar_odometry \
-    ros2-lidar-odometry.launch.py $mola_args \
-    >log/mola_mapping_mola.log 2>&1 &
+ros2 launch racing_bringup mola_mapping.launch.py \
+    simplemap_output:="$simplemap" >log/mola_mapping_mola.log 2>&1 &
 mola=$!
 # Match the node executables' path, never a bare "mola": pkill -f would also
 # kill any shell whose command line merely mentions it.
@@ -118,12 +108,15 @@ wait "$launch" || true
 kill "$watchdog" 2>/dev/null || true
 sm2mm -i "$simplemap" -o "$output.mm" -p config/localization/mola_sm2mm.yaml
 
-python3 - "$output" "$scenario" "$seed" "$time_scale" "$first_stamp" "$stem" <<'PY'
-import hashlib, json, math, subprocess, sys
-import yaml
+# T_map_mola: the pose of the world frame's car at MOLA's first processed
+# scan (/ground_truth/odom is read here and nowhere in MOLA), rounded as the
+# provenance records it so the grid and the yaml agree. Written to a file for
+# the grid step and the provenance step.
+t_file=$(pwd)/log/mola_mapping_T.txt
+python3 - "$first_stamp" "$t_file" <<'PY'
+import json, math, sys
 
-output, scenario, seed, time_scale, first_stamp, stem = sys.argv[1:]
-first_stamp = float(first_stamp)
+first_stamp, out = float(sys.argv[1]), sys.argv[2]
 truth = None
 for line in open("log/mola_mapping.jsonl"):
     try:
@@ -137,6 +130,32 @@ for line in open("log/mola_mapping.jsonl"):
         truth = (stamp, record["payload"])
 _, pose = truth
 yaw = 2 * math.atan2(pose["qz"], pose["qw"])
+with open(out, "w") as handle:
+    handle.write(
+        f"{round(pose['x'], 4)} {round(pose['y'], 4)} {round(yaw, 5)}\n"
+    )
+PY
+
+# The grid: the simplemap moved into the world frame by T (sm-cli takes the
+# yaw in degrees), then a grid-layer pipeline (a second sm2mm, because mm2grid
+# reads only a COccupancyGridMap2D layer) and mm2grid, with the survey's
+# thresholds. Nothing is resampled.
+read -r tx ty tyaw <"$t_file"
+yaw_deg=$(python3 -c "import math; print(math.degrees($tyaw))")
+world_simplemap=$(pwd)/log/mola_mapping_world.simplemap
+grid_mm=$(pwd)/log/mola_mapping_grid.mm
+sm-cli tf "$simplemap" "$world_simplemap" "[$tx $ty 0 $yaw_deg 0 0]"
+sm2mm -i "$world_simplemap" -o "$grid_mm" -p config/localization/mola_sm2grid.yaml
+(cd "$(dirname "$output")" && mm2grid "$grid_mm" --occupied-thresh 0.65 \
+    --free-thresh 0.196 -o "$(basename "$output")_grid")
+
+python3 - "$output" "$scenario" "$seed" "$time_scale" "$first_stamp" "$stem" "$t_file" <<'PY'
+import hashlib, subprocess, sys
+import yaml
+
+output, scenario, seed, time_scale, first_stamp, stem, t_file = sys.argv[1:]
+first_stamp = float(first_stamp)
+x, y, yaw = (float(v) for v in open(t_file).read().split())
 
 
 def version(package):
@@ -146,6 +165,7 @@ def version(package):
 
 
 mm = open(f"{output}.mm", "rb").read()
+grid = open(f"{output}_grid.png", "rb").read()
 name = stem.rsplit("/", 1)[-1]
 provenance = {
     "command": (
@@ -158,14 +178,19 @@ provenance = {
     "mola_version": version("ros-jazzy-mola-lidar-odometry"),
     "mp2p_icp_version": version("ros-jazzy-mp2p-icp"),
     "T_map_mola": {
-        "x": round(pose["x"], 4),
-        "y": round(pose["y"], 4),
+        "x": x,
+        "y": y,
         "z": 0.074,
-        "yaw": round(yaw, 5),
+        "yaw": yaw,
     },
     "T_source": "first_processed_scan",
     "mm_sha256": hashlib.sha256(mm).hexdigest(),
     "mm_bytes": len(mm),
+    "loop_closure": False,
+    "grid_image": f"{name}_grid.png",
+    "grid_sha256": hashlib.sha256(grid).hexdigest(),
+    "grid_bytes": len(grid),
+    "grid_pipeline": "config/localization/mola_sm2grid.yaml",
 }
 with open(f"{output}.yaml", "w") as handle:
     handle.write(

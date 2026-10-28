@@ -214,3 +214,81 @@ def test_bringup_1700_mola_mapping_is_the_mapping_yaml_plus_an_output() -> None:
     assert arguments["use_sim_time"] == "True"
     assert "mola_initial_map_mm_file" not in arguments
     assert all("ground_truth" not in v for v in arguments.values())
+
+
+MAPPING_LAUNCH = PACKAGE_ROOT / "launch" / "mola_mapping.launch.py"
+
+
+def test_bringup_1720_the_mapping_launch_starts_only_mola() -> None:
+    """BRINGUP-1720: `mola_mapping.launch.py` declares `simplemap_output` and
+    `configuration`, and what it starts is exactly the output variable and
+    MOLA's include: no stack, so the script's SIGINT-to-mola-cli shutdown
+    owns a process group of one launch."""
+    import importlib.util
+
+    from launch import LaunchContext
+    from launch.actions import (
+        DeclareLaunchArgument,
+        IncludeLaunchDescription,
+        OpaqueFunction,
+        SetEnvironmentVariable,
+    )
+
+    assert MAPPING_LAUNCH.is_file(), f"{MAPPING_LAUNCH} does not exist"
+    spec = importlib.util.spec_from_file_location(
+        "mola_mapping", MAPPING_LAUNCH
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    entities = module.generate_launch_description().entities
+    declared = {
+        e.name for e in entities if isinstance(e, DeclareLaunchArgument)
+    }
+    assert declared == {"simplemap_output", "configuration"}
+    (opaque,) = [e for e in entities if isinstance(e, OpaqueFunction)]
+    context = LaunchContext()
+    context.launch_configurations["simplemap_output"] = "/x/out.simplemap"
+    context.launch_configurations["configuration"] = str(MAPPING_CONFIGURATION)
+    actions = opaque.execute(context)
+    assert [type(a) for a in actions] == [
+        SetEnvironmentVariable,
+        IncludeLaunchDescription,
+    ]
+    text = MAPPING_LAUNCH.read_text()
+    assert "sim_pure_pursuit" not in text.replace("sim_pure_pursuit.launch", "")
+    assert "config/localization/mola_lidar2d_mapping.yaml" in text
+
+
+def test_bringup_1730_the_script_drives_the_mapping_launch() -> None:
+    """BRINGUP-1730: `mola_map_track.sh` starts MOLA through
+    `racing_bringup mola_mapping.launch.py` (no yaml parsed in a heredoc, no
+    direct `mola_lidar_odometry` launch), and its order is lap, simplemap,
+    .mm, T, grid, provenance. The seed is a positional, so the recorded
+    command's stem stays at `split()[-2]`."""
+    script = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()
+    assert "ros2 launch racing_bringup mola_mapping.launch.py" in script
+    assert 'simplemap_output:="$simplemap"' in script
+    assert "ros2 launch mola_lidar_odometry" not in script
+    assert "config/localization/mola_lidar2d_mapping.yaml" not in script
+    assert (
+        "usage: mola_map_track.sh <scenario.yaml> <output-stem> <seed>"
+        in script
+    )
+    order = [
+        'wait "$mola"',
+        'sm2mm -i "$simplemap" -o "$output.mm"',
+        "mola_mapping_T.txt",
+        "sm-cli tf",
+        "config/localization/mola_sm2grid.yaml",
+        "mm2grid",
+        "grid_sha256",
+    ]
+    code = "\n".join(
+        line for line in script.splitlines() if not line.startswith("#")
+    )
+    positions = [code.index(item) for item in order]
+    assert positions == sorted(positions), dict(
+        zip(order, positions, strict=True)
+    )
+    # Every tool step runs under `set -e` and the ERR trap names its line.
+    assert re.search(r"^trap 'echo .*LINENO.*' ERR$", script, re.MULTILINE)
