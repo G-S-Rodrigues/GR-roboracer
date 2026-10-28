@@ -169,3 +169,48 @@ def test_bringup_1560_localization_pipeline_differs_by_two_values() -> None:
             'threshold: "1.0*ADAPTIVE_THRESHOLD_SIGMA"',
         ),
     ]
+
+
+MAPPING_CONFIGURATION = (
+    REPOSITORY_ROOT / "config" / "localization" / "mola_lidar2d_mapping.yaml"
+)
+
+
+def test_bringup_1710_mapping_arguments_name_no_initial_map() -> None:
+    """BRINGUP-1710: `mola_launch_arguments(cfg, None)` is the mapping form: it
+    has no `mola_initial_map_mm_file` (a mapping lap starts from nothing), and
+    the localization form (cfg, mm) is unchanged."""
+    from racing_bringup.estimators import mola_launch_arguments
+
+    mapping = mola_launch_arguments(str(MAPPING_CONFIGURATION), None)
+    assert "mola_initial_map_mm_file" not in mapping
+    assert mapping["start_mapping_enabled"] == "True"
+    localization = mola_launch_arguments(
+        str(REPOSITORY_ROOT / "config/localization/mola_lidar2d.yaml"),
+        "/x/m.mm",
+    )
+    assert localization["mola_initial_map_mm_file"] == "/x/m.mm"
+
+
+def test_bringup_1700_mola_mapping_is_the_mapping_yaml_plus_an_output() -> None:
+    """BRINGUP-1700: `mola_mapping` includes MOLA-LO's launch file with the
+    mapping yaml's arguments (mapping on, simplemap generated, MOLA's frames
+    renamed, simulated time) and sets MOLA_SIMPLEMAP_OUTPUT, the environment
+    variable the pipeline reads, to the given path. No value reads
+    `/ground_truth` (acceptance 6)."""
+    from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
+    from racing_bringup.estimators import mola_mapping
+
+    actions = mola_mapping(str(MAPPING_CONFIGURATION), "/x/out.simplemap")
+    environment = [a for a in actions if isinstance(a, SetEnvironmentVariable)]
+    includes = [a for a in actions if isinstance(a, IncludeLaunchDescription)]
+    assert len(actions) == 2 and len(environment) == 1 and len(includes) == 1
+    assert environment[0].name[0].text == "MOLA_SIMPLEMAP_OUTPUT"
+    assert environment[0].value[0].text == "/x/out.simplemap"
+    arguments = dict(includes[0].launch_arguments)
+    assert arguments["start_mapping_enabled"] == "True"
+    assert arguments["generate_simplemap"] == "True"
+    assert arguments["mola_bridge_odometry_frame"] == "mola_odom"
+    assert arguments["use_sim_time"] == "True"
+    assert "mola_initial_map_mm_file" not in arguments
+    assert all("ground_truth" not in v for v in arguments.values())
