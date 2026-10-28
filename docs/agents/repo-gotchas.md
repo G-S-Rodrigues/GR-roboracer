@@ -82,7 +82,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     unrecoverable stop during startup, on a graph that is otherwise perfectly healthy. Symptom: an
     emergency stop already latched at t=0, with no fault anywhere in the logs. The fix is a
     deterministic t=0 — wait for every participant, then call the sim node's `~/reset` — never a
-    longer timeout.
+    longer timeout. That wait also covers the supervisor's `~/clock_received` (its first `/clock`
+    delivery): a best-effort `/clock` writer matched after t=0 left the supervisor's clock at 0
+    and latched STALE with no gap in the drive stream (F1).
 
 10. **A stale ROS graph outlives the launch that started it.** `pkill -f 'ros2 launch'` kills the
     launcher and leaves every node running; they keep publishing on the same `ROS_DOMAIN_ID` and
