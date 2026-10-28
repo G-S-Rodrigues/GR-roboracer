@@ -485,7 +485,7 @@ def _reset_at_deterministic_t0(
         # which (hypothesis, untested) needs motion before it emits, never
         # produced /localization/odom while held - measured as a 394 s
         # timeout on SIM-3070, while SIM-3080 passes with this wait.
-        if pose_source == "amcl":
+        if pose_source in ("amcl", "mola"):
             wait_for_message(
                 node, Odometry, ESTIMATE_TOPIC, RELIABLE_QOS, _remaining()
             )

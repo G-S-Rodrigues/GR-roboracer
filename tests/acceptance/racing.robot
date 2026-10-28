@@ -51,6 +51,16 @@ Localization Estimate Tracks Ground Truth: amcl
     # originally, 0.141-0.356 post-3.1b); SIM-5030's own multi-seed bounds differ.
     amcl             0.65              0.99
 
+Localization Estimate Tracks Ground Truth: mola
+    [Documentation]    ACC-4510. The MOLA-LO implementation's case; see the
+    ...    slam_toolbox case above. It localizes on the map MOLA built itself
+    ...    (config/scenarios/maps/Spielberg/mola/), so its error includes
+    ...    that map's own error, and runs the 1080-beam scenario at 1x.
+    [Tags]    impl:pose_source=mola
+    [Template]    Pose Source Should Track Ground Truth
+    # mola 4.0: provisional until the bounds are measured (divergence guard).
+    mola             4.0               0.99    config/scenarios/spielberg_1080.yaml    1.0
+
 Vehicle Completes A Lap Driving On Its Own Estimate
     [Documentation]    ACC-4040. Closed loop on nav2_amcl: the controller
     ...    consumes /localization/odom while the safety supervisor keeps
@@ -67,7 +77,9 @@ Vehicle Completes A Lap Driving On Its Own Estimate
 *** Keywords ***
 Pose Source Should Track Ground Truth
     [Arguments]    ${pose_source}    ${error_bound}    ${availability_bound}
+    ...    ${scenario}=config/scenarios/spielberg.yaml    ${time_scale}=5.0
     Run Racing Scenario On Pose Source    ${pose_source}
+    ...    scenario=${scenario}    time_scale=${time_scale}
     Lap Completion Should Be    true
     Localization Availability Should Exceed    ${availability_bound}
     Localization Error Should Be Below    ${error_bound}
