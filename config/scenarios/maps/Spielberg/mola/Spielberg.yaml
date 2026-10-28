@@ -16,5 +16,5 @@ T_map_mola:
   z: 0.074
   yaw: -0.06665
 T_source: first_processed_scan
-mm_sha256: 91f6831e71393afef22cf1604bf1376514118fec26e997d9f77468830feff3d2
-mm_bytes: 293545
+mm_sha256: 4a8972258e487a338e3222ed0bd36c0eca71dfb4f1925b6f3210a35c38b01093
+mm_bytes: 55751
