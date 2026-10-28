@@ -14,15 +14,13 @@ provenance path so the tier-1 test below can feed it a mutated copy.
 """
 
 import math
-import os
 import shutil
 import subprocess
 from pathlib import Path
 
-import numpy as np
 import pytest
 import yaml
-from scipy.spatial import cKDTree
+from racing_evaluation.map_accuracy import mm_layer_points, nearest_p95
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 COMMITTED = (
@@ -61,25 +59,6 @@ def _document(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def _points(mm: Path, work: Path) -> np.ndarray:
-    """The occupied voxel centres of `mm`'s `localmap` layer, from mm2txt."""
-    work.mkdir(parents=True, exist_ok=True)
-    tool = shutil.which("mm2txt")
-    assert tool, "mm2txt is not on PATH: source /opt/ros/jazzy/setup.bash"
-    subprocess.run(
-        [tool, str(mm.resolve())],
-        cwd=work,
-        check=True,
-        capture_output=True,
-        env=os.environ,
-    )
-    return np.loadtxt(work / "Spielberg_localmap.txt")[:, :2]
-
-
-def _p95(points: np.ndarray, reference: np.ndarray) -> float:
-    return float(np.percentile(cKDTree(reference).query(points)[0], 95))
-
-
 def check_regenerated(
     committed_yaml: Path, regenerated_stem: Path, work: Path | None = None
 ) -> dict:
@@ -105,13 +84,17 @@ def check_regenerated(
     position = math.hypot(a["x"] - b["x"], a["y"] - b["y"])
     yaw = abs(math.degrees(a["yaw"] - b["yaw"]))
     work = work or regenerated_stem.parent
-    old = _points(committed_yaml.with_suffix(".mm"), work / "committed")
-    new = _points(regenerated_stem.with_suffix(".mm"), work / "regenerated")
+    old = mm_layer_points(
+        committed_yaml.with_suffix(".mm"), "localmap", work / "committed"
+    )
+    new = mm_layer_points(
+        regenerated_stem.with_suffix(".mm"), "localmap", work / "regenerated"
+    )
     deltas = {
         "T_position_m": position,
         "T_yaw_deg": yaw,
-        "p95_regenerated_to_committed_m": _p95(new, old),
-        "p95_committed_to_regenerated_m": _p95(old, new),
+        "p95_regenerated_to_committed_m": nearest_p95(new, old),
+        "p95_committed_to_regenerated_m": nearest_p95(old, new),
     }
     print(f"SIM-5520 deltas: {deltas}; measured: {MEASUREMENT}")
     assert position <= POSITION_TOLERANCE, deltas
