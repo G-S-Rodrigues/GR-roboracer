@@ -271,6 +271,41 @@ def test_bringup_1030_the_launch_composes_the_reference_stack() -> None:
     assert named == set(scenario_parameters.PLANNERS)
 
 
+def test_bringup_1530_launch_pose_sources_are_the_reference_ones() -> None:
+    """BRINGUP-1530: the `pose_source` values the launch accepts are exactly
+    the implementations `reference_stack.yaml` names for that role (the
+    default plus its alternatives). A guard: it passes when the two agree
+    and names the difference when one gains an estimator the other lacks."""
+    import yaml
+
+    roles = yaml.safe_load(
+        (REPOSITORY_ROOT / "config" / "reference_stack.yaml").read_text(
+            encoding="utf-8"
+        )
+    )["roles"]
+    pose_source = roles["pose_source"]
+    named = {
+        pose_source["implementation"],
+        *(a["implementation"] for a in pose_source.get("alternatives", [])),
+    }
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    configs = next(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "POSE_SOURCE_CONFIGS"
+    )
+    accepted = {
+        key.value for key in configs.keys if isinstance(key, ast.Constant)
+    } | {pose_source["implementation"]}
+    assert accepted == named, (
+        f"launch only: {sorted(accepted - named)}; "
+        f"reference_stack only: {sorted(named - accepted)}"
+    )
+
+
 def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
     """BRINGUP-1080: the reference-stack map and the tier-3/4 tests agree.
 
@@ -816,3 +851,96 @@ def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
         module, context = _launch_context(**overrides)
         with pytest.raises(RuntimeError):
             module._launch_nodes(context, "", "")
+
+
+MOLA_CONFIGURATION = (
+    REPOSITORY_ROOT / "config" / "localization" / "mola_lidar2d.yaml"
+)
+
+
+def test_bringup_1520_mola_runs_localization_only_on_the_derived_map() -> None:
+    """BRINGUP-1520: `pose_source:=mola` starts MOLA-LO's lidar2d pipeline in
+    localization-only mode on the scenario's own committed map, headless, on
+    simulated time, with its frames renamed so that it owns exactly
+    `mola_map -> odom` and a static `map -> mola_map` (the provenance's T)
+    puts that into the world frame. No value reads `/ground_truth` (AC6), and
+    describing the nodes starts no process."""
+    import yaml
+    from racing_bringup.estimators import (
+        mola,
+        mola_alignment_arguments,
+        mola_launch_arguments,
+        mola_map_files,
+    )
+    from racing_bringup.scenario_parameters import track_parameters
+
+    grid = track_parameters(SPIELBERG_SCENARIO)["map_server"]["yaml_filename"]
+    mm, provenance = mola_map_files(grid)
+    arguments = mola_launch_arguments(str(MOLA_CONFIGURATION), mm)
+
+    assert arguments["lidar_topic_name"] == "/scan"
+    assert arguments["lidar_topic_type"] == "LaserScan"
+    assert Path(arguments["mola_lo_pipeline"]).is_file()
+    assert Path(arguments["mola_lo_pipeline"]).name == (
+        "mola_lidar2d_localization_pipeline.yaml"
+    )
+    assert arguments["start_mapping_enabled"] == "False"
+    assert arguments["use_rviz"] == "False"
+    assert arguments["use_mola_gui"] == "False"
+    assert arguments["use_sim_time"] == "True"
+    assert arguments["mola_state_estimator_reference_frame"] == "mola_map"
+    assert arguments["mola_lo_reference_frame"] == "mola_map"
+    assert arguments["mola_initial_map_mm_file"] == mm
+    assert all("ground_truth" not in str(v) for v in arguments.values())
+
+    transform = yaml.safe_load(Path(provenance).read_text(encoding="utf-8"))[
+        "T_map_mola"
+    ]
+    assert mola_alignment_arguments(provenance) == [
+        "--x",
+        str(transform["x"]),
+        "--y",
+        str(transform["y"]),
+        "--z",
+        str(transform["z"]),
+        "--yaw",
+        str(transform["yaw"]),
+        "--frame-id",
+        "map",
+        "--child-frame-id",
+        "mola_map",
+    ]
+
+    static, include = mola(str(MOLA_CONFIGURATION), grid)
+    assert static.node_package == "tf2_ros"
+    assert static.node_executable == "static_transform_publisher"
+    assert type(include).__name__ == "IncludeLaunchDescription"
+
+
+def test_bringup_1570_warns_when_mola_is_driven_on_its_own_estimate(
+    monkeypatch,
+) -> None:
+    """BRINGUP-1570: `pose_source:=mola` with `drive_on_estimate:=true` (the
+    launch default) is launched, not refused, with a warning: MOLA is backed
+    open loop only, and the controller would latch a stop before the hold
+    releases (repo-gotchas #19). Open loop and the other sources say nothing."""
+    monkeypatch.chdir(REPOSITORY_ROOT)
+
+    def warnings_for(**overrides) -> list[str]:
+        module, context = _launch_context(
+            scenario="config/scenarios/spielberg_1080.yaml", **overrides
+        )
+        recorded: list[str] = []
+
+        class Recorder:
+            def warning(self, message, *args, **kwargs):
+                recorded.append(str(message))
+
+        monkeypatch.setattr(module, "LOGGER", Recorder())
+        module._launch_nodes(context, "", "")
+        return recorded
+
+    closed = warnings_for(pose_source="mola", drive_on_estimate="true")
+    assert len(closed) == 1 and "drive_on_estimate" in closed[0]
+    assert warnings_for(pose_source="mola", drive_on_estimate="false") == []
+    assert warnings_for(pose_source="amcl", drive_on_estimate="true") == []

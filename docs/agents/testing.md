@@ -120,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **229 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 6 tier-5.**
+Current counts: **238 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -132,6 +132,7 @@ and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
 The nightly-flake work added tier 1 `EVAL-1060`.
 The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
+The MOLA pose-source work added tier 1 `BRINGUP-1520` to `BRINGUP-1570` and `BRINGUP-2500` (estimate held until the start pose is applied), tier 3 `SIM-3510`, nightly `SIM-5520`, and tier 4 `ACC-4510`.
 The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
 The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130` (nine IDs, 1085 among them).
 `raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.

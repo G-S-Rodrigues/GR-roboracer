@@ -100,7 +100,7 @@ def test_check_1820_presence_is_launch_keys_intersect_methods() -> None:
     assert present_sources(["amcl", "slam_toolbox"]) == (BOTH, [])
     present, unknown = present_sources({"amcl", "foo", "slam_toolbox"})
     assert (present, unknown) == (BOTH, ["foo"])
-    # mola and far_lio are in METHODS without an entry yet: absent.
+    # mola and far_lio are in METHODS but not in this launch set: absent.
     assert present_sources({"amcl"}) == (["amcl"], [])
     failures = structural_failures(_all_records(), _expected(BOTH + ["foo"]))
     assert "foo: in the build but not in METHODS" in failures
