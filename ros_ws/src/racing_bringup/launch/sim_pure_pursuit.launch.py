@@ -83,6 +83,24 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     if pose_source not in ("ground_truth", *POSE_SOURCE_CONFIGS):
         raise RuntimeError(f"unknown pose_source: {pose_source}")
     estimating = pose_source != "ground_truth"
+    # Which parameter file slam_toolbox loads, when the caller names one.
+    # Resolved only for slam_toolbox: given to another source it would be
+    # ignored silently, so it is an error there (ADR 0005: the file of one
+    # beam count must stay runnable on any scenario; a real car has no
+    # scenario; a variant is measured without editing a tracked file).
+    slam_toolbox_config = LaunchConfiguration("slam_toolbox_config").perform(
+        context
+    )
+    if slam_toolbox_config:
+        if pose_source != "slam_toolbox":
+            raise RuntimeError(
+                "slam_toolbox_config is only valid with "
+                f"pose_source:=slam_toolbox, not {pose_source}"
+            )
+        if not Path(slam_toolbox_config).is_file():
+            raise RuntimeError(
+                f"slam_toolbox_config file not found: {slam_toolbox_config}"
+            )
     # Whether the controller drives on that estimate or keeps ground truth
     # while the estimator is merely scored. Open loop is how an estimator
     # too rough to race on is still measured (SIM-3070); it changes nothing
@@ -256,11 +274,13 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         recording_node,
         robot_state_publisher_node,
         rviz_node,
-        *_pose_source_nodes(pose_source, tracks),
+        *_pose_source_nodes(pose_source, tracks, slam_toolbox_config),
     ]
 
 
-def _pose_source_nodes(pose_source: str, tracks: dict) -> list:
+def _pose_source_nodes(
+    pose_source: str, tracks: dict, slam_toolbox_config: str = ""
+) -> list:
     """The nodes `pose_source` adds; none for ground truth, which the
     support node already serves."""
     if pose_source == "ground_truth":
@@ -275,7 +295,7 @@ def _pose_source_nodes(pose_source: str, tracks: dict) -> list:
     if pose_source == "mola":
         # MOLA's map is derived from the same grid, for the same reason.
         return mola(configuration, tracks["map_server"]["yaml_filename"])
-    return slam_toolbox("mapping", [configuration])
+    return slam_toolbox("mapping", [slam_toolbox_config or configuration])
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -322,6 +342,10 @@ def generate_launch_description() -> LaunchDescription:
         choices=["", *SPEED_SOURCES],
     )
 
+    slam_toolbox_config_arg = DeclareLaunchArgument(
+        "slam_toolbox_config", default_value=""
+    )
+
     return LaunchDescription(
         [
             scenario_arg,
@@ -337,6 +361,7 @@ def generate_launch_description() -> LaunchDescription:
             planner_arg,
             raceline_optimizer_arg,
             speed_source_arg,
+            slam_toolbox_config_arg,
             OpaqueFunction(
                 function=_launch_nodes,
                 args=[robot_description, rviz_config],
