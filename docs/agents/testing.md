@@ -120,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **238 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **239 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -162,6 +162,8 @@ The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and th
 
 The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/1020/1030` (1030 also pins the exact guard shape, with a negative case), `SIMJAX-1150`; tier 2 `ADAPT-2140/2145/2150/2160`. Conformance tests select by the backend's declared capabilities (`racing_sim_adapter/test/conformance.py`); a not-applicable test prints `NOT APPLICABLE <id>: ...` and returns (no skip marker), and ADAPT-2150 pins the set.
 The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
+
+The lap-time tolerance work (T1) added tier 1 `METRICS-1050` (`sim/tests/test_compare.py`: the default lap_time tolerance admits 0.08 s).
 
 The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
 
