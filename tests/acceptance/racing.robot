@@ -58,8 +58,8 @@ Localization Estimate Tracks Ground Truth: mola
     ...    that map's own error, and runs the 1080-beam scenario at 1x.
     [Tags]    impl:pose_source=mola
     [Template]    Pose Source Should Track Ground Truth
-    # mola 4.0: provisional until the bounds are measured (divergence guard).
-    mola             4.0               0.99    config/scenarios/spielberg_1080.yaml    1.0
+    # mola 2.5: SIM-3510's rmse bound (5 laps 1.547-1.556 m, its MEASUREMENT).
+    mola             2.5               0.99    config/scenarios/spielberg_1080.yaml    1.0
 
 Vehicle Completes A Lap Driving On Its Own Estimate
     [Documentation]    ACC-4040. Closed loop on nav2_amcl: the controller

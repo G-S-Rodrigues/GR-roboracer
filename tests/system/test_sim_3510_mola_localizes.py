@@ -34,9 +34,20 @@ SEED = 42
 TIME_SCALE = 1.0
 TIMEOUT_SECONDS = 400.0
 
-MEASUREMENT = "provisional; step 7 replaces"
-POSITION_RMSE_MAXIMUM = 4.0
-POSITION_MAXIMUM = 8.0
+MEASUREMENT = (
+    "SIM-3510, Spielberg 1080 beams, seed 42, 1x, open loop, on "
+    "maps/Spielberg/mola/Spielberg.mm (mm_sha256 4a89722..., mapping seed 7), "
+    "5 full laps on the dev host (load 1.9-4.2): ate_rmse 1.547-1.556 m "
+    "(median 1.552), ate_maximum 3.076-3.097 m, availability "
+    "0.99743-0.99925; every lap complete, 0 collisions. Includes MOLA's "
+    "own map error and the T alignment, so a regenerated map is a reason "
+    "to re-measure (SIM-5520 flags drift)"
+)
+# Headroom: rmse 1.61x and maximum 1.45x of the worst run, availability's
+# floor 0.99 (worst 0.9974). The spread over five laps is 0.009 m: the run
+# is near-deterministic, so the headroom covers machine and map differences.
+POSITION_RMSE_MAXIMUM = 2.5
+POSITION_MAXIMUM = 4.5
 AVAILABILITY_MINIMUM = 0.99
 OFFLINE_BOUNDS = {
     "ate_maximum": {"maximum": POSITION_MAXIMUM, "measurement": MEASUREMENT},
