@@ -313,8 +313,15 @@ MAP_SERVER_KEYS = {
     "occupied_thresh",
     "free_thresh",
 }
-FRAME_P95_BOUND = None
-GRID_VOXEL_P95_BOUND = None
+# FRAME_P95_BOUND is SIM-3530's P95_BOUND copied as a number (this test owns
+# it): five seed-42 laps, wall p95 0.518 0.860 0.810 0.810 0.988 m, worst
+# 0.9885 x 1.25 = 1.236 -> 1.24 (2026-10-28, slam-p2, no loop closure).
+# GRID_VOXEL_P95_BOUND: the same five laps' grid -> voxel / voxel -> grid
+# nearest-neighbour p95 under each run's T (m):
+#   0.0329/0.0455  0.0330/0.0466  0.0330/0.0452  0.0330/0.0455  0.0329/0.0442
+# worst 0.0466 x 1.25 = 0.0583 -> 0.06 (about one 0.05 m cell).
+FRAME_P95_BOUND = 1.24
+GRID_VOXEL_P95_BOUND = 0.06
 
 
 def check_grid_provenance(provenance_path: Path, directory: Path) -> None:

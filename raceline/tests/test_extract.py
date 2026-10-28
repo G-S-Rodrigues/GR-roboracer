@@ -869,9 +869,15 @@ def test_raceline_1170_the_survey_bounds_are_seen_walls(spielberg_maps):
 
 
 # RACELINE-1510: MOLA's own grid (spec C2, acceptance 2). Measured, not
-# chosen; None until Step 5/6 of the MOLA mapping plan sets it.
+# chosen. extract_track(walls="observed") on the grids of five seed-42
+# mapping laps (SIM-3530's, 2026-10-28, slam-p2, no loop closure, load
+# 0.2-4.4) closed on every one (3440-3448 points); length / committed length:
+#   1.0035  1.0041  1.0029  1.0030  1.0019
+# worst |ratio - 1| 0.0041 x 1.25 = 0.0052, rounded up to 0.001
+#                                                 -> MOLA_LENGTH_RTOL 0.006
+# (the committed seed-7 grid's own ratio is recorded in the Step 6 commit).
 MOLA_GRID = REPO / "config/scenarios/maps/Spielberg/mola/Spielberg_grid.yaml"
-MOLA_LENGTH_RTOL = None
+MOLA_LENGTH_RTOL = 0.006
 
 
 def test_raceline_1510_the_extractor_reads_the_mola_grid_unchanged():

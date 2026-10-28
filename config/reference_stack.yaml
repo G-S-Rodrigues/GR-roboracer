@@ -106,7 +106,7 @@ roles:
           - ros_ws/src/racing_sim_gym_jax/*
           - ros_ws/src/racing_sim_adapter/*
           - ros_ws/src/racing_evaluation/*
-        verified_by: [SIM-3510, ACC-4510]
+        verified_by: [SIM-3510, SIM-3530, ACC-4510]
   planner:
     # The scenario's centerline, published on /trajectory; renamed from
     # track_raceline 2026-10-21, owner ruling 2026-10-11, behaviour unchanged.
