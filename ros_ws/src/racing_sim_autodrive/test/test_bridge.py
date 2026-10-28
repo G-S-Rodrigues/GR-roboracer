@@ -231,6 +231,57 @@ def test_simad_1190_reset_replies_true_once_and_reanchors(raws, reset_start):
     assert last.reply["V1 Reset"] == "False"
 
 
+def test_simad_1190_a_reset_the_sim_never_shows_gives_up_with_an_error(raws):
+    """SIMAD-1190: when the sim never shows the reset (a frame sequence in
+    which the lap clock keeps running and the encoders keep rising), the
+    session logs one ERROR after `RESET_WAIT_FRAMES` frames and returns to
+    control: /odom dead-reckons again and the throttle loop integrates
+    again, instead of copying the truth until the next lap line.
+
+    The cap is read off the fixture (see the constant): the reset is fired in
+    the driving segment, whose frames never contain a reset until 449."""
+    import logging
+
+    class Collect(logging.Handler):
+        def __init__(self):
+            super().__init__(logging.ERROR)
+            self.records = []
+
+        def emit(self, record):
+            self.records.append(record)
+
+    seen = Collect()  # a handler of our own: seen is not wired here
+    cap = bridge.RESET_WAIT_FRAMES
+    fire = 140
+    assert fire + cap + 40 < 449
+    session = _session()
+    for raw in raws[:fire]:
+        session.on_frame(raw, DRIVE)
+    session.request_reset()
+    assert session.on_frame(raws[fire], DRIVE).reply["V1 Reset"] == "True"
+    logger = logging.getLogger(bridge.__name__)
+    logger.addHandler(seen)
+    try:
+        for k in range(fire + 1, fire + cap):
+            step = session.on_frame(raws[k], DRIVE)
+            assert step.odometry.x == step.ground_truth.x, k  # still waiting
+            assert session.integral == 0.0, k
+        assert not seen.records
+        step = session.on_frame(raws[fire + cap], DRIVE)
+        assert [r.levelno for r in seen.records] == [logging.ERROR]
+        assert "reset" in seen.records[0].getMessage()
+        for k in range(fire + cap + 1, fire + cap + 40):
+            step = session.on_frame(raws[k], DRIVE)
+    finally:
+        logger.removeHandler(seen)
+    assert len(seen.records) == 1  # logged once, not per frame
+    assert session.integral != 0.0  # the loop is back
+    assert (
+        step.odometry.x != step.ground_truth.x
+        or step.odometry.y != step.ground_truth.y
+    )  # dead reckoning again
+
+
 def test_simad_1190_two_requests_before_a_frame_give_one_true(raws):
     """SIMAD-1190: requests are a level, not a count."""
     session = _session()
@@ -266,17 +317,23 @@ def test_simad_1200_drive_maps_to_normalized_steering_and_clamps(raws):
 def test_simad_1210_dead_reckoning_drifts_but_stays_bounded(raws):
     """SIMAD-1210: /odom is dead reckoning (encoder speed, yaw rate), so over
     the driving segment it differs from the truth by more than 1e-4 m (a
-    ground-truth copy would not: ADAPT-2110) yet stays within BOUND.
+    ground-truth copy would not: ADAPT-2110) yet stays within 2 x MEASURED.
 
-    Measured in RED on the fixture frames 37..336 (commanded driving, before
-    the reset segment): max |odom - truth| = 4.38 m over 10 m of path (the yaw
-    reckoning misses the sim's single-frame heading jumps, e.g. -0.43 rad at
-    frame 83 while the reported yaw rate is 0.2 rad/s: a bump). The bound is
-    twice that: it catches a wrong-sign or runaway integration, not drift.
+    The window is frames 132..336 (a session started at 132, commanded
+    driving, before the reset segment). The recorded ground truth itself
+    teleports at frames 83 and 131 (implied speed 7.3 m/s while the encoders
+    read 0.92 m/s, yaw snapping back by -0.43 and -0.51 rad), so no
+    dead-reckoned track can follow it there; an earlier window from frame 37
+    measured 4.38 m for the correct integrator and let frozen odometry (7.12
+    m) and a flipped yaw-rate sign (3.41 m) pass an 8.76 m bound. From 132
+    the correct integrator measures MEASURED = 0.172 m, and the broken
+    variants measure at least 0.49 m (speed x1.1), 0.79 (yaw rate 0), 1.14
+    (yaw-rate sign flipped), 1.70 (speed x0.5) and 3.51 (frozen odometry),
+    all above the bound 2 x 0.172 = 0.344 m.
     """
     session = _session()
     worst = 0.0
-    for raw in raws[37:337]:
+    for raw in raws[132:337]:
         step = session.on_frame(raw, DRIVE)
         worst = max(
             worst,
@@ -285,7 +342,7 @@ def test_simad_1210_dead_reckoning_drifts_but_stays_bounded(raws):
                 step.odometry.y - step.ground_truth.y,
             ),
         )
-    MEASURED = 4.38  # m
+    MEASURED = 0.172  # m
     assert worst > 1e-4
     assert worst < 2 * MEASURED
 

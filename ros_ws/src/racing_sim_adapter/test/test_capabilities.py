@@ -279,3 +279,58 @@ def test_adapt_1040_backend_selection_defaults_to_the_gym_and_rejects_unknown(
     monkeypatch.setenv("RACING_SIM_BACKEND", "nope")
     with pytest.raises(ValueError, match="nope"):
         conformance.backend()
+
+
+CMAKE = Path(__file__).parents[1] / "CMakeLists.txt"
+
+
+def _launch_registrations(text: str) -> dict[str, list[str]]:
+    """CTest name of every add_launch_test -> the RACING_SIM_BACKEND values
+    set on it by a `set_property(TEST <name> ... ENVIRONMENT ...)`."""
+    names = []
+    for call in re.findall(r"add_launch_test\(([^)]*)\)", text):
+        target = re.search(r"TARGET\s+(\S+)", call)
+        source = re.search(r"test/(\S+\.py)", call).group(1)
+        names.append(target.group(1) if target else f"test_{source}")
+    backends: dict[str, list[str]] = {name: [] for name in names}
+    for name, tail in re.findall(
+        r"set_property\(TEST\s+(\S+)\s+APPEND PROPERTY ENVIRONMENT\s+"
+        r"([^)]*)\)",
+        text,
+    ):
+        backends.setdefault(name, []).extend(
+            re.findall(r"RACING_SIM_BACKEND=(\S+)", tail)
+        )
+    return {n: backends[n] for n in names}
+
+
+def test_adapt_1050_every_launch_registration_runs_the_backend_it_names():
+    """ADAPT-1050: each add_launch_test carries exactly one
+    RACING_SIM_BACKEND, `autodrive` for a target ending `_autodrive` and
+    `f1tenth_gym_jax` for the others. add_launch_test has no ENV argument, so
+    a lost property would silently rerun the gym under an `_autodrive` name
+    and pass (seen before the property route)."""
+    found = _launch_registrations(CMAKE.read_text())
+    assert len(found) == 8
+    for name, values in found.items():
+        want = (
+            conformance.AUTODRIVE
+            if name.endswith("_autodrive")
+            else conformance.GYM
+        )
+        assert values == [want], name
+
+
+def test_adapt_1050_negative_a_lost_property_is_reported():
+    """ADAPT-1050 negative: the scan is not vacuous."""
+    text = (
+        "add_launch_test(test/test_adapter_contract.py\n"
+        "  TARGET test_adapter_contract_autodrive TIMEOUT 30)\n"
+        "set_property(TEST test_adapter_contract_autodrive APPEND PROPERTY"
+        " ENVIRONMENT\n  RACING_SIM_BACKEND=autodrive)\n"
+        "add_launch_test(test/test_adapter_start_held.py TIMEOUT 30)\n"
+    )
+    assert _launch_registrations(text) == {
+        "test_adapter_contract_autodrive": ["autodrive"],
+        "test_test_adapter_start_held.py": [],
+    }

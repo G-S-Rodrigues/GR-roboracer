@@ -81,3 +81,70 @@ def test_simad_1150_negative_a_bumped_pin_is_reported() -> None:
     assert mismatches(lock, {"gevent": "26.9.0"}) == [
         "websocket-client: not pinned"
     ]
+
+
+def installed_mismatches(pins: dict[str, str], version_of) -> list[str]:
+    """Pins the running interpreter does not have, by `version_of(name)`
+    (raising PackageNotFoundError when absent)."""
+    from importlib.metadata import PackageNotFoundError
+
+    out = []
+    for name, wanted in sorted(pins.items()):
+        try:
+            have = version_of(name)
+        except PackageNotFoundError:
+            have = None
+        if have != wanted:
+            out.append(f"{name}: pinned {wanted}, installed {have}")
+    return out
+
+
+def test_simad_1150_the_running_image_carries_the_pinned_closure() -> None:
+    """SIMAD-1150: the interpreter running the tests has every Socket.IO
+    closure pin installed. A stale `dev` image (rebuilt after the merge, ADR
+    0002) then fails here, by name, instead of as "racing_sim not found" or
+    "replay stalled" in the tier-2 server tests."""
+    from importlib.metadata import version
+
+    wanted = {
+        name: pinned
+        for name, pinned in requirement_pins(
+            DEV_REQUIREMENTS.read_text()
+        ).items()
+        if name
+        in {
+            "python-socketio",
+            "python-engineio",
+            "gevent",
+            "gevent-websocket",
+            "greenlet",
+            "zope-event",
+            "zope-interface",
+            "websocket-client",
+        }
+    }
+    assert len(wanted) == 8
+    problems = installed_mismatches(wanted, version)
+    assert not problems, (
+        "stale image, rebuild gr-roboracer:dev (ADR 0002) or put the "
+        "closure on PYTHONPATH: " + "; ".join(problems)
+    )
+
+
+def test_simad_1150_negative_a_missing_or_old_package_is_reported() -> None:
+    """SIMAD-1150 negative: the installed-version check is not vacuous."""
+    from importlib.metadata import PackageNotFoundError
+
+    def version_of(name: str) -> str:
+        if name == "gevent":
+            return "26.9.0"
+        if name == "old":
+            return "1.0"
+        raise PackageNotFoundError(name)
+
+    assert installed_mismatches(
+        {"gevent": "26.9.0", "old": "2.0", "absent": "1.0"}, version_of
+    ) == [
+        "absent: pinned 1.0, installed None",
+        "old: pinned 2.0, installed 1.0",
+    ]

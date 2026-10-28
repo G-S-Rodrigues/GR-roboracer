@@ -18,11 +18,18 @@ official devkit). Which dt the throttle loop and odometry integrate over is
 
 Either way a missing dt means feedforward plus the held integral, never a
 guessed step.
+
+Reversing: any backward wheel motion makes `core.encoder_speed` None, so
+while the car backs up the throttle is feedforward plus the held integral and
+`/odom` holds its pose with `vx = 0`. That is acceptable for racing (the car
+does not reverse) and is not fixed here.
 """
 
 from __future__ import annotations
 
+import logging
 import math
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -44,6 +51,19 @@ __all__ = [
     "integrate_odometry",
     "scan_geometry",
 ]
+
+_LOG = logging.getLogger(__name__)
+
+# How many frames after a reset reply the session waits to see the sim reset
+# before it logs an ERROR and gives control back. Read off the fixture: the
+# recorded sim was answered `Reset True` for 59 consecutive replies, so the
+# reset takes at least that many frames to be taken seriously, and the
+# handshake here detects its effect (lap clock stops or encoders fall) 11
+# frames after the first True in the recording. 120 frames is about twice
+# the longest recorded True run and ten times the detection, so a slow
+# reset is not cut short while a reset the sim ignored (one True may not
+# suffice, to be verified live) costs seconds, not a lap, of blind control.
+RESET_WAIT_FRAMES = 120
 
 DT_SOURCES = ("lap_time", "receipt")
 STEP_MODE_CONTINUOUS = 0  # racing_interfaces/SetStepMode.CONTINUOUS
@@ -210,8 +230,10 @@ class BridgeSession:
         )
         self._latch = control.ResetLatch()
         self._reset_level = False
+        self._level_lock = threading.Lock()  # service thread vs gevent thread
         self._awaiting_reset = False  # replied True, sim not yet reset
         self._effect_seen = False
+        self._waited = 0  # frames since the reset reply
         self._prev: core.SimFrame | None = None
         self._prev_received: float | None = None
         self._odometry: CogState | None = None
@@ -223,7 +245,8 @@ class BridgeSession:
 
     def request_reset(self) -> None:
         """From the `~/reset` service: the next reply carries Reset True."""
-        self._reset_level = True
+        with self._level_lock:
+            self._reset_level = True
 
     def _dt(self, frame: core.SimFrame, received_at: float | None):
         if self._dt_source == "lap_time":
@@ -279,9 +302,17 @@ class BridgeSession:
         reanchor = prev is None
         if self._awaiting_reset:
             reanchor = True
+            self._waited += 1
             if sim_dt is None or encoders_fell:
                 self._effect_seen = True
             elif self._effect_seen:
+                self._awaiting_reset = False
+            elif self._waited >= RESET_WAIT_FRAMES:
+                _LOG.error(
+                    "the sim showed no reset in %d frames after Reset True;"
+                    " resuming control (one Reset True may not suffice)",
+                    RESET_WAIT_FRAMES,
+                )
                 self._awaiting_reset = False
         if reanchor:
             self._loop.reset()
@@ -309,13 +340,15 @@ class BridgeSession:
             )
         )
 
-        fire = self._latch.next(self._reset_level)
-        self._reset_level = False
+        with self._level_lock:  # read and clear together: no request lost
+            level, self._reset_level = self._reset_level, False
+        fire = self._latch.next(level)
         if fire:
             self._latch.next(False)  # re-arm: one True per request
             self._loop.reset()
             self._awaiting_reset = True
             self._effect_seen = False
+            self._waited = 0
 
         track_state = None
         if self._track is not None:

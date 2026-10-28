@@ -157,30 +157,18 @@ def _gym_h():
     return Param().h
 
 
-# Part 4's files, not copies (plan Step 0 / D9). h and the steering limit are
-# not single keys there (see racing_sim_autodrive/test/_server_launch.py);
-# kp/ki are UNTUNED.
-AUTODRIVE_H = 0.07354
+# One source with the server tests: racing_sim_autodrive/test/_vehicle_values.py
+# (part 4's files; h and the steering limit anchored there; kp/ki UNTUNED).
 AUTODRIVE_REPLAY_START_FRAME = 90
 
 
 def _autodrive_vehicle() -> dict:
-    import yaml
+    directory = str(REPO / "ros_ws/src/racing_sim_autodrive/test")
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    import _vehicle_values
 
-    directory = REPO / "config" / "vehicles" / "autodrive_roboracer"
-    source = yaml.safe_load((directory / "source.yaml").read_text())["values"]
-    identified = yaml.safe_load((directory / "identified.yaml").read_text())
-    return {
-        "lr": float(source["com_x_lr_m"]["value"]),
-        "h": AUTODRIVE_H,
-        "wheel_radius": float(source["wheel_radius_m"]["value"]),
-        "throttle_gain": float(
-            identified["measurements"]["throttle_gain"]["value"]
-        ),
-        "max_steering_angle": 0.523633,
-        "kp": 0.02,
-        "ki": 0.05,
-    }
+    return _vehicle_values.vehicle()
 
 
 def _autodrive_actions(parameters=None):
@@ -293,7 +281,7 @@ BACKENDS = {
         # >= 20 Hz, the spec's nominal. One-sided, and on replay it measures
         # the replay's pacing (one publish per frame).
         odom_max_median_period_s=0.05,
-        expected_h=lambda: AUTODRIVE_H,
+        expected_h=lambda: _autodrive_vehicle()["h"],
         expected_clock=FREE_RUNNING,
         # Not the declared value, or ADAPT-2145 would be vacuous.
         clock_override=OWNS_CLOCK,

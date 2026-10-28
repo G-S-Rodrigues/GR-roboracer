@@ -17,8 +17,10 @@ if(BUILD_TESTING)
   set_tests_properties(test_capabilities PROPERTIES LABELS "tier1")
 
   find_package(launch_testing_ament_cmake REQUIRED)
-  # add_launch_test has no ENV argument: it swallows it into LABELS (seen in
-  # CTestTestfile.cmake), so the backend is set as a test property instead.
+  # An ENV written after LABELS is swallowed into LABELS (seen in
+  # CTestTestfile.cmake, and every _autodrive target then ran the gym); one
+  # written before it would reach ament_add_test. The backend is set as a
+  # test property instead (ADAPT-1050 holds one per registration).
   # RACING_SIM_BACKEND is set on every registration so an exported variable
   # cannot turn a gym target into an autodrive run.
   add_launch_test(test/test_adapter_contract.py

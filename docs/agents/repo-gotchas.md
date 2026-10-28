@@ -284,9 +284,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     braking depends on speed (8.4 / 5.8 / 6.0 m/s^2 from 0.5 / 3 / 4.9 m/s): never read one number
     from `identified.yaml` as the car's.
 
-37. **The AutoDRIVE `/ground_truth/scan` is lidar-relative; the gym's is CoG-relative.** `racing_metrics`
-    reads `/ground_truth/scan` for `minimum_wall_clearance` and `collision_count` (#17). The gym casts
-    that scan from `base_link`, so those metrics measure the vehicle's CoG. Under `simulator:=autodrive`
-    the scan is the sim's own, in the `lidar` mount frame, so the same two metrics measure from the
-    lidar (about 0.27 m ahead of the rear axle) with no error and no flag. Never compare clearance or
-    collision counts across the two simulators as one number.
+37. **The AutoDRIVE server's `/ground_truth/scan` is lidar-relative; the gym's is CoG-relative.**
+    `racing_metrics` reads `/ground_truth/scan` for `minimum_wall_clearance` and `collision_count` (#17).
+    The gym casts that scan from `base_link`, so those metrics measure the vehicle's CoG. The AutoDRIVE
+    server (`racing_sim_autodrive`) republishes the sim's own scan, cast from its lidar mount, so the
+    same two metrics would measure from the lidar (about 0.27 m ahead of the rear axle) with no error
+    and no flag. Never compare clearance or collision counts across the two simulators as one number.

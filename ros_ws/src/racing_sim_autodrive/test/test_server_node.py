@@ -126,7 +126,14 @@ class TestServerNode(unittest.TestCase):
     def test_simad_2010_every_frame_is_answered_and_scanned(self):
         """SIMAD-2010: 300 frames replayed (the lidar-less first included)
         get 300 replies; /scan carries the 299 frames that have a lidar
-        (at least 98 %: a best-effort topic, with a deep subscriber queue)."""
+        (at least 98 % = 293: a best-effort topic, with a deep subscriber
+        queue).
+
+        Observed: 12 runs on 2026-10-28 (dev container, load about 8-9,
+        domain 68) gave /scan counts 299, 299, 299, 299, 299, 299, 299, 299,
+        299, 299, 299, 299 out of 299, a minimum of 100 %. The 98 % bound
+        leaves room for the occasional best-effort drop under host load
+        without being able to hide a real loss."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
