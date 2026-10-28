@@ -33,6 +33,7 @@ import gzip
 import json
 import sys
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -106,7 +107,70 @@ def read_records(path: Path) -> tuple[dict, list[dict]]:
     return header, events
 
 
-def _header(config_path: Path) -> dict:
+class BridgeHandler:
+    """What one `Bridge` message does, with the clock injected as `now`.
+
+    Time is measured from the first frame. The sim record is written (through
+    `frame_filter`), then the reply; the reply is `schedule(t)`. Returns None
+    once `t > end`: the caller stops the server.
+    """
+
+    def __init__(
+        self,
+        writer: RecordWriter,
+        schedule: Callable[[float], dict[str, str]],
+        end: float,
+        frame_filter: Callable[[dict], dict] = lambda data: data,
+    ) -> None:
+        self._writer = writer
+        self._schedule = schedule
+        self._end = end
+        self._filter = frame_filter
+        self._t0: float | None = None
+        self.sims = 0
+
+    def __call__(self, now: float, data: dict) -> dict[str, str] | None:
+        if self._t0 is None:
+            self._t0 = now
+        t = now - self._t0
+        if t > self._end:
+            return None
+        self.sims += 1
+        self._writer.write(t, "sim", self._filter(data))
+        reply = self._schedule(t)
+        self._writer.write(t, "bridge", reply)
+        return reply
+
+
+def serve(handler: BridgeHandler, port: int) -> None:
+    """Serve the sim's Socket.IO stream through `handler` until it stops."""
+    import socketio
+    from gevent import pywsgi
+    from geventwebsocket.handler import WebSocketHandler
+
+    sio = socketio.Server(async_mode="gevent")
+    server = pywsgi.WSGIServer(
+        ("", port),
+        socketio.WSGIApp(sio),
+        handler_class=WebSocketHandler,
+    )
+
+    @sio.on("connect")
+    def connect(sid, environ):
+        print("connected", sid, flush=True)
+
+    @sio.on("Bridge")
+    def bridge(sid, data):
+        reply = handler(time.monotonic(), data)
+        if reply is None:
+            server.stop()
+            return
+        sio.emit("Bridge", data=reply)
+
+    server.serve_forever()
+
+
+def _header(config_path: Path, schedule_id: str = SCHEDULE_ID) -> dict:
     import importlib.metadata as metadata
 
     import yaml
@@ -124,7 +188,7 @@ def _header(config_path: Path) -> dict:
                 "gevent-websocket",
             )
         },
-        "schedule": SCHEDULE_ID,
+        "schedule": schedule_id,
         "recorded_at": datetime.now(UTC).isoformat(),
     }
 
@@ -136,47 +200,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=4567)
     args = parser.parse_args(argv)
 
-    import socketio
-    from gevent import pywsgi
-    from geventwebsocket.handler import WebSocketHandler
-
     header = _header(args.config)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     writer = RecordWriter(args.out, header)
-    sio = socketio.Server(async_mode="gevent")
-    state = {"t0": None, "sims": 0}
-    server = pywsgi.WSGIServer(
-        ("", args.port),
-        socketio.WSGIApp(sio),
-        handler_class=WebSocketHandler,
-    )
-
-    @sio.on("connect")
-    def connect(sid, environ):
-        print("connected", sid, flush=True)
-
-    @sio.on("Bridge")
-    def bridge(sid, data):
-        now = time.monotonic()
-        if state["t0"] is None:
-            state["t0"] = now
-        t = now - state["t0"]
-        if t > SCHEDULE_END:
-            server.stop()
-            return
-        state["sims"] += 1
-        writer.write(t, "sim", data)
-        reply = command_schedule(t)
-        writer.write(t, "bridge", reply)
-        sio.emit("Bridge", data=reply)
-
+    handler = BridgeHandler(writer, command_schedule, SCHEDULE_END)
     print(f"recording to {args.out}; start the sim now", flush=True)
     try:
-        server.serve_forever()
+        serve(handler, args.port)
     finally:
         writer.close()
-    print(f"{state['sims']} sim messages (need {MIN_MESSAGES})", flush=True)
-    if not recording_usable(state["sims"]):
+    print(f"{handler.sims} sim messages (need {MIN_MESSAGES})", flush=True)
+    if not recording_usable(handler.sims):
         print("too few messages; the recording is not usable", file=sys.stderr)
         return 1
     return 0

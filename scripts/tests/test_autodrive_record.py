@@ -104,6 +104,44 @@ def test_check_1650_record_writer_round_trips_header_first(tmp_path) -> None:
     assert not hasattr(tool, "EXPECTED_HZ")
 
 
+def test_check_1715_bridge_handler_writes_sim_then_reply_and_stops() -> None:
+    """CHECK-1715: the handler `main` and the identification tool share
+    measures t from the first frame, writes the sim record (through the
+    frame filter) then the reply, answers `schedule(t)`, counts the frames it
+    wrote, and returns None once `t > end` without writing."""
+    tool = _tool()
+    written: list[tuple[float, str, dict]] = []
+
+    class Writer:
+        def write(self, t: float, direction: str, data: dict) -> None:
+            written.append((t, direction, data))
+
+    def schedule(t: float) -> dict[str, str]:
+        return {"V1 Throttle": str(t)}
+
+    def drop_camera(data: dict) -> dict:
+        return {k: v for k, v in data.items() if k != "cam"}
+
+    handler = tool.BridgeHandler(Writer(), schedule, 1.0, drop_camera)
+    first = {"a": "1", "cam": "x"}
+    assert handler(100.0, first) == {"V1 Throttle": "0.0"}
+    assert handler(100.5, {"a": "2", "cam": "y"}) == {"V1 Throttle": "0.5"}
+    assert handler(101.5, {"a": "3", "cam": "z"}) is None
+    assert written == [
+        (0.0, "sim", {"a": "1"}),
+        (0.0, "bridge", {"V1 Throttle": "0.0"}),
+        (0.5, "sim", {"a": "2"}),
+        (0.5, "bridge", {"V1 Throttle": "0.5"}),
+    ]
+    assert handler.sims == 2
+    assert first["cam"] == "x", "the filter must not mutate the frame"
+    # `t > end` is strict: a frame exactly at `end` is still answered.
+    edge = tool.BridgeHandler(Writer(), schedule, 1.0)
+    assert edge(0.0, {}) is not None
+    assert edge(1.0, {}) is not None
+    assert edge(1.01, {}) is None
+
+
 def _decode_ranges(encoded: str) -> list[float]:
     text = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
     return [float(x) for x in text.split("\n") if x]

@@ -1,0 +1,89 @@
+# Every number about the AutoDRIVE RoboRacer that is READ, not measured, each
+# with the line it was read from. Hand-written; the measured ones are in
+# identified.yaml (written only by tools/autodrive_identify.py). Neither file
+# is a ROS parameter file: BRINGUP-1100 forbids extra keys in
+# config/vehicles/*.yaml, and no node reads these yet.
+#
+# Edition: 2026-iros-practice (config/autodrive/simulator.yaml). The car's
+# physics are unchanged since 2023-11; the prefab below is the source tip
+# (7 days newer than the build).
+#
+# `read_from_build: true` only where the 2026-iros-practice build itself was
+# read (UnityPy on its level0, grill 2026-10-25): rigidbody mass and drag,
+# wheel radius and mass, suspension, wheel friction. The scene's MotorTorque is
+# a MonoBehaviour field the IL2CPP build does not expose, and the guide is
+# prose: those are `false`.
+sources:
+  prefab:
+    repo: Tinker-Twins/AutoDRIVE
+    sha: 75b7df5216524a3c6b3150d698139190c6c44f8f
+    path: Assets/Prefabs/F1TENTH/F1TENTH.prefab
+  scene:
+    repo: Tinker-Twins/AutoDRIVE
+    sha: 75b7df5216524a3c6b3150d698139190c6c44f8f
+    path: Assets/Scenes/RoboRacer - Sim Racing.unity
+  guide:
+    repo: AutoDRIVE-Ecosystem/autodrive-ecosystem.github.io
+    sha: a8780f48e06ba1e7f4016d47b6afb1dbbcfa0b62
+    path: docs/competitions/roboracer-sim-racing-guide-2026.md
+  bridge:
+    repo: AutoDRIVE-Ecosystem/AutoDRIVE-RoboRacer-Sim-Racing
+    sha: fde15908fcf41f23d0e7519d1682f4a04b5f73cf
+    path: autodrive_devkit/autodrive_roboracer/autodrive_bridge.py
+
+# The frame is `roboracer_1`, the REAR AXLE (guide :160). Its pose is moved
+# lr along the heading to become base_link (gotcha 26).
+values:
+  sprung_mass_kg: {value: 3.47, source: prefab, line: 31647, read_from_build: true}
+  total_mass_kg: {value: 3.906, source: guide, line: 186, read_from_build: false}
+  linear_drag: {value: 0.273, source: prefab, line: 31648, read_from_build: true}
+  angular_drag: {value: 0.1, source: prefab, line: 31649, read_from_build: true}
+  # The prefab's rigidbody inertia is computed by PhysX: there is no number.
+  yaw_inertia: {value: null, source: prefab, line: 31651, read_from_build: false}
+  wheel_radius_m: {value: 0.059, source: prefab, line: 31423, read_from_build: true}
+  wheel_mass_kg: {value: 0.109, source: prefab, line: 31430, read_from_build: true}
+  suspension_spring: {value: 500, source: prefab, line: 31425, read_from_build: true}
+  suspension_damper: {value: 100, source: prefab, line: 31426, read_from_build: true}
+  # The CoG, in the REAR-AXLE frame (x forward, z up from the axle centre, a
+  # wheel radius above the ground). lr = x; com_z feeds h = z at rest + com_z.
+  com_x_lr_m: {value: 0.15532, source: guide, line: 189, read_from_build: false}
+  com_z_above_rear_axle_m: {value: 0.01434, source: guide, line: 189, read_from_build: false}
+  # Wheelbase: the collider geometry (front wheel x in the guide's TF, which
+  # also makes 0.09 + 0.33 + 0.08 the 0.50 m body) against the table value and
+  # the prefab's Ackermann field, which the Ackermann formula alone uses.
+  wheelbase_m: {value: 0.33, source: guide, line: 154, read_from_build: false}
+  wheelbase_table_m: {value: 0.324, source: guide, line: 180, read_from_build: false}
+  wheelbase_prefab_field_mm: {value: 324, source: prefab, line: 31695, read_from_build: false}
+  track_width_m: {value: 0.236, source: guide, line: 181, read_from_build: false}
+  body_length_m: {value: 0.50, source: guide, line: 178, read_from_build: false}
+  body_width_m: {value: 0.27, source: guide, line: 179, read_from_build: false}
+  # The body collider is a MeshCollider (prefab :21558 and others): it carries
+  # no width number, so the half width is the guide's 0.27 / 2.
+  half_width_m: {value: 0.135, source: guide, line: 179, read_from_build: false}
+  lidar_x_m: {value: 0.2733, source: guide, line: 152, read_from_build: false}
+  lidar_y_m: {value: 0.0, source: guide, line: 152, read_from_build: false}
+  lidar_z_m: {value: 0.096, source: guide, line: 152, read_from_build: false}
+  lidar_yaw_rad: {value: 0.0, source: guide, line: 152, read_from_build: false}
+  steering_limit_rad: {value: 0.5236, source: guide, line: 212, read_from_build: false}
+  # The prefab says the same in degrees: 30 deg and 183.346 deg/s (= 3.2 rad/s).
+  steering_limit_prefab_deg: {value: 30, source: prefab, line: 31699, read_from_build: false}
+  steering_rate_rad_s: {value: 3.2, source: guide, line: 213, read_from_build: false}
+  steering_rate_prefab_deg_s: {value: 183.346, source: prefab, line: 31694, read_from_build: false}
+  # The prefab's value is 85.6 Nm (:31698); the scene overrides it to 428.
+  motor_torque_nm: {value: 428, source: scene, line: 25200, read_from_build: false}
+  motor_torque_prefab_nm: {value: 85.6, source: prefab, line: 31698, read_from_build: false}
+  # Unexplained by any code in the source (no speed clamp, drag 0.273): the
+  # guide's number, never measured on Porto (identified.yaml says why).
+  top_speed_m_s: {value: 22.88, source: guide, line: 204, read_from_build: false}
+  lidar_rate_hz: {value: 40, source: scene, line: 25156, read_from_build: false}
+  lidar_rate_prefab_hz: {value: 20, source: prefab, line: 31539, read_from_build: false}
+  # Wheel friction curves (Unity WheelCollider, forward x stiffness 0.8):
+  # extremum (slip, value), asymptote (slip, value), stiffness.
+  friction_forward: {extremum_slip: 0.15, extremum_value: 0.9, asymptote_slip: 0.25, asymptote_value: 0.58, stiffness: 0.8, source: prefab, line: 31433, read_from_build: true}
+  friction_sideways: {extremum_slip: 0.01, extremum_value: 1.0, asymptote_slip: 0.1, asymptote_value: 0.5, stiffness: 1.0, source: prefab, line: 31439, read_from_build: true}
+  # mu for the GGV's ay bound: the sideways curve's extremum times stiffness
+  # (1.0 x 1.0). Prefab :31415 is a WheelCollider (no VPP model anywhere in
+  # the prefab), whose friction force is curve value x stiffness x load, so
+  # the extremum value is the friction coefficient. A modelling bound that
+  # was never measured: Porto has no room for a skidpad.
+  mu_lateral: {value: 1.0, source: prefab, line: 31440, read_from_build: true}
