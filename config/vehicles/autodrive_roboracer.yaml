@@ -1,0 +1,72 @@
+# The AutoDRIVE league car (RoboRacer Sim Racing, edition 2026-iros-practice),
+# for `simulator:=autodrive` (part 8). NOT for the gym, which simulates a
+# different car. Same sections and keys as f1tenth_default.yaml (BRINGUP-1100).
+# Bump the version string in racing_metrics/racing_recording below whenever a
+# value here changes.
+#
+# Where each number comes from (config/vehicles/autodrive_roboracer/):
+#   geometry   source.yaml, each value with a pinned line anchor: wheelbase 0.33
+#              (collider geometry; the identified effective 0.339 and the
+#              prefab's 324 mm Ackermann field sit beside it), half width 0.135
+#              (guide), steering angle 0.5236 (guide and prefab), laser mount
+#              0.2733 (guide TF).
+#   caps       the default's reference-stack caps (speed 3.0, acceleration 2.0,
+#              steering rate 1.5; owner-accepted D2): Porto qualification
+#              drives on this file, where speed is irrelevant and a crash costs.
+#   not here   top speed: not measured on Porto (the longest straight, about
+#              8 m, reaches a highest steady 2.977 m/s at throttle 0.12). The
+#              guide's 22.88 m/s is in source.yaml, unverified. Braking depends
+#              on speed (8.4 / 5.8 / 6.0 m/s^2 from 0.5 / 3 / 4.9 m/s, mean
+#              6.34), so no single deceleration is claimed.
+#
+# Reference point (repo-gotchas #26): AutoDRIVE's pose is the REAR AXLE;
+# base_link is the CoG, lr = 0.15532 ahead, at h = 0.0735.
+# laser_x is the true 0.2733 and does NOT match the one shared URDF (0.275, rear
+# axle 0.17145 behind base_link rather than 0.15532): the TF base_link -> laser
+# is about 14 mm off under simulator:=autodrive until part 8 gives it its own
+# description. BRINGUP-1050 therefore skips this file (NOT_GYM_CAST).
+
+racing_sim:
+  ros__parameters:
+    laser_x: 0.2733
+    laser_y: 0.0
+    laser_yaw: 0.0
+
+racing_controller_baseline:
+  ros__parameters:
+    wheelbase: 0.33
+    lookahead_distance: 1.0
+    minimum_speed: 0.5
+    maximum_speed: 3.0
+    curvature_speed_gain: 1.0
+    closed_trajectory: true
+
+racing_safety_supervisor:
+  ros__parameters:
+    maximum_speed: 3.0
+    maximum_steering_angle: 0.5236
+    maximum_acceleration: 2.0
+    maximum_steering_rate: 1.5
+    vehicle_half_width: 0.135
+    # Never widen this to cure a latch (repo-gotchas #19): a latched stop means
+    # the command stream really stalled, or the estimator was not up yet.
+    stale_input_timeout_ms: 100
+    track_path: config/tracks/analytic_circle.yaml
+
+racing_bringup_support:
+  ros__parameters:
+    track_path: config/tracks/analytic_circle.yaml
+    raceline_path: config/scenarios/maps/analytic_circle/analytic_circle_raceline.csv
+
+racing_metrics:
+  ros__parameters:
+    track_path: config/tracks/analytic_circle.yaml
+    scenario_id: baseline
+    track_version: analytic_circle-v1
+    vehicle_parameter_version: autodrive-roboracer-v1
+
+racing_recording:
+  ros__parameters:
+    scenario_id: baseline
+    track_version: analytic_circle-v1
+    vehicle_parameter_version: autodrive-roboracer-v1
