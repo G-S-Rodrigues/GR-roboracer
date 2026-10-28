@@ -59,7 +59,11 @@ LATCHED_QOS = QoSProfile(
 # How near the start pose a hold-until-applied estimate must be to count as
 # having applied it: ten of the 0.5 m standard deviations above. MOLA's
 # untold estimate is tens of metres off, its applied one about 1 m (the
-# map's own drift at the start).
+# map's own drift at the start). Measured in the sim (commit 8d61a49,
+# part 1): untold about 34 m off, applied about 1 m. It is a plausibility
+# gate, not proof MOLA applied anything: on a car, wheel odometry starts
+# at 0, so an untold estimate sits at the mapping-lap start and passes if
+# the car is set down within this radius of it. There is no yaw check.
 START_POSE_RADIUS = 5.0
 INITIAL_POSE_VARIANCES = (0.25, 0.25, 0.06853891945200942)
 
@@ -224,7 +228,8 @@ class SupportNode(Node):
         # composes nothing until the composed pose is within
         # START_POSE_RADIUS of the start pose published here, then never
         # holds again. Judged from the estimator's own output against the
-        # pose it was told, so it holds on a car with no ground truth
+        # pose it was told (read back from initial_pose_topic), so it holds on a
+        # car with no ground truth
         # (BRINGUP-2030).
         self.declare_parameter("hold_estimate_until_initial_pose", False)
 
@@ -288,6 +293,7 @@ class SupportNode(Node):
         self._initial_pose_sent = False
         self._initial_pose_xy: tuple[float, float] | None = None
         self._start_pose_applied = False
+        self._hold_logged = False
         self._hold_until_initial_pose = (
             self.get_parameter("hold_estimate_until_initial_pose")
             .get_parameter_value()
@@ -304,6 +310,16 @@ class SupportNode(Node):
         self.create_subscription(
             Odometry, "/odom", self._on_dead_reckoning, LATCHED_QOS.depth
         )
+        if initial_pose_topic:
+            # The start pose is whatever is published here: the sim's own
+            # latched publish loops back, and on a car it is the operator's
+            # RViz pose, with no ground truth anywhere (BRINGUP-2030).
+            self.create_subscription(
+                PoseWithCovarianceStamped,
+                initial_pose_topic,
+                self._on_initial_pose,
+                LATCHED_QOS,
+            )
 
         self._publish_static_artifacts(track_path, raceline_path)
 
@@ -373,6 +389,10 @@ class SupportNode(Node):
             truth.pose.pose.position.y,
         )
 
+    def _on_initial_pose(self, message: PoseWithCovarianceStamped) -> None:
+        position = message.pose.pose.position
+        self._initial_pose_xy = (position.x, position.y)
+
     def _on_dead_reckoning(self, message: Odometry) -> None:
         self._latest_dead_reckoning = message
         self._publish_correction()
@@ -409,6 +429,17 @@ class SupportNode(Node):
             if start is None or (
                 math.hypot(x - start[0], y - start[1]) > START_POSE_RADIUS
             ):
+                if not self._hold_logged:
+                    self._hold_logged = True
+                    self.get_logger().info(
+                        "holding the estimate until it is within "
+                        f"{START_POSE_RADIUS} m of the start pose "
+                        + (
+                            "(no /initialpose received yet)"
+                            if start is None
+                            else f"{start}"
+                        )
+                    )
                 return
             self._start_pose_applied = True
         composed = Odometry()

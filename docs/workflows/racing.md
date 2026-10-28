@@ -77,8 +77,9 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios
 ```
 
 Use the 1080-beam scenario at 1x: scan matching is wall-clock work, so a faster simulated clock drops
-scans. The support node publishes no estimate until MOLA has applied the start pose (it is told it
-on `/initialpose`). No closed-loop lap is backed for `mola`: its worst error, 3.1 m, is above the
+scans. The support node publishes no estimate until MOLA's pose is within 5 m of the start pose it is told
+on `/initialpose` (a plausibility check on MOLA's own output, with no yaw check). Launching it with
+`drive_on_estimate:=true`, the default, logs a warning and is allowed. No closed-loop lap is backed for `mola`: its worst error, 3.1 m, is above the
 1.83 m `amcl` closed loop is accepted at.
 
 ## Planning and raceline generation

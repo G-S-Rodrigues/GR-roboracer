@@ -880,3 +880,32 @@ def test_bringup_1520_mola_runs_localization_only_on_the_derived_map() -> None:
     assert static.node_package == "tf2_ros"
     assert static.node_executable == "static_transform_publisher"
     assert type(include).__name__ == "IncludeLaunchDescription"
+
+
+def test_bringup_1570_warns_when_mola_is_driven_on_its_own_estimate(
+    monkeypatch,
+) -> None:
+    """BRINGUP-1570: `pose_source:=mola` with `drive_on_estimate:=true` (the
+    launch default) is launched, not refused, with a warning: MOLA is backed
+    open loop only, and the controller would latch a stop before the hold
+    releases (repo-gotchas #19). Open loop and the other sources say nothing."""
+    monkeypatch.chdir(REPOSITORY_ROOT)
+
+    def warnings_for(**overrides) -> list[str]:
+        module, context = _launch_context(
+            scenario="config/scenarios/spielberg_1080.yaml", **overrides
+        )
+        recorded: list[str] = []
+
+        class Recorder:
+            def warning(self, message, *args, **kwargs):
+                recorded.append(str(message))
+
+        monkeypatch.setattr(module, "LOGGER", Recorder())
+        module._launch_nodes(context, "", "")
+        return recorded
+
+    closed = warnings_for(pose_source="mola", drive_on_estimate="true")
+    assert len(closed) == 1 and "drive_on_estimate" in closed[0]
+    assert warnings_for(pose_source="mola", drive_on_estimate="false") == []
+    assert warnings_for(pose_source="amcl", drive_on_estimate="true") == []

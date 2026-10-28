@@ -13,6 +13,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
+from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from racing_bringup.estimators import amcl, mola, slam_toolbox
@@ -22,6 +23,7 @@ from racing_bringup.scenario_parameters import (
     track_parameters,
 )
 
+LOGGER = get_logger("sim_pure_pursuit.launch")
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
 # How the controller's command speed is chosen: its own curvature schedule, or
@@ -88,6 +90,16 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     driving_on_estimate = estimating and LaunchConfiguration(
         "drive_on_estimate"
     ).perform(context) in ("true", "True", "1")
+    if pose_source == "mola" and driving_on_estimate:
+        # Warned, not refused: a closed-loop experiment stays possible
+        # (ADR 0005).
+        LOGGER.warning(
+            "pose_source:=mola with drive_on_estimate:=true: no closed-loop "
+            "lap is backed for MOLA (worst open-loop error 3.1 m), and the "
+            "controller may latch a stop before the estimate is held to the "
+            "start pose (repo-gotchas #19). Pass drive_on_estimate:=false "
+            "to score it open loop."
+        )
     # The estimate scored and recorded is the pose the controller drives
     # on, unless the caller named another topic.
     if estimating and estimate_topic.perform(context) == GROUND_TRUTH_POSE:

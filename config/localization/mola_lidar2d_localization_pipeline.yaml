@@ -3,8 +3,7 @@
 # pipeline). Two values differ from it, both about the ICP search window:
 #   adaptive_threshold.maximum_sigma  1.0 -> 0.5 m
 #   Matcher_Points_DistanceThreshold.threshold  2.0*sigma -> 1.0*sigma
-# Why (SIM-3510, seed 42, 1080 beams, 1x, open loop; measurements in
-# .scratch/roboracer-slam/run/part1-progress.md): on a map from another run
+# Why (SIM-3510, seed 42, 1080 beams, 1x, open loop): on a map from another run
 # ICP's paired ratio sits near 0.78, under the controller's 0.85 setpoint, so
 # sigma ramps +0.05 per scan to its maximum within a second and the matcher
 # window (2*sigma = 2 m) lets ICP jump to a wrong optimum (49 deg at sim 3.5 s)
@@ -17,8 +16,7 @@
 # pipelines/lidar2d.yaml with FOUR values changed (everything else is upstream's).
 # Tuned on config/scenarios/spielberg_1080.yaml (1080-beam Hokuyo-class scan)
 # only; on the 64-beam spielberg.yaml scan the stock pipeline is 4.6-5.1 m
-# wrong over the first 5 s (part 1 of the MOLA plan, measurements in
-# .scratch/roboracer-slam/run/part1-progress.md).
+# wrong over the first 5 s (part 1 of the MOLA plan).
 #   min_time_between_scans   0.001 -> 0.04  the sim publishes 100 Hz scans of
 #       1080 beams; MOLA keeps up with ~35%, drops the rest at random times
 #       and loses repeatability. A fixed 25 Hz is repeatable and 2-3x better

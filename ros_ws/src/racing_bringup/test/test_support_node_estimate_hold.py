@@ -18,7 +18,7 @@ import time
 
 import pytest
 import rclpy
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
 from nav_msgs.msg import Odometry
 from racing_bringup.support_node import SupportNode
 from rclpy.executors import SingleThreadedExecutor
@@ -39,6 +39,12 @@ RACELINE = os.path.join(
     "config/scenarios/maps/analytic_circle/analytic_circle_raceline.csv",
 )
 COMPOSED_TOPIC = "/localization/odom"
+LATCHED_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+)
 RELIABLE_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=10,
@@ -103,9 +109,11 @@ def _run(hold: bool):
     return context, support, probe, executor
 
 
-def _scenario(hold: bool) -> list[float]:
+def _scenario(hold: bool, start: str = "truth") -> list[float]:
     """x of every composed pose: a stale (stamp 1) then an applied (stamp 2)
-    map -> odom, each followed by one /odom."""
+    map -> odom, each followed by one /odom. ``start`` is where the start pose
+    comes from: the sim's ground truth, or an operator's /initialpose with no
+    ground truth at all (a real car)."""
     context, support, probe, executor = _run(hold)
     try:
         composed: list[Odometry] = []
@@ -117,6 +125,9 @@ def _scenario(hold: bool) -> list[float]:
         )
         dead = probe.create_publisher(Odometry, "/odom", RELIABLE_QOS)
         estimator = TransformBroadcaster(probe)
+        initial = probe.create_publisher(
+            PoseWithCovarianceStamped, "/initialpose", LATCHED_QOS
+        )
         assert _spin_until(
             executor,
             lambda: (
@@ -125,7 +136,14 @@ def _scenario(hold: bool) -> list[float]:
             5.0,
         )
         # The start pose is published at stamp 1 (the held sim's stamp).
-        truth.publish(_odometry(1, "map"))
+        if start == "truth":
+            truth.publish(_odometry(1, "map"))
+        else:
+            pose = PoseWithCovarianceStamped()
+            pose.header.stamp.sec = 1
+            pose.header.frame_id = "map"
+            pose.pose.pose.orientation.w = 1.0
+            initial.publish(pose)
         _spin_until(executor, lambda: False, 0.3)
         # The estimator's pre-/initialpose map -> odom, stamped 1, tens of
         # metres off.
@@ -157,3 +175,12 @@ def test_bringup_2030_withholds_the_estimate_until_the_start_pose_is_applied():
 def test_bringup_2030_off_by_default_composes_every_estimate():
     xs = _scenario(hold=False)
     assert xs[0] == pytest.approx(34.0) and math.isclose(xs[-1], 0.5)
+
+
+def test_bringup_2030_takes_the_start_pose_from_initialpose_without_truth():
+    """A real car has no /ground_truth/odom: the operator's /initialpose is
+    the only start pose, and the hold must still release on it."""
+    xs = _scenario(hold=True, start="initialpose")
+    assert xs == [pytest.approx(0.5)], (
+        f"the hold never released on /initialpose alone: {xs}"
+    )

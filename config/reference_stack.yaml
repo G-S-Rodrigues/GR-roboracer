@@ -96,6 +96,7 @@ roles:
         # with provenance; owner ruling 2026-10-25).
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
+          - ros_ws/src/racing_bringup/racing_bringup/support_node.py  # BRINGUP-2030 hold
           - config/localization/mola_*.yaml
           - config/scenarios/maps/*/mola/*
           - scripts/mola_map_track.sh
