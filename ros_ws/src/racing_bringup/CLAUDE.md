@@ -14,6 +14,7 @@ from its dead reckoning). The launch file remaps the controller's `/odom` to `/g
 domain logic, and stays out of `racing_common`. Under an estimator it stops broadcasting `map -> odom`
 (`publish_map_to_odom: false`) and publishes `composed_odometry_topic` = latest `map -> odom` ∘ `/odom`,
 the control-rate Odometry in `map` the controller drives on (BRINGUP-1040, BRINGUP-2010).
+With `hold_estimate_until_initial_pose` (MOLA) it composes nothing until the pose is within 5 m of the start pose (BRINGUP-2030).
 
 ## Running it
 
