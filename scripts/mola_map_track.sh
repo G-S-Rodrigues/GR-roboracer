@@ -48,6 +48,19 @@ esac
 simplemap=$(pwd)/log/mola_mapping.simplemap
 rm -f "$simplemap"
 
+# A kill watchdog. Its stdio is closed and stop_watchdog kills its `sleep`
+# too: a leftover `sleep` holding the caller's stdout pipe made
+# subprocess.run(capture_output=True) wait out its whole timeout after this
+# script had exited 0 (nightly 40663334967, SIM-5520; BRINGUP-1770).
+start_watchdog() {
+    ( exec >/dev/null 2>&1 </dev/null; sleep "$1"; kill -KILL "$2" ) &
+    watchdog=$!
+}
+stop_watchdog() {
+    pkill -P "$watchdog" 2>/dev/null || true
+    kill "$watchdog" 2>/dev/null || true
+}
+
 ros2 launch racing_bringup sim_pure_pursuit.launch.py \
     scenario:="$scenario" use_rviz:=false seed:="$seed" start_held:=true \
     time_scale:="$time_scale" recording_path:=log/mola_mapping.jsonl \
@@ -93,19 +106,17 @@ grep -q "lap_completed: true" log/mola_mapping_metrics.txt
 # leave mola-cli running for 15 minutes, never saving.
 kill -INT "$mola" 2>/dev/null || true
 pkill -INT -f lib/mola_launcher/mola-cli || true
-( sleep 900; kill -KILL "$mola" 2>/dev/null ) &
-watchdog=$!
+start_watchdog 900 "$mola"
 wait "$mola" || true
-kill "$watchdog" 2>/dev/null || true
+stop_watchdog
 test -s "$simplemap" || { echo "no simplemap written" >&2; exit 1; }
 # Stop the stack, so the recording the provenance reads is complete.
 # SIGTERM: a background job of a non-interactive shell starts with SIGINT
 # ignored, so a SIGINT sent to `ros2 launch` does nothing.
 kill -TERM "$launch" 2>/dev/null || true
-( sleep 120; kill -KILL "$launch" 2>/dev/null ) &
-watchdog=$!
+start_watchdog 120 "$launch"
 wait "$launch" || true
-kill "$watchdog" 2>/dev/null || true
+stop_watchdog
 sm2mm -i "$simplemap" -o "$output.mm" -p config/localization/mola_sm2mm.yaml
 
 # T_map_mola: the pose of the world frame's car at MOLA's first processed

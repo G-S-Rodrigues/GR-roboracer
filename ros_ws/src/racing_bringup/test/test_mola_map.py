@@ -457,3 +457,40 @@ def test_bringup_1760_the_grid_and_the_mm_agree_under_the_provenance_t(
         deltas = _frame_deltas(grid, points, wrong)
         print(f"BRINGUP-1760 bite {name}: {deltas}")
         assert min(deltas) >= 3 * GRID_VOXEL_P95_BOUND, (name, deltas)
+
+
+def test_bringup_1770_a_watchdog_never_holds_the_callers_pipe() -> None:
+    """BRINGUP-1770: the script's kill watchdogs do not keep its stdout open.
+
+    Nightly 40663334967 (SIM-5520): the script exited 0 but
+    `subprocess.run(capture_output=True)` waited the full 900 s timeout,
+    because `( sleep 900; kill ... ) &` left its `sleep` alive after the
+    watchdog subshell was killed, and that `sleep` inherited the pipe.
+    The functions are run as the script defines them, under a capture, with
+    a 30 s watchdog stopped at once.
+    """
+    import subprocess
+    import time
+
+    text = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()
+    functions = re.findall(
+        r"^(?:start_watchdog|stop_watchdog)\(\) \{.*?^\}\n",
+        text,
+        flags=re.M | re.S,
+    )
+    assert len(functions) == 2, "start_watchdog and stop_watchdog"
+    assert "start_watchdog " in text and "stop_watchdog" in text
+    harness = "\n".join(functions) + (
+        "\nstart_watchdog 30 $$\nsleep 0.5\nstop_watchdog\necho done\n"
+    )
+    started = time.monotonic()
+    completed = subprocess.run(
+        ["bash", "-c", harness],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    elapsed = time.monotonic() - started
+    assert completed.stdout == "done\n"
+    assert elapsed < 5, f"capture held open {elapsed:.1f} s by a watchdog"
