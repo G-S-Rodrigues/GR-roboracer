@@ -17,7 +17,11 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ "${1:-}" = "stop" ]; then
     if [ -f "$pidfile" ]; then
-        kill "$(cat "$pidfile")" 2>/dev/null || true
+        pid="$(cat "$pidfile")"
+        # Only kill it if it is still the socat we started (PIDs get reused).
+        if tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q '^socat '; then
+            kill "$pid" 2>/dev/null || true
+        fi
         rm -f "$pidfile"
     fi
     docker stop "$relay" >/dev/null 2>&1 || true
@@ -63,6 +67,7 @@ sleep 1
 if ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
     echo "socat did not stay up on $wsl_ip:4567" >&2
     docker stop "$relay" >/dev/null 2>&1 || true
+    rm -f "$pidfile"
     exit 1
 fi
 

@@ -37,6 +37,8 @@ reply latency, p50 / p99 / max in ms), part 8:
 | socat `nodelay` and relay `NODELAY` (the script) | 4.3 | 7.0 | 8.3 |
 | relay alone, `NODELAY` off, no socat (client on the host) | 4.4 | 6.8 | 9.3 |
 
+asyncio enables TCP_NODELAY on every TCP connection by default, so the rows with relay `NODELAY` off did not actually turn it off, and "no measurable effect" means nothing was varied there, not that the option is inert.
+
 Without `nodelay` on socat, Nagle and delayed ACK hold each small Engine.IO write about 45 ms. That
 is consistent with the 11.5-14.7 Hz part 7 measured live only if the sim is lock-step (24.5 + 45 ms is
 about 70 ms, 14 Hz); that is not established, and part 7's 1.1 s gaps are unexplained (the offline max

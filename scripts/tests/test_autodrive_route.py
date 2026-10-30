@@ -29,10 +29,10 @@ case "$1" in
 esac
 exit 0
 """
-SOCAT = """#!/bin/sh
+SOCAT = """#!/bin/bash
 echo "socat $*" >> "$STUB_LOG"
 [ -n "$STUB_SOCAT_FAIL" ] && exit 1
-exec sleep 30
+exec -a socat sleep 30
 """
 SS = """#!/bin/sh
 echo "ss $*" >> "$STUB_LOG"
@@ -143,7 +143,8 @@ def test_check_2110_taken_port_and_missing_dev_are_refused(tmp_path) -> None:
 def test_check_2120_stop_and_failed_socat_clean_up(tmp_path) -> None:
     """CHECK-2120: `stop` kills the socat a `start` left, removes the
     pidfile and stops the relay container; a socat that dies at once gives
-    exit 1, stops the relay and leaves nothing running."""
+    exit 1, stops the relay and leaves no pidfile; `stop` does not kill a
+    pidfile PID that is no longer a socat (the PID was reused)."""
     done, _ = _run(tmp_path, "start")
     assert done.returncode == 0, done.stderr
     pid = int((tmp_path / "route.pid").read_text())
@@ -163,6 +164,18 @@ def test_check_2120_stop_and_failed_socat_clean_up(tmp_path) -> None:
     assert done.returncode == 1, done.stderr
     assert "did not stay up" in done.stderr
     assert "docker stop autodrive-route-relay" in calls, calls
+    assert not (tmp_path / "route.pid").exists(), "dead PID left behind"
+    other = subprocess.Popen(["sleep", "30"])
+    try:
+        (tmp_path / "route.pid").write_text(f"{other.pid}\n")
+        done, _ = _run(tmp_path, "reuse", "stop")
+        assert done.returncode == 0, done.stderr
+        time.sleep(0.5)
+        assert other.poll() is None, "stop killed a PID that is not socat"
+        assert not (tmp_path / "route.pid").exists()
+    finally:
+        other.kill()
+        other.wait()
 
 
 def test_check_2130_relay_sets_nodelay_on_both_legs(
