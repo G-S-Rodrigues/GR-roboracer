@@ -930,7 +930,16 @@ def test_bringup_1056_the_vehicle_selects_its_description(
     import yaml
 
     monkeypatch.chdir(REPOSITORY_ROOT)
-    module, context = _launch_context(vehicle=str(vehicle_file))
+    # A vehicle the gym cannot cast for is launched on its own simulator.
+    own = (
+        {
+            "simulator": "autodrive",
+            "scenario": "config/scenarios/porto.yaml",
+        }
+        if vehicle_file.stem in NOT_GYM_CAST
+        else {}
+    )
+    module, context = _launch_context(vehicle=str(vehicle_file), **own)
     share = _description_share()
     mapping = yaml.safe_load((share / "urdf" / "descriptions.yaml").read_text())
     want = (share / "urdf" / mapping[vehicle_file.stem]).read_text()
