@@ -163,7 +163,16 @@ def _gym_h():
 
 # One source with the server tests: racing_sim_autodrive/test/_vehicle_values.py
 # (part 4's files; h and the steering limit anchored there; kp/ki UNTUNED).
-AUTODRIVE_REPLAY_START_FRAME = 90
+def _load_replay_loop():
+    directory = str(REPO / "ros_ws/src/racing_sim_autodrive/test")
+    if directory not in sys.path:
+        sys.path.append(directory)
+    import _replay_loop
+
+    return _replay_loop.PORTO_DRIVING_LOOP
+
+
+AUTODRIVE_REPLAY_START_FRAME, AUTODRIVE_REPLAY_END_FRAME = _load_replay_loop()
 
 
 def _autodrive_vehicle() -> dict:
@@ -173,6 +182,28 @@ def _autodrive_vehicle() -> dict:
     import _vehicle_values
 
     return _vehicle_values.vehicle()
+
+
+def autodrive_replay_args(port: int) -> list[str]:
+    """The replay's argv after `-m racing_sim_autodrive.replay`: ROS-free, so
+    SIMAD-1320 parses what the conformance launch really runs."""
+    return [
+        "--fixture",
+        str(
+            REPO
+            / "ros_ws/src/racing_sim_autodrive/test/fixtures"
+            / "porto_stream.jsonl.gz"
+        ),
+        "--url",
+        f"http://127.0.0.1:{port}",
+        "--pace",
+        "recorded",
+        "--loop",
+        "--start-frame",
+        str(AUTODRIVE_REPLAY_START_FRAME),
+        "--end-frame",
+        str(AUTODRIVE_REPLAY_END_FRAME),
+    ]
 
 
 def _autodrive_actions(parameters=None):
@@ -213,27 +244,19 @@ def _autodrive_actions(parameters=None):
         ],
         output="screen",
     )
-    # --start-frame is inside the recorded driving segment (frames ~90-355),
-    # so the 2 s ADAPT-2110 window cannot reach the loop wrap or the reset
-    # segment (frames ~470-480) that re-anchors dead reckoning.
+    # The replay loops only the driving frames [132, 338), so any 2 s window,
+    # wherever the test's wall clock puts it, moves the car at least 1.82 m
+    # (CoG) at recorded pace (SIMAD-1320). The wrap jumps truth about 3.5 m
+    # back while odom holds; that cannot fake "moved" (every looped frame is
+    # moving) nor "drift" (an odom that copies truth jumps with it). The
+    # window still assumes the server handles frames at the recorded pace;
+    # under load it may not (fix part 7.1 PR, part 8 rate fix).
     replay = launch.actions.ExecuteProcess(
         cmd=[
             sys.executable,
             "-m",
             "racing_sim_autodrive.replay",
-            "--fixture",
-            str(
-                REPO
-                / "ros_ws/src/racing_sim_autodrive/test/fixtures"
-                / "porto_stream.jsonl.gz"
-            ),
-            "--url",
-            f"http://127.0.0.1:{port}",
-            "--pace",
-            "recorded",
-            "--loop",
-            "--start-frame",
-            str(AUTODRIVE_REPLAY_START_FRAME),
+            *autodrive_replay_args(port),
         ],
         output="screen",
     )

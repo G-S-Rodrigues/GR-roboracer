@@ -121,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **278 tier-1, 34 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **292 tier-1, 37 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -174,7 +174,13 @@ The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen ID
 
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
 
+The AutoDRIVE visual-model work (V1) added tier 1 `DESC-1030` to `DESC-1090` (`racing_vehicle_description/test/test_description.py`, `test_autodrive_description.py`; 1030 parametrises the structure tests over `urdf/descriptions.yaml`), `BRINGUP-1056/1057`, `CHECK-2030` (`scripts/tests/test_autodrive_meshes.py`); tier 2 `DESC-2010`. `CHECK-2020` now loops over every mapped URDF.
+
 The AutoDRIVE part-7 work (our Socket.IO server) added tier 1 `SIMAD-1150` to `SIMAD-1270` (thirteen IDs: the Socket.IO pins, the ROS-free bridge session, the replay schedule, the comma-decimal locale error) `ADAPT-1040` and `ADAPT-1050` (every launch registration carries its own `RACING_SIM_BACKEND`; SIMAD-1150 also checks the running image has the pinned closure, so a stale image fails by name), and tier 2 `SIMAD-2010` to `SIMAD-2050` (the server node against `racing_sim_autodrive.replay`, on an ephemeral port, never the sim's 4567; it runs under the `/test_simad` namespace with every absolute topic remapped, and `SIMAD-2100` fails on any name outside it, so it cannot reach another package's tests on a shared domain). The four `racing_sim_adapter` launch files are registered a second time (`test_adapter_<name>_autodrive`) with `RACING_SIM_BACKEND=autodrive`; `conformance.BACKENDS` holds each backend's launch, its expected not-applicable set and its per-backend expectations (ADAPT-2030 rate, 2130 h, 2145 clock), and the variable defaults to the gym. The tier-1 and tier-2 AutoDRIVE tests need the Socket.IO closure (`docker/dev-tools-requirements.txt`) on `PYTHONPATH`. The live sim run (port 4567) is a recorded manual step, not a gate.
+
+The AutoDRIVE fix part 7.1 added tier 1 `SIMAD-1310` and `SIMAD-1320` (`ros_ws/src/racing_sim_autodrive/test/test_replay.py`): the replay's loop end frame, and that the loop the conformance launch configures (frames 132 to 337, `test/_replay_loop.py`) moves the car in every 2 s window at recorded pace.
+
+The AutoDRIVE stall work (part 7.2) added tier 1 `SIMAD-1330/1340` (`StallWatch`) and tier 2 `SIMAD-2080` (300 frames at recorded pace under a `/drive` flood, every one answered: red 9/40 before the executor fix, green 40/40 after) and `SIMAD-2090` (the stall WARNING and stack dump). Select one with `colcon test --packages-select racing_sim_autodrive --pytest-args -k test_server_node`: `-k simad_2080` selects nothing, because pytest names a launch test by its file.
 
 The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
 

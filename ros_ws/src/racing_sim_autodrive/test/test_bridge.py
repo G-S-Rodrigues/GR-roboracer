@@ -418,3 +418,38 @@ def test_simad_1260_reset_and_step_mode_handlers():
     ok, message = bridge.handle_step_mode(1)
     assert ok is False and message
     assert bridge.handle_step_mode(7)[0] is False
+
+
+def test_simad_1330_stall_watch_fires_once_per_stall_while_connected():
+    """SIMAD-1330: a connected client silent for longer than the timeout
+    gives one report; the same stall gives no second; a frame re-arms it; a
+    sim that never connected, or has left, is never reported."""
+    watch = bridge.StallWatch(timeout_s=0.5)
+    assert watch.check(100.0) is None  # never connected
+    watch.connected(100.0)
+    assert watch.check(100.4) is None  # inside the timeout
+    assert watch.check(100.6) is not None  # first report
+    assert watch.check(105.0) is None  # same stall
+    watch.entered()
+    watch.exited(106.0)
+    assert watch.check(106.4) is None
+    assert watch.check(106.6) is not None  # a new stall
+    watch.disconnected()
+    assert watch.check(200.0) is None
+
+
+def test_simad_1340_stall_watch_report_carries_counters_and_gap():
+    """SIMAD-1340: the report names the entry, exit and emit counts and the
+    seconds since the last frame, so a log line says where frames stopped."""
+    watch = bridge.StallWatch(timeout_s=0.5)
+    watch.connected(10.0)
+    for _ in range(3):
+        watch.entered()
+        watch.emitted()
+        watch.exited(11.0)
+    watch.entered()  # a fourth frame that never left the handler
+    report = watch.check(12.5)
+    assert report is not None
+    assert "entered=4" in report and "exited=3" in report
+    assert "emitted=3" in report
+    assert "1.50 s" in report
