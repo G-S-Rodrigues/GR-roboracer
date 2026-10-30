@@ -31,7 +31,7 @@ belongs there when its cost is laps rather than seconds and what it catches is a
 combination shows.
 
 A red nightly leaves evidence: node logs and Robot output (`logs-<region>-seed-<n>`, failed jobs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the pose-source data report (`pose-source-report`: `log/pose-source-report/{report.md,report.json}`, from `slam`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the pose-source data report (`pose-source-report`: `log/pose-source-report/{report.md,report.json}`, from `slam`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop[-<planner>].jsonl`, whose stamps locate a lost stretch of availability), and, when a
 `run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
 (`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
 prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and bounds the pooled median and
@@ -82,8 +82,8 @@ tree when the branch touches `config/`, scoped otherwise):
 
 | Change | Selected | Wall time |
 |---|---|---|
-| comment in `config/localization/amcl.yaml` | amcl: SIM-3020, SIM-3080, ACC-4030 (amcl case), ACC-4040 | 426 s |
-| comment in `racing_controller_baseline/src/node.cpp` | controller, planner, ground_truth: 6 tier-3 tests, 3 Robot cases | 342 s |
+| comment in `config/localization/amcl.yaml` | amcl: SIM-3020, SIM-3080, ACC-4030 (amcl case), ACC-4040 (centerline case) | 426 s (before V3) |
+| comment in `racing_controller_baseline/src/node.cpp` | controller, planner, ground_truth: 6 tier-3 tests, 4 Robot cases (ACC-4040 raceline case added by V3) | 342 s (before V3) |
 | `racing_common` `.cpp` | whole tree (unmapped), the same as `--full`, ~13 min | not timed |
 
 `--full` was "everything" while tiers 0–4 were everything. ADR 0007 makes `--ready` the definition of
@@ -127,7 +127,7 @@ The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `sc
 The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
 `BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;
 tier 3 `SIM-3070` (slam_toolbox) and `SIM-3080` (amcl); tier 4 `ACC-4030` (one case per pose source)
-and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
+and `ACC-4040` (two cases: the centerline, and the min-curvature line on the amcl estimate); tier 5 `SIM-5010/5020/5030`.
 
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
 The nightly-flake work added tier 1 `EVAL-1060`.
