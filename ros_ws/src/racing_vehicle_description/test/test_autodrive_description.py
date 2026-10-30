@@ -22,6 +22,7 @@ Re-measured 2026-10-30 on the committed STLs (measured / tolerance):
   8 mm.
 """
 
+import importlib.util
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from test_urdf_matches_vehicle import _origin_in
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_ROOT.parents[2]
 URDF_PATH = PACKAGE_ROOT / "urdf" / "autodrive_roboracer.urdf"
+DESCRIPTIONS = PACKAGE_ROOT / "urdf" / "descriptions.yaml"
 VEHICLES = REPO_ROOT / "config" / "vehicles"
 VEHICLE_DIR = VEHICLES / "autodrive_roboracer"
 
@@ -172,7 +174,8 @@ def test_desc_1070_mesh_body_has_the_cars_length_and_sits_on_the_ground() -> (
     shock tower stick out further (to -0.104) and are the only things that
     do, so the edge is taken at the 0.05 % quantile of the chassis
     vertices' x (the committed mesh puts it 2.1 mm inside 0.08; the
-    1 % quantile gives 3.0 mm), which ignores the few hundred vertices of those two parts.
+    1 % quantile gives 3.0 mm), which ignores the few hundred vertices of
+    those two parts.
     """
     root = _root()
     chassis = _chassis(root)
@@ -200,3 +203,34 @@ def test_desc_1080_the_lidar_frame_is_in_the_lidar_mesh() -> None:
     assert np.all(lo <= origin) and np.all(origin <= hi), (lo, origin, hi)
     centre = (lo + hi) / 2
     assert centre[:2] == pytest.approx(origin[:2], abs=0.008)
+
+
+def _display_module():
+    spec = importlib.util.spec_from_file_location(
+        "display_launch", PACKAGE_ROOT / "launch" / "display.launch.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_desc_1090_every_vehicle_has_a_description() -> None:
+    """DESC-1090: urdf/descriptions.yaml maps every vehicle file's stem to an
+    existing URDF, the f1tenth stems to f1tenth.urdf and the AutoDRIVE one to
+    its own; display.launch.py reads the same map."""
+    mapping = yaml.safe_load(DESCRIPTIONS.read_text())
+    stems = {p.stem for p in VEHICLES.glob("*.yaml")}
+    assert stems == set(mapping), (sorted(stems), sorted(mapping))
+    for stem, name in mapping.items():
+        assert (PACKAGE_ROOT / "urdf" / name).is_file(), (stem, name)
+    assert mapping["f1tenth_default"] == "f1tenth.urdf"
+    assert mapping["f1tenth_gym_limits"] == "f1tenth.urdf"
+    assert mapping["autodrive_roboracer"] == "autodrive_roboracer.urdf"
+    display = _display_module()
+    for stem, name in mapping.items():
+        path = display.description_for(
+            f"config/vehicles/{stem}.yaml", PACKAGE_ROOT
+        )
+        assert path == PACKAGE_ROOT / "urdf" / name, stem
+    with pytest.raises(RuntimeError, match="no description for vehicle nope"):
+        display.description_for("some/dir/nope.yaml", PACKAGE_ROOT)
