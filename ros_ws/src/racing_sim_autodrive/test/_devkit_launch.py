@@ -9,10 +9,12 @@ that exceeds 101): B holds the devkit side on a second rclpy context there.
 """
 
 import os
+import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -25,8 +27,6 @@ FIXTURE = server_launch.FIXTURE
 PORTO = server_launch.PORTO
 VEHICLE = server_launch.VEHICLE
 
-# docker-compose.yaml runs the devkit on this domain when the variable is unset.
-COMPOSE_DEFAULT_DOMAIN = "42"
 STACK_DOMAIN = int(os.environ.get("ROS_DOMAIN_ID", "0"))
 PREFIX = "/test_simad_devkit"
 DEVKIT_PREFIX = f"/test_simad_devkit_dk{STACK_DOMAIN}"
@@ -49,16 +49,47 @@ def devkit_domain() -> int:
     return STACK_DOMAIN + 1 if STACK_DOMAIN + 1 <= 101 else STACK_DOMAIN - 1
 
 
+DEVKIT_URL = os.environ.get(
+    "AUTODRIVE_DEVKIT_URL", "http://autodrive-devkit:4567"
+)
+
+
+def devkit_reachable() -> bool:
+    parts = urlparse(DEVKIT_URL)
+    try:
+        socket.create_connection(
+            (parts.hostname, parts.port), timeout=1
+        ).close()
+    except OSError:
+        return False
+    return True
+
+
 def check_not_live_devkit() -> None:
-    # Unset means the compose file's default (42, dev's own domain): fail
-    # closed on that rather than let an unset variable pass.
-    live = os.environ.get("AUTODRIVE_ROS_DOMAIN_ID") or COMPOSE_DEFAULT_DOMAIN
+    """Refuse to run beside a live devkit whose domain could be ours.
+
+    With AUTODRIVE_ROS_DOMAIN_ID set, its domain must be neither S nor the
+    devkit-side domain. Unset, the container's domain is unknown (compose
+    defaults it to 42), so refuse only if a devkit answers on its port: CI
+    runs on domain 42 with no devkit and must pass.
+    """
+    live = os.environ.get("AUTODRIVE_ROS_DOMAIN_ID")
+    clash = f"stack domain {STACK_DOMAIN} / devkit domain {devkit_domain()}"
+    if live is None:
+        if devkit_reachable():
+            raise AssertionError(
+                f"a devkit answers at {DEVKIT_URL} and"
+                " AUTODRIVE_ROS_DOMAIN_ID is unset (compose defaults it to"
+                f" 42): {clash} may clash with it. Stop it, or restart it on"
+                " its own domain: AUTODRIVE_ROS_DOMAIN_ID=<D> docker compose"
+                " -f docker/docker-compose.yaml --profile autodrive up -d"
+                " --no-deps autodrive-devkit"
+            )
+        return
     if int(live) in (STACK_DOMAIN, devkit_domain()):
         raise AssertionError(
-            f"stack domain {STACK_DOMAIN} / devkit domain {devkit_domain()}"
-            f" equals the live devkit's domain {live}"
-            " (AUTODRIVE_ROS_DOMAIN_ID, default 42): a test must never"
-            " subscribe to the live devkit"
+            f"{clash} equals AUTODRIVE_ROS_DOMAIN_ID={live}: a test must"
+            " never subscribe to the live devkit"
         )
 
 

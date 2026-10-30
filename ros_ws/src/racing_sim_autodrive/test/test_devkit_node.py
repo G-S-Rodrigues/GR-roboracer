@@ -205,11 +205,13 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
 def test_simad_2200_b_started_after_the_stream_gets_whole_frames(
     tmp_path, observer
 ):
-    """SIMAD-2200: B joins a stand-in that is already publishing (it does
-    not wait for subscribers, as docs/running.md starts the devkit first), so
-    B's 13 readers match mid-burst. It still emits output, every `/scan`
-    stamp is a devkit lidar stamp, and each `/ground_truth/odom` shares its
-    stamp with the `/scan` of the same assembled frame."""
+    """SIMAD-2200: a regression smoke for "B emits after joining a running
+    stream", not a guard against mixed frames (SIMAD-1420/1430 hold that).
+    B joins a stand-in that is already publishing (no `--wait-subscribers`,
+    as docs/running.md starts the devkit first). B still emits, every
+    `/scan` stamp is a devkit lidar stamp, and each `/ground_truth/odom`
+    shares its stamp with a `/scan`. The observer is matched to the lidar
+    topic before B starts, so every B stamp is one it saw."""
     scans, truth, lidar_stamps = [], [], set()
     observer.stack.create_subscription(
         LaserScan, dl.topic("/scan"), scans.append, SENSOR
@@ -233,7 +235,9 @@ def test_simad_2200_b_started_after_the_stream_gets_whole_frames(
     )
     bridge = None
     try:
-        spin(observer, 0.37)
+        spin_until(
+            observer, lambda: len(lidar_stamps) >= 3, 30.0, "observer lidar"
+        )
         bridge, blog = dl.start_bridge(tmp_path)
         dl.wait_for_log(bridge, blog, BRIDGE_UP)
         spin_until(observer, lambda: len(scans) >= 40, 30.0, "40 scans")
