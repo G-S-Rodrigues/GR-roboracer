@@ -28,8 +28,8 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py simulator:=autodrive \
 
 The simulator's compose service (`autodrive-sim`, profile `autodrive`) connects to
 `AUTODRIVE_BRIDGE_HOST`, which defaults to the official devkit container; pointing it at this server
-is not yet a tested step. Never start the profile with a bare `up`, which also starts `dev` and the
-devkit, and the devkit holds the same port 4567.
+is not yet a tested step. Never start the profile with a bare `up`, which also starts `dev`, `fast-sim`
+and the devkit, and the devkit holds the same port 4567.
 
 The minimum-curvature line from `config/racelines/`, raced at its own speed:
 

@@ -44,7 +44,8 @@ is. `optimized_raceline` publishes the committed minimum-curvature line
 `config/racelines/<track>/<vehicle version>/<raceline_optimizer>.csv` instead. A missing or
 mismatched line is an error: the launch never falls back to the centerline. The one exception runs
 the other way: under `track_centerline` a map with no `<map>_raceline.csv` (Porto has none yet) is
-driven on its own centerline, published at speed 0 so the controller's schedule sets the speed. Exploratory methods
+driven on its own centerline, published at speed 0 so the controller's schedule sets the speed;
+`speed_source:=trajectory` there is refused, naming the map, because the car would never move. Exploratory methods
 (MPC/MPCC, learned control, FAR-LIO) have no identifier and are not listed here.
 
 The reference default is the composition every new implementation is verified in. Its names come
@@ -164,7 +165,7 @@ is a reviewed diff. The example writes to `log/maps/Spielberg` so following it i
 # Racing: one lap with a selected stack.
 schema_version: 1  # Available: 1
 workflow: racing  # Available: mapping, racing
-scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Committed but not runnable: config/scenarios/porto.yaml (AutoDRIVE practice track; no simulator runs it until `simulator:=autodrive`)
+scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Runs on `simulator: autodrive` only: config/scenarios/porto.yaml (the AutoDRIVE practice track; the gym has no map for it)
 vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Runs on `simulator: autodrive` only: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; the gym refuses it). The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer only)
