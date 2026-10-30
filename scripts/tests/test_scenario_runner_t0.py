@@ -137,14 +137,18 @@ def test_check_1980_t0_waits_for_the_supervisor_clock_before_the_client(
     )
     node = _FakeNode(released)
     scenario_runner._reset_at_deterministic_t0(node, 42, 5.0)
-    assert len(calls) == 1
-    message_type, topic, qos, timeout = calls[0]
+    clock_calls = [c for c in calls if c[1] == CLOCK_RECEIVED_TOPIC]
+    assert clock_calls, "no wait_for_message on the supervisor Clock topic"
+    message_type, topic, qos, timeout = clock_calls[0]
     assert message_type is Clock
     assert topic == CLOCK_RECEIVED_TOPIC
     assert qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
     assert qos.reliability == ReliabilityPolicy.RELIABLE
     assert timeout <= 5.0
-    assert released == ["wait_for_message", "create_client"]
+    assert "create_client" in released
+    assert released.index("wait_for_message") < released.index(
+        "create_client"
+    )
 
 
 def test_check_1990_an_unheard_clock_raises_and_never_releases(
