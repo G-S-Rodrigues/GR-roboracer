@@ -33,16 +33,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import conformance  # noqa: E402  (the capability vocabulary)
 
-ADAPTER_NODE = "racing_sim"
-SCAN_TOPIC = "/scan"
-ODOMETRY_TOPIC = "/odom"
-GROUND_TRUTH_SCAN_TOPIC = "/ground_truth/scan"
-GROUND_TRUTH_ODOMETRY_TOPIC = "/ground_truth/odom"
-DRIVE_TOPIC = "/drive"
-IMU_TOPIC = "/imu"
-CLOCK_TOPIC = "/clock"
-RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
-STEP_MODE_SERVICE = f"/{ADAPTER_NODE}/step_mode"
+# EVAL-2030's probe (racing_evaluation's file, imported by path, never copied).
+sys.path.insert(0, str(conformance.REPO / "ros_ws/src/racing_evaluation/test"))
+import graph_isolation  # noqa: E402
+
+ADAPTER_NODE = conformance.ADAPTER_NAME
+SCAN_TOPIC = conformance.topic("/scan")
+ODOMETRY_TOPIC = conformance.topic("/odom")
+GROUND_TRUTH_SCAN_TOPIC = conformance.topic("/ground_truth/scan")
+GROUND_TRUTH_ODOMETRY_TOPIC = conformance.topic("/ground_truth/odom")
+DRIVE_TOPIC = conformance.topic("/drive")
+IMU_TOPIC = conformance.topic("/imu")
+CLOCK_TOPIC = conformance.topic("/clock")
+RESET_SERVICE = conformance.service("reset")
+STEP_MODE_SERVICE = conformance.service("step_mode")
 EXPECTED_RATE_HZ = 100.0
 RATE_TOLERANCE = 0.20
 
@@ -105,13 +109,12 @@ class TestAdapterContract(unittest.TestCase):
             topics = {
                 name for name, _types in self.node.get_topic_names_and_types()
             }
-            if (
-                ADAPTER_NODE in self.node.get_node_names()
-                and required_topics.issubset(topics)
-            ):
+            if conformance.adapter_present(
+                self.node
+            ) and required_topics.issubset(topics):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
-        self.fail(f"node not found: {ADAPTER_NODE}")
+        self.fail(f"node not found: {conformance.node_fqn()}")
 
     def _collect(self, message_type, topic, qos, count, timeout=3.0):
         messages = []
@@ -185,7 +188,9 @@ class TestAdapterContract(unittest.TestCase):
         )[0]
         transforms = [
             transform
-            for message in self._collect(TFMessage, "/tf", STATE_QOS, 1)
+            for message in self._collect(
+                TFMessage, conformance.topic("/tf"), STATE_QOS, 1
+            )
             for transform in message.transforms
             if transform.header.frame_id == "odom"
             and transform.child_frame_id == "base_link"
@@ -394,8 +399,15 @@ class TestAdapterContract(unittest.TestCase):
             return
         self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
 
+        # The row remaps /clock under its prefix; so does the consumer's
+        # TimeSource (Step 0: rclpy follows a node-local /clock remap).
         consumer = rclpy.create_node(
             "adapt_2075_use_sim_time_consumer",
+            cli_args=[
+                "--ros-args",
+                "-r",
+                f"{conformance.CLOCK_TOPIC}:={CLOCK_TOPIC}",
+            ],
             parameter_overrides=[
                 Parameter("use_sim_time", Parameter.Type.BOOL, True)
             ],
@@ -462,7 +474,7 @@ class TestAdapterContract(unittest.TestCase):
             self.assertIsInstance(declared[name], bool, name)
 
         client = self.node.create_client(
-            SetParameters, f"{ADAPTER_NODE}/set_parameters"
+            SetParameters, conformance.service("set_parameters")
         )
         try:
             self.assertTrue(client.wait_for_service(timeout_sec=20.0))
@@ -514,6 +526,27 @@ class TestAdapterContract(unittest.TestCase):
         self.assertTrue(future.done(), "step_mode timed out")
         self.assertTrue(future.result().success, future.result().message)
         self.node.destroy_client(client)
+
+    def test_adapt_2170_backend_topics_stay_under_the_row_prefix(self):
+        """ADAPT-2170: the conformance-launched backend has no data topic
+        outside its row's namespace (colcon runs other packages' tier-2 tests
+        on this domain; gotcha #39). EVAL-2030's shape, on the backend."""
+        self._require_adapter()
+        ns = conformance.backend().namespace
+        found = graph_isolation.data_topics(
+            self.node, conformance.ADAPTER_NAME, ns
+        )
+        expected = {
+            conformance.topic(n) for n in conformance.backend().remapped
+        }
+        self.assertEqual(
+            {"outside": graph_isolation.outside(found, ns), "root": ns == "/"},
+            {"outside": [], "root": False},
+            f"backend topics: {sorted(found)}",
+        )
+        self.assertLessEqual(
+            expected, found, "contract topics missing (discovery incomplete?)"
+        )
 
     def test_adapt_2160_stepped_mode_holds_the_clock(self):
         """ADAPT-2160: in STEPPED mode the backend does not advance on its

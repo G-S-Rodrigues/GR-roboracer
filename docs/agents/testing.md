@@ -121,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **297 tier-1, 38 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **298 tier-1, 39 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -187,6 +187,7 @@ The AutoDRIVE part-8 rate work added tier 1 `SIMAD-1280` (`replay.latency_summar
 The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
 
 The evaluation-isolation work (E1) added tier 2 `EVAL-2030` (one case in each of `test_evaluation_node.py` and `test_evaluation_node_pose.py`: neither the evaluator nor the test node has a topic outside the file's prefix; `test/graph_isolation.py`), and moved EVAL-2010/2020 under `/test_eval2010/`, `/test_eval2020/`.
+The AutoDRIVE isolation work (part 7.3b) added tier 1 `ADAPT-1060` (no `test_adapter_*.py` names a global topic or service; a negative case keeps the scan honest) and tier 2 `ADAPT-2170` (in `test_adapter_contract.py`, so it runs on both rows: the backend has no topic outside its row prefix, via `racing_evaluation/test/graph_isolation.py`). The conformance servers now run under `/test_adapt_gym` and `/test_adapt_autodrive` with every absolute name remapped, and the gym row also remaps `/clock`, so ADAPT-2075's `use_sim_time` consumer remaps `/clock` to match. The tests name topics through `conformance.topic()`.
 
 ## The tests that matter most
 
