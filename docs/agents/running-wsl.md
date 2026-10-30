@@ -58,10 +58,9 @@ Docker Desktop's published port on `127.0.0.1` (`Test-NetConnection` True). In P
    AutoDRIVE-RoboRacer-Sim-Racing, check its sha256 (`2D3E5CC7073009D8F28F41B2266C129DD64210688C70228A6811B844EE48A751`)
    and `Expand-Archive` it. The owner used `C:\dev\Autodrive`; the script prints a placeholder.
 3. Start the bridge (the script), then run `AutoDRIVE Simulator.exe -ip 127.0.0.1 -port 4567`. The
-   flags only fill the address; the window never connects by itself (only under `-batchmode`). Click
-   Menu > Connection once, only if not already connected (a second click disconnects), and trust the
-   sid in the server log, not the label. `docs/agents/autodrive.md` has the facts and the
-   `scripts/windows/autodrive.ps1` helper that does the clicks (Trackcam included).
+   flags only fill the address; the window does not connect by itself. Connecting, the Trackcam view
+   and how to confirm are in `docs/agents/autodrive.md`, with the `scripts/windows/autodrive.ps1`
+   helper that does the clicks.
 4. Manual mode drives the car from the window. Autonomous mode does not move until something sends
    commands; `ros2 run autodrive_roboracer teleop_keyboard` in the devkit container does.
 5. Restore the saved culture afterwards.

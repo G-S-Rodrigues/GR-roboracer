@@ -115,6 +115,7 @@ def test_check_1680_printed_windows_steps(tmp_path) -> None:
         "<folder for the sim>",
         "-ip 127.0.0.1 -port 4567",
         "click Connection once",
+        "Connected!",
         "Camera Switch five times",
         "scripts/windows/autodrive.ps1",
         "teleop_keyboard",
@@ -132,11 +133,12 @@ def test_check_1685_windows_helper_is_committed_and_referenced() -> None:
     text = helper.read_text()
     for needle in (
         "$SimPath",
-        "$Ip",
+        '[string]$Ip = "127.0.0.1"',
         "$Port",
         "-NoConnect",
         "-NoTrackcam",
         "$LoadSeconds",
+        "& $click 0.04 0.04 1000",
         "0.379",
         "0.563",
     ):

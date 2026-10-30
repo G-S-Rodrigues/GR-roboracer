@@ -61,7 +61,8 @@ Open a NEW PowerShell window (the culture applies to new processes), then:
   & "\$dir\\autodrive_simulator\\AutoDRIVE Simulator.exe" -ip 127.0.0.1 -port 4567
 The flags only fill the address; the window never connects by itself. Open
 Menu, click Connection once (only if not already Connected; a second click
-disconnects), and trust the session id in the bridge log, not the label.
+disconnects), and trust Connected! in "docker logs
+autodrive-devkit-gui", not the window label.
 Menu > Camera Switch five times from Driver's Eye reaches Trackcam; no flag
 selects a camera. scripts/windows/autodrive.ps1 does these clicks (verified at
 one 1920x991 window); docs/agents/autodrive.md has the facts.

@@ -9,17 +9,18 @@ The competition simulator's window is a **Windows** build; an agent in WSL start
 1. Start the bridge first (the sim connects once, gotcha 30):
    `AUTODRIVE_ROS_DOMAIN_ID=<not 42> scripts/autodrive_gui.sh` (it publishes `127.0.0.1:4567`).
 2. Run the helper `scripts/windows/autodrive.ps1` (optional; it is a click automation, not CI):
-   `powershell.exe -NoProfile -Command ". '<windows path of autodrive.ps1>'; autodrive -SimPath '<...\AutoDRIVE Simulator.exe>'"`.
+   `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". '<windows path of autodrive.ps1>'; autodrive -SimPath '<...\AutoDRIVE Simulator.exe>'"`.
+   `-ExecutionPolicy Bypass` applies to that process only; it changes no machine setting.
    Parameters: `-SimPath` (or `$env:AUTODRIVE_SIM_EXE`), `-Ip` (default `127.0.0.1`; a recorder on
    the WSL host needs the WSL IP), `-Port`, `-NoConnect`, `-NoTrackcam`, `-LoadSeconds`.
-3. Confirm the connection in the **server log**: a session id (`sid`) and messages arriving. Do not
-   trust the window's "Connected" label.
+3. Confirm the connection in a log, not the window label: `Connected!` in
+   `docker logs autodrive-devkit-gui` on the devkit route, or a session id (`sid`) in our own
+   server's or a probe recorder's log.
 
 ## Facts (from the AutoDRIVE source @75b7df5 and live runs)
 
 - `-ip` / `-port` only fill the address fields. The build connects alone only under `-batchmode`
   (no window). In the GUI, **one click on Menu > Connection** connects; a second click disconnects.
-  The earlier "the flags auto-connect" wording was wrong.
 - No flag or setting selects a camera. Driver's Eye is the start view; **5 presses of Menu > Camera
   Switch** reach Trackcam (Bird's, God's, Dash, Rear, Track).
 - The helper clicks at window-relative fractions (Menu 0.04,0.04; Connection 0.04,0.379; Camera

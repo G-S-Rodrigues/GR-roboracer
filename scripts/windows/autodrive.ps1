@@ -2,7 +2,8 @@
 # Dot-source it in PowerShell, then run it:
 #   . .\autodrive.ps1
 #   autodrive -SimPath "<folder>\autodrive_simulator\AutoDRIVE Simulator.exe"
-# From WSL: powershell.exe -NoProfile -Command ". '<path to this file>'; autodrive -SimPath '...'"
+# From WSL: powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ". '<path to this file>'; autodrive -SimPath '...'"
+# (-ExecutionPolicy Bypass applies to that process only.)
 # -SimPath may be omitted when $env:AUTODRIVE_SIM_EXE holds the path.
 # -Ip defaults to 127.0.0.1, where scripts/autodrive_gui.sh publishes the
 # devkit bridge; a stand-in recorder on the WSL host needs the WSL IP instead.
