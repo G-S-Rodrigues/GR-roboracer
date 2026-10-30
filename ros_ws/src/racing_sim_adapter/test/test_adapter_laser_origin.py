@@ -47,9 +47,18 @@ SENSOR_QOS = QoSProfile(
 )
 
 
-def _mount_x() -> float:
+def _vehicle_parameters() -> dict:
+    """The file's ``racing_sim.ros__parameters`` as a dict. A params *path*
+    keyed ``racing_sim:`` matches ``/racing_sim`` only, not the row's
+    ``/<prefix>/racing_sim``, so the node would fall back to laser_x = 0
+    (measured, Step 0); a dict is written to a ``/**`` file and matches
+    under any namespace."""
     document = yaml.safe_load(VEHICLE_CONFIG.read_text(encoding="utf-8"))
-    return float(document[ADAPTER_NODE]["ros__parameters"]["laser_x"])
+    return dict(document[ADAPTER_NODE]["ros__parameters"])
+
+
+def _mount_x() -> float:
+    return float(_vehicle_parameters()["laser_x"])
 
 
 @pytest.mark.launch_test
@@ -57,7 +66,7 @@ def generate_test_description():
     return launch.LaunchDescription(
         [
             *conformance.backend().actions(
-                [str(VEHICLE_CONFIG), {"start_held": True}]
+                [{**_vehicle_parameters(), "start_held": True}]
             ),
             launch_testing.actions.ReadyToTest(),
         ]

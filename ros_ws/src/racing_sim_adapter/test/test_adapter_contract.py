@@ -33,6 +33,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import conformance  # noqa: E402  (the capability vocabulary)
 
+# EVAL-2030's probe (racing_evaluation's file, imported by path, never copied).
+sys.path.insert(0, str(conformance.REPO / "ros_ws/src/racing_evaluation/test"))
+import graph_isolation  # noqa: E402
+
 ADAPTER_NODE = conformance.ADAPTER_NAME
 SCAN_TOPIC = conformance.topic("/scan")
 ODOMETRY_TOPIC = conformance.topic("/odom")
@@ -395,8 +399,15 @@ class TestAdapterContract(unittest.TestCase):
             return
         self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
 
+        # The row remaps /clock under its prefix; so does the consumer's
+        # TimeSource (Step 0: rclpy follows a node-local /clock remap).
         consumer = rclpy.create_node(
             "adapt_2075_use_sim_time_consumer",
+            cli_args=[
+                "--ros-args",
+                "-r",
+                f"{conformance.CLOCK_TOPIC}:={CLOCK_TOPIC}",
+            ],
             parameter_overrides=[
                 Parameter("use_sim_time", Parameter.Type.BOOL, True)
             ],
@@ -515,6 +526,27 @@ class TestAdapterContract(unittest.TestCase):
         self.assertTrue(future.done(), "step_mode timed out")
         self.assertTrue(future.result().success, future.result().message)
         self.node.destroy_client(client)
+
+    def test_adapt_2170_backend_topics_stay_under_the_row_prefix(self):
+        """ADAPT-2170: the conformance-launched backend has no data topic
+        outside its row's namespace (colcon runs other packages' tier-2 tests
+        on this domain; gotcha #39). EVAL-2030's shape, on the backend."""
+        self._require_adapter()
+        ns = conformance.backend().namespace
+        found = graph_isolation.data_topics(
+            self.node, conformance.ADAPTER_NAME, ns
+        )
+        expected = {
+            conformance.topic(n) for n in conformance.backend().remapped
+        }
+        self.assertEqual(
+            {"outside": graph_isolation.outside(found, ns), "root": ns == "/"},
+            {"outside": [], "root": False},
+            f"backend topics: {sorted(found)}",
+        )
+        self.assertLessEqual(
+            expected, found, "contract topics missing (discovery incomplete?)"
+        )
 
     def test_adapt_2160_stepped_mode_holds_the_clock(self):
         """ADAPT-2160: in STEPPED mode the backend does not advance on its

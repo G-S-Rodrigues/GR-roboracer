@@ -117,6 +117,7 @@ UNGATED = frozenset(
         "ADAPT-2140",
         "ADAPT-2145",
         "ADAPT-2150",
+        "ADAPT-2170",
     }
 )
 REPO = Path(__file__).resolve().parents[4]
@@ -136,6 +137,14 @@ CONTRACT_TOPICS = (
     "/drive",
 )
 CLOCK_TOPIC = "/clock"
+GYM_NAMESPACE = "/test_adapt_gym"
+AUTODRIVE_NAMESPACE = "/test_adapt_autodrive"
+
+
+def _prefixed(namespace: str, name: str) -> str:
+    return name if namespace == "/" else f"{namespace}{name}"
+
+
 GYM = "f1tenth_gym_jax"
 AUTODRIVE = "autodrive"
 
@@ -170,10 +179,20 @@ def _gym_actions(parameters=None):
     arguments = {}
     if parameters:
         arguments["parameters"] = list(parameters)
+    # colcon runs other packages' tier-2 tests in parallel on one domain, so
+    # the node's absolute names (and its /clock, which every use_sim_time
+    # node on the domain would follow) must not land on the shared graph
+    # (ADAPT-2170, gotcha #39). The prefix is test-only: production launches
+    # keep the global names.
     return [
         launch_ros.actions.Node(
             package="racing_sim_gym_jax",
             executable="racing_sim_gym_jax_node",
+            namespace=GYM_NAMESPACE,
+            remappings=[
+                (n, _prefixed(GYM_NAMESPACE, n))
+                for n in CONTRACT_TOPICS + (CLOCK_TOPIC,)
+            ],
             output="screen",
             **arguments,
         )
@@ -254,6 +273,11 @@ def _autodrive_actions(parameters=None):
         package="racing_sim_autodrive",
         executable="racing_sim_autodrive_server",
         name="racing_sim",
+        # Parallel colcon tests share the domain (ADAPT-2170, gotcha #39).
+        namespace=AUTODRIVE_NAMESPACE,
+        remappings=[
+            (n, _prefixed(AUTODRIVE_NAMESPACE, n)) for n in CONTRACT_TOPICS
+        ],
         parameters=[
             {
                 **_autodrive_vehicle(),
@@ -314,6 +338,7 @@ BACKENDS = {
         expected_h=_gym_h,
         expected_clock=OWNS_CLOCK,
         clock_override=FREE_RUNNING,
+        namespace=GYM_NAMESPACE,
         remapped=CONTRACT_TOPICS + (CLOCK_TOPIC,),
     ),
     AUTODRIVE: Backend(
@@ -338,6 +363,7 @@ BACKENDS = {
         expected_clock=FREE_RUNNING,
         # Not the declared value, or ADAPT-2145 would be vacuous.
         clock_override=OWNS_CLOCK,
+        namespace=AUTODRIVE_NAMESPACE,
         remapped=CONTRACT_TOPICS,
     ),
 }
@@ -389,8 +415,7 @@ def applicable(testcase, node, test_id):
 
 def topic(name: str) -> str:
     """``name`` (absolute) as the running row's backend publishes it."""
-    ns = backend().namespace
-    return name if ns == "/" else f"{ns}{name}"
+    return _prefixed(backend().namespace, name)
 
 
 def node_fqn() -> str:
