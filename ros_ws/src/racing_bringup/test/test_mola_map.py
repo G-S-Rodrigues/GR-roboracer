@@ -322,13 +322,15 @@ MAP_SERVER_KEYS = {
     "free_thresh",
 }
 # FRAME_P95_BOUND is SIM-3530's P95_BOUND copied as a number (this test owns
-# it): five seed-42 laps, wall p95 0.518 0.860 0.810 0.810 0.988 m, worst
-# 0.9885 x 1.25 = 1.236 -> 1.24 (2026-10-28, slam-p2, no loop closure).
-# GRID_VOXEL_P95_BOUND: the same five laps' grid -> voxel / voxel -> grid
-# nearest-neighbour p95 under each run's T (m):
+# it): ten laps of the final mapping pipeline, wall p95 0.790-1.565 m, worst
+# 1.565 x 1.25 = 1.956 -> 1.96 (2026-10-30, slam-p2; the table is beside
+# SIM-3530's constants). The baseline pipeline's five laps gave 1.24.
+# GRID_VOXEL_P95_BOUND: grid -> voxel / voxel -> grid nearest-neighbour p95
+# under each run's T (m), five baseline laps and then five final-pipeline laps:
 #   0.0329/0.0455  0.0330/0.0466  0.0330/0.0452  0.0330/0.0455  0.0329/0.0442
-# worst 0.0466 x 1.25 = 0.0583 -> 0.06 (about one 0.05 m cell).
-FRAME_P95_BOUND = 1.24
+#   0.0330/0.0452  0.0331/0.0449  0.0331/0.0453  0.0331/0.0462  0.0329/0.0459
+# worst 0.0466 x 1.25 = 0.0583 -> 0.06 (about one 0.05 m cell), unchanged.
+FRAME_P95_BOUND = 1.96
 GRID_VOXEL_P95_BOUND = 0.06
 
 

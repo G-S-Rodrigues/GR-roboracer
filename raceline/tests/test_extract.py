@@ -869,15 +869,20 @@ def test_raceline_1170_the_survey_bounds_are_seen_walls(spielberg_maps):
 
 
 # RACELINE-1510: MOLA's own grid (spec C2, acceptance 2). Measured, not
-# chosen. extract_track(walls="observed") on the grids of five seed-42
-# mapping laps (SIM-3530's, 2026-10-28, slam-p2, no loop closure, load
-# 0.2-4.4) closed on every one (3440-3448 points); length / committed length:
-#   1.0035  1.0041  1.0029  1.0030  1.0019
-# worst |ratio - 1| 0.0041 x 1.25 = 0.0052, rounded up to 0.001
-#                                                 -> MOLA_LENGTH_RTOL 0.006
-# (the committed seed-7 grid's own ratio is recorded in the Step 6 commit).
+# chosen. extract_track(walls="observed") closed on every grid of the final
+# mapping pipeline (icp_prior_weight 50; 2026-10-30, slam-p2, load 4-8);
+# length / committed track length:
+#   seed 7, tuning laps   1.0081  1.0088
+#   seed 42, tuning laps  1.0079  1.0078
+#   seed 7, script laps   1.0090  1.0083  1.0085
+#   seed 7, committed     1.0079
+# worst |ratio - 1| 0.0090 x 1.25 = 0.01125, rounded up to 0.001
+#                                                 -> MOLA_LENGTH_RTOL 0.012
+# The 1 % target is met (0.0090); only the guard is above it (owner ruling
+# 2026-10-30, T1). The baseline pipeline's five seed-42 laps gave 1.0019-
+# 1.0041 (0.006); icp_prior_weight 50 trades that length for closing seed 7.
 MOLA_GRID = REPO / "config/scenarios/maps/Spielberg/mola/Spielberg_grid.yaml"
-MOLA_LENGTH_RTOL = 0.006
+MOLA_LENGTH_RTOL = 0.012
 
 
 def test_raceline_1510_the_extractor_reads_the_mola_grid_unchanged():

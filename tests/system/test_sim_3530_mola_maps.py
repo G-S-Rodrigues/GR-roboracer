@@ -38,31 +38,41 @@ COMMITTED_GRID = (
 SEED = 42
 TIMEOUT_SECONDS = 900.0
 
-# Rule (gotcha #14, the spec's testing section): each bound is the worst of
-# five seed-42 laps x 1.25 rounded up to 1 cm; the cell floor is the minimum
-# x 0.8. Measured 2026-10-28, dev container slam-p2, 1x, no loop closure,
-# host load 0.2-4.4 at each start, 140-145 s per mapping script run:
-#   run  wall_cells  p95 (m)   median (m)  signed_mean (m)
-#   1    43372       0.9885     0.3514      +0.0748
-#   2    43180       0.5180     0.1604      +0.0784
-#   3    43526       0.8604     0.3107      +0.0752
-#   4    43445       0.8104     0.4261      +0.0743
-#   5    43521       0.8104     0.2873      +0.0735
-# worst p95 0.9885 -> 1.24; worst median 0.4261 -> 0.54; worst |signed_mean|
-# 0.0784 -> 0.10; fewest cells 43180 -> 34 544 -> 34 500. The spread of the
-# p95 over five identical-seed laps (0.52-0.99 m) is MOLA's lap-to-lap drift
-# with no loop closure, not noise in the scorer; the bound guards against a
-# different map, not against a different drift. Q3 targets (spec acceptance
-# 7: wall p95 <= 5 cm, |mean offset| <= 3 cm) are NOT met and are reported,
-# not gated: the measured p95 is 10-20x the target.
+# Rule (gotcha #14, the spec's testing section): each bound is the worst lap
+# x 1.25 rounded up to 1 cm; the cell floor is the minimum x 0.8. The bounds
+# were first set on five laps of the baseline mapping pipeline (p95 0.518-
+# 0.988 m: 1.24 / 0.54 / 0.10 / 34 500). Part 2 then changed the mapping
+# pipeline (icp_prior_weight 50, which makes seed 7 close and halves its
+# wall p95), so they are re-measured on ten laps of the final pipeline,
+# 1x, no loop closure, dev container slam-p2, 2026-10-29/30, host load 4-8
+# at each start (seeds 7 and 42; wall p95 / median / signed_mean / cells):
+#   s42 (this test)  1.565 0.410 +0.1604 43716  <- worst p95, worst signed
+#   s42 (this test)  0.790 0.196 +0.0849 43651
+#   s42 (tuning)     0.921 0.210 +0.0871 43761
+#   s42 (tuning)     0.892 0.409 +0.0902 43708
+#   s7  (tuning)     1.149 0.390 +0.0926 43812
+#   s7  (tuning)     0.877 0.260 +0.0770 43835
+#   s7  (script)     0.993 0.310 +0.0783 43660
+#   s7  (script)     0.890 0.240 +0.0800 43722
+#   s7  (script)     1.010 0.250 +0.0798 43644
+#   s7  (committed)  0.821 0.214 +0.0771 43631  <- fewest cells
+# worst p95 1.565 -> 1.96; worst median 0.410 -> 0.52; worst |signed_mean|
+# 0.1604 -> 0.21 (0.2005 rounded up); fewest cells 43 631 x 0.8 -> 34 900.
+# The spread (p95 0.79-1.57 m over identical-seed laps) is MOLA's lap-to-lap
+# drift with no loop closure, not noise in the scorer, and it is wider than
+# the baseline pipeline's: the bound guards against a different map, not
+# against a different drift. Q3 targets (spec acceptance 7: wall p95 <= 5 cm,
+# |mean offset| <= 3 cm) are NOT met and are reported, not gated: they apply
+# to the known-pose survey map only; the measured p95 is 16-31x the target.
 MEASUREMENT = (
-    "five seed-42 laps, wall p95 0.518-0.988 m, median 0.160-0.426 m, "
-    "signed_mean +0.0735..+0.0784 m, 43 180-43 526 wall cells"
+    "ten laps of the final pipeline (seeds 7 and 42), wall p95 0.790-1.565 "
+    "m, median 0.196-0.410 m, signed_mean +0.0770..+0.1604 m, 43 631-43 835 "
+    "wall cells"
 )
-MIN_CELLS = 34500
-P95_BOUND = 1.24
-MEDIAN_BOUND = 0.54
-SIGNED_BOUND = 0.10
+MIN_CELLS = 34900
+P95_BOUND = 1.96
+MEDIAN_BOUND = 0.52
+SIGNED_BOUND = 0.21
 Q3_P95_TARGET = 0.05
 Q3_MEAN_TARGET = 0.03
 

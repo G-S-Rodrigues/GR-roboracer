@@ -55,12 +55,21 @@ EXACT_INPUTS = (
 # not against a different drift. (An older committed map, built with a
 # different scan rate, was 68 m p95 from these.)
 MEASUREMENT = (
-    "three same-seed laps: T spread 0, nearest-neighbour p95 0.224-1.154 m"
+    "three same-seed laps: T spread 0, nearest-neighbour p95 0.224-1.154 m; "
+    "final pipeline, committed + three laps: T spread 0, voxel p95 0.35-0.80 "
+    "m, grid p95 0.40-0.81 m"
 )
 POSITION_TOLERANCE = 0.05
 YAW_TOLERANCE_DEGREES = 0.2
 NEAREST_NEIGHBOUR_P95_TOLERANCE = 1.9
-# PROVISIONAL until the three-lap re-measure (plan Step 6.5 (d)).
+# Re-measured 2026-10-30 (slam-p2, 1x, load 7.7-7.9) on the final mapping
+# pipeline: the committed map and three same-seed regenerations, every pair:
+# T identical to the 4th decimal (spread 0 -> the floors above stand);
+# voxel p95 0.35-0.80 m and grid p95 0.40-0.81 m (the two agree within 0.05
+# m in each pair; spread 0.46 m, the existing 1.9 m stands as 2.4x the
+# worst). The grid tolerance is a new constant: 1.9 m, the voxel one. A
+# 90 degree rotated copy of the committed grid scores 32.2 / 61.2 m (>= 3x).
+# No existing tolerance moved.
 GRID_NEAREST_NEIGHBOUR_P95_TOLERANCE = 1.9
 
 
