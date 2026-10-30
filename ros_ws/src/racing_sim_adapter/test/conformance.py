@@ -55,8 +55,11 @@ def _value(parameter_value):
     return None
 
 
-def declared_capabilities(node, backend="racing_sim", timeout=20.0):
+def declared_capabilities(node, backend=None, timeout=20.0):
     """Read the backend's five capability parameters through ROS.
+
+    ``backend`` is the node's name; None means the running row's
+    ``node_fqn()``.
 
     Returns ``{name: value}``; a parameter the backend did not declare
     reads as ``None``.
@@ -64,6 +67,8 @@ def declared_capabilities(node, backend="racing_sim", timeout=20.0):
     import rclpy
     from rcl_interfaces.srv import GetParameters
 
+    if backend is None:
+        backend = node_fqn()
     # A bare service client, not AsyncParameterClient: Jazzy's has no destroy,
     # and one left behind per call keeps its six clients on the node.
     client = node.create_client(GetParameters, f"{backend}/get_parameters")
@@ -115,6 +120,22 @@ UNGATED = frozenset(
     }
 )
 REPO = Path(__file__).resolve().parents[4]
+ADAPTER_NAME = "racing_sim"
+# The absolute names a backend creates; a row remaps them under its prefix
+# (a namespace alone does not move "/x"). A second copy of
+# racing_sim_autodrive/test/_server_launch.py ABSOLUTE_NAMES: ADAPT-2170 and
+# SIMAD-2100 each fail by name on a name their copy misses.
+CONTRACT_TOPICS = (
+    "/scan",
+    "/ground_truth/scan",
+    "/imu",
+    "/odom",
+    "/ground_truth/odom",
+    "/ground_truth/track_relative_state",
+    "/tf",
+    "/drive",
+)
+CLOCK_TOPIC = "/clock"
 GYM = "f1tenth_gym_jax"
 AUTODRIVE = "autodrive"
 
@@ -137,6 +158,10 @@ class Backend:
     expected_h: Callable[[], float]
     expected_clock: str
     clock_override: str
+    # The row's namespace ("/" = the root, the leak ADAPT-2170 forbids) and
+    # the absolute names it remaps under it.
+    namespace: str = "/"
+    remapped: tuple[str, ...] = ()
 
 
 def _gym_actions(parameters=None):
@@ -289,6 +314,7 @@ BACKENDS = {
         expected_h=_gym_h,
         expected_clock=OWNS_CLOCK,
         clock_override=FREE_RUNNING,
+        remapped=CONTRACT_TOPICS + (CLOCK_TOPIC,),
     ),
     AUTODRIVE: Backend(
         name=AUTODRIVE,
@@ -312,6 +338,7 @@ BACKENDS = {
         expected_clock=FREE_RUNNING,
         # Not the declared value, or ADAPT-2145 would be vacuous.
         clock_override=OWNS_CLOCK,
+        remapped=CONTRACT_TOPICS,
     ),
 }
 
@@ -358,3 +385,25 @@ def applicable(testcase, node, test_id):
     print(f"NOT APPLICABLE {reason}")
     testcase.assertIn(test_id, backend().expected_not_applicable, reason)
     return False
+
+
+def topic(name: str) -> str:
+    """``name`` (absolute) as the running row's backend publishes it."""
+    ns = backend().namespace
+    return name if ns == "/" else f"{ns}{name}"
+
+
+def node_fqn() -> str:
+    return topic(f"/{ADAPTER_NAME}")
+
+
+def service(name: str) -> str:
+    """A private service of the backend."""
+    return f"{node_fqn()}/{name}"
+
+
+def adapter_present(node) -> bool:
+    """The backend's node is in the graph under the row's namespace (the bare
+    name would also match another package's ``racing_sim``)."""
+    ns = backend().namespace
+    return (ADAPTER_NAME, ns) in node.get_node_names_and_namespaces()

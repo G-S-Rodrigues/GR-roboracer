@@ -33,16 +33,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import conformance  # noqa: E402  (the capability vocabulary)
 
-ADAPTER_NODE = "racing_sim"
-SCAN_TOPIC = "/scan"
-ODOMETRY_TOPIC = "/odom"
-GROUND_TRUTH_SCAN_TOPIC = "/ground_truth/scan"
-GROUND_TRUTH_ODOMETRY_TOPIC = "/ground_truth/odom"
-DRIVE_TOPIC = "/drive"
-IMU_TOPIC = "/imu"
-CLOCK_TOPIC = "/clock"
-RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
-STEP_MODE_SERVICE = f"/{ADAPTER_NODE}/step_mode"
+ADAPTER_NODE = conformance.ADAPTER_NAME
+SCAN_TOPIC = conformance.topic("/scan")
+ODOMETRY_TOPIC = conformance.topic("/odom")
+GROUND_TRUTH_SCAN_TOPIC = conformance.topic("/ground_truth/scan")
+GROUND_TRUTH_ODOMETRY_TOPIC = conformance.topic("/ground_truth/odom")
+DRIVE_TOPIC = conformance.topic("/drive")
+IMU_TOPIC = conformance.topic("/imu")
+CLOCK_TOPIC = conformance.topic("/clock")
+RESET_SERVICE = conformance.service("reset")
+STEP_MODE_SERVICE = conformance.service("step_mode")
 EXPECTED_RATE_HZ = 100.0
 RATE_TOLERANCE = 0.20
 
@@ -105,10 +105,9 @@ class TestAdapterContract(unittest.TestCase):
             topics = {
                 name for name, _types in self.node.get_topic_names_and_types()
             }
-            if (
-                ADAPTER_NODE in self.node.get_node_names()
-                and required_topics.issubset(topics)
-            ):
+            if conformance.adapter_present(
+                self.node
+            ) and required_topics.issubset(topics):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.fail(f"node not found: {ADAPTER_NODE}")
@@ -185,7 +184,9 @@ class TestAdapterContract(unittest.TestCase):
         )[0]
         transforms = [
             transform
-            for message in self._collect(TFMessage, "/tf", STATE_QOS, 1)
+            for message in self._collect(
+                TFMessage, conformance.topic("/tf"), STATE_QOS, 1
+            )
             for transform in message.transforms
             if transform.header.frame_id == "odom"
             and transform.child_frame_id == "base_link"
@@ -462,7 +463,7 @@ class TestAdapterContract(unittest.TestCase):
             self.assertIsInstance(declared[name], bool, name)
 
         client = self.node.create_client(
-            SetParameters, f"{ADAPTER_NODE}/set_parameters"
+            SetParameters, conformance.service("set_parameters")
         )
         try:
             self.assertTrue(client.wait_for_service(timeout_sec=20.0))

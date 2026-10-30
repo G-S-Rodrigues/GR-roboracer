@@ -27,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import conformance  # noqa: E402
 
-ADAPTER_NODE = "racing_sim"
-CLOCK_TOPIC = "/clock"
+ADAPTER_NODE = conformance.ADAPTER_NAME
+CLOCK_TOPIC = conformance.topic("/clock")
 TIME_SCALE = 5.0
 SAMPLE_COUNT = 60
 # Discard the leading samples: JIT warm-up and process startup happen once,
@@ -96,7 +96,7 @@ class TestAdapterTimeScale(unittest.TestCase):
             topics = {
                 name for name, _types in self.node.get_topic_names_and_types()
             }
-            if ADAPTER_NODE in self.node.get_node_names() and (
+            if conformance.adapter_present(self.node) and (
                 CLOCK_TOPIC in topics or not owns_clock
             ):
                 return

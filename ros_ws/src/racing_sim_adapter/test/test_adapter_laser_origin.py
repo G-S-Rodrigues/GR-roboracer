@@ -91,7 +91,9 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         # requests only afterwards; wait for it before the first ROS call.
         deadline = time.monotonic() + 20.0
         while time.monotonic() < deadline:
-            if self.node.get_publishers_info_by_topic("/scan"):
+            if self.node.get_publishers_info_by_topic(
+                conformance.topic("/scan")
+            ):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.1)
         self.fail("no /scan publisher")
@@ -136,8 +138,8 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         self._require_adapter()
         if not self._applicable("ADAPT-2120"):
             return
-        truth = self._collect("/ground_truth/scan")
-        noisy = self._collect("/scan")
+        truth = self._collect(conformance.topic("/ground_truth/scan"))
+        noisy = self._collect(conformance.topic("/scan"))
         self.assertEqual(noisy[0].header.frame_id, conformance.SCAN_FRAME)
         # Labelled where it was cast from, so the label is honest.
         self.assertEqual(truth[0].header.frame_id, "base_link")
