@@ -38,7 +38,7 @@ from racing_common import CartesianPose, Track
 from racing_interfaces.msg import TrackRelativeState
 from racing_interfaces.srv import Reset, SetStepMode
 from rcl_interfaces.msg import ParameterDescriptor
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import (
@@ -85,6 +85,9 @@ def _quaternion_z(yaw: float) -> tuple[float, float]:
 
 # A connected sim silent for this long is logged once (gotcha 29, 30).
 STALL_TIMEOUT_S = 0.5
+# The executor thread's loop: wait this long for work, then yield the GIL.
+SPIN_TIMEOUT_S = 0.05
+SPIN_YIELD_S = 0.001
 
 
 class AutoDriveServer(Node):
@@ -356,12 +359,19 @@ class AutoDriveServer(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = AutoDriveServer()
-    executor = MultiThreadedExecutor()
+    executor = SingleThreadedExecutor()
     executor.add_node(node)
+    stopping = threading.Event()
 
     def spin() -> None:
+        # Not executor.spin(): under a /drive flood that loop never blocks,
+        # holds the GIL, and the gevent hub on the main thread gets it once
+        # per switch interval, so replies drain at ~20/s (SIMAD-2080). One
+        # callback, then sleep: the sleep releases the GIL for the hub.
         try:
-            executor.spin()
+            while rclpy.ok() and not stopping.is_set():
+                executor.spin_once(timeout_sec=SPIN_TIMEOUT_S)
+                time.sleep(SPIN_YIELD_S)
         except Exception:
             if rclpy.ok():
                 raise
@@ -371,8 +381,9 @@ def main(args=None) -> None:
     try:
         node.serve()
     finally:
-        executor.shutdown()
+        stopping.set()
         thread.join(timeout=5.0)  # a spin left running aborts at exit
+        executor.shutdown()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
