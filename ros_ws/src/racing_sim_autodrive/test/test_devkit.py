@@ -397,3 +397,14 @@ def test_simad_1470_both_paths_give_the_same_session():
                 getattr(a.ground_truth, name),
             )
             assert abs(got - want) <= 1e-4, (k, name)
+
+
+def test_simad_1430_a_topic_that_never_comes_keeps_memory_bounded():
+    """SIMAD-1430: with one topic absent from the start the assembler never
+    syncs, emits nothing, and holds at most a bounded backlog per topic."""
+    assembler = devkit.DevkitAssembler()
+    got = []
+    for f in range(500):
+        got += feed(assembler, burst(f, skip=("collision_count",)))
+    assert got == []
+    assert all(len(q) <= 64 for q in assembler._pending.values())

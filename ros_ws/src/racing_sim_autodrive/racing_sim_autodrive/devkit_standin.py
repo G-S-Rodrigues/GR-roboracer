@@ -268,6 +268,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="publish everything but this topic (a stall)",
     )
     parser.add_argument(
+        "--wait-subscribers",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="before the first frame, wait up to this long for every topic"
+        " to have a subscriber (volatile topics lose what discovery misses)",
+    )
+    parser.add_argument(
         "--frame-id-lidar",
         default="lidar",
         help="the scan's frame id; only SIM-3720's negative control sets it",
@@ -454,6 +462,11 @@ def main(argv: list[str] | None = None) -> int:
         return msg
 
     frames = replay.load_frames(args.fixture)
+    waited_until = time.monotonic() + args.wait_subscribers
+    while time.monotonic() < waited_until and any(
+        p.get_subscription_count() == 0 for p in pubs.values()
+    ):
+        time.sleep(0.02)
     out = args.replies_out.open("w") if args.replies_out else None
     sent = 0
     try:

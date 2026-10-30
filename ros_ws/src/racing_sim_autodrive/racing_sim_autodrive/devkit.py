@@ -134,7 +134,10 @@ class DevkitAssembler:
             last = None
         self._last[topic] = sequence
         if not self._synced:
-            self._pending[topic].append(item)
+            queue = self._pending[topic]
+            queue.append(item)
+            if len(queue) > _MAX_FRAMES:  # a topic that never comes
+                queue.popleft()
             return self._learn()
         if last is not None and sequence > last + 1:
             self._lose(topic, last + 1, sequence)
