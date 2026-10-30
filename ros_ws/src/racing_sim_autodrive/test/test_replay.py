@@ -111,3 +111,16 @@ def test_simad_1250_bad_arguments_raise(records):
         list(
             replay.schedule(records, pace="lockstep", start_frame=len(records))
         )
+
+
+def test_simad_1280_latency_summary_is_exact_on_a_known_list():
+    """SIMAD-1280: latency_summary gives n, median, p99 and max of reply
+    latencies (nearest-rank p99), the figures part 8's rate bar is read
+    from; an empty list is an error and one row is all three at once."""
+    rows = [float(k) for k in range(1, 101)]  # 1..100 ms
+    summary = replay.latency_summary(rows)
+    assert summary == {"n": 100, "p50": 50.5, "p99": 99.0, "max": 100.0}
+    one = replay.latency_summary([7.0])
+    assert one == {"n": 1, "p50": 7.0, "p99": 7.0, "max": 7.0}
+    with pytest.raises(ValueError):
+        replay.latency_summary([])
