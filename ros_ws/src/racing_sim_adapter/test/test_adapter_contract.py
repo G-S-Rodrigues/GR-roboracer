@@ -114,7 +114,7 @@ class TestAdapterContract(unittest.TestCase):
             ) and required_topics.issubset(topics):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
-        self.fail(f"node not found: {ADAPTER_NODE}")
+        self.fail(f"node not found: {conformance.node_fqn()}")
 
     def _collect(self, message_type, topic, qos, count, timeout=3.0):
         messages = []

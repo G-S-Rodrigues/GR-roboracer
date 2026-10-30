@@ -389,7 +389,12 @@ def test_adapt_1060_no_conformance_file_names_a_global_topic_or_service():
     nodes hold no lasting subscription a live probe could see). Known false
     negative, accepted: a relative name ("scan") on the root-namespace test
     node also resolves globally; it fails functionally (no data under the
-    prefix) instead."""
+    prefix) instead.
+
+    Other known blind spots, also accepted: remap strings such as
+    "/clock:=/x"; names built as "/" + name; f-strings that start with a
+    variable; and global names reached through conformance constants such
+    as CLOCK_TOPIC."""
     paths = sorted(Path(__file__).parent.glob("test_adapter_*.py"))
     assert len(paths) == 4, paths
     leaks = {path.name: _global_names(path.read_text()) for path in paths}
