@@ -146,9 +146,7 @@ def test_check_1980_t0_waits_for_the_supervisor_clock_before_the_client(
     assert qos.reliability == ReliabilityPolicy.RELIABLE
     assert timeout <= 5.0
     assert "create_client" in released
-    assert released.index("wait_for_message") < released.index(
-        "create_client"
-    )
+    assert released.index("wait_for_message") < released.index("create_client")
 
 
 def test_check_1990_an_unheard_clock_raises_and_never_releases(
