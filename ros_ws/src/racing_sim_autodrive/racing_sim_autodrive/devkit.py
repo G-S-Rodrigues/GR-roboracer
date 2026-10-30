@@ -182,14 +182,47 @@ class DevkitAssembler:
         return out
 
     def _learn(self) -> list[AssembledFrame]:
+        """Align the queue heads to one burst, then learn the offsets.
+
+        The devkit publishes each burst from one handler, once per topic, in
+        REQUIRED order (`autodrive_bridge.py`, `bridge`; Step 1's probes:
+        `source_timestamp` rises along REQUIRED within every burst and the
+        next burst's `throttle` is later than the last topic of this one,
+        0 violations in 1848 bursts). So burst k is exactly the messages
+        whose `source_timestamp` lies in [throttle_k, throttle_k+1): heads
+        before the `throttle` head belong to an earlier burst, and a topic
+        whose head is at or after the next `throttle` has no message in this
+        one. Once the next `throttle` is queued the burst is verified
+        whole; before that it is trusted only when its offsets equal those
+        of the verified burst just before it.
+        """
         out = []
-        while all(self._pending[t] for t in REQUIRED):
-            parts = {t: self._pending[t].popleft() for t in REQUIRED}
-            base = parts[_LIDAR][2]
-            offsets = {t: parts[t][2] - base for t in REQUIRED}
+        first = REQUIRED[0]
+        rest = REQUIRED[1:]
+        pending = self._pending
+        while pending[first]:
+            t0 = pending[first][0][1]
+            for t in rest:
+                queue = pending[t]
+                while queue and queue[0][1] < t0:
+                    queue.popleft()  # an earlier burst's message
+            if not all(pending[t] for t in rest):
+                break
+            closed = len(pending[first]) > 1
+            if closed:
+                t1 = pending[first][1][1]
+                if any(pending[t][0][1] >= t1 for t in rest):
+                    pending[first].popleft()  # a topic missed this burst
+                    self._candidate = None
+                    continue
+            base = pending[_LIDAR][0][2]
+            offsets = {t: pending[t][0][2] - base for t in REQUIRED}
+            if not closed and offsets != self._candidate:
+                break  # cannot yet tell it from the next burst
+            parts = {t: pending[t].popleft() for t in REQUIRED}
             frame = self._build(parts)
             if frame is None:
-                self._candidate = None  # not a clean burst: start counting over
+                self._candidate = None  # not a clean burst: start over
                 continue
             if self._candidate != offsets:
                 self._candidate = offsets
@@ -198,10 +231,10 @@ class DevkitAssembler:
             self._synced = True
             self._candidate = None
             for t in REQUIRED:  # whatever queued behind the burst
-                for it in self._pending[t]:
+                for it in pending[t]:
                     fid = it[2] - offsets[t]
                     self._frames.setdefault(fid, {})[t] = it
-                self._pending[t].clear()
+                pending[t].clear()
             out.append(frame)
             out.extend(self._drain())
             self._in_error = False

@@ -202,6 +202,20 @@ def test_sim_3710_b_equals_a_on_contract_and_commands(devkit, tmp_path):
         bad = _compare.first_difference(a_msgs, b_msgs, TOLERANCE)
         assert bad is None, f"{key}: first difference at {bad}; B: {resyncs}"
 
+    # E2: one frame carries one receipt stamp (the devkit's lidar header
+    # stamp) on every topic B publishes from it.
+    stamps = {
+        key: [
+            m.header.stamp.sec * 10**9 + m.header.stamp.nanosec
+            for m in got[(c.PREFIX_B, key)]
+        ]
+        for key in ("gt_odom", "gt_scan", "imu", "encoders")
+    }
+    reference = stamps["gt_scan"]
+    assert len(set(reference)) == len(reference), "B repeated a stamp"
+    for key, values in stamps.items():
+        assert values == reference, (key, values[:3], reference[:3])
+
     a_steer, b_steer = _steering(replies["a"]), _steering(replies["b"])
     assert all(float(r["V1 Throttle"]) == 0.0 for r in replies["a"])
     assert all(float(r["V1 Throttle"]) == 0.0 for r in replies["b"])

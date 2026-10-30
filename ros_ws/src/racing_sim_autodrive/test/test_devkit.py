@@ -59,7 +59,7 @@ def values_for(f):
 HEADERED = ("lidar", "imu", "left_encoder", "right_encoder", "odom")
 
 
-def burst(f, skip=(), tweak=None, order=None):
+def burst(f, skip=(), tweak=None, order=None, period=PERIOD_NS):
     """(topic, kwargs) for frame f, in `order` (default the devkit's)."""
     values = values_for(f)
     out = []
@@ -67,7 +67,7 @@ def burst(f, skip=(), tweak=None, order=None):
         k = devkit.REQUIRED.index(topic)
         if topic in skip:
             continue
-        src = f * PERIOD_NS + k * 200_000
+        src = f * period + k * 200_000
         hdr = src if topic in HEADERED else None
         item = {
             "value": values[topic],
@@ -397,6 +397,102 @@ def test_simad_1470_both_paths_give_the_same_session():
                 getattr(a.ground_truth, name),
             )
             assert abs(got - want) <= 1e-4, (k, name)
+
+
+def one_frame(a):
+    """True when all 13 values of an assembled frame are from one frame."""
+    f = a.sample.lap_count
+    want = values_for(f)
+    s = a.sample
+    return (
+        s.throttle == pytest.approx(want["throttle"])
+        and s.steering == pytest.approx(want["steering"])
+        and s.left_encoder == want["left_encoder"]
+        and s.right_encoder == want["right_encoder"]
+        and s.ips == want["ips"]
+        and s.imu_angular_velocity == want["imu"][1]
+        and s.ranges[1] == want["lidar"][0][1]
+        and s.lap_time == pytest.approx(want["lap_time"])
+        and s.collisions == f
+    )
+
+
+def assert_single_frames(got, last, minimum):
+    """Every emitted frame is one burst, in order, ending at `last`, and at
+    least `minimum` frames came out (recovery resumed output)."""
+    frames = [frame_of(a) for a in got]
+    assert all(one_frame(a) for a in got), frames
+    assert frames == sorted(set(frames)), frames
+    assert len(frames) >= minimum and frames[-1] == last, frames
+
+
+@pytest.mark.parametrize("period", [PERIOD_NS, 8_000_000])
+@pytest.mark.parametrize("missed", [3, 9])
+def test_simad_1420_joining_mid_burst_never_mixes_frames(missed, period):
+    """SIMAD-1420: a reader that joins after the first `missed` topics of a
+    burst were published (docs/running.md starts the devkit first) sees the
+    queue heads of different bursts. The devkit publishes each burst in
+    REQUIRED order from one handler (autodrive_bridge.py `bridge`), so the
+    alignment is by that order: no emitted frame mixes two bursts."""
+    assembler = devkit.DevkitAssembler()
+    skipped = devkit.REQUIRED[:missed]
+    got = feed(assembler, burst(0, skip=skipped, period=period))
+    for f in range(1, 30):
+        got += feed(assembler, burst(f, period=period))
+    assert_single_frames(got, 29, 25)
+    assert assembler.resyncs == 0
+
+
+@pytest.mark.parametrize("late", ["throttle", "lap_time", "collision_count"])
+def test_simad_1420_a_topic_three_frames_late_still_syncs(late):
+    """SIMAD-1420: a topic whose writer matched 3 frames after the rest
+    (sequence numbers are the writer's own count, so it joins at 3) is
+    aligned to its burst, not paired by queue position."""
+    assembler = devkit.DevkitAssembler()
+    got = []
+    for f in range(30):
+        got += feed(assembler, burst(f, skip=(late,) if f < 3 else ()))
+    assert_single_frames(got, 29, 24)
+
+
+def test_simad_1430_a_stall_past_the_backlog_then_recovery():
+    """SIMAD-1430: a topic silent for 100 frames (more than _MAX_FRAMES)
+    resumes. The backlog resync fires, and the frames after it are emitted
+    again, each one a single burst."""
+    assembler = devkit.DevkitAssembler()
+    _after_learning(assembler)
+    got = []
+    for f in range(2, 100 + 250):
+        skip = ("collision_count",) if 10 <= f < 110 else ()
+        got += feed(assembler, burst(f, skip=skip))
+    assert_single_frames(got, 349, 200)
+    assert assembler.resyncs >= 1
+    assert max(frame_of(a) for a in got if frame_of(a) < 10) == 9
+    assert all(not 10 <= frame_of(a) < 110 for a in got)
+
+
+def test_simad_1430_a_restart_whose_writers_rejoin_at_different_frames():
+    """SIMAD-1430: the devkit restarts (sequences start over) and its 13
+    writers rejoin the reader at frames 0..3 after the first. Frames after
+    the restart are single bursts."""
+    assembler = devkit.DevkitAssembler()
+    _after_learning(assembler)
+    got = []
+    for f in range(2, 12):
+        got += feed(assembler, burst(f))
+    join = {t: i % 4 for i, t in enumerate(devkit.REQUIRED)}
+    join["throttle"] = 0
+
+    def restart(topic, item):
+        # restarted writers count from 1 again
+        item["sequence"] = item["sequence"] - BASE[topic] - 11 + 3 * len(topic)
+
+    after = []
+    for f in range(12, 50):
+        skip = tuple(t for t in devkit.REQUIRED if f - 12 < join[t])
+        after += feed(assembler, burst(f, skip=skip, tweak=restart))
+    assert_single_frames(after, 49, 30)
+    assert assembler.resyncs >= 1
 
 
 def test_simad_1430_a_topic_that_never_comes_keeps_memory_bounded():

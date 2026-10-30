@@ -94,6 +94,10 @@ def observer():
     observers.close()
 
 
+def stamp_ns(message):
+    return message.header.stamp.sec * 10**9 + message.header.stamp.nanosec
+
+
 def spin(observers, seconds):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
@@ -146,6 +150,13 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
         Odometry, dl.topic("/ground_truth/odom"), truth.append, STATE
     )
     imus, odoms = [], []
+    lidar_stamps = set()
+    observer.devkit.create_subscription(
+        LaserScan,
+        f"{dl.NAMESPACE}/lidar",
+        lambda m: lidar_stamps.add(stamp_ns(m)),
+        STATE,
+    )
     from sensor_msgs.msg import Imu
 
     stack.create_subscription(Imu, dl.topic("/imu"), imus.append, SENSOR)
@@ -185,6 +196,56 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
         m.header.stamp.sec * 10**9 + m.header.stamp.nanosec for m in truth
     ]
     assert all(b > a for a, b in zip(stamps, stamps[1:], strict=False))
+    # E2: B's receipt stamp is the stand-in's lidar header stamp, unchanged.
+    assert lidar_stamps
+    assert {stamp_ns(m) for m in scans} <= lidar_stamps
+    assert set(stamps) <= {stamp_ns(m) for m in scans}
+
+
+def test_simad_2200_b_started_after_the_stream_gets_whole_frames(
+    tmp_path, observer
+):
+    """SIMAD-2200: B joins a stand-in that is already publishing (it does
+    not wait for subscribers, as docs/running.md starts the devkit first), so
+    B's 13 readers match mid-burst. It still emits output, every `/scan`
+    stamp is a devkit lidar stamp, and each `/ground_truth/odom` shares its
+    stamp with the `/scan` of the same assembled frame."""
+    scans, truth, lidar_stamps = [], [], set()
+    observer.stack.create_subscription(
+        LaserScan, dl.topic("/scan"), scans.append, SENSOR
+    )
+    observer.stack.create_subscription(
+        Odometry, dl.topic("/ground_truth/odom"), truth.append, STATE
+    )
+    observer.devkit.create_subscription(
+        LaserScan,
+        f"{dl.NAMESPACE}/lidar",
+        lambda m: lidar_stamps.add(stamp_ns(m)),
+        STATE,
+    )
+    standin, _, _ = dl.start_standin(
+        tmp_path,
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--wait-subscribers",
+        "0",
+    )
+    bridge = None
+    try:
+        spin(observer, 0.37)
+        bridge, blog = dl.start_bridge(tmp_path)
+        dl.wait_for_log(bridge, blog, BRIDGE_UP)
+        spin_until(observer, lambda: len(scans) >= 40, 30.0, "40 scans")
+        spin(observer, 0.3)
+    finally:
+        for process in (bridge, standin):
+            if process is not None:
+                dl.stop(process, timeout_s=10.0)
+    assert len(scans) >= 40
+    assert {stamp_ns(m) for m in scans} <= lidar_stamps
+    assert {stamp_ns(m) for m in truth} <= {stamp_ns(m) for m in scans}
+    assert "resyncing" not in blog.read_text(errors="replace")
 
 
 def test_simad_2210_drive_reaches_the_devkit_latch(run, observer):
