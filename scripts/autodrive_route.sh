@@ -7,7 +7,8 @@
 # Why nodelay: without it the socat hop holds small Engine.IO writes for
 # Nagle and delayed ACK (measured 48 ms p50 per reply, 4.5 ms with it);
 # docs/agents/autodrive.md has the numbers. AUTODRIVE_WSL_IP overrides the
-# address (it changes on a WSL restart).
+# address (it changes on a WSL restart). socat's output goes to the pidfile's
+# sibling .log so a caller that captures our output is not held until it exits.
 set -euo pipefail
 
 relay=autodrive-route-relay
@@ -16,7 +17,11 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ "${1:-}" = "stop" ]; then
     if [ -f "$pidfile" ]; then
-        kill "$(cat "$pidfile")" 2>/dev/null || true
+        pid="$(cat "$pidfile")"
+        # Only kill it if it is still the socat we started (PIDs get reused).
+        if tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q '^socat '; then
+            kill "$pid" 2>/dev/null || true
+        fi
         rm -f "$pidfile"
     fi
     docker stop "$relay" >/dev/null 2>&1 || true
@@ -55,12 +60,14 @@ docker run -d --rm --name "$relay" --network "$network" \
     "$image" python3 /relay.py >/dev/null
 
 socat "TCP-LISTEN:4567,bind=$wsl_ip,fork,reuseaddr,nodelay" \
-    "TCP:127.0.0.1:4567,nodelay" &
+    "TCP:127.0.0.1:4567,nodelay" \
+    </dev/null >"${pidfile%.pid}.log" 2>&1 &
 echo "$!" >"$pidfile"
 sleep 1
 if ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
     echo "socat did not stay up on $wsl_ip:4567" >&2
     docker stop "$relay" >/dev/null 2>&1 || true
+    rm -f "$pidfile"
     exit 1
 fi
 

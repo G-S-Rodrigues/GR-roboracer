@@ -42,6 +42,7 @@ __all__ = [
     "CogState",
     "DriveRequest",
     "ScanGeometry",
+    "StallWatch",
     "Step",
     "TrackState",
     "VehicleValues",
@@ -141,6 +142,55 @@ class Step:
     track_state: TrackState | None
     speed: float | None  # encoder speed
     dt: float | None
+
+
+class StallWatch:
+    """Decides when a connected sim has gone silent (ROS-free, `now` passed in).
+
+    The sim is never left waiting (gotcha 29) and never reconnects (gotcha
+    30), so a server that stops answering must say so. `check` returns one
+    report per stall: a stall is a gap longer than `timeout_s` since the last
+    handled frame (or the connect), and the next frame re-arms it.
+    """
+
+    def __init__(self, timeout_s: float) -> None:
+        self._timeout_s = timeout_s
+        self._connected = False
+        self._last = 0.0
+        self._reported = False
+        self.entries = 0
+        self.exits = 0
+        self.emits = 0
+
+    def connected(self, now: float) -> None:
+        self._connected = True
+        self._last = now
+        self._reported = False
+
+    def disconnected(self) -> None:
+        self._connected = False
+
+    def entered(self) -> None:
+        self.entries += 1
+
+    def emitted(self) -> None:
+        self.emits += 1
+
+    def exited(self, now: float) -> None:
+        self.exits += 1
+        self._last = now
+        self._reported = False
+
+    def check(self, now: float) -> str | None:
+        gap = now - self._last
+        if not self._connected or self._reported or gap <= self._timeout_s:
+            return None
+        self._reported = True
+        return (
+            f"no Bridge frame handled for {gap:.2f} s: "
+            f"entered={self.entries} exited={self.exits} "
+            f"emitted={self.emits}"
+        )
 
 
 def scan_geometry(n_beams: int) -> ScanGeometry:

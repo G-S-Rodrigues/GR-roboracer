@@ -26,6 +26,7 @@ from racing_bringup.scenario_parameters import (
     SIMULATORS,
     track_parameters,
 )
+from racing_bringup.vehicle_description import description_for
 from racing_sim_autodrive.capabilities import CAPABILITIES as AUTODRIVE_CAPS
 from racing_sim_gym_jax.capabilities import CAPABILITIES as GYM_CAPS
 
@@ -402,12 +403,20 @@ def _pose_source_nodes(
     return slam_toolbox("mapping", [configuration], use_sim_time)
 
 
+def _launch_described(context, description_share: Path, rviz_config: str):
+    """The vehicle file's own URDF, then every node (_launch_nodes)."""
+    vehicle = LaunchConfiguration("vehicle").perform(context)
+    if not Path(vehicle).is_file():
+        raise RuntimeError(f"vehicle file not found: {vehicle}")
+    robot_description = description_for(vehicle, description_share).read_text(
+        encoding="utf-8"
+    )
+    return _launch_nodes(context, robot_description, rviz_config)
+
+
 def generate_launch_description() -> LaunchDescription:
     description_share = Path(
         get_package_share_directory("racing_vehicle_description")
-    )
-    robot_description = (description_share / "urdf" / "f1tenth.urdf").read_text(
-        encoding="utf-8"
     )
     rviz_config = str(description_share / "rviz" / "sim_pure_pursuit.rviz")
 
@@ -476,8 +485,8 @@ def generate_launch_description() -> LaunchDescription:
             raceline_optimizer_arg,
             speed_source_arg,
             OpaqueFunction(
-                function=_launch_nodes,
-                args=[robot_description, rviz_config],
+                function=_launch_described,
+                args=[description_share, rviz_config],
             ),
         ]
     )

@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -31,6 +32,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _server_launch as launch_support  # noqa: E402
 
 PORT = launch_support.free_port()
+SCAN = launch_support.topic("/scan")
+DRIVE = launch_support.topic("/drive")
+ODOM = launch_support.topic("/odom")
+TRUTH = launch_support.topic("/ground_truth/odom")
+RESET = f"{launch_support.PREFIX}/racing_sim/reset"
 FRAMES = 300
 SENSOR = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
@@ -71,7 +77,10 @@ class TestServerNode(unittest.TestCase):
     def _wait_for_server(self):
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
-            if "racing_sim" in self.node.get_node_names():
+            if (
+                "racing_sim",
+                launch_support.PREFIX,
+            ) in self.node.get_node_names_and_namespaces():
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.fail("racing_sim not found")
@@ -141,19 +150,19 @@ class TestServerNode(unittest.TestCase):
                 Path(tmp) / "replies.jsonl",
                 "--count",
                 str(FRAMES),
-                collect=[(LaserScan, "/scan", SENSOR)],
+                collect=[(LaserScan, SCAN, SENSOR)],
             )
         self.assertEqual(len(replies), FRAMES)
-        self.assertGreaterEqual(len(got["/scan"]), int(0.98 * (FRAMES - 1)))
-        self.assertLessEqual(len(got["/scan"]), FRAMES - 1)
-        self.assertEqual(len(got["/scan"][0].ranges), 1081)
+        self.assertGreaterEqual(len(got[SCAN]), int(0.98 * (FRAMES - 1)))
+        self.assertLessEqual(len(got[SCAN]), FRAMES - 1)
+        self.assertEqual(len(got[SCAN][0].ranges), 1081)
         header = (
             launch_support.REPO
             / "ros_ws/src/racing_sim_adapter/include/racing_sim_adapter"
             / "contract.hpp"
         ).read_text()
         frame = re.search(r'kLaserFrame\{"([^"]+)"\}', header).group(1)
-        self.assertEqual(got["/scan"][0].header.frame_id, frame)
+        self.assertEqual(got[SCAN][0].header.frame_id, frame)
 
     def test_simad_2020_drive_commands_reach_the_reply(self):
         """SIMAD-2020: /drive 2.0 m/s, 0.1 rad -> replies carry throttle > 0
@@ -161,7 +170,7 @@ class TestServerNode(unittest.TestCase):
         import tempfile
 
         publisher = self.node.create_publisher(
-            AckermannDriveStamped, "/drive", STATE
+            AckermannDriveStamped, DRIVE, STATE
         )
 
         def send():
@@ -189,12 +198,12 @@ class TestServerNode(unittest.TestCase):
         )
 
     def test_simad_2030_reset_service_sets_reset_true_once(self):
-        """SIMAD-2030: /racing_sim/reset -> the next reply has V1 Reset
+        """SIMAD-2030: <prefix>/racing_sim/reset -> the next reply has V1 Reset
         True, the one after False."""
         import tempfile
 
         self._wait_for_server()
-        client = self.node.create_client(Reset, "/racing_sim/reset")
+        client = self.node.create_client(Reset, RESET)
         self.assertTrue(client.wait_for_service(timeout_sec=5.0))
         future = client.call_async(Reset.Request(seed=0, scenario_id=""))
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=3.0)
@@ -221,12 +230,12 @@ class TestServerNode(unittest.TestCase):
                 "--count",
                 "100",
                 collect=[
-                    (Odometry, "/odom", STATE),
-                    (Odometry, "/ground_truth/odom", STATE),
+                    (Odometry, ODOM, STATE),
+                    (Odometry, TRUTH, STATE),
                 ],
             )
-        odom = [_stamp(m) for m in got["/odom"]]
-        truth = [_stamp(m) for m in got["/ground_truth/odom"]]
+        odom = [_stamp(m) for m in got[ODOM]]
+        truth = [_stamp(m) for m in got[TRUTH]]
         self.assertGreaterEqual(len(odom), 100)
         self.assertEqual(odom[-100:], truth[-100:])
         self.assertTrue(
@@ -259,3 +268,69 @@ class TestServerNode(unittest.TestCase):
             latency = (row["reply_ns"] - row["sent_ns"]) * 1e-9
             self.assertGreater(latency, 0.0, row)
             self.assertLess(latency, replay.REPLY_WAIT_S, row)
+
+    def test_simad_2080_every_frame_is_answered_under_a_drive_flood(self):
+        """SIMAD-2080: a controller publishing /drive in a tight loop must not
+        starve the Socket.IO hub. 300 frames at recorded pace (the sim's own
+        pace, many frames in flight) get 300 replies.
+
+        Why: in CI the rclpy executor thread, busy with the /drive flood,
+        held the GIL and the hub's replies drained at 9-30 per second, so
+        the replay ended with replies missing (the ADAPT-2110 stall). Lockstep
+        cannot see it: one frame in flight, so no reply is ever late."""
+        import tempfile
+
+        publisher = self.node.create_publisher(
+            AckermannDriveStamped, DRIVE, STATE
+        )
+        message = AckermannDriveStamped()
+        message.drive.speed = 2.0
+        message.drive.steering_angle = 0.1
+        stop = threading.Event()
+
+        def flood():
+            while not stop.is_set():
+                publisher.publish(message)
+
+        thread = threading.Thread(target=flood, daemon=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            thread.start()
+            try:
+                replies, _ = self._replay(
+                    Path(tmp) / "replies.jsonl",
+                    "--pace",
+                    "recorded",
+                    "--count",
+                    str(FRAMES),
+                )
+            finally:
+                stop.set()
+                thread.join(timeout=5.0)
+        self.assertEqual(len(replies), FRAMES)
+
+    def test_simad_2090_a_silent_client_gets_one_stall_warning(
+        self, proc_output
+    ):
+        """SIMAD-2090: 20 frames, then the client holds the socket open and
+        silent for 1.5 s: the server logs the stall with its counters
+        (entered = exited = emitted: every frame it took it answered; the
+        counts are cumulative over the server's life, shared by this file's
+        tests) and dumps the stacks of every thread, so a stuck server is
+        never silent (gotcha 29)."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                "20",
+                "--hold-s",
+                "1.5",
+            )
+        proc_output.assertWaitFor(
+            "stall: no Bridge frame handled for", timeout=5
+        )
+        proc_output.assertWaitFor(
+            re.compile(r"entered=(\d+) exited=\1 emitted=\1"), timeout=5
+        )
+        proc_output.assertWaitFor("Current thread", timeout=5)

@@ -23,7 +23,13 @@ import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-__all__ = ["load_frames", "schedule", "latency_summary", "main"]
+__all__ = [
+    "load_frames",
+    "schedule",
+    "latency_summary",
+    "build_parser",
+    "main",
+]
 
 PACES = ("recorded", "lockstep")
 REPLY_WAIT_S = 1.0  # a reply later than this is a stall, never a hang
@@ -46,6 +52,7 @@ def schedule(
     start_frame: int = 0,
     loop: bool = False,
     count: int | None = None,
+    end_frame: int | None = None,
 ) -> Iterator[tuple[int, float, dict[str, str]]]:
     """Yield (fixture index, delay before sending in s, raw frame).
 
@@ -54,12 +61,19 @@ def schedule(
     one at `start_frame`, go at once. With `loop` the plan restarts at
     `start_frame` forever (the wrap waits the median recorded period, not
     the difference of the last and first stamps); `count` bounds the total.
+    `end_frame` (exclusive, as a slice end; default the fixture's end) cuts
+    the segment, so a loop can repeat only `start_frame..end_frame - 1`.
     """
     if pace not in PACES:
         raise ValueError(f"pace {pace!r} is not one of {PACES}")
     if not 0 <= start_frame < len(frames):
         raise ValueError(
             f"start_frame {start_frame} outside 0..{len(frames) - 1}"
+        )
+    end = len(frames) if end_frame is None else end_frame
+    if not start_frame < end <= len(frames):
+        raise ValueError(
+            f"end_frame {end} outside {start_frame + 1}..{len(frames)}"
         )
     periods = [b[0] - a[0] for a, b in zip(frames, frames[1:], strict=False)]
     wrap = statistics.median(periods) if periods else 0.0
@@ -75,7 +89,7 @@ def schedule(
         yield index, delay, frames[index][1]
         sent += 1
         index += 1
-        if index == len(frames):
+        if index == end:
             if not loop:
                 return
             index = start_frame
@@ -98,12 +112,13 @@ def latency_summary(latencies: Sequence[float]) -> dict[str, float]:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--url", default="http://127.0.0.1:4567")
     parser.add_argument("--pace", choices=PACES, default="lockstep")
     parser.add_argument("--start-frame", type=int, default=0)
+    parser.add_argument("--end-frame", type=int, default=None)
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--count", type=int, default=None)
     parser.add_argument("--replies-out", type=Path, default=None)
@@ -111,9 +126,21 @@ def main(argv: list[str] | None = None) -> int:
         "--timings-out",
         type=Path,
         default=None,
-        help="write {frame, sent_ns, reply_ns} per frame (perf_counter_ns)",
+        help="write {frame, sent_ns, reply_ns} per frame (perf_counter_ns); "
+        "lockstep only: sends and replies are paired by order, so a lost "
+        "reply shifts every later row",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--hold-s",
+        type=float,
+        default=0.0,
+        help="keep the socket open and silent this long after the last reply",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     import socketio
 
@@ -136,7 +163,12 @@ def main(argv: list[str] | None = None) -> int:
     status = 0
     try:
         for index, delay, raw in schedule(
-            frames, args.pace, args.start_frame, args.loop, args.count
+            frames,
+            args.pace,
+            args.start_frame,
+            args.loop,
+            args.count,
+            end_frame=args.end_frame,
         ):
             if delay:
                 time.sleep(delay)
@@ -173,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        if args.hold_s > 0:
+            time.sleep(args.hold_s)
         client.disconnect()
         if args.replies_out is not None:
             with args.replies_out.open("w") as out:

@@ -19,6 +19,15 @@ if(BUILD_TESTING)
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/test
   )
   set_tests_properties(test_urdf_matches_vehicle PROPERTIES LABELS "tier1")
+  ament_add_pytest_test(test_autodrive_description
+    test/test_autodrive_description.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/test
+  )
+  set_tests_properties(test_autodrive_description PROPERTIES LABELS "tier1")
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_autodrive_tf_launch.py TIMEOUT 30
+    LABELS "tier2"
+  )
 endif()
 
 ament_package()
