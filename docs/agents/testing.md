@@ -121,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **280 tier-1, 33 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **290 tier-1, 34 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -173,6 +173,8 @@ The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/te
 The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen IDs, `scripts/tests/test_autodrive_identify.py`, 1715 in `test_autodrive_record.py`) and `BRINGUP-1055` (BRINGUP-1050 now skips the vehicle files in `NOT_GYM_CAST`; 1055 keeps that list to committed, non-gym files).
 
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
+
+The AutoDRIVE visual-model work (V1) added tier 1 `DESC-1030` to `DESC-1090` (`racing_vehicle_description/test/test_description.py`, `test_autodrive_description.py`; 1030 parametrises the structure tests over `urdf/descriptions.yaml`), `BRINGUP-1056/1057`, `CHECK-2030` (`scripts/tests/test_autodrive_meshes.py`); tier 2 `DESC-2010`. `CHECK-2020` now loops over every mapped URDF.
 
 The AutoDRIVE part-7 work (our Socket.IO server) added tier 1 `SIMAD-1150` to `SIMAD-1270` (thirteen IDs: the Socket.IO pins, the ROS-free bridge session, the replay schedule, the comma-decimal locale error) `ADAPT-1040` and `ADAPT-1050` (every launch registration carries its own `RACING_SIM_BACKEND`; SIMAD-1150 also checks the running image has the pinned closure, so a stale image fails by name), and tier 2 `SIMAD-2010` to `SIMAD-2050` (the server node against `racing_sim_autodrive.replay`, on an ephemeral port, never the sim's 4567). The four `racing_sim_adapter` launch files are registered a second time (`test_adapter_<name>_autodrive`) with `RACING_SIM_BACKEND=autodrive`; `conformance.BACKENDS` holds each backend's launch, its expected not-applicable set and its per-backend expectations (ADAPT-2030 rate, 2130 h, 2145 clock), and the variable defaults to the gym. The tier-1 and tier-2 AutoDRIVE tests need the Socket.IO closure (`docker/dev-tools-requirements.txt`) on `PYTHONPATH`. The live sim run (port 4567) is a recorded manual step, not a gate.
 
