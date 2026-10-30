@@ -29,10 +29,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import conformance  # noqa: E402
 
-ADAPTER_NODE = "racing_sim"
-ODOMETRY_TOPIC = "/odom"
-CLOCK_TOPIC = "/clock"
-RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
+ADAPTER_NODE = conformance.ADAPTER_NAME
+ODOMETRY_TOPIC = conformance.topic("/odom")
+CLOCK_TOPIC = conformance.topic("/clock")
+RESET_SERVICE = conformance.service("reset")
 
 STATE_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
@@ -97,13 +97,12 @@ class TestAdapterStartHeld(unittest.TestCase):
             topics = {
                 name for name, _types in self.node.get_topic_names_and_types()
             }
-            if (
-                ADAPTER_NODE in self.node.get_node_names()
-                and required_topics.issubset(topics)
-            ):
+            if conformance.adapter_present(
+                self.node
+            ) and required_topics.issubset(topics):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
-        self.fail(f"node not found: {ADAPTER_NODE}")
+        self.fail(f"node not found: {conformance.node_fqn()}")
 
     def _collect(self, message_type, topic, qos, count, timeout=3.0):
         messages = []

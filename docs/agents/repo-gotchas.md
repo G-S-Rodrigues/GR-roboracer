@@ -318,5 +318,10 @@ Traps any task in this repository can hit. Each one cost real time at least once
     reproduces alone. Remedy: a `PREFIX` constant, `namespace=PREFIX` **and** a remap for every
     absolute name (a namespace alone does not move `/x`), as METRICS-1030 and `_server_launch.py` do.
     SIMAD-2100 is the guard to copy on the sending side; on the receiving side
-    `racing_evaluation/test/graph_isolation.py` (EVAL-2030) is. Still leaking: the
-    `racing_sim_adapter` conformance servers (gym and autodrive rows), which use global names.
+    `racing_evaluation/test/graph_isolation.py` (EVAL-2030) is. The
+    `racing_sim_adapter` conformance servers run under `/test_adapt_gym` (its `/clock` remapped too) and
+    `/test_adapt_autodrive`; ADAPT-2170 (backend side) and ADAPT-1060 (test sources) guard them. Still
+    open: the gym node's `count_publishers("/drive")` (`node.py:283`) ignores remaps, so under the
+    prefix it counts the global `/drive`, and another package's `/drive` publisher can make it
+    lockstep-wait at `time_scale` 5.0. No endpoint exists for a probe to see; fixing it is a
+    production-node change.

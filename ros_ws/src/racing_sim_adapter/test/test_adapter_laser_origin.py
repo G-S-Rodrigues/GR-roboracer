@@ -47,9 +47,18 @@ SENSOR_QOS = QoSProfile(
 )
 
 
-def _mount_x() -> float:
+def _vehicle_parameters() -> dict:
+    """The file's ``racing_sim.ros__parameters`` as a dict. A params *path*
+    keyed ``racing_sim:`` matches ``/racing_sim`` only, not the row's
+    ``/<prefix>/racing_sim``, so the node would fall back to laser_x = 0
+    (measured, Step 0); a dict is written to a ``/**`` file and matches
+    under any namespace."""
     document = yaml.safe_load(VEHICLE_CONFIG.read_text(encoding="utf-8"))
-    return float(document[ADAPTER_NODE]["ros__parameters"]["laser_x"])
+    return dict(document[ADAPTER_NODE]["ros__parameters"])
+
+
+def _mount_x() -> float:
+    return float(_vehicle_parameters()["laser_x"])
 
 
 @pytest.mark.launch_test
@@ -57,7 +66,7 @@ def generate_test_description():
     return launch.LaunchDescription(
         [
             *conformance.backend().actions(
-                [str(VEHICLE_CONFIG), {"start_held": True}]
+                [{**_vehicle_parameters(), "start_held": True}]
             ),
             launch_testing.actions.ReadyToTest(),
         ]
@@ -91,7 +100,9 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         # requests only afterwards; wait for it before the first ROS call.
         deadline = time.monotonic() + 20.0
         while time.monotonic() < deadline:
-            if self.node.get_publishers_info_by_topic("/scan"):
+            if self.node.get_publishers_info_by_topic(
+                conformance.topic("/scan")
+            ):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.1)
         self.fail("no /scan publisher")
@@ -136,8 +147,8 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         self._require_adapter()
         if not self._applicable("ADAPT-2120"):
             return
-        truth = self._collect("/ground_truth/scan")
-        noisy = self._collect("/scan")
+        truth = self._collect(conformance.topic("/ground_truth/scan"))
+        noisy = self._collect(conformance.topic("/scan"))
         self.assertEqual(noisy[0].header.frame_id, conformance.SCAN_FRAME)
         # Labelled where it was cast from, so the label is honest.
         self.assertEqual(truth[0].header.frame_id, "base_link")
