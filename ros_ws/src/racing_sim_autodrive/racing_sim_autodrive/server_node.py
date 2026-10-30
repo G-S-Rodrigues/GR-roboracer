@@ -17,9 +17,12 @@ exactly as the official devkit stamps; the sim sends none.
 
 from __future__ import annotations
 
+import faulthandler
 import math
 import signal
+import sys
 import threading
+import time
 from pathlib import Path
 
 import gevent
@@ -80,6 +83,10 @@ def _quaternion_z(yaw: float) -> tuple[float, float]:
     return math.sin(yaw / 2.0), math.cos(yaw / 2.0)
 
 
+# A connected sim silent for this long is logged once (gotcha 29, 30).
+STALL_TIMEOUT_S = 0.5
+
+
 class AutoDriveServer(Node):
     def __init__(self) -> None:
         super().__init__("racing_sim")
@@ -135,6 +142,7 @@ class AutoDriveServer(Node):
         self._drive_lock = threading.Lock()
         self._warned_unsupported = False
         self._sid: str | None = None
+        self._stall = bridge.StallWatch(STALL_TIMEOUT_S)
 
         self._scan_publisher = self.create_publisher(
             LaserScan, "/scan", SENSOR_QOS
@@ -204,15 +212,24 @@ class AutoDriveServer(Node):
 
     def _on_connect(self, sid, environ) -> None:
         self._sid = sid
+        self._stall.connected(time.monotonic())
         self.get_logger().info(f"sim connected: {sid}")
 
     def _on_disconnect(self, sid) -> None:
+        self._stall.disconnected()
         self.get_logger().error(
             f"sim disconnected: {sid}. It never reconnects (gotcha 30): "
             "restart the sim."
         )
 
     def _on_bridge(self, sid, data) -> None:
+        self._stall.entered()
+        try:
+            self._handle_bridge(sid, data)
+        finally:
+            self._stall.exited(time.monotonic())
+
+    def _handle_bridge(self, sid, data) -> None:
         now = self.get_clock().now()
         stamp = now.to_msg()
         with self._drive_lock:
@@ -225,9 +242,20 @@ class AutoDriveServer(Node):
             # the sim is never left waiting (gotcha 29)
             self.get_logger().error(f"bad Bridge frame: {error}")
             self.sio.emit("Bridge", bridge.fallback_reply(), to=sid)
+            self._stall.emitted()
             return
         self._publish(stamp, step)
         self.sio.emit("Bridge", step.reply, to=sid)
+        self._stall.emitted()
+
+    def _watch_stalls(self) -> None:
+        """Log one WARNING and one all-thread stack dump per stall."""
+        while True:
+            gevent.sleep(STALL_TIMEOUT_S / 5)
+            report = self._stall.check(time.monotonic())
+            if report is not None:
+                self.get_logger().warning(f"stall: {report}")
+                faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
 
     def _publish(self, stamp, step: bridge.Step) -> None:
         truth, odom = step.ground_truth, step.odometry
@@ -318,6 +346,7 @@ class AutoDriveServer(Node):
         # Bound before the handlers and the log line: a signal arriving ahead
         # of start() would stop an unstarted server and crash serve_forever.
         server.start()
+        gevent.spawn(self._watch_stalls)
         gevent.signal_handler(signal.SIGINT, server.stop)
         gevent.signal_handler(signal.SIGTERM, server.stop)
         self.get_logger().info(f"listening on {self._host}:{self._port}")

@@ -272,3 +272,31 @@ class TestServerNode(unittest.TestCase):
                 stop.set()
                 thread.join(timeout=5.0)
         self.assertEqual(len(replies), FRAMES)
+
+    def test_simad_2090_a_silent_client_gets_one_stall_warning(
+        self, proc_output
+    ):
+        """SIMAD-2090: 20 frames, then the client holds the socket open and
+        silent for 1.5 s: the server logs the stall with its counters
+        (entered = exited = emitted: every frame it took it answered; the
+        counts are cumulative over the server's life, shared by this file's
+        tests) and dumps the stacks of every thread, so a stuck server is
+        never silent (gotcha 29)."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                "20",
+                "--hold-s",
+                "1.5",
+            )
+        proc_output.assertWaitFor(
+            "stall: no Bridge frame handled for", timeout=5
+        )
+        proc_output.assertWaitFor(
+            re.compile(r"entered=(\d+) exited=\1 emitted=\1"), timeout=5
+        )
+        proc_output.assertWaitFor("Current thread", timeout=5)
+
