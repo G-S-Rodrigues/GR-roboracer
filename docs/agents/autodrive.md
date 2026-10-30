@@ -82,3 +82,24 @@ end-of-stream latch (commands stop, the supervisor latches 100 ms later) must ar
 latch after an odom gap of 100 ms or more is reported as a stand-in stall. The
 sim races the track clockwise while `porto.yaml`'s centerline is counter-clockwise (open topic
 porto-race-direction); Pure Pursuit on that centerline is part 10's to settle.
+
+## Front end B, the official devkit bridge (part 9)
+
+`autodrive_bridge:=official` runs `racing_sim_autodrive_devkit` (node `racing_sim`) in place of the server.
+The devkit container bridges the simulator's Socket.IO to 13 ROS topics on its own domain `D`; B holds two
+rclpy contexts, the stack's and `D`, and feeds the same `BridgeSession` as A through `on_sim_frame`. Frames are
+assembled by DDS `publication_sequence_number` (a gap is a lost frame, dropped and counted, never paired
+across). The stamp and `dt` come from the devkit's `lidar` header stamp. Commands are latched on the devkit:
+steering and throttle are published as `/drive` arrives, and reset is held True until the session sees the reset take
+effect, then False.
+
+Three places hold its tests, by what each needs:
+- CI-able: tier 1 `SIMAD-14xx`, tier 2 `SIMAD-22xx`, the conformance row `autodrive_official`, and tier 3
+  `SIM-3620` (the whole launch against `racing_sim_autodrive.devkit_standin`).
+- Local, with the devkit container and no simulator: `tests/autodrive/` holds `SIM-3710` (B equals A on the
+  contract, command lag at most 3 frames) and `SIM-3720` (the stand-in equals the real devkit). They fail,
+  never skip, while the container is down. Never move them under `tests/system/`. Run, from `dev`:
+  `AUTODRIVE_ROS_DOMAIN_ID=64 docker compose -f docker/docker-compose.yaml --profile autodrive up -d --no-deps autodrive-devkit`,
+  then `ROS_DOMAIN_ID=62 AUTODRIVE_ROS_DOMAIN_ID=64 python3 -m pytest tests/autodrive -s`. Run them on every
+  edition bump.
+- Live, with the simulator: a manual slot after the PR.

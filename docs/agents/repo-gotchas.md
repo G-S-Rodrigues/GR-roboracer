@@ -325,3 +325,20 @@ Traps any task in this repository can hit. Each one cost real time at least once
     prefix it counts the global `/drive`, and another package's `/drive` publisher can make it
     lockstep-wait at `time_scale` 5.0. No endpoint exists for a probe to see; fixing it is a
     production-node change.
+
+40. **The devkit's `/tf` claims `lidar`.** The official bridge publishes `world -> roboracer_1 -> lidar` on the
+    global `/tf` of its domain. A stack on that domain gets a second parent for `lidar`, and
+    `base_link -> lidar` breaks with no error. Symptom: a scan that jumps in RViz, or a TF lookup that
+    flips between parents. Remedy: the devkit runs on its own domain and front end B reads it through a
+    second context; the launch refuses `autodrive_devkit_domain` equal to the stack's (BRINGUP-1690;
+    SIMAD-2250 guards the isolation).
+
+41. **The devkit latches every command, so a dead consumer leaves the car driving or resetting.** Its
+    steering, throttle and reset topics hold their last value and are replied on every frame. If B dies
+    after publishing a throttle or a reset True, the car keeps that command. B zeroes the latch on
+    shutdown (SIMAD-2230, own SIGINT handling); a SIGKILL cannot, so after one, start by publishing
+    zero throttle and reset False yourself.
+
+42. **The official bridge's commands lag one frame.** A command published for frame n reaches the car at
+    frame n+1 (measured 1 frame in SIM-3710; accepted up to 3). Recorded and measured, not compensated.
+
