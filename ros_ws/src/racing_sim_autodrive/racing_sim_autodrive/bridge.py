@@ -73,8 +73,8 @@ SCAN_ANGLE_MIN = -2.35619
 SCAN_ANGLE_INCREMENT = 0.004363323
 SCAN_RANGE_MIN = 0.06
 SCAN_RANGE_MAX = 10.0
-# Mirror of racing_sim_adapter contract.hpp kLaserFrame (no Python source for
-# it exists; the gym hard-codes it too). SIMAD-1220 parses the header and
+# Mirror of racing_sim_adapter contract.hpp kLaserFrame (there is no
+# shared Python source for it). SIMAD-1220 parses the header and
 # CHECK-2020 holds this name to it.
 SCAN_FRAME_ID = "lidar"
 

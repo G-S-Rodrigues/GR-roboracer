@@ -293,6 +293,6 @@ Traps any task in this repository can hit. Each one cost real time at least once
     server (`racing_sim_autodrive`) republishes the sim's own scan, cast from its lidar mount, so the
     same two metrics would measure from the lidar (about 0.27 m ahead of the rear axle) with no error
     and no flag. Never compare clearance or collision counts across the two simulators as one number.
-    Both servers stamp the scan in the same frame, `lidar` (CHECK-2020 holds `bridge.SCAN_FRAME_ID` to
-    `kLaserFrame`), so a matching frame name does not mean a matching origin: the gym's `lidar` frame
-    is a TF child, but its ranges are cast from the CoG.
+    The two truth scans also carry different labels, each honest: the gym stamps `/ground_truth/scan`
+    `base_link`, the AutoDRIVE server stamps it `lidar`. `racing_metrics` ignores the label, so the
+    origin mismatch still goes unflagged.

@@ -1,7 +1,7 @@
 """The lidar's TF frame is named once and every copy of it agrees.
 
 CHECK-2010 walks the whole repo and fails on any text that names a frame
-with the old word. CHECK-2020 holds the three Python/URDF mirrors of
+with the old word. CHECK-2020 holds the three Python mirrors and the URDF link of
 contract.hpp's `kLaserFrame` to it. Device identifiers (`laser_x`,
 `LaserMount`, the `racing_sim_gym_jax.laser` module) keep the word and are
 pinned as not flagged. Nothing here imports ROS.
