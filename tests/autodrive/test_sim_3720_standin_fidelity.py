@@ -8,9 +8,10 @@ S+1 > 101; every stand-in name under a prefix that carries S, so a
 neighbour's stack on that domain never shares one). An observer on each
 domain records all 13 topics and the transforms. Compared:
 
-- per topic: message type, QoS (reliability, durability, history, depth of
-  the publisher), frame_id, LaserScan geometry (angles, range limits, beam
-  count);
+- per topic: message type, QoS (reliability and durability of the
+  publisher; history and depth are not carried by DDS discovery to a remote
+  reader, so they cannot be compared from here), frame_id, LaserScan
+  geometry (angles, range limits, beam count);
 - the set of `/tf` frames (the devkit's global one against the stand-in's
   prefixed one);
 - the per-frame values within float32 resolution, by order;
@@ -22,7 +23,6 @@ stand-in runs on is checked against AUTODRIVE_ROS_DOMAIN_ID.
 Run: see conftest.py.
 """
 
-import math
 import subprocess
 import sys
 import time
@@ -111,8 +111,6 @@ class Side:
             self.qos[name] = (
                 profile.reliability.name,
                 profile.durability.name,
-                profile.history.name,
-                profile.depth,
             )
             self.node.create_subscription(
                 kind,
@@ -312,4 +310,3 @@ def test_sim_3720_standin_matches_the_real_devkit(devkit, tmp_path):
         real_replies[-1],
         fake_replies[-1],
     )
-    assert math.isfinite(len(real_replies))

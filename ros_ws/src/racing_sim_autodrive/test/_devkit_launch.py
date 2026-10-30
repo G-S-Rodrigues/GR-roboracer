@@ -25,6 +25,8 @@ FIXTURE = server_launch.FIXTURE
 PORTO = server_launch.PORTO
 VEHICLE = server_launch.VEHICLE
 
+# docker-compose.yaml runs the devkit on this domain when the variable is unset.
+COMPOSE_DEFAULT_DOMAIN = "42"
 STACK_DOMAIN = int(os.environ.get("ROS_DOMAIN_ID", "0"))
 PREFIX = "/test_simad_devkit"
 DEVKIT_PREFIX = f"/test_simad_devkit_dk{STACK_DOMAIN}"
@@ -48,11 +50,14 @@ def devkit_domain() -> int:
 
 
 def check_not_live_devkit() -> None:
-    live = os.environ.get("AUTODRIVE_ROS_DOMAIN_ID")
-    if live is not None and int(live) in (STACK_DOMAIN, devkit_domain()):
+    # Unset means the compose file's default (42, dev's own domain): fail
+    # closed on that rather than let an unset variable pass.
+    live = os.environ.get("AUTODRIVE_ROS_DOMAIN_ID") or COMPOSE_DEFAULT_DOMAIN
+    if int(live) in (STACK_DOMAIN, devkit_domain()):
         raise AssertionError(
             f"stack domain {STACK_DOMAIN} / devkit domain {devkit_domain()}"
-            f" equals AUTODRIVE_ROS_DOMAIN_ID={live}: a test must never"
+            f" equals the live devkit's domain {live}"
+            " (AUTODRIVE_ROS_DOMAIN_ID, default 42): a test must never"
             " subscribe to the live devkit"
         )
 
@@ -106,7 +111,9 @@ def wait_for_log(process, log, text, timeout_s=60.0):
 
 def start_standin(tmp_path, *extra, replies="replies.jsonl", domain=None):
     """The devkit stand-in as a subprocess on the devkit domain."""
-    env = {**os.environ, "ROS_DOMAIN_ID": str(domain or devkit_domain())}
+    if domain is None:
+        domain = devkit_domain()
+    env = {**os.environ, "ROS_DOMAIN_ID": str(domain)}
     out = tmp_path / replies
     log = tmp_path / "standin.log"
     process = subprocess.Popen(

@@ -47,8 +47,8 @@ SPIN_YIELD_S = 0.001
 
 class AutoDriveServer(ContractNode):
     def __init__(self) -> None:
-        # Declared first: `_build_session` reads dt_source during the base
-        # constructor, and the Node exists by then.
+        # `_build_session` (called by the base constructor) declares host,
+        # port and dt_source, since the Node exists by then.
         super().__init__()
         self._host = self._text("host")
         self._port = (

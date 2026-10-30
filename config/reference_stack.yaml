@@ -54,8 +54,9 @@ roles:
     # Selected by `simulator:=autodrive` on sim_pure_pursuit.launch.py; listed,
     # not ranked (ADR 0005). Verified once, inside this stack, against ground
     # truth - here by the recorded stream (SIM-3610; SIM-3620 through the
-    # official bridge), because the sim is not in CI. A digest bump in `images` therefore selects a test that cannot see
-    # the image (#44 part 8, D2): the live gate is parts 9/10's.
+    # official bridge), because the sim is not in CI. A digest bump in
+    # `images` therefore selects a test that cannot see the image (#44 part
+    # 8, D2): the live gate is parts 9/10's.
     alternatives:
       - implementation: autodrive
         package: racing_sim_autodrive

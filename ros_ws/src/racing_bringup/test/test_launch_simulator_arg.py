@@ -404,7 +404,7 @@ def test_bringup_1690_official_bridge_launches_the_devkit_node(
     assert "".join(p.text for p in default) == "71"
     assert declared is not None
 
-    for value, why in (
+    for value, _why in (
         ("", "missing"),
         ("abc", "not an integer"),
         ("102", "above 101"),
@@ -416,7 +416,6 @@ def test_bringup_1690_official_bridge_launches_the_devkit_node(
         )
         with pytest.raises(RuntimeError, match="autodrive_devkit_domain"):
             module._launch_nodes(context, "", "")
-        print(why)
 
     # unused under `ours`: a bad domain cannot break a launch that never
     # reads it
