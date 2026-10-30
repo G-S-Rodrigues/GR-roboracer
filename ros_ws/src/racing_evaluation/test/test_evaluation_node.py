@@ -6,6 +6,10 @@ estimate is the same pose 0.3 m to its left. The node must report 0.3 m of
 position and lateral error, then, once the estimate stops, NaN errors with
 ``available`` false - never a zero.
 
+Every node and topic here is renamed to a ``/test_eval2010/`` name, as
+METRICS-1030 and PP-2010 do, because colcon runs tier-2 tests in parallel on
+one domain and other tests (SIMAD-2010..2050) publish ``/ground_truth/odom``.
+
 EVAL-2030: neither the evaluator nor this test's own node has a data topic
 outside ``/test_eval2010/``. A stray ``/ground_truth/odom`` publisher with a
 later stamp (AutoDRIVE's server stamps wall clock) makes the Aligner
@@ -39,13 +43,13 @@ import graph_isolation  # noqa: E402
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 TRACK = REPOSITORY_ROOT / "config" / "tracks" / "analytic_circle.yaml"
-EVALUATION_NODE = "racing_evaluation"
-ESTIMATE_TOPIC = "/test/estimate"
-TRUTH_TOPIC = "/ground_truth/odom"
-ERROR_TOPIC = "/evaluation/localization_error"
 PREFIX = "/test_eval2010"
-EVALUATOR_NAME = "racing_evaluation"  # what the launch produces today
-EVALUATOR_NAMESPACE = "/"
+EVALUATOR_NAME = "evaluation_2010"
+EVALUATOR_NAMESPACE = PREFIX
+EVALUATION_NODE = f"{PREFIX}/{EVALUATOR_NAME}"
+ESTIMATE_TOPIC = f"{PREFIX}/estimate"
+TRUTH_TOPIC = f"{PREFIX}/ground_truth_odom"
+ERROR_TOPIC = f"{PREFIX}/localization_error"
 OFFSET = 0.3
 PERIOD = 0.01
 
@@ -62,6 +66,12 @@ def generate_test_description():
     evaluation = launch_ros.actions.Node(
         package="racing_evaluation",
         executable="racing_evaluation_node",
+        name=EVALUATOR_NAME,
+        namespace=EVALUATOR_NAMESPACE,
+        remappings=[
+            ("/ground_truth/odom", TRUTH_TOPIC),
+            ("/evaluation/localization_error", ERROR_TOPIC),
+        ],
         parameters=[
             {"estimate_topic": ESTIMATE_TOPIC, "track_path": str(TRACK)}
         ],
