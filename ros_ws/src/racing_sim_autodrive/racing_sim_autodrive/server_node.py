@@ -353,7 +353,17 @@ class AutoDriveServer(Node):
         gevent.signal_handler(signal.SIGINT, server.stop)
         gevent.signal_handler(signal.SIGTERM, server.stop)
         self.get_logger().info(f"listening on {self._host}:{self._port}")
+        if not rclpy.ok():
+            # rclpy's own SIGINT handler (installed by rclpy.init) fired
+            # before ours existed: nothing would stop serve_forever.
+            server.stop()
+            return
         server.serve_forever()
+
+
+def _ignore_signals() -> None:
+    for number in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(number, signal.SIG_IGN)
 
 
 def main(args=None) -> None:
@@ -381,12 +391,18 @@ def main(args=None) -> None:
     try:
         node.serve()
     finally:
+        # The launch forwards SIGINT and the caller's group signal is another,
+        # so a second one arrives while this runs. A KeyboardInterrupt here
+        # kills the process with -2 ("process has died"), and rclpy.shutdown
+        # restores the default handler, so ignore it again after.
+        _ignore_signals()
         stopping.set()
         thread.join(timeout=5.0)  # a spin left running aborts at exit
         executor.shutdown()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+        _ignore_signals()
 
 
 if __name__ == "__main__":
