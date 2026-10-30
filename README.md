@@ -9,17 +9,17 @@ tracking and wall clearance are visible in the tests.
 
 ## Demonstration
 
-The demonstration uses AMCL on the saved Spielberg survey map, pure pursuit control
-and an independent safety supervisor. The map is generated survey output: the vehicle
-drives on ground truth while SLAM Toolbox builds it. AMCL then drives in closed loop
-on its own estimate; the existing acceptance case verifies a completed lap with zero
-collisions.
+The demonstration is a Spielberg lap on the committed minimum-curvature raceline
+(`optimized_raceline`, optimizer `tum_mincurv_iqp`), at the line's own speed, with pure pursuit
+control and an independent safety supervisor. The vehicle drives on ground-truth pose; the
+acceptance test SIM-3110 verifies that this seeded lap completes with zero collisions.
 
-[![AMCL driving a closed-loop Spielberg lap on the generated survey map, 9.8x playback](docs/assets/readme-lap-preview.gif)](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view)
+[![A Spielberg lap on the minimum-curvature raceline, 10.0x playback](docs/assets/readme-mincurv-lap-preview.gif)](https://drive.google.com/file/d/1jyuSPOSun9hCTo3B2k7AFhTbSG5BWP-h/view)
 
-▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view):
-the complete lap at 3.9x simulated time (the preview above plays at 9.8x). Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=amcl drive_on_estimate:=true seed:=42`
-on `config/scenarios/spielberg.yaml`, seed 42, at commit `cadfdd5`.
+▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1jyuSPOSun9hCTo3B2k7AFhTbSG5BWP-h/view):
+the complete lap at 4.0x simulated time (the preview above plays at 10.0x). Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory seed:=42`
+on `config/scenarios/spielberg.yaml`, seed 42, at commit `abb22f2`.
+Earlier videos, including the AMCL closed-loop lap, are in [demonstrations](docs/demonstrations.md).
 
 ## Capabilities and roadmap
 
