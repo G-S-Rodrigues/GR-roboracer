@@ -121,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **273 tier-1, 30 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **273 tier-1, 31 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -175,6 +175,8 @@ The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src
 The AutoDRIVE part-7 work (our Socket.IO server) added tier 1 `SIMAD-1150` to `SIMAD-1270` (thirteen IDs: the Socket.IO pins, the ROS-free bridge session, the replay schedule, the comma-decimal locale error) `ADAPT-1040` and `ADAPT-1050` (every launch registration carries its own `RACING_SIM_BACKEND`; SIMAD-1150 also checks the running image has the pinned closure, so a stale image fails by name), and tier 2 `SIMAD-2010` to `SIMAD-2050` (the server node against `racing_sim_autodrive.replay`, on an ephemeral port, never the sim's 4567). The four `racing_sim_adapter` launch files are registered a second time (`test_adapter_<name>_autodrive`) with `RACING_SIM_BACKEND=autodrive`; `conformance.BACKENDS` holds each backend's launch, its expected not-applicable set and its per-backend expectations (ADAPT-2030 rate, 2130 h, 2145 clock), and the variable defaults to the gym. The tier-1 and tier-2 AutoDRIVE tests need the Socket.IO closure (`docker/dev-tools-requirements.txt`) on `PYTHONPATH`. The live sim run (port 4567) is a recorded manual step, not a gate.
 
 The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
+
+The evaluation-isolation work (E1) added tier 2 `EVAL-2030` (one case in each of `test_evaluation_node.py` and `test_evaluation_node_pose.py`: neither the evaluator nor the test node has a topic outside the file's prefix; `test/graph_isolation.py`), and moved EVAL-2010/2020 under `/test_eval2010/`, `/test_eval2020/`.
 
 ## The tests that matter most
 

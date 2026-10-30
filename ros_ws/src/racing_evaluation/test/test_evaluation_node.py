@@ -5,9 +5,19 @@ A synthetic truth drives along the analytic circle's centerline; the
 estimate is the same pose 0.3 m to its left. The node must report 0.3 m of
 position and lateral error, then, once the estimate stops, NaN errors with
 ``available`` false - never a zero.
+
+The evaluator and every topic here are renamed to a ``/test_eval2010/`` name, as
+METRICS-1030 and PP-2010 do, because colcon runs tier-2 tests in parallel on
+one domain and other tests (SIMAD-2010..2050) publish ``/ground_truth/odom``.
+
+EVAL-2030: neither the evaluator nor this test's own node has a data topic
+outside ``/test_eval2010/``. A stray ``/ground_truth/odom`` publisher with a
+later stamp (AutoDRIVE's server stamps wall clock) makes the Aligner
+declare every waiting truth sample unavailable.
 """
 
 import math
+import sys
 import time
 import unittest
 from pathlib import Path
@@ -28,12 +38,18 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import graph_isolation  # noqa: E402
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 TRACK = REPOSITORY_ROOT / "config" / "tracks" / "analytic_circle.yaml"
-EVALUATION_NODE = "racing_evaluation"
-ESTIMATE_TOPIC = "/test/estimate"
-TRUTH_TOPIC = "/ground_truth/odom"
-ERROR_TOPIC = "/evaluation/localization_error"
+PREFIX = "/test_eval2010"
+EVALUATOR_NAME = "evaluation_2010"
+EVALUATOR_NAMESPACE = PREFIX
+EVALUATION_NODE = f"{PREFIX}/{EVALUATOR_NAME}"
+ESTIMATE_TOPIC = f"{PREFIX}/estimate"
+TRUTH_TOPIC = f"{PREFIX}/ground_truth_odom"
+ERROR_TOPIC = f"{PREFIX}/localization_error"
 OFFSET = 0.3
 PERIOD = 0.01
 
@@ -50,6 +66,12 @@ def generate_test_description():
     evaluation = launch_ros.actions.Node(
         package="racing_evaluation",
         executable="racing_evaluation_node",
+        name=EVALUATOR_NAME,
+        namespace=EVALUATOR_NAMESPACE,
+        remappings=[
+            ("/ground_truth/odom", TRUTH_TOPIC),
+            ("/evaluation/localization_error", ERROR_TOPIC),
+        ],
         parameters=[
             {"estimate_topic": ESTIMATE_TOPIC, "track_path": str(TRACK)}
         ],
@@ -77,6 +99,16 @@ class TestEvaluationNode(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = rclpy.create_node("racing_evaluation_contract_test")
+        cls.received = []
+        cls.node.create_subscription(
+            LocalizationError, ERROR_TOPIC, cls.received.append, RELIABLE_QOS
+        )
+        cls.truth = cls.node.create_publisher(
+            Odometry, TRUTH_TOPIC, RELIABLE_QOS
+        )
+        cls.estimate = cls.node.create_publisher(
+            Odometry, ESTIMATE_TOPIC, RELIABLE_QOS
+        )
 
     @classmethod
     def tearDownClass(cls):
@@ -95,14 +127,7 @@ class TestEvaluationNode(unittest.TestCase):
 
     def test_eval_2010_scores_a_synthetic_estimate_then_its_stall(self):
         self._require_evaluator()
-        received: list[LocalizationError] = []
-        self.node.create_subscription(
-            LocalizationError, ERROR_TOPIC, received.append, RELIABLE_QOS
-        )
-        truth = self.node.create_publisher(Odometry, TRUTH_TOPIC, RELIABLE_QOS)
-        estimate = self.node.create_publisher(
-            Odometry, ESTIMATE_TOPIC, RELIABLE_QOS
-        )
+        received, truth, estimate = self.received, self.truth, self.estimate
         # Discovery of the two new publishers, and of this node's error
         # subscription by the evaluator, before anything is sent.
         deadline = time.monotonic() + 5.0
@@ -177,4 +202,21 @@ class TestEvaluationNode(unittest.TestCase):
         )
         self.assertEqual(
             endpoint.qos_profile.durability, DurabilityPolicy.VOLATILE
+        )
+
+    def test_eval_2030_evaluation_node_topics_stay_under_prefix(self):
+        evaluator = graph_isolation.data_topics(
+            self.node, EVALUATOR_NAME, EVALUATOR_NAMESPACE
+        )
+        own = graph_isolation.data_topics(
+            self.node, self.node.get_name(), self.node.get_namespace()
+        )
+        self.assertEqual(len(evaluator), 3, f"evaluator topics: {evaluator}")
+        self.assertEqual(len(own), 3, f"test node topics: {own}")
+        self.assertEqual(
+            {
+                "evaluator": graph_isolation.outside(evaluator, PREFIX),
+                "test node": graph_isolation.outside(own, PREFIX),
+            },
+            {"evaluator": [], "test node": []},
         )
