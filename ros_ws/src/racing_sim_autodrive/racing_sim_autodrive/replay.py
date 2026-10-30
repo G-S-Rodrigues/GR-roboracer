@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import math
 import statistics
 import sys
 import threading
@@ -22,7 +23,13 @@ import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-__all__ = ["load_frames", "schedule", "build_parser", "main"]
+__all__ = [
+    "load_frames",
+    "schedule",
+    "latency_summary",
+    "build_parser",
+    "main",
+]
 
 PACES = ("recorded", "lockstep")
 REPLY_WAIT_S = 1.0  # a reply later than this is a stall, never a hang
@@ -88,6 +95,23 @@ def schedule(
             index = start_frame
 
 
+def latency_summary(latencies: Sequence[float]) -> dict[str, float]:
+    """n, median, nearest-rank p99 and max of a list of latencies.
+
+    Part 8's rate bar is read from these; the unit is the caller's.
+    """
+    if not latencies:
+        raise ValueError("no latencies to summarise")
+    ordered = sorted(latencies)
+    rank = math.ceil(0.99 * len(ordered))
+    return {
+        "n": len(ordered),
+        "p50": statistics.median(ordered),
+        "p99": ordered[rank - 1],
+        "max": ordered[-1],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--fixture", type=Path, required=True)
@@ -98,6 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--count", type=int, default=None)
     parser.add_argument("--replies-out", type=Path, default=None)
+    parser.add_argument(
+        "--timings-out",
+        type=Path,
+        default=None,
+        help="write {frame, sent_ns, reply_ns} per frame (perf_counter_ns); "
+        "lockstep only: sends and replies are paired by order, so a lost "
+        "reply shifts every later row",
+    )
     parser.add_argument(
         "--hold-s",
         type=float,
@@ -115,12 +147,15 @@ def main(argv: list[str] | None = None) -> int:
     frames = load_frames(args.fixture)
     replies: list[tuple[int, dict]] = []
     sent_indices: list[int] = []
+    sent_ns: list[int] = []
+    reply_ns: list[int] = []
     arrived = threading.Condition()
     client = socketio.Client()
 
     @client.on("Bridge")
     def on_reply(data):
         with arrived:
+            reply_ns.append(time.perf_counter_ns())
             replies.append((len(replies), data))
             arrived.notify_all()
 
@@ -138,6 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             if delay:
                 time.sleep(delay)
             sent_indices.append(index)
+            sent_ns.append(time.perf_counter_ns())
             client.emit("Bridge", raw)
             if args.pace == "lockstep":
                 with arrived:
@@ -179,6 +215,16 @@ def main(argv: list[str] | None = None) -> int:
                     out.write(
                         json.dumps({"frame": frame, "reply": data}) + "\n"
                     )
+        if args.timings_out is not None:
+            with args.timings_out.open("w") as out:
+                for k, sent in enumerate(sent_ns):
+                    if k < len(reply_ns):
+                        row = {
+                            "frame": sent_indices[k],
+                            "sent_ns": sent,
+                            "reply_ns": reply_ns[k],
+                        }
+                        out.write(json.dumps(row) + "\n")
     print(
         f"replay: {len(sent_indices)} sent, {len(replies)} replies",
         flush=True,

@@ -17,6 +17,38 @@ The competition simulator's window is a **Windows** build; an agent in WSL start
    `docker logs autodrive-devkit-gui` on the devkit route, or a session id (`sid`) in our own
    server's or a probe recorder's log.
 
+## The route to our own server (headless server in `dev`, Windows sim)
+
+`dev` publishes no port (ADR 0002), so the Windows sim reaches the server in it through two hops:
+`scripts/autodrive_route.sh` starts a relay container (`scripts/autodrive_relay.py`, publishing
+`127.0.0.1:4567`) and a `socat` on the WSL IP. Start the server first, then the script, then the
+sim with `-ip <WSL IP>`; `scripts/autodrive_route.sh stop` ends both. It refuses a taken 4567.
+
+**Socat's `nodelay` is the one that matters; the relay sets TCP_NODELAY too, with no measurable
+effect of its own.** Offline lock-step replay of the recorded W1a stream (3000 frames,
+reply latency, p50 / p99 / max in ms), part 8:
+
+| path | p50 | p99 | max |
+|---|---|---|---|
+| direct to the server | 3.7 | 9.4 | 59.6 |
+| WSL IP -> socat -> relay -> server (part 7's route) | 48.2 | 59.6 | 144.9 |
+| the same, relay `NODELAY`, socat without | 48.1 | 53.8 | 96.4 |
+| the same, socat `nodelay` | 4.6 | 7.3 | 9.0 |
+| socat `nodelay` and relay `NODELAY` (the script) | 4.3 | 7.0 | 8.3 |
+| relay alone, `NODELAY` off, no socat (client on the host) | 4.4 | 6.8 | 9.3 |
+
+asyncio enables TCP_NODELAY on every TCP connection by default, so the rows with relay `NODELAY` off did not actually turn it off, and "no measurable effect" means nothing was varied there, not that the option is inert.
+
+Without `nodelay` on socat, Nagle and delayed ACK hold each small Engine.IO write about 45 ms. That
+is consistent with the 11.5-14.7 Hz part 7 measured live only if the sim is lock-step (24.5 + 45 ms is
+about 70 ms, 14 Hz); that is not established, and part 7's 1.1 s gaps are unexplained (the offline max
+is 145 ms). The direct row's 59.6 ms max misses the 50 ms bar for the server alone; it is one outlier
+and not the handler's (its own max is 4-13 ms), and it is unexplained. The direct row's client ran in
+`dev`, the route rows' on the host, so they are not like for like. The server's own handler is not the bound: per frame it
+takes p50 1.1 ms, p99 2.0-2.5 ms, max 4-13 ms (decode 0.3, session 0.6, all publishes 0.35, emit
+0.05), with or without subscribers on `/scan` and `/odom`. Verifying the live rate through this
+route needs the Windows sim running against it, not an offline replay.
+
 ## Facts (from the AutoDRIVE source @75b7df5 and live runs)
 
 - `-ip` / `-port` only fill the address fields. The build connects alone only under `-batchmode`
