@@ -218,6 +218,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
     `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
     the axle centre (a wheel radius higher), because every mesh is authored there.
+    The lidar's TF frame is lidar, renamed from laser on 2026-10-28 to match the AutoDRIVE devkit;
+    device identifiers (laser_x, LaserMount, the racing_sim_gym_jax.laser module) keep the old word,
+    and a bag or RViz config recorded before the rename still names laser.
 
 ## AutoDRIVE
 

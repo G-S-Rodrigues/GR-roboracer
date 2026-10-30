@@ -54,7 +54,7 @@ class Snapshot:
     collision: bool
     done: bool
     # Ray-marched from the laser mount: /scan, what an estimator reads in
-    # frame `laser`. The same array as `scan` when laser_x == lr (the laser at
+    # frame `lidar`. The same array as `scan` when laser_x == lr (the laser at
     # base_link).
     laser_scan: np.ndarray
 

@@ -22,7 +22,7 @@
 # Reference point (repo-gotchas #26): AutoDRIVE's pose is the REAR AXLE;
 # base_link is the CoG, lr = 0.15532 ahead, at h = 0.0735.
 # laser_x is the true 0.2733 and does NOT match the one shared URDF (0.275, rear
-# axle 0.17145 behind base_link rather than 0.15532): the TF base_link -> laser
+# axle 0.17145 behind base_link rather than 0.15532): the TF base_link -> lidar
 # is about 14 mm off under simulator:=autodrive until part 8 gives it its own
 # description. BRINGUP-1050 therefore skips this file (NOT_GYM_CAST).
 
