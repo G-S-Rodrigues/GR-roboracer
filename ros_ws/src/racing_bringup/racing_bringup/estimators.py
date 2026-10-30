@@ -63,46 +63,57 @@ def autostarted(node: LifecycleNode) -> list:
     return [node, activate, configure]
 
 
-def slam_toolbox(mode: str, parameters: list) -> list:
-    """slam_toolbox in `mode` ("mapping" | "localization"), autostarted."""
+def slam_toolbox(
+    mode: str, parameters: list, use_sim_time: bool = True
+) -> list:
+    """slam_toolbox in `mode` ("mapping" | "localization"), autostarted.
+
+    `use_sim_time` is appended after the yaml, so it wins: the yaml says true,
+    which is the gym; a simulator without /clock passes false.
+    """
     node = LifecycleNode(
         package="slam_toolbox",
         executable=SLAM_TOOLBOX_EXECUTABLES[mode],
         name="slam_toolbox",
         namespace="",
-        parameters=[*parameters, {"use_lifecycle_manager": False}],
+        parameters=[
+            *parameters,
+            {"use_lifecycle_manager": False, "use_sim_time": use_sim_time},
+        ],
         output="screen",
     )
     return autostarted(node)
 
 
-def amcl(parameters: list, map_yaml: str) -> list:
+def amcl(parameters: list, map_yaml: str, use_sim_time: bool = True) -> list:
     """nav2_amcl localizing against `map_yaml`, served by nav2_map_server.
 
     The grid is the track's committed survey
     (config/scenarios/maps/<map>/slam/), named by the caller from the
     scenario, so a run can only ever be localized against its own track.
+    `use_sim_time` is appended after the yaml (which says true), so it wins.
     """
+    clock = {"use_sim_time": use_sim_time}
     return [
         Node(
             package="nav2_map_server",
             executable="map_server",
             name="map_server",
-            parameters=[*parameters, {"yaml_filename": map_yaml}],
+            parameters=[*parameters, {"yaml_filename": map_yaml}, clock],
             output="screen",
         ),
         Node(
             package="nav2_amcl",
             executable="amcl",
             name="amcl",
-            parameters=parameters,
+            parameters=[*parameters, clock],
             output="screen",
         ),
         Node(
             package="nav2_lifecycle_manager",
             executable="lifecycle_manager",
             name="amcl_lifecycle_manager",
-            parameters=parameters,
+            parameters=[*parameters, clock],
             output="screen",
         ),
     ]
@@ -130,7 +141,9 @@ def mola_map_files(grid_yaml: str) -> tuple[str, str]:
 
 
 def mola_launch_arguments(
-    configuration: str, mm_file: str | None = None
+    configuration: str,
+    mm_file: str | None = None,
+    use_sim_time: bool = True,
 ) -> dict:
     """The launch arguments of MOLA-LO's ros2-lidar-odometry launch file.
 
@@ -149,6 +162,8 @@ def mola_launch_arguments(
     )
     if mm_file is not None:
         arguments["mola_initial_map_mm_file"] = mm_file
+    # The yaml says "True" (the gym); a simulator without /clock overrides it.
+    arguments["use_sim_time"] = str(use_sim_time)
     return arguments
 
 
@@ -176,7 +191,7 @@ def mola_alignment_arguments(provenance_yaml: str) -> list[str]:
     ]
 
 
-def mola(configuration: str, grid_yaml: str) -> list:
+def mola(configuration: str, grid_yaml: str, use_sim_time: bool = True) -> list:
     """MOLA-LO localizing on the map it built itself for `grid_yaml`'s track.
 
     MOLA owns `mola_map -> odom`; the static `map -> mola_map` joins that to
@@ -195,7 +210,7 @@ def mola(configuration: str, grid_yaml: str) -> list:
             # command line (gotcha #10).
             name="racing_mola_map_alignment",
             arguments=mola_alignment_arguments(provenance),
-            parameters=[{"use_sim_time": True}],
+            parameters=[{"use_sim_time": use_sim_time}],
             output="screen",
         ),
         IncludeLaunchDescription(
@@ -203,7 +218,7 @@ def mola(configuration: str, grid_yaml: str) -> list:
                 str(share / "ros2-launchs" / "ros2-lidar-odometry.launch.py")
             ),
             launch_arguments=mola_launch_arguments(
-                configuration, mm_file
+                configuration, mm_file, use_sim_time
             ).items(),
         ),
     ]

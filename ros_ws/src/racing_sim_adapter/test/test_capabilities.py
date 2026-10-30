@@ -206,3 +206,207 @@ def test_adapt_1030_every_conformance_test_is_classified_and_guarded() -> None:
         test_id for test_id in ungated if _applicable_calls(methods[test_id][1])
     )
     assert not guarded, f"ungated but guarded: {guarded}"
+
+
+def _capabilities_by_path(path: Path) -> dict:
+    """A backend's stdlib-only capabilities.py, loaded with no ROS and no
+    package import (the gym's package pulls JAX in)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CAPABILITIES
+
+
+SOURCES = Path(__file__).parents[2]
+BACKEND_CAPABILITIES = {
+    conformance.GYM: SOURCES
+    / "racing_sim_gym_jax"
+    / "racing_sim_gym_jax"
+    / "capabilities.py",
+    conformance.AUTODRIVE: SOURCES
+    / "racing_sim_autodrive"
+    / "racing_sim_autodrive"
+    / "capabilities.py",
+}
+
+
+def _mismatches(backends: dict) -> dict[str, set[str]]:
+    """Row name -> ids where its expected_not_applicable differs from what
+    its capabilities module makes not applicable."""
+    found = {}
+    for name, row in backends.items():
+        declared = _capabilities_by_path(BACKEND_CAPABILITIES[name])
+        computed = set(
+            conformance.not_applicable(conformance.REQUIREMENTS, declared)
+        )
+        if computed != set(row.expected_not_applicable):
+            found[name] = computed ^ set(row.expected_not_applicable)
+    return found
+
+
+def test_adapt_1040_each_backend_row_expects_what_its_capabilities_imply():
+    """ADAPT-1040: for every BACKENDS row, expected_not_applicable equals
+    not_applicable(REQUIREMENTS, that backend's capabilities module). A row
+    cannot drift from what the backend declares, and an extra id is named."""
+    from dataclasses import replace
+
+    assert set(conformance.BACKENDS) == set(BACKEND_CAPABILITIES)
+    assert _mismatches(conformance.BACKENDS) == {}
+    extra = dict(conformance.BACKENDS)
+    extra[conformance.AUTODRIVE] = replace(
+        extra[conformance.AUTODRIVE],
+        expected_not_applicable=extra[
+            conformance.AUTODRIVE
+        ].expected_not_applicable
+        | {"ADAPT-2010"},
+    )
+    assert _mismatches(extra) == {conformance.AUTODRIVE: {"ADAPT-2010"}}
+
+
+def test_adapt_1040_backend_selection_defaults_to_the_gym_and_rejects_unknown(
+    monkeypatch,
+):
+    """ADAPT-1040: RACING_SIM_BACKEND unset is the gym; a name not in the
+    table raises rather than silently running the gym."""
+    import pytest
+
+    monkeypatch.delenv("RACING_SIM_BACKEND", raising=False)
+    assert conformance.backend().name == conformance.GYM
+    monkeypatch.setenv("RACING_SIM_BACKEND", conformance.AUTODRIVE)
+    assert conformance.backend().name == conformance.AUTODRIVE
+    monkeypatch.setenv("RACING_SIM_BACKEND", "nope")
+    with pytest.raises(ValueError, match="nope"):
+        conformance.backend()
+
+
+CMAKE = Path(__file__).parents[1] / "CMakeLists.txt"
+
+
+def _launch_registrations(text: str) -> dict[str, list[str]]:
+    """CTest name of every add_launch_test -> the RACING_SIM_BACKEND values
+    set on it by a `set_property(TEST <name> ... ENVIRONMENT ...)`."""
+    names = []
+    for call in re.findall(r"add_launch_test\(([^)]*)\)", text):
+        target = re.search(r"TARGET\s+(\S+)", call)
+        source = re.search(r"test/(\S+\.py)", call).group(1)
+        names.append(target.group(1) if target else f"test_{source}")
+    backends: dict[str, list[str]] = {name: [] for name in names}
+    for name, tail in re.findall(
+        r"set_property\(TEST\s+(\S+)\s+APPEND PROPERTY ENVIRONMENT\s+"
+        r"([^)]*)\)",
+        text,
+    ):
+        backends.setdefault(name, []).extend(
+            re.findall(r"RACING_SIM_BACKEND=(\S+)", tail)
+        )
+    return {n: backends[n] for n in names}
+
+
+def test_adapt_1050_every_launch_registration_runs_the_backend_it_names():
+    """ADAPT-1050: each add_launch_test carries exactly one
+    RACING_SIM_BACKEND, `autodrive` for a target ending `_autodrive` and
+    `f1tenth_gym_jax` for the others. add_launch_test has no ENV argument, so
+    a lost property would silently rerun the gym under an `_autodrive` name
+    and pass (seen before the property route)."""
+    found = _launch_registrations(CMAKE.read_text())
+    assert len(found) == 8
+    for name, values in found.items():
+        want = (
+            conformance.AUTODRIVE
+            if name.endswith("_autodrive")
+            else conformance.GYM
+        )
+        assert values == [want], name
+
+
+def test_adapt_1050_negative_a_lost_property_is_reported():
+    """ADAPT-1050 negative: the scan is not vacuous."""
+    text = (
+        "add_launch_test(test/test_adapter_contract.py\n"
+        "  TARGET test_adapter_contract_autodrive TIMEOUT 30)\n"
+        "set_property(TEST test_adapter_contract_autodrive APPEND PROPERTY"
+        " ENVIRONMENT\n  RACING_SIM_BACKEND=autodrive)\n"
+        "add_launch_test(test/test_adapter_start_held.py TIMEOUT 30)\n"
+    )
+    assert _launch_registrations(text) == {
+        "test_adapter_contract_autodrive": ["autodrive"],
+        "test_test_adapter_start_held.py": [],
+    }
+
+
+_NAME_SHAPED = re.compile(r"/[A-Za-z_~][\w/~]*")
+
+
+def _is_topic_call(node: ast.AST) -> bool:
+    """`topic(...)` or `<anything>.topic(...)`: the sanctioned way to name
+    a topic."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return (isinstance(func, ast.Name) and func.id == "topic") or (
+        isinstance(func, ast.Attribute) and func.attr == "topic"
+    )
+
+
+def _global_names(source: str) -> list[str]:
+    """Every name-shaped absolute string in `source`: a str literal that is
+    `/name`-shaped, or an f-string whose first part is a literal starting `/`.
+    Not reported: a first argument of `topic(...)`, the inner parts of an
+    f-string (it is judged once, by its first part), and prose such as
+    "/clock must advance" (not name-shaped)."""
+    tree = ast.parse(source)
+    skipped: set[int] = set()
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if _is_topic_call(node) and node.args:
+            skipped.add(id(node.args[0]))
+        elif isinstance(node, ast.JoinedStr):
+            for part in node.values:
+                skipped.add(id(part))
+            first = node.values[0] if node.values else None
+            if (
+                isinstance(first, ast.Constant)
+                and isinstance(first.value, str)
+                and first.value.startswith("/")
+            ):
+                found.append(ast.unparse(node))
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in skipped
+            and _NAME_SHAPED.fullmatch(node.value)
+        ):
+            found.append(node.value)
+    return found
+
+
+def test_adapt_1060_no_conformance_file_names_a_global_topic_or_service():
+    """ADAPT-1060: no test_adapter_*.py names a topic or service by a global
+    literal; they go through conformance.topic()/service() so the row's
+    namespace applies. This is the receiving side of ADAPT-2170 (the test
+    nodes hold no lasting subscription a live probe could see). Known false
+    negative, accepted: a relative name ("scan") on the root-namespace test
+    node also resolves globally; it fails functionally (no data under the
+    prefix) instead.
+
+    Other known blind spots, also accepted: remap strings such as
+    "/clock:=/x"; names built as "/" + name; f-strings that start with a
+    variable; and global names reached through conformance constants such
+    as CLOCK_TOPIC."""
+    paths = sorted(Path(__file__).parent.glob("test_adapter_*.py"))
+    assert len(paths) == 4, paths
+    leaks = {path.name: _global_names(path.read_text()) for path in paths}
+    assert {name: names for name, names in leaks.items() if names} == {}
+
+
+def test_adapt_1060_negative_a_planted_global_name_is_reported():
+    """ADAPT-1060 negative: the scan is not vacuous."""
+    source = (
+        'X = "/scan"\n'
+        'Y = f"/{a}/reset"\n'
+        'Z = conformance.topic("/odom")\n'
+        'M = "/clock must advance"\n'
+    )
+    assert _global_names(source) == ["/scan", "f'/{a}/reset'"]

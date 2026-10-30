@@ -18,4 +18,7 @@ Run from the repository root; paths resolve relative to the working directory.
 `ros2 launch racing_bringup sim_pure_pursuit.launch.py`. Launch arguments and fields:
 `docs/configuration.md`. Tests: `./scripts/check.sh --fast`.
 
-Trap: the planner resolver fails closed (BRINGUP-1160); it never falls back to the centerline.
+Trap: the planner resolver fails closed (BRINGUP-1160); it never falls back to the centerline,
+except `track_centerline` on a map with no `<map>_raceline.csv` (Porto), whose speed is 0, so
+`speed_source:=trajectory` there is refused (BRINGUP-1680). `simulator`, `autodrive_bridge` and
+`autodrive_port` pick the simulator (`docs/configuration.md`).

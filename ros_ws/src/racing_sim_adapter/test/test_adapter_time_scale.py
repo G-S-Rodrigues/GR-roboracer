@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 
 import launch
-import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 import pytest
@@ -28,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import conformance  # noqa: E402
 
-ADAPTER_NODE = "racing_sim"
-CLOCK_TOPIC = "/clock"
+ADAPTER_NODE = conformance.ADAPTER_NAME
+CLOCK_TOPIC = conformance.topic("/clock")
 TIME_SCALE = 5.0
 SAMPLE_COUNT = 60
 # Discard the leading samples: JIT warm-up and process startup happen once,
@@ -62,14 +61,11 @@ CLOCK_QOS = QoSProfile(
 
 @pytest.mark.launch_test
 def generate_test_description():
-    backend = launch_ros.actions.Node(
-        package="racing_sim_gym_jax",
-        executable="racing_sim_gym_jax_node",
-        parameters=[{"time_scale": TIME_SCALE}],
-        output="screen",
-    )
     return launch.LaunchDescription(
-        [backend, launch_testing.actions.ReadyToTest()]
+        [
+            *conformance.backend().actions([{"time_scale": TIME_SCALE}]),
+            launch_testing.actions.ReadyToTest(),
+        ]
     )
 
 
@@ -91,14 +87,17 @@ class TestAdapterTimeScale(unittest.TestCase):
         rclpy.shutdown()
 
     def _require_adapter(self) -> None:
+        # Only a backend that owns the clock publishes /clock.
+        owns_clock = conformance.backend().expected_clock == (
+            conformance.OWNS_CLOCK
+        )
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
             topics = {
                 name for name, _types in self.node.get_topic_names_and_types()
             }
-            if (
-                ADAPTER_NODE in self.node.get_node_names()
-                and CLOCK_TOPIC in topics
+            if conformance.adapter_present(self.node) and (
+                CLOCK_TOPIC in topics or not owns_clock
             ):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)

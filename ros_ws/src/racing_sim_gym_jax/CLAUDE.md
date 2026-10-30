@@ -5,7 +5,7 @@ Purpose: expose one warmed `f1tenth_gym_jax` environment through the backend-neu
 Public contract: noisy `/scan` and `/odom` (frame `odom`, plus TF `odom -> base_link`), exact
 `/ground_truth/scan` and `/ground_truth/odom` (frame `map`), `/imu`, `/drive`, `~/reset`, and `~/step_mode`.
 It declares every capability read-only (`capabilities.py`, ADAPT-2140).
-base_link is the centre of gravity (z = h); `rear_axle` is its URDF child. `/scan` (frame `laser`) is cast
+base_link is the centre of gravity (z = h); `rear_axle` is its URDF child. `/scan` (frame `lidar`) is cast
 at `laser_x/y/yaw` measured from the rear axle, minus lr (BRINGUP-1050, ADAPT-2120); `/ground_truth/scan`
 stays cast from, and labelled, `base_link`.
 Above 1x, while a `/drive` publisher exists, each step waits up to one 1x tick for a `/drive` stamped

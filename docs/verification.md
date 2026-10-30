@@ -50,6 +50,7 @@ bound it against ground truth.
 - SIM-3510: with the car driving on ground truth (open loop), `mola` localizes on the map MOLA built itself (1080 beams, 1x, seed 42): position RMSE within 2.5 m, maximum within 4.5 m, available in at least 0.99 of samples (five laps measured 0.704-2.131 m, 1.414-4.149 m, 0.9975 or better); the offline score must agree.
 - SIM-3530: one MOLA mapping lap at 1x (seed 42) produces a grid whose wall 95th-percentile deviation from the track's true walls is within 1.96 m (median 0.52 m, mean offset 0.21 m, at least 34 900 wall cells; ten laps measured 0.79-1.57 m, 0.20-0.41 m, +0.077..+0.160 m, 43 631 or more cells), and `nav2_map_server` serves the committed grid. The 5 cm target is reported, not gated.
 - SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate is available in at least 0.99 of samples and its position RMSE is within 0.65 m (the seed-42 bound).
+- SIM-3610: `simulator:=autodrive` launches the whole stack against the recorded AutoDRIVE stream (no simulator): every node on wall time, the controller's speed reaches the replies, and the supervisor raises no stale-input stop while the frames last. It cannot see the simulator image or its real rate.
 
 ## 4. Acceptance tests (Robot Framework)
 

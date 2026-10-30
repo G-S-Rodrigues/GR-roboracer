@@ -1,0 +1,253 @@
+<?xml version="1.0"?>
+<!--
+  RViz-only AutoDRIVE RoboRacer description, drawn from AutoDRIVE's own model
+  (meshes/autodrive_roboracer/, imported by scripts/import_autodrive_meshes.py;
+  provenance and BSD-2 licence in meshes/NOTICE.md). Selected by the vehicle
+  through urdf/descriptions.yaml. Every joint is fixed; no node publishes
+  joint states. No Gazebo, sensor, plugin or actuator-coupling elements.
+
+  Numbers (AutoDRIVE, config/vehicles/autodrive_roboracer/source.yaml):
+  base_link is the CoG, lr = 0.15532 ahead of the rear axle at h = 0.07354.
+  rear_axle is its fixed child at (-lr, 0, -h): the ground point under the
+  rear-axle midpoint, where every mesh is authored. The axle centre is
+  0.0592 m above it (h minus the CoG's 0.01434 m above the axle). The lidar
+  is 0.2733 m ahead of and 0.096 m above the axle centre (0.1552 above the
+  ground point). The front axle sits 0.010 m higher than the rear one (the
+  prefab); the wheels are static, with the front wheels straight.
+-->
+<robot name="autodrive_roboracer">
+  <material name="ad_000000">
+    <color rgba="0.0000 0.0000 0.0000 1.0"/>
+  </material>
+  <material name="ad_1a1a1a">
+    <color rgba="0.1020 0.1020 0.1020 1.0"/>
+  </material>
+  <material name="ad_1b1b1b">
+    <color rgba="0.1059 0.1059 0.1059 1.0"/>
+  </material>
+  <material name="ad_333333">
+    <color rgba="0.2000 0.2000 0.2000 1.0"/>
+  </material>
+  <material name="ad_3b3b3b">
+    <color rgba="0.2314 0.2314 0.2314 1.0"/>
+  </material>
+  <material name="ad_4b4b4b">
+    <color rgba="0.2941 0.2941 0.2941 1.0"/>
+  </material>
+  <material name="ad_555555">
+    <color rgba="0.3333 0.3333 0.3333 1.0"/>
+  </material>
+  <material name="ad_636363">
+    <color rgba="0.3882 0.3882 0.3882 1.0"/>
+  </material>
+  <material name="ad_7d7d7d">
+    <color rgba="0.4902 0.4902 0.4902 1.0"/>
+  </material>
+  <material name="ad_afafaf">
+    <color rgba="0.6863 0.6863 0.6863 1.0"/>
+  </material>
+  <material name="ad_c5c5c5">
+    <color rgba="0.7725 0.7725 0.7725 1.0"/>
+  </material>
+  <material name="ad_c8c8c8">
+    <color rgba="0.7843 0.7843 0.7843 1.0"/>
+  </material>
+  <material name="ad_d2cec9">
+    <color rgba="0.8235 0.8078 0.7882 1.0"/>
+  </material>
+  <material name="ad_fae37e">
+    <color rgba="0.9804 0.8902 0.4941 1.0"/>
+  </material>
+  <material name="ad_ffba00">
+    <color rgba="1.0000 0.7294 0.0000 1.0"/>
+  </material>
+  <material name="ad_ffdd75">
+    <color rgba="1.0000 0.8667 0.4588 1.0"/>
+  </material>
+  <material name="ad_ffffff">
+    <color rgba="1.0000 1.0000 1.0000 1.0"/>
+  </material>
+
+  <link name="base_link"/>
+
+  <link name="rear_axle">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_000000.stl"/>
+      </geometry>
+      <material name="ad_000000"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_1a1a1a.stl"/>
+      </geometry>
+      <material name="ad_1a1a1a"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_1b1b1b.stl"/>
+      </geometry>
+      <material name="ad_1b1b1b"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_333333.stl"/>
+      </geometry>
+      <material name="ad_333333"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_3b3b3b.stl"/>
+      </geometry>
+      <material name="ad_3b3b3b"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_4b4b4b.stl"/>
+      </geometry>
+      <material name="ad_4b4b4b"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_555555.stl"/>
+      </geometry>
+      <material name="ad_555555"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_636363.stl"/>
+      </geometry>
+      <material name="ad_636363"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_7d7d7d.stl"/>
+      </geometry>
+      <material name="ad_7d7d7d"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_afafaf.stl"/>
+      </geometry>
+      <material name="ad_afafaf"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_c5c5c5.stl"/>
+      </geometry>
+      <material name="ad_c5c5c5"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_c8c8c8.stl"/>
+      </geometry>
+      <material name="ad_c8c8c8"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_d2cec9.stl"/>
+      </geometry>
+      <material name="ad_d2cec9"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_fae37e.stl"/>
+      </geometry>
+      <material name="ad_fae37e"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_ffba00.stl"/>
+      </geometry>
+      <material name="ad_ffba00"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_ffdd75.stl"/>
+      </geometry>
+      <material name="ad_ffdd75"/>
+    </visual>
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/chassis_ffffff.stl"/>
+      </geometry>
+      <material name="ad_ffffff"/>
+    </visual>
+  </link>
+  <joint name="base_link_to_rear_axle" type="fixed">
+    <parent link="base_link"/>
+    <child link="rear_axle"/>
+    <origin xyz="-0.15532 0 -0.07354" rpy="0 0 0"/>
+  </joint>
+
+  <link name="lidar">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/lidar.stl"/>
+      </geometry>
+      <material name="ad_1a1a1a"/>
+    </visual>
+  </link>
+  <joint name="rear_axle_to_lidar" type="fixed">
+    <parent link="rear_axle"/>
+    <child link="lidar"/>
+    <origin xyz="0.2733 0 0.1552" rpy="0 0 0"/>
+  </joint>
+
+  <link name="left_rear_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/wheel_rl.stl"/>
+      </geometry>
+      <material name="ad_1b1b1b"/>
+    </visual>
+  </link>
+  <joint name="rear_axle_to_left_rear_wheel" type="fixed">
+    <parent link="rear_axle"/>
+    <child link="left_rear_wheel"/>
+    <origin xyz="0 0.118 0.0592" rpy="0 0 0"/>
+  </joint>
+
+  <link name="right_rear_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/wheel_rr.stl"/>
+      </geometry>
+      <material name="ad_1b1b1b"/>
+    </visual>
+  </link>
+  <joint name="rear_axle_to_right_rear_wheel" type="fixed">
+    <parent link="rear_axle"/>
+    <child link="right_rear_wheel"/>
+    <origin xyz="0 -0.118 0.0592" rpy="0 0 0"/>
+  </joint>
+
+  <link name="left_front_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/wheel_fl.stl"/>
+      </geometry>
+      <material name="ad_1b1b1b"/>
+    </visual>
+  </link>
+  <joint name="rear_axle_to_left_front_wheel" type="fixed">
+    <parent link="rear_axle"/>
+    <child link="left_front_wheel"/>
+    <origin xyz="0.33 0.118 0.0692" rpy="0 0 0"/>
+  </joint>
+
+  <link name="right_front_wheel">
+    <visual>
+      <geometry>
+        <mesh filename="package://racing_vehicle_description/meshes/autodrive_roboracer/wheel_fr.stl"/>
+      </geometry>
+      <material name="ad_1b1b1b"/>
+    </visual>
+  </link>
+  <joint name="rear_axle_to_right_front_wheel" type="fixed">
+    <parent link="rear_axle"/>
+    <child link="right_front_wheel"/>
+    <origin xyz="0.33 -0.118 0.0692" rpy="0 0 0"/>
+  </joint>
+
+</robot>
