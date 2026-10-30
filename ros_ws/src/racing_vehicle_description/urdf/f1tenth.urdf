@@ -369,7 +369,7 @@
     <child link="front_hub_right"/>
   </joint>
 
-  <link name="laser">
+  <link name="lidar">
     <visual>
       <origin xyz="0 0 0.0065" rpy="0 0 0"/>
       <geometry>
@@ -379,9 +379,9 @@
       <material name="laser_grey"/>
     </visual>
   </link>
-  <joint name="rear_axle_to_laser" type="fixed">
+  <joint name="rear_axle_to_lidar" type="fixed">
     <parent link="rear_axle"/>
-    <child link="laser"/>
+    <child link="lidar"/>
     <origin xyz="0.275 0.0 0.105" rpy="0 0 0"/>
   </joint>
 
