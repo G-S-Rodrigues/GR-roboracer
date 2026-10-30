@@ -59,14 +59,16 @@ def test_metrics_1020_honours_per_field_tolerances() -> None:
 
 
 def test_metrics_1040_difference_equal_to_tolerance_passes() -> None:
-    # |22.86 - 22.81| is 0.0500000000000007 in binary floats (nightly
-    # 40075939673); a difference of exactly the tolerance is inside it.
+    # |22.91 - 22.81| is 0.10000000000000142 in binary floats (the same
+    # rounding as nightly 40075939673, which saw 0.0500000000000007 at the old
+    # 0.05); a difference of exactly the tolerance is inside it. Default
+    # tolerances, so this pins the shipped lap_time constant.
     expected = metrics()
     expected["lap_time"] = 22.81
     actual = deepcopy(expected)
-    actual["lap_time"] = 22.86
+    actual["lap_time"] = 22.91
 
-    assert compare_metrics(expected, actual, {"lap_time": 0.05}) == []
+    assert compare_metrics(expected, actual) == []
 
 
 def test_metrics_1040_difference_beyond_tolerance_fails() -> None:
@@ -74,9 +76,9 @@ def test_metrics_1040_difference_beyond_tolerance_fails() -> None:
     expected = metrics()
     expected["lap_time"] = 22.81
     actual = deepcopy(expected)
-    actual["lap_time"] = 22.87
+    actual["lap_time"] = 22.92
 
-    differences = compare_metrics(expected, actual, {"lap_time": 0.05})
+    differences = compare_metrics(expected, actual)
 
     assert [difference.field for difference in differences] == ["lap_time"]
 

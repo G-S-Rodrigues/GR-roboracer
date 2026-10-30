@@ -35,16 +35,21 @@ from typing import Any
 # 40075939673: |22.86 - 22.81| = 0.0500000000000007). It applies to every
 # field in FLOAT_TOLERANCES; on the 0.01-tolerance tracking errors it is 1% of
 # the tolerance. lap_time moves in whole 0.01 s ticks, so on lap_time it
-# admits exactly the 0.05 boundary and nothing past it.
-# What the slack is measured against: SIM-3040's live lap_time at seed 42,
-# 2026-10-25, six runs on a quiet host (CPU idle >= 85%): 22.83 x2, 22.84 x4,
-# against the golden's 22.81. The offset is 0.02-0.03 s, so the 0.05 tolerance
-# carries ~1.7x it and no live lap came near the 22.86 boundary. The 0.05 is
-# unchanged.
+# admits exactly the 0.1 boundary and nothing past it.
+# Measured: C1, 2026-10-25, six quiet laps 22.83-22.84 against the golden's
+# 22.81. F1 Step 1, 2026-10-27, origin/main b992e24, 24 quiet-host runs (CPU
+# idle >= 85%), seed 42: 22.74-23.03, median 22.83, 3 of 24 outside 0.05
+# (23.03, 22.90, 22.74).
+# Decision: lap_time widened 0.05 -> 0.1 by owner ruling 2026-10-28;
+# baseline.json is not regenerated.
+# Limit: 0.1 would still have failed 23.03 (1 of 24) and the two earlier
+# misses, 22.61 and 22.92 on 2026-10-26 (the 22.61 run also missed both
+# tracking errors, so it fails regardless). It does not close the spread;
+# the open topic sim3040-lap-time-spread stays open.
 FLOAT_SLACK = 1e-4
 
 FLOAT_TOLERANCES = {
-    "lap_time": 0.05,
+    "lap_time": 0.1,
     "minimum_wall_clearance": 0.05,
     "maximum_tracking_error": 0.01,
     "p95_tracking_error": 0.01,
