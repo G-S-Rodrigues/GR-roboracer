@@ -307,3 +307,12 @@ Traps any task in this repository can hit. Each one cost real time at least once
     for the sitting and restore the saved culture after; `Set-Culture` is a persistent per-user
     setting. A stand-in server or client for the sim should fail loudly on a comma decimal in the
     first message.
+
+39. **A tier-2 test that starts a node on global names leaks into other packages' tests.** colcon runs
+    packages' tests in parallel on one domain, so a wall-clock `/ground_truth/odom` from one test
+    silently poisons another package's subscriber (the AutoDRIVE server test made EVAL-2020 fail
+    "0 not >= 25" in 2 of 5 runs, 0 of 5 without it). Symptom: a cross-package flake that never
+    reproduces alone. Remedy: a `PREFIX` constant, `namespace=PREFIX` **and** a remap for every
+    absolute name (a namespace alone does not move `/x`), as METRICS-1030 and `_server_launch.py` do.
+    SIMAD-2100 is the guard to copy. Not yet true repo-wide: the adapter conformance launches (gym
+    and autodrive rows) still use global names until 7.3b.
