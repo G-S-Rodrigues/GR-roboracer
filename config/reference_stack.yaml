@@ -77,7 +77,7 @@ roles:
           - ros_ws/src/racing_sim_gym_jax/*
           - ros_ws/src/racing_sim_adapter/*
           - ros_ws/src/racing_evaluation/*
-        verified_by: [SIM-3070, ACC-4030]
+        verified_by: [SIM-3070, SIM-3550, ACC-4030]
       - implementation: amcl
         package: nav2_amcl
         # Localizes against the track's committed occupancy grid,
