@@ -39,7 +39,7 @@ loop: ATE RMSE 1.547-1.556 m (median 1.552) and maximum 3.076-3.097 m over five 
 (ACC-4040). `slam_toolbox` with its 1080-beam file (selected by `spielberg_1080`), 5x, open loop, six laps over
 seeds 42 and 7: ATE RMSE 0.81-1.25 m, maximum 1.53-2.24 m, map median 0.28-0.56 m and 95th percentile
 0.92-1.93 m from the true walls, availability 0.9996 or better; bounded at 1.57 m RMSE and 2.80 m maximum
-(SIM-3550). The 64-beam file on the same scenario gave 6.9-8.2 m RMSE, which is the number this replaced.
+(SIM-3550). The 64-beam file on the same scenario gave 6.9-8.2 m RMSE, which is the number this improved on; the 64 file stays selectable with `slam_toolbox_config:=`.
 See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
 
 The denser surveys beside the committed grid, measured against the track's ground-truth walls, have a

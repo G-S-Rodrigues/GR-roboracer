@@ -35,8 +35,8 @@ REPO = Path(__file__).resolve().parents[2]
 SCENARIO = "config/scenarios/spielberg_1080.yaml"
 ESTIMATE_TOPIC = "/localization/odom"
 SEED = 42
-# Measured and run at 5x: at 1x the same file gave ATE 7.54 / 7.21 m with the
-# 64 file (part 8 diagnosis A1), so the 64-file failure was never latency.
+# Measured and run at 5x: at 1x the 64 file gave 7.54 / 7.21 m (part 8
+# diagnosis A1), so its failure was never latency.
 TIME_SCALE = 5.0
 # Six laps took 77-87 s of wall clock from launch to metrics (x2 = 174 s,
 # rounded up to the next 50 s is 200 s); never below SIM-3070's 400 s.
