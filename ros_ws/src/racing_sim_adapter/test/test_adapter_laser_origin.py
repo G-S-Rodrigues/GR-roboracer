@@ -121,7 +121,7 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         ahead of it, so the laser lies `laser_x - lr` (0.10355 m) ahead of
         base_link. Held, the vehicle sits at one pose and both rays hit the
         same wall point, so the ranges differ by exactly that. A scan cast
-        from base_link but stamped `laser` would read the same range as
+        from base_link but stamped `lidar` would read the same range as
         ground truth, and one cast `laser_x` from the CoG would differ by
         0.275: TF would then place every point lr off. /ground_truth/scan
         stays cast from base_link: racing_metrics' clearance and collisions
@@ -138,7 +138,7 @@ class TestAdapterLaserOrigin(unittest.TestCase):
             return
         truth = self._collect("/ground_truth/scan")
         noisy = self._collect("/scan")
-        self.assertEqual(noisy[0].header.frame_id, "laser")
+        self.assertEqual(noisy[0].header.frame_id, conformance.SCAN_FRAME)
         # Labelled where it was cast from, so the label is honest.
         self.assertEqual(truth[0].header.frame_id, "base_link")
 

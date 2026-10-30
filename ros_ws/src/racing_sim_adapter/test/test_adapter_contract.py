@@ -31,7 +31,7 @@ from tf2_msgs.msg import TFMessage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import conformance  # noqa: E402,F401  (the capability vocabulary)
+import conformance  # noqa: E402  (the capability vocabulary)
 
 ADAPTER_NODE = "racing_sim"
 SCAN_TOPIC = "/scan"
@@ -163,7 +163,7 @@ class TestAdapterContract(unittest.TestCase):
         scan = self._collect(LaserScan, SCAN_TOPIC, SENSOR_QOS, 1)[0]
         odometry = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         imu = self._collect(Imu, IMU_TOPIC, SENSOR_QOS, 1)[0]
-        self.assertEqual(scan.header.frame_id, "laser")
+        self.assertEqual(scan.header.frame_id, conformance.SCAN_FRAME)
         self.assertEqual(odometry.header.frame_id, "odom")
         self.assertEqual(odometry.child_frame_id, "base_link")
         self.assertEqual(imu.header.frame_id, "base_link")

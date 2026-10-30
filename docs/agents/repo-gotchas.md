@@ -218,6 +218,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
     `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
     the axle centre (a wheel radius higher), because every mesh is authored there.
+    The lidar's TF frame is lidar, renamed from laser on 2026-10-28 to match the AutoDRIVE devkit;
+    device identifiers (laser_x, LaserMount, the racing_sim_gym_jax.laser module) keep the old word,
+    and a bag or RViz config recorded before the rename still names laser.
 
 ## AutoDRIVE
 
@@ -290,3 +293,6 @@ Traps any task in this repository can hit. Each one cost real time at least once
     server (`racing_sim_autodrive`) republishes the sim's own scan, cast from its lidar mount, so the
     same two metrics would measure from the lidar (about 0.27 m ahead of the rear axle) with no error
     and no flag. Never compare clearance or collision counts across the two simulators as one number.
+    Both servers stamp the scan in the same frame, `lidar` (CHECK-2020 holds `bridge.SCAN_FRAME_ID` to
+    `kLaserFrame`), so a matching frame name does not mean a matching origin: the gym's `lidar` frame
+    is a TF child, but its ranges are cast from the CoG.

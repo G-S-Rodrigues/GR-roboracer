@@ -88,7 +88,7 @@ def _vec(raw: Mapping[str, str], key: str, count: int) -> tuple[float, ...]:
             raise FrameError(
                 f"{key!r} carries a comma-decimal number ({text[:40]!r}): "
                 "the Windows sim is running under a comma-decimal locale "
-                "(e.g. pt-PT); set its culture to en-US (gotcha 38)"
+                "(e.g. pt-PT); set the Windows culture to en-US"
             ) from None
         raise FrameError(f"{key!r} is not numeric: {error}") from None
     if len(values) != count:

@@ -133,7 +133,7 @@ def test_simad_1270_comma_decimal_number_fails_loudly_naming_the_locale():
     """SIMAD-1270: a Windows sim under a comma-decimal locale (pt-PT) sends
     'V1 Throttle': '0,0000'. That is a FrameError (the node logs it at ERROR
     and sends the stopped fallback) whose text names the cause and the fix
-    (en-US culture, gotcha 38), not a bare float() message."""
+    (en-US culture), not a bare float() message."""
     _, sim, _ = _fixture()
     raw = dict(sim[1])
     raw["V1 Throttle"] = "0,0000"

@@ -352,10 +352,10 @@ def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
 def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     vehicle_file: Path,
 ) -> None:
-    """BRINGUP-1050: the sim's laser mount is the URDF's rear_axle_to_laser.
+    """BRINGUP-1050: the sim's laser mount is the URDF's rear_axle_to_lidar.
 
-    /scan is stamped in frame `laser` and every estimator places its beams
-    through TF rear_axle -> laser, which robot_state_publisher takes from the
+    /scan is stamped in frame `lidar` and every estimator places its beams
+    through TF rear_axle -> lidar, which robot_state_publisher takes from the
     URDF. The vehicle file states the mount from the rear axle (the frame
     every source measures the lidar from: AutoDRIVE roboracer_1, the
     f1tenth_simulator scan_distance_to_base_link); the sim converts it to
@@ -380,9 +380,9 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     joint = (
         ElementTree.parse(urdf)
         .getroot()
-        .find("./joint[@name='rear_axle_to_laser']")
+        .find("./joint[@name='rear_axle_to_lidar']")
     )
-    assert joint is not None, "no joint rear_axle_to_laser"
+    assert joint is not None, "no joint rear_axle_to_lidar"
     assert joint.find("parent").attrib["link"] == "rear_axle"
     origin = joint.find("origin")
     assert origin is not None

@@ -75,8 +75,8 @@ SCAN_RANGE_MIN = 0.06
 SCAN_RANGE_MAX = 10.0
 # Mirror of racing_sim_adapter contract.hpp kLaserFrame (no Python source for
 # it exists; the gym hard-codes it too). SIMAD-1220 parses the header and
-# fails if they differ, so the part that renames it (R1) cannot miss this.
-SCAN_FRAME_ID = "laser"
+# CHECK-2020 holds this name to it.
+SCAN_FRAME_ID = "lidar"
 
 
 @dataclass(frozen=True)

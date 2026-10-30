@@ -12,6 +12,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+# The frame /scan is stamped in: mirrors contract.hpp kLaserFrame (CHECK-2020
+# guards it), and the AutoDRIVE devkit publishes its LaserScan in it too.
+SCAN_FRAME = "lidar"
+
 CLOCK_PARAMETER = "capability.clock"
 RESET_PARAMETER = "capability.reset"
 STEP_MODE_PARAMETER = "capability.step_mode"
