@@ -8,11 +8,15 @@ slam:
   - SIM-3070
   - SIM-3080
   - SIM-3100
+  - SIM-3510
+  - SIM-5520
+  - ACC-4510
   - ACC-4030
   - ACC-4040
   - SIM-5010
   - SIM-5020
   - SIM-5030
+  - SIM-5510
 path_planning:
   - SIM-3110
   - SIM-5040

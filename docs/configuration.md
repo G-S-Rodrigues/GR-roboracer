@@ -15,7 +15,7 @@ Pick one of two workflows. The choice decides which fields apply and which value
 - `racing`: run a lap with a selected stack.
 
 For example, in `mapping` the only legal `pose_source` is `ground_truth`: the mapper owns the
-map, never the pose, so the car drives on exact pose. In `racing`, `slam_toolbox` and `amcl` are
+map, never the pose, so the car drives on exact pose. In `racing`, `slam_toolbox`, `amcl` and `mola` are
 pose sources.
 
 ## Fixed services
@@ -33,7 +33,7 @@ These are always launched and have no field. Nothing selects them.
 | Role | Available (racing) | Available (mapping) | Planned | Reference default |
 |---|---|---|---|---|
 | `simulator` | `f1tenth_gym_jax` | `f1tenth_gym_jax` | an AutoDRIVE simulator (no identifier yet) | `f1tenth_gym_jax` |
-| `pose_source` | `ground_truth`, `slam_toolbox`, `amcl` | `ground_truth` | none | `ground_truth` |
+| `pose_source` | `ground_truth`, `slam_toolbox`, `amcl`, `mola` | `ground_truth` | none | `ground_truth` |
 | `mapper` | none (racing has no mapper) | `slam_toolbox` | none | n/a |
 | `planner` | `track_centerline`, `optimized_raceline` | `track_centerline` | none | `track_centerline` |
 | `controller` | `pure_pursuit` | `pure_pursuit` | none | `pure_pursuit` |
@@ -48,13 +48,36 @@ mismatched line is an error: the launch never falls back to the centerline. Expl
 The reference default is the composition every new implementation is verified in. Its names come
 from `config/reference_stack.yaml`, which is a test map, not this schema.
 
+## The AutoDRIVE vehicle
+
+`config/vehicles/autodrive_roboracer.yaml` is the league car's file for the AutoDRIVE simulator
+backend, which does not exist yet; the gym cannot run it (it simulates a different car). Its geometry is
+read from the sim's own prefab and guide (`config/vehicles/autodrive_roboracer/source.yaml`, every
+value anchored to a pinned line) and its measurements are written only by
+`tools/autodrive_identify.py` (`identified.yaml`). Its speed, acceleration and steering-rate caps are
+the default's, and its laser mount is the true 0.2733 m, which differs from the shared URDF's by about
+14 mm until the AutoDRIVE description lands. The measured values (top speed not measured, braking
+depending on speed) are under [AutoDRIVE car identification](results.md#autodrive-car-identification).
+
+To redo the identification for a new edition, start `record` first and the sim after it (the sim
+connects once and never retries):
+
+```
+env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py record \
+    --config config/autodrive/simulator.yaml --out rec.jsonl.gz
+env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
+    --recording rec.jsonl.gz \
+    --source config/vehicles/autodrive_roboracer/source.yaml \
+    --out config/vehicles/autodrive_roboracer/identified.yaml
+```
+
 ## Runtime controls
 
 - `seed` and `time_scale` (the ratio of simulated time to wall clock).
 - `recording_path`: where the run record is written.
 - `drive_on_estimate` (racing only): drive on the estimator's pose instead of ground truth. It is
   ignored with `ground_truth`. `true` is acceptance-backed for `amcl`. No acceptance lap backs it
-  for `slam_toolbox`, which is measured open loop only, so use `false` there.
+  for `slam_toolbox` or `mola`, which is measured open loop only, so use `false` there.
 - `scenario` and `vehicle`: the track and sensor setup, and the vehicle parameter file.
 - `planner`, `raceline_optimizer` and `speed_source` (racing): which line `/trajectory` carries
   (`track_centerline` by default, or `optimized_raceline`), which optimizer's committed line
@@ -79,7 +102,7 @@ scored, and its default already follows the pose source. Both stay today-only ad
 schema_version: 1  # Available: 1
 workflow: mapping  # Available: mapping, racing
 scenario: config/scenarios/spielberg_survey.yaml  # Available: config/scenarios/spielberg_survey.yaml (exact sensors)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not)
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
   pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
@@ -116,11 +139,11 @@ is a reviewed diff. The example writes to `log/maps/Spielberg` so following it i
 # Racing: one lap with a selected stack.
 schema_version: 1  # Available: 1
 workflow: racing  # Available: mapping, racing
-scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/contract_test.yaml (no localization). Committed but not runnable: config/scenarios/porto.yaml (AutoDRIVE practice track; no simulator runs it until `simulator:=autodrive`)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml
+scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Committed but not runnable: config/scenarios/porto.yaml (AutoDRIVE practice track; no simulator runs it until `simulator:=autodrive`)
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not)
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
-  pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl
+  pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl, mola
   planner: track_centerline  # Available: track_centerline, optimized_raceline
   raceline_optimizer: tum_mincurv_iqp  # Available: tum_mincurv_iqp (used by optimized_raceline)
   controller: pure_pursuit  # Available: pure_pursuit
@@ -159,7 +182,7 @@ looks the same to a scan matcher.
 | `scenario` | `scenario:=` | Also supplies amcl's map grid. |
 | `vehicle` | `vehicle:=` | `map_track.sh` passes no vehicle, so it always uses the launch default `config/vehicles/f1tenth_default.yaml`. Another value needs the direct mapping launch, and that launch does not save a map: the mapping guide covers saving. |
 | `stack.simulator` | none | One implementation today, always launched. |
-| `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox` and `amcl` are accepted; anything else is an error. |
+| `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox`, `amcl` and `mola` are accepted; anything else is an error. |
 | `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
 | `stack.planner` | `planner:=` | `track_centerline` (default) or `optimized_raceline`; anything else is an error. |
 | `stack.raceline_optimizer` | `raceline_optimizer:=` | `tum_mincurv_iqp`; used only under `optimized_raceline`, but validated always. |

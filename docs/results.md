@@ -33,12 +33,36 @@ To reproduce a record and compare it, see [Running a scenario](running.md#runnin
 
 There is no golden for localization. The acceptance cases bound the estimate against ground truth on
 Spielberg: `slam_toolbox` within 4.0 m RMSE and `amcl` within 0.65 m, each with availability above
-0.99 (ACC-4030). A further case drives a full lap on the `amcl` estimate with zero collisions
+0.99 (ACC-4030). `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
+loop: ATE RMSE 1.547-1.556 m (median 1.552) and maximum 3.076-3.097 m over five laps, availability
+0.9974 or better, bounded at 2.5 m RMSE (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
 (ACC-4040). See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
 
 The denser surveys beside the committed grid, measured against the track's ground-truth walls, have a
 95th-percentile wall deviation of 0.067 m at 0.05 m cells, 0.049 m at 0.025 m and 0.046 m at 0.02 m
 (`config/scenarios/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers hold the full figures).
+
+## Pose-source data
+
+The nightly records every pose source on `spielberg` (64 beams) and `spielberg_1080` (1080 beams over
+270 degrees), per seed, as `report.md` and `report.json` in the `pose-source-report` artifact of the
+`slam` seed-42 job (SIM-5510 in [Verification](verification.md#5-nightly-coverage)). It reports the
+estimate's error and availability, the rate of changed poses, the scan rate, CPU per scan and the produced
+map's distance to the true walls. The wall distance is the raw distance from each occupied cell's centre
+to the gym map image's wall faces, so a perfect map at 0.05 m cells scores 0.025 m, not 0. The report is
+data: it ranks nothing and bounds no value. No numbers are published here until a nightly produces them.
+
+## AutoDRIVE car identification
+
+`tools/autodrive_identify.py` drives the AutoDRIVE RoboRacer on the Porto practice track and writes its
+measurements to `config/vehicles/autodrive_roboracer/identified.yaml` from the committed recording
+(`identification/2026-iros-practice.jsonl.gz`, three repeats of the schedule; CHECK-1780 re-derives the
+file from it). Top speed is not measured: Porto has about 8 m of straight, and the highest steady speed
+is 2.977 m/s at throttle 0.12. Braking depends on the speed it starts from (8.4, 5.8 and 6.0 m/s^2 from
+0.5, 3 and 4.9 m/s; mean 6.34 m/s^2), so no single number describes it. The full-throttle burst
+accelerates at 5.2 m/s^2 (spread 0.08 % over the repeats), and the throttle gain is 24.86 m/s per unit
+throttle. The file is data about the simulator's car, not a result of the stack. To redo it, see
+[The AutoDRIVE vehicle](configuration.md#the-autodrive-vehicle).
 
 ## Mapping demonstration
 

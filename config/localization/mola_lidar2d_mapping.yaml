@@ -1,0 +1,20 @@
+# Launch arguments of ros-jazzy-mola-lidar-odometry 3.3.0's
+# ros2-launchs/ros2-lidar-odometry.launch.py for scripts/mola_map_track.sh's
+# MAPPING run (MOLA builds the map beside the ground-truth stack). MOLA's
+# frames are renamed so that it publishes no TF edge the stack owns: it
+# broadcasts mola_map -> mola_odom only, and no mola_odom -> base_link exists
+# for the REP-105 composition to use. MOLA reads /scan and /odom, never
+# /ground_truth/*. A relative `mola_lo_pipeline` is relative to this file.
+lidar_topic_name: /scan
+lidar_topic_type: LaserScan
+mola_lo_pipeline: mola_lidar2d_pipeline.yaml
+use_rviz: "False"
+use_mola_gui: "False"
+use_sim_time: "True"
+enforce_planar_motion: "True"
+odom_topic_name: /odom
+mola_state_estimator_reference_frame: mola_map
+mola_lo_reference_frame: mola_map
+mola_bridge_odometry_frame: mola_odom
+start_mapping_enabled: "True"
+generate_simplemap: "True"

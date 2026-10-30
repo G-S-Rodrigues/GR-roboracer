@@ -1,0 +1,20 @@
+# MOLA-LO's map of Spielberg, built by one mapping lap; see the plan.
+# Regenerate (dev container, from /ws, after a colcon build):
+#   ./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml config/scenarios/maps/Spielberg/mola/Spielberg 7
+# T_map_mola is the /ground_truth/odom pose at the stamp (0.0) of MOLA's
+# first processed scan, used only to score the run against ground truth.
+command: ./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml config/scenarios/maps/Spielberg/mola/Spielberg
+  7
+scenario: config/scenarios/spielberg_1080.yaml
+seed: 7
+time_scale: 1.0
+mola_version: 3.3.0
+mp2p_icp_version: 3.0.0
+T_map_mola:
+  x: 15.5216
+  y: 25.6925
+  z: 0.074
+  yaw: -0.06665
+T_source: first_processed_scan
+mm_sha256: 4a8972258e487a338e3222ed0bd36c0eca71dfb4f1925b6f3210a35c38b01093
+mm_bytes: 55751

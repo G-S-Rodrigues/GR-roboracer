@@ -9,17 +9,17 @@ tracking and wall clearance are visible in the tests.
 
 ## Demonstration
 
-The demonstration uses AMCL on the saved Spielberg survey map, pure pursuit control
-and an independent safety supervisor. The map is generated survey output: the vehicle
-drives on ground truth while SLAM Toolbox builds it. AMCL then drives in closed loop
-on its own estimate; the existing acceptance case verifies a completed lap with zero
-collisions.
+The demonstration is a Spielberg lap on the committed minimum-curvature raceline
+(`optimized_raceline`, optimizer `tum_mincurv_iqp`), at the line's own speed, with pure pursuit
+control and an independent safety supervisor. The vehicle drives on ground-truth pose; the
+acceptance test SIM-3110 verifies that this seeded lap completes with zero collisions.
 
-[![AMCL driving a closed-loop Spielberg lap on the generated survey map, 9.8x playback](docs/assets/readme-lap-preview.gif)](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view)
+[![A Spielberg lap on the minimum-curvature raceline, 10.0x playback](docs/assets/readme-mincurv-lap-preview.gif)](https://drive.google.com/file/d/1jyuSPOSun9hCTo3B2k7AFhTbSG5BWP-h/view)
 
-▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1PiRinnzqWcYsrCz1xnA7K2JKh43zbPqP/view):
-the complete lap at 3.9x simulated time (the preview above plays at 9.8x). Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=amcl drive_on_estimate:=true seed:=42`
-on `config/scenarios/spielberg.yaml`, seed 42, at commit `cadfdd5`.
+▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1jyuSPOSun9hCTo3B2k7AFhTbSG5BWP-h/view):
+the complete lap at 4.0x simulated time (the preview above plays at 10.0x). Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory seed:=42`
+on `config/scenarios/spielberg.yaml`, seed 42, at commit `abb22f2`.
+Earlier videos, including the AMCL closed-loop lap, are in [demonstrations](docs/demonstrations.md).
 
 ## Capabilities and roadmap
 
@@ -36,6 +36,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Localization | [`ground_truth`](docs/workflows/racing.md#ground-truth-reference-stack) | Available | Exact simulator pose in the reference stack. |
 | Localization | [`slam_toolbox`](docs/workflows/racing.md#online-slam-toolbox-evaluation) | Available | Online estimate evaluation while driving on ground truth; driving on its estimate latches a `TRACK_LIMIT` stop. |
 | Localization | [`amcl`](docs/workflows/racing.md#amcl-closed-loop) | Available | Saved-map localization and verified closed-loop driving on Spielberg. |
+| Localization | [`mola`](docs/workflows/racing.md#mola-open-loop) | Available | MOLA-LO lidar localization on the map MOLA built itself, scored open loop on Spielberg (1080 beams, 1x); no closed-loop lap is backed. |
 | Planning and raceline generation | [`track_centerline`](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Default runtime planner (`planner:=track_centerline`): publishes the centerline at constant speed. Renamed from `track_raceline`. |
 | Planning and raceline generation | [Offline centerline extraction and TUM minimum-curvature wrapper](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Offline command `python -m raceline` (needs `--vehicle`, `--optimizer` and `--track` or `--map`; `--map` also needs `--start-pose` and `--direction`; full command and flags in [raceline/README.md](raceline/README.md#racelines-part-4)); min-curvature racelines committed under `config/racelines/spielberg/`; the stack races them through `optimized_raceline` below; minimum-time optimization has not converged. |
 | Planning and raceline generation | [`optimized_raceline`](docs/workflows/racing.md#planning-and-raceline-generation) (racing integration) | Available | Selectable with `planner:=optimized_raceline speed_source:=trajectory`; follows the committed minimum-curvature line on Spielberg, a 113.08 s lap against 120.41 s for the centerline lap on the curvature schedule (seed 42, ground truth; see [path planning](docs/path-planning.md)). Only the default-vehicle line has a gate lap; [issue #12](https://github.com/G-S-Rodrigues/GR-roboracer/issues/12) stays open for the remaining stages. |

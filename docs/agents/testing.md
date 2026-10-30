@@ -31,7 +31,7 @@ belongs there when its cost is laps rather than seconds and what it catches is a
 combination shows.
 
 A red nightly leaves evidence: node logs and Robot output (`logs-<region>-seed-<n>`, failed jobs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the pose-source data report (`pose-source-report`: `log/pose-source-report/{report.md,report.json}`, from `slam`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
 `run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
 (`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
 prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and bounds the pooled median and
@@ -104,6 +104,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 1, `sim/` | `python3 -m pytest sim/tests -k sim_1010` |
 | 1, `scripts/` | `python3 -m pytest scripts/tests -k check_1010` |
 | 1, `raceline/` | `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests -k raceline_1010` |
+| 1, ament_python | `python3 -m pytest ros_ws/src/racing_sim_autodrive/test -k simad_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
 | manual, host | `docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh` (GPU-3010) |
@@ -119,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **200 tier-1, 24 tier-2, 11 tier-3, 4 tier-4, 5 tier-5.**
+Current counts: **255 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -131,6 +132,7 @@ and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
 The nightly-flake work added tier 1 `EVAL-1060`.
 The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
+The MOLA pose-source work added tier 1 `BRINGUP-1520` to `BRINGUP-1570` and `BRINGUP-2500` (estimate held until the start pose is applied), tier 3 `SIM-3510`, nightly `SIM-5520`, and tier 4 `ACC-4510`.
 The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
 The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130` (nine IDs, 1085 among them).
 `raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.
@@ -147,6 +149,8 @@ The optimized-raceline runner work (part 4) added tier 1 `RACELINE-1310` to `RAC
 The nightly-split work (part 7.0) added tier 1 `CHECK-1510/1520` (`scripts/tests/test_nightly_regions.py`; `tests/nightly_regions.yaml` assigns each nightly test to a region, `slam`, `path_planning`, `control` or `shared`, plus the implicit `static`).
 The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 
+The evaluation-harness work (SLAM part 7) added tier 1 `SIMJAX-1500/1510` (and amended `SIMJAX-1060`: `spielberg_1080.yaml` may differ in `num_beams` and `fov`, by file name), `EVAL-1500..1540` (`racing_evaluation.map_accuracy`), `CHECK-1820..1870` and `CHECK-1851` (`scripts/pose_source_report.py`); tier 5 `SIM-5510`, assigned to `slam`. `run_scenario` takes optional `probes` (`tests/lib/racing_test_keywords/probes.py`); the wiring has no tier-1 test.
+
 The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).
 
 The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHECK-1420/1430`, `SIM-1080`; tier 2 `PP-2010`; tier 3 `SIM-3110`.
@@ -160,8 +164,11 @@ The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/
 The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
 
 The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
+The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen IDs, `scripts/tests/test_autodrive_identify.py`, 1715 in `test_autodrive_record.py`) and `BRINGUP-1055` (BRINGUP-1050 now skips the vehicle files in `NOT_GYM_CAST`; 1055 keeps that list to committed, non-gym files).
 
-The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670` and `CHECK-1680` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
+The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
+
+The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675` and `CHECK-1680` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
 
 ## The tests that matter most
 

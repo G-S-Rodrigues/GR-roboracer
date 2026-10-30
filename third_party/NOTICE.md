@@ -1,9 +1,10 @@
 # third_party — what is referenced
 
-One section per git submodule. A submodule here is **referenced, not vendored**:
+Two kinds of thing are listed. A git submodule is **referenced, not vendored**:
 this repository records only its URL and the commit, and none of its files is
 copied into this tree, into the Docker images (the Dockerfile `COPY`s named
-paths only) or into `install/`.
+paths only) or into `install/`. The apt packages in the last section are
+installed into the image unmodified.
 
 ## `f1tenth_racetracks`
 
@@ -17,3 +18,16 @@ paths only) or into `install/`.
 - The pin matches the revision `config/scenarios/maps/Spielberg/NOTICE.md`
   derives the Spielberg track from.
 - Initialise with `git submodule update --init third_party/f1tenth_racetracks`.
+
+## MOLA, mp2p-icp and MRPT (Jazzy apt)
+
+- Source: the `ros-jazzy-mola-*`, `ros-jazzy-mp2p-icp*` and `ros-jazzy-mrpt-*`
+  packages of the ROS Jazzy apt index, pinned by name in
+  `docker/apt-preferences/mola.pref` (the closure is `mola.closure`).
+- Used unmodified from Jazzy apt, as separate processes; not vendored, not
+  forked.
+- Licences: `mola_lidar_odometry`, `mola_kernel` and `mola_launcher` are
+  **GPL-3.0**; `mola_bridge_ros2` and `mp2p_icp` are **BSD-3-Clause**; MRPT is
+  BSD.
+- The committed MOLA map (`.mm`) is **data output by** GPL-3.0 software. It is
+  data, not a copy of the program.

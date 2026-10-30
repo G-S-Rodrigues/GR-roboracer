@@ -41,6 +41,7 @@ bound it against ground truth.
 - SIM-3090: the Spielberg lap matches `tests/golden/spielberg_baseline.json`.
 - SIM-3110: the Spielberg lap on the committed minimum-curvature line (`planner:=optimized_raceline speed_source:=trajectory`, default vehicle, seed 42) completes with 0 collisions and 0 saturation events, at its own measured lap time of 113.08 s (tolerance 0.05 s).
 - SIM-3070: with the car driving on ground truth, `slam_toolbox` publishes an estimate whose RMSE against ground truth is within 4.0 m. The test is open loop and does not claim the estimate is good.
+- SIM-3510: with the car driving on ground truth (open loop), `mola` localizes on the map MOLA built itself (1080 beams, 1x, seed 42): position RMSE within 2.5 m, maximum within 4.5 m, available in at least 0.99 of samples (five laps measured 1.547-1.556 m, 3.076-3.097 m, 0.9974 or better); the offline score must agree.
 - SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate is available in at least 0.99 of samples and its position RMSE is within 0.65 m (the seed-42 bound).
 
 ## 4. Acceptance tests (Robot Framework)
@@ -50,6 +51,7 @@ Black-box cases on the composed stack, one per behaviour a user can name:
 - `Vehicle Completes Baseline Lap Safely` (ACC-4010)
 - `Vehicle Stops When Track Limits Violated` (ACC-4020)
 - `Localization Estimate Tracks Ground Truth: slam_toolbox` and `Localization Estimate Tracks Ground Truth: amcl` (ACC-4030)
+- `Localization Estimate Tracks Ground Truth: mola` (ACC-4510), the same case as ACC-4030 on MOLA's own map at 2.5 m RMSE
 - `Vehicle Completes A Lap Driving On Its Own Estimate` (ACC-4040)
 
 ## 5. Nightly coverage
@@ -67,9 +69,11 @@ layer 5 test. Its track dimension is Spielberg alone today.
 
 - SIM-5010: the committed occupancy grid regenerates from the survey.
 - SIM-5020: `slam_toolbox` and `amcl` over seeds 42 and 1030 on Spielberg.
+- SIM-5520: the committed MOLA map regenerates from its recorded command. The inputs and the start-pose transform must match exactly and the voxels land within a measured nearest-neighbour p95 (1.9 m); position 0.05 m and yaw 0.2 degrees.
 - SIM-5030: the `amcl` run-to-run spread, over seeds 42, 1030, 1, 7, 99, 123 and 3, with 5 runs per seed.
 - SIM-5040: every committed raceline regenerates from its recorded command. The inputs (survey map, vehicle, TUM pins, parameters) must match exactly and the line must land within a measured tolerance of the committed one.
 - SIM-5050: the raceline comparison report, both vehicles by every committed line by seeds 42, 1030, 7 and 2026. A gym-limits run that does not finish is recorded with the distance it reached; a default-vehicle run that does not finish fails the test. No lap time or ranking is asserted.
+- SIM-5510: every pose source the build has, on `spielberg` (64 beams) and `spielberg_1080` (1080 beams, 270 degrees), by seeds 42, 1030, 7 and 2026, open loop. It records the error, availability, changed-pose rate, scan rate, CPU per scan and the produced map's distance to the true walls, and writes `log/pose-source-report/`. A method the build lacks is recorded as absent. Only structure is asserted (a record per row, no latch, a finite error, probes that heard something); no value is bounded and no method is ranked.
 
 ## Running the checks
 
