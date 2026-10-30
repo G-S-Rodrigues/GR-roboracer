@@ -90,7 +90,7 @@ The devkit container bridges the simulator's Socket.IO to 13 ROS topics on its o
 rclpy contexts, the stack's and `D`, and feeds the same `BridgeSession` as A through `on_sim_frame`. Frames are
 assembled by DDS `publication_sequence_number` (a gap is a lost frame, dropped and counted, never paired
 across). The stamp and `dt` come from the devkit's `lidar` header stamp. Commands are latched on the devkit:
-steering and throttle are published as `/drive` arrives, and reset is held True until the session sees the reset take
+steering and throttle are published once per assembled frame (not as `/drive` arrives), and reset is held True until the session sees the reset take
 effect, then False.
 
 Three places hold its tests, by what each needs:

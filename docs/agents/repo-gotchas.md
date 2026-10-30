@@ -336,8 +336,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
 41. **The devkit latches every command, so a dead consumer leaves the car driving or resetting.** Its
     steering, throttle and reset topics hold their last value and are replied on every frame. If B dies
     after publishing a throttle or a reset True, the car keeps that command. B zeroes the latch on
-    shutdown (SIMAD-2230, own SIGINT handling); a SIGKILL cannot, so after one, start by publishing
-    zero throttle and reset False yourself.
+    shutdown (SIMAD-2230, own SIGINT handling); a SIGKILL cannot (by design: it is uncatchable), so
+    after one, publish zero yourself on the devkit domain D, for each of the three topics:
+    `ros2 topic pub --once /autodrive/roboracer_1/throttle_command std_msgs/msg/Float32 '{data: 0.0}'`,
+    the same with `steering_command`, and `ros2 topic pub --once /autodrive/reset_command std_msgs/msg/Bool
+    '{data: false}'`, each under `ROS_DOMAIN_ID=D`.
 
 42. **The official bridge's commands lag one frame.** A command published for frame n reaches the car at
     frame n+1 (measured 1 frame in SIM-3710; accepted up to 3). Recorded and measured, not compensated.
