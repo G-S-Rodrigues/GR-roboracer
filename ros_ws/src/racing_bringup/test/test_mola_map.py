@@ -98,7 +98,9 @@ def test_bringup_1540_the_mapping_script_never_fails_silently() -> None:
     script = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()
     assert re.search(r"^trap 'echo .*LINENO.*' ERR$", script, re.MULTILINE)
     assert 'wait "$mola"' in script
-    assert "pgrep" not in script
+    # No process-name match; the watchdog's `pgrep -P <pid>` (BRINGUP-1770)
+    # follows a parent pid, which is not one.
+    assert "pgrep -f" not in script
     # `ros2 launch` was measured to leave mola-cli running for 15 minutes
     # after a SIGINT (it never saved the simplemap): the signal goes to
     # mola-cli itself, which saves on SIGINT.
