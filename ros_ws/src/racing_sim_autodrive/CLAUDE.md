@@ -11,7 +11,9 @@ gains) are arguments with no defaults. dt is the caller's. A missing key other t
 Also `bridge.BridgeSession` (frame -> reply), `server_node` (script `racing_sim_autodrive_server`, node
 `racing_sim`, vehicle params required) and `replay` (stand-in for the sim). Trap: gevent serves on the MAIN
 thread, the rclpy executor in a daemon thread (a spin_once loop that sleeps 1 ms between callbacks, so a
-/drive flood cannot starve the hub, SIMAD-2080), no monkey-patching; join it before exit.
+/drive flood cannot starve the hub, SIMAD-2080), no monkey-patching; join it before exit. The launch
+and its caller each send SIGINT, so teardown ignores signals (`_ignore_signals`, SIMAD-2110): a
+KeyboardInterrupt there exits -2, which a launch reports as a dead process.
 
 Language: Python (rclpy, devkit).
 Test: `colcon test --packages-select racing_sim_autodrive --event-handlers console_direct+` (replays

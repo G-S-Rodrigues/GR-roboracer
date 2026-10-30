@@ -9,6 +9,7 @@ arguments below) resolve the same way ``scripts/check.sh`` resolves them.
 
 from pathlib import Path
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -18,15 +19,37 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from racing_bringup.estimators import amcl, mola, slam_toolbox
 from racing_bringup.scenario_parameters import (
+    AUTODRIVE_BRIDGES,
+    GYM_INCOMPATIBLE_VEHICLES,
     PLANNERS,
     RACELINE_OPTIMIZERS,
+    SIMULATORS,
     track_parameters,
 )
 from racing_bringup.vehicle_description import description_for
+from racing_sim_autodrive.capabilities import CAPABILITIES as AUTODRIVE_CAPS
+from racing_sim_gym_jax.capabilities import CAPABILITIES as GYM_CAPS
 
 LOGGER = get_logger("sim_pure_pursuit.launch")
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
+# The simulator capability tables, by `simulator:=` value; `capability.clock`
+# decides whether the rest of the graph reads /clock (ADR 0006).
+SIMULATOR_CAPABILITIES = {
+    "f1tenth_gym_jax": GYM_CAPS,
+    "autodrive": AUTODRIVE_CAPS,
+}
+# What `simulator:=autodrive` runs: the only vehicle and the only track the
+# AutoDRIVE build has active, the server's values and the world_to_map it
+# publishes under (config/autodrive/porto_frame.yaml: derived, not measured,
+# until part 10's lap measures it; plan D3). Paths are repository-relative,
+# like the rest of this file.
+AUTODRIVE_VEHICLE = "autodrive_roboracer"
+AUTODRIVE_SCENARIO = "porto"
+AUTODRIVE_SERVER_CONFIG = "config/vehicles/autodrive_roboracer/server.yaml"
+AUTODRIVE_FRAME = "config/autodrive/porto_frame.yaml"
+# config/autodrive/simulator.yaml bridge_port (BRINGUP-1600 keeps them equal).
+AUTODRIVE_PORT = "4567"
 # How the controller's command speed is chosen: its own curvature schedule, or
 # the speed each /trajectory point carries (a raceline's).
 SPEED_SOURCES = ("curvature_schedule", "trajectory")
@@ -64,12 +87,82 @@ POSE_SOURCE_CONFIGS = {
 INITIAL_POSE_TOPIC = "/initialpose"
 
 
+def _world_to_map() -> dict:
+    """The server's `world_to_map.*` parameters, from AUTODRIVE_FRAME."""
+    document = yaml.safe_load(Path(AUTODRIVE_FRAME).read_text(encoding="utf-8"))
+    return {
+        f"world_to_map.{key}": float(value)
+        for key, value in document["world_to_map"].items()
+    }
+
+
+def _check_autodrive(context, vehicle: str, bridge: str) -> None:
+    """Refuse what the AutoDRIVE backend cannot do, naming the argument.
+
+    The capabilities it lacks (time scaling, a held start) are refused, not
+    ignored: a run that quietly drops `time_scale:=2` measures something else.
+    The build has one car and one active track, so no other is offered.
+    """
+    if bridge == "official":
+        raise RuntimeError(
+            "autodrive_bridge:=official (the devkit's own bridge) lands in "
+            "autodrive part 9; use autodrive_bridge:=ours"
+        )
+    if Path(vehicle).stem != AUTODRIVE_VEHICLE:
+        raise RuntimeError(
+            f"simulator:=autodrive runs vehicle {AUTODRIVE_VEHICLE} only, "
+            f"not {vehicle}"
+        )
+    scenario = LaunchConfiguration("scenario").perform(context)
+    if Path(scenario).stem != AUTODRIVE_SCENARIO:
+        raise RuntimeError(
+            f"simulator:=autodrive runs scenario {AUTODRIVE_SCENARIO} only "
+            f"(the build has one active track), not {scenario}"
+        )
+    if LaunchConfiguration("start_held").perform(context).lower() in (
+        "true",
+        "1",
+    ):
+        raise RuntimeError(
+            "simulator:=autodrive has no start_held (capability.start_held "
+            "is false): the sim starts when it connects"
+        )
+    if float(LaunchConfiguration("time_scale").perform(context)) != 1.0:
+        raise RuntimeError(
+            "simulator:=autodrive has no time_scale (capability.time_scale "
+            "is false): the sim runs in real time"
+        )
+    LOGGER.info(
+        "simulator:=autodrive: reset is initial_pose_only, so seed is "
+        "accepted and has no effect on the start"
+    )
+
+
 def _launch_nodes(context, robot_description: str, rviz_config: str):
     # Which vehicle file every vehicle-taking node reads. Checked first, so
     # a wrong path is the error raised whatever the other arguments hold.
     vehicle = LaunchConfiguration("vehicle").perform(context)
     if not Path(vehicle).is_file():
         raise RuntimeError(f"vehicle file not found: {vehicle}")
+    simulator = LaunchConfiguration("simulator").perform(context)
+    if simulator not in SIMULATORS:
+        raise RuntimeError(f"unknown simulator: {simulator}")
+    autodrive_bridge = LaunchConfiguration("autodrive_bridge").perform(context)
+    if autodrive_bridge not in AUTODRIVE_BRIDGES:
+        raise RuntimeError(f"unknown autodrive_bridge: {autodrive_bridge}")
+    use_autodrive = simulator == "autodrive"
+    if not use_autodrive and Path(vehicle).stem in GYM_INCOMPATIBLE_VEHICLES:
+        raise RuntimeError(
+            f"vehicle {vehicle} is not a car the gym can cast a scan for; "
+            "run it with simulator:=autodrive"
+        )
+    if use_autodrive:
+        _check_autodrive(context, vehicle, autodrive_bridge)
+    # Every node but the simulator reads /clock exactly when the simulator
+    # owns it (ADR 0006; the capability, not the simulator's name).
+    use_sim_time = (
+        SIMULATOR_CAPABILITIES[simulator]["capability.clock"] == "owns_clock"
+    )
     scenario = LaunchConfiguration("scenario")
     seed = LaunchConfiguration("seed")
     recording_path = LaunchConfiguration("recording_path")
@@ -129,6 +222,19 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         )
     except (ValueError, FileNotFoundError) as error:
         raise RuntimeError(str(error)) from error
+    if (
+        speed_source == "trajectory"
+        and tracks["racing_bringup_support"]["raceline_path"] == ""
+    ):
+        # track_centerline on a map with no raceline publishes the
+        # centerline at speed 0: the car would never move, with no error.
+        raise RuntimeError(
+            "speed_source:=trajectory on "
+            f"{Path(scenario.perform(context)).stem}: the map has no "
+            "raceline, so track_centerline publishes its centerline at "
+            "speed 0 and the car would not move; use the default "
+            "speed_source (curvature_schedule)"
+        )
 
     # The simulator owns the clock (ADR 0006): it publishes /clock from its
     # own simulated-time counter and stays off use_sim_time so its wall
@@ -149,6 +255,29 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
             },
         ],
     )
+    # Front end A: our Socket.IO server the sim connects to. It listens before
+    # the sim exists and never owns /clock (free-running, ADR 0006). The values
+    # file is the server's, not the vehicle file (BRINGUP-1670).
+    autodrive_node = None
+    if use_autodrive:
+        autodrive_node = Node(
+            package="racing_sim_autodrive",
+            executable="racing_sim_autodrive_server",
+            name="racing_sim",
+            parameters=[
+                AUTODRIVE_SERVER_CONFIG,
+                {
+                    **_world_to_map(),
+                    "track_path": tracks["racing_safety_supervisor"][
+                        "track_path"
+                    ],
+                    "scenario_id": AUTODRIVE_SCENARIO,
+                    "port": int(
+                        LaunchConfiguration("autodrive_port").perform(context)
+                    ),
+                },
+            ],
+        )
     support_node = Node(
         package="racing_bringup",
         executable="racing_bringup_support",
@@ -156,7 +285,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
             vehicle,
             tracks["racing_bringup_support"],
             {
-                "use_sim_time": True,
+                "use_sim_time": use_sim_time,
                 # An active estimator owns map -> odom; the support node
                 # then composes it with /odom into the control-rate pose.
                 "publish_map_to_odom": not estimating,
@@ -178,7 +307,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         parameters=[
             vehicle,
             {
-                "use_sim_time": True,
+                "use_sim_time": use_sim_time,
                 **({"speed_source": speed_source} if speed_source else {}),
             },
         ],
@@ -196,7 +325,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         parameters=[
             vehicle,
             tracks["racing_safety_supervisor"],
-            {"use_sim_time": True},
+            {"use_sim_time": use_sim_time},
         ],
     )
     metrics_node = Node(
@@ -205,7 +334,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         parameters=[
             vehicle,
             tracks["racing_metrics"],
-            {"seed": seed, "use_sim_time": True},
+            {"seed": seed, "use_sim_time": use_sim_time},
         ],
     )
     # Scores estimate_topic against ground truth, live. With the default
@@ -216,7 +345,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         executable="racing_evaluation_node",
         parameters=[
             tracks["racing_evaluation"],
-            {"estimate_topic": estimate_topic, "use_sim_time": True},
+            {"estimate_topic": estimate_topic, "use_sim_time": use_sim_time},
         ],
     )
     recording_node = Node(
@@ -229,7 +358,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
                 "seed": seed,
                 "output_path": recording_path,
                 "estimate_topic": estimate_topic,
-                "use_sim_time": True,
+                "use_sim_time": use_sim_time,
             },
         ],
     )
@@ -237,18 +366,21 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         package="robot_state_publisher",
         executable="robot_state_publisher",
         parameters=[
-            {"robot_description": robot_description, "use_sim_time": True}
+            {
+                "robot_description": robot_description,
+                "use_sim_time": use_sim_time,
+            }
         ],
     )
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
         arguments=["-d", rviz_config],
-        parameters=[{"use_sim_time": True}],
+        parameters=[{"use_sim_time": use_sim_time}],
         condition=IfCondition(use_rviz),
     )
     return [
-        sim_node,
+        autodrive_node if autodrive_node is not None else sim_node,
         support_node,
         controller_node,
         supervisor_node,
@@ -257,11 +389,13 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         recording_node,
         robot_state_publisher_node,
         rviz_node,
-        *_pose_source_nodes(pose_source, tracks),
+        *_pose_source_nodes(pose_source, tracks, use_sim_time),
     ]
 
 
-def _pose_source_nodes(pose_source: str, tracks: dict) -> list:
+def _pose_source_nodes(
+    pose_source: str, tracks: dict, use_sim_time: bool
+) -> list:
     """The nodes `pose_source` adds; none for ground truth, which the
     support node already serves."""
     if pose_source == "ground_truth":
@@ -272,11 +406,19 @@ def _pose_source_nodes(pose_source: str, tracks: dict) -> list:
         # parameter (BRINGUP-1060): a hand-set path is a second copy of
         # which world this is, and localizing against another track's walls
         # is silent, not an error.
-        return amcl([configuration], tracks["map_server"]["yaml_filename"])
+        return amcl(
+            [configuration],
+            tracks["map_server"]["yaml_filename"],
+            use_sim_time,
+        )
     if pose_source == "mola":
         # MOLA's map is derived from the same grid, for the same reason.
-        return mola(configuration, tracks["map_server"]["yaml_filename"])
-    return slam_toolbox("mapping", [configuration])
+        return mola(
+            configuration,
+            tracks["map_server"]["yaml_filename"],
+            use_sim_time,
+        )
+    return slam_toolbox("mapping", [configuration], use_sim_time)
 
 
 def _launch_described(context, description_share: Path, rviz_config: str):
@@ -303,6 +445,17 @@ def generate_launch_description() -> LaunchDescription:
     # pose racing_evaluation scores.
     scenario_arg = DeclareLaunchArgument("scenario", default_value=SCENARIO)
     vehicle_arg = DeclareLaunchArgument("vehicle", default_value=VEHICLE_CONFIG)
+    simulator_arg = DeclareLaunchArgument(
+        "simulator", default_value="f1tenth_gym_jax", choices=list(SIMULATORS)
+    )
+    autodrive_bridge_arg = DeclareLaunchArgument(
+        "autodrive_bridge",
+        default_value="ours",
+        choices=list(AUTODRIVE_BRIDGES),
+    )
+    autodrive_port_arg = DeclareLaunchArgument(
+        "autodrive_port", default_value=AUTODRIVE_PORT
+    )
     seed_arg = DeclareLaunchArgument("seed", default_value="0")
     rec_arg = DeclareLaunchArgument("recording_path", default_value=REC_DEFAULT)
     use_rviz_arg = DeclareLaunchArgument("use_rviz", default_value="true")
@@ -335,6 +488,9 @@ def generate_launch_description() -> LaunchDescription:
         [
             scenario_arg,
             vehicle_arg,
+            simulator_arg,
+            autodrive_bridge_arg,
+            autodrive_port_arg,
             seed_arg,
             rec_arg,
             use_rviz_arg,

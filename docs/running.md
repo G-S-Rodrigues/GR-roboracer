@@ -16,6 +16,21 @@ source /ws/setup.sh
 ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 ```
 
+The AutoDRIVE simulator's Porto track (in development: the launch is tested against a recorded stream,
+not yet against the live simulator). The server listens first and the simulator connects to it once;
+see [Configuration](configuration.md#the-autodrive-simulator) for the arguments and refusals:
+
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py simulator:=autodrive \
+  vehicle:=config/vehicles/autodrive_roboracer.yaml scenario:=config/scenarios/porto.yaml \
+  use_rviz:=false
+```
+
+The simulator's compose service (`autodrive-sim`, profile `autodrive`) connects to
+`AUTODRIVE_BRIDGE_HOST`, which defaults to the official devkit container; pointing it at this server
+is not yet a tested step. Never start the profile with a bare `up`, which also starts `dev`, `fast-sim`
+and the devkit, and the devkit holds the same port 4567.
+
 The minimum-curvature line from `config/racelines/`, raced at its own speed:
 
 ```bash
