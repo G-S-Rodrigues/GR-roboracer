@@ -91,8 +91,8 @@ The 3D model of the AutoDRIVE RoboRacer (F1TENTH) car, used by
   the lidar. **Not simplified**: all 937,506 triangles are kept.
 - Vendor sub-parts: the FBX's `Jetson Xavier NX-1/SBC (1).stp` and `Hokuyo UST-10LX`
   parts are probably derived from vendor CAD and have no recorded provenance in the AutoDRIVE
-  repository. They are imported under the owner's ruling (V1 D1); see the open topic
-  `2026-10-30-v1-vendor-subpart-provenance`.
+  repository. They are imported under the owner's ruling (V1 D1), and their
+  provenance is left to the owner to establish with the AutoDRIVE maintainers.
 - Command (network; deterministic):
   `env -u PYTHONPATH uv run --locked --script scripts/import_autodrive_meshes.py meshes/autodrive_roboracer`
   from this package.

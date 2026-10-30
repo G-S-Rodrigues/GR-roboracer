@@ -1,7 +1,7 @@
 """Which URDF draws which vehicle.
 
 `racing_vehicle_description/urdf/descriptions.yaml` maps a vehicle file's stem
-to a URDF. racing_vehicle_description's display.launch.py carries a 3-line copy
+to a URDF. racing_vehicle_description's display.launch.py carries a copy
 of this lookup (it must not depend on this package); BRINGUP-1056 and DESC-1090
 pin both to the one map.
 """

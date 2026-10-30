@@ -30,8 +30,9 @@ externalObjects; the ``.mat`` file's ``_BaseColor``, as 8-bit sRGB.
 Usage (network; the output is deterministic and hash-checked)::
 
     env -u PYTHONPATH uv run --locked --script \\
-        scripts/import_autodrive_meshes.py \\
-        ros_ws/src/racing_vehicle_description/meshes/autodrive_roboracer
+        scripts/import_autodrive_meshes.py meshes/autodrive_roboracer
+
+(run from ros_ws/src/racing_vehicle_description, the form NOTICE.md gives)
 
 ``--inputs DIR`` reads a directory laid out as the downloader writes it
 (``F1TENTH.fbx``, ``F1TENTH.fbx.meta``, ``F1TENTH.prefab``, ``LICENSE``,
@@ -399,7 +400,13 @@ def to_rear_axle(pts_mm):
 
 
 def write_stl(path, tri_xyz):
-    """Binary STL; tri_xyz is (n, 3, 3). Deterministic: normals from winding."""
+    """Binary STL; tri_xyz is (n, 3, 3). Deterministic: normals from winding.
+
+    Not generate_f1tenth_meshes.write_stl, deliberately: that one packs every
+    triangle with a per-triangle Python loop, which is too slow for this
+    model's 937,506. The bytes are the same format (80-byte header, count,
+    50-byte records, normal from the winding, attribute 0).
+    """
     n = len(tri_xyz)
     t = tri_xyz.astype("<f4")
     a, b, c = (t[:, i, :].astype(np.float64) for i in range(3))
