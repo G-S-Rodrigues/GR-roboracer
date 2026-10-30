@@ -1,11 +1,11 @@
 """Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2260).
 
-B (`racing_sim_autodrive.devkit_node`) and `racing_sim_autodrive.devkit_standin`
-run as processes on one ROS graph (this file's devkit domain is
-`_devkit_launch.devkit_domain()`; step 7 moves it to `S+1`). Names: stack side
-under `/test_simad_devkit`, devkit side under `/test_simad_devkit_dk<S>`.
-Needs ROS_DOMAIN_ID set by the caller. Plain pytest: each test starts its own
-B and stand-in, which a launch_test file cannot restart per test.
+B (`racing_sim_autodrive.devkit_node`) and the devkit stand-in run as
+processes: B's stack side on the domain S, its devkit side and the stand-in on
+`_devkit_launch.devkit_domain()` = S+1. Names: stack side under
+`/test_simad_devkit`, devkit side under `/test_simad_devkit_dk<S>`. Needs
+ROS_DOMAIN_ID set by the caller. Plain pytest: each test starts its own B and
+stand-in, which a launch_test file cannot restart per test.
 """
 
 import math
@@ -19,6 +19,8 @@ import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset
+from rclpy.context import Context
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -48,25 +50,60 @@ FRAMES = 120
 BRIDGE_UP = "devkit bridge on"
 
 
+class Observers:
+    """A node on the stack domain and one on the devkit domain."""
+
+    def __init__(self):
+        dl.check_not_live_devkit()
+        self.stack_context = Context()
+        rclpy.init(context=self.stack_context)
+        self.stack = rclpy.create_node(
+            "simad_devkit_observer", context=self.stack_context
+        )
+        self.devkit_context = Context()
+        rclpy.init(context=self.devkit_context, domain_id=dl.devkit_domain())
+        self.devkit = rclpy.create_node(
+            "simad_devkit_observer_dk", context=self.devkit_context
+        )
+        self._executors = []
+        for node, context in (
+            (self.stack, self.stack_context),
+            (self.devkit, self.devkit_context),
+        ):
+            executor = SingleThreadedExecutor(context=context)
+            executor.add_node(node)
+            self._executors.append(executor)
+
+    def spin_once(self, timeout_sec=0.01):
+        for executor in self._executors:
+            executor.spin_once(timeout_sec=timeout_sec)
+
+    def close(self):
+        for executor in self._executors:
+            executor.shutdown()
+        self.stack.destroy_node()
+        self.devkit.destroy_node()
+        self.stack_context.shutdown()
+        self.devkit_context.shutdown()
+
+
 @pytest.fixture(scope="module")
 def observer():
-    rclpy.init()
-    node = rclpy.create_node("simad_devkit_observer")
-    yield node
-    node.destroy_node()
-    rclpy.shutdown()
+    observers = Observers()
+    yield observers
+    observers.close()
 
 
-def spin(node, seconds):
+def spin(observers, seconds):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
-        rclpy.spin_once(node, timeout_sec=0.02)
+        observers.spin_once()
 
 
-def spin_until(node, done, timeout_s, what):
+def spin_until(observers, done, timeout_s, what):
     end = time.monotonic() + timeout_s
     while time.monotonic() < end:
-        rclpy.spin_once(node, timeout_sec=0.02)
+        observers.spin_once()
         if done():
             return
     raise AssertionError(f"timed out: {what}")
@@ -101,19 +138,18 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
     98 % of frames - 1 (SIMAD-2020's bound; the first burst teaches the
     assembler its offsets and is not published)."""
     scans, truth = [], []
-    observer.create_subscription(
+    stack = observer.stack
+    stack.create_subscription(
         LaserScan, dl.topic("/scan"), scans.append, SENSOR
     )
-    observer.create_subscription(
+    stack.create_subscription(
         Odometry, dl.topic("/ground_truth/odom"), truth.append, STATE
     )
     imus, odoms = [], []
     from sensor_msgs.msg import Imu
 
-    observer.create_subscription(Imu, dl.topic("/imu"), imus.append, SENSOR)
-    observer.create_subscription(
-        Odometry, dl.topic("/odom"), odoms.append, STATE
-    )
+    stack.create_subscription(Imu, dl.topic("/imu"), imus.append, SENSOR)
+    stack.create_subscription(Odometry, dl.topic("/odom"), odoms.append, STATE)
     spin(observer, 0.5)
     _, _, standin, _, _ = run(
         *dl.STATIONARY, "--pace", "recorded", "--count", str(FRAMES)
@@ -155,7 +191,7 @@ def test_simad_2210_drive_reaches_the_devkit_latch(run, observer):
     """SIMAD-2210: `/drive` 2.0 m/s, 0.1 rad reaches the stand-in's latched
     reply (throttle > 0, steering = 0.1 / max steering angle), and B's
     endpoints toward the devkit are RELIABLE and VOLATILE."""
-    publisher = observer.create_publisher(
+    publisher = observer.stack.create_publisher(
         AckermannDriveStamped, dl.topic("/drive"), STATE
     )
     message = AckermannDriveStamped()
@@ -176,13 +212,15 @@ def test_simad_2210_drive_reaches_the_devkit_latch(run, observer):
         0.1 / maximum, abs=2e-3
     )
     for name in ("throttle_command", "steering_command"):
-        infos = observer.get_publishers_info_by_topic(f"{dl.NAMESPACE}/{name}")
+        infos = observer.devkit.get_publishers_info_by_topic(
+            f"{dl.NAMESPACE}/{name}"
+        )
         assert infos, name
         for info in infos:
             assert info.qos_profile.reliability == ReliabilityPolicy.RELIABLE
             assert info.qos_profile.durability == DurabilityPolicy.VOLATILE
     for name in ("lidar", "lap_time"):
-        infos = observer.get_subscriptions_info_by_topic(
+        infos = observer.devkit.get_subscriptions_info_by_topic(
             f"{dl.NAMESPACE}/{name}"
         )
         assert infos, name
@@ -198,7 +236,7 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
     only place a True overwritten by a later False would show, carries
     `Reset True` in one contiguous run (at least one reply) and then False."""
     seen = []
-    observer.create_subscription(
+    observer.devkit.create_subscription(
         Bool,
         dl.RESET_TOPIC,
         lambda m: seen.append(bool(m.data)),
@@ -211,7 +249,9 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
     _, _, standin, out, _ = run(
         *dl.STATIONARY, "--pace", "recorded", "--count", "400"
     )
-    client = observer.create_client(Reset, f"{dl.PREFIX}/racing_sim/reset")
+    client = observer.stack.create_client(
+        Reset, f"{dl.PREFIX}/racing_sim/reset"
+    )
     assert client.wait_for_service(timeout_sec=10.0)
     spin(observer, 1.5)
     future = client.call_async(Reset.Request(seed=0, scenario_id=""))
@@ -240,24 +280,31 @@ def test_simad_2240_every_name_is_under_a_test_prefix(run, observer):
         *dl.STATIONARY, "--pace", "recorded", "--count", "200"
     )
     allowed = {"/rosout", "/parameter_events"}
-    prefixes = (f"{dl.PREFIX}/", f"{dl.DEVKIT_PREFIX}/")
+    # (node, namespace, the observer on its domain, the prefix it may use):
+    # B's stack node names only the stack prefix, its devkit link and the
+    # stand-in only the devkit prefix.
     nodes = [
-        ("racing_sim", dl.PREFIX),
-        ("racing_sim_devkit_link", dl.PREFIX),
-        ("autodrive_bridge", "/"),
+        ("racing_sim", dl.PREFIX, observer.stack, f"{dl.PREFIX}/"),
+        (
+            "racing_sim_devkit_link",
+            dl.PREFIX,
+            observer.devkit,
+            f"{dl.DEVKIT_PREFIX}/",
+        ),
+        ("autodrive_bridge", "/", observer.devkit, f"{dl.DEVKIT_PREFIX}/"),
     ]
     outside = set()
     found = set()
     end = time.monotonic() + 15.0
     while time.monotonic() < end and len(found) < len(nodes):
         spin(observer, 0.2)
-        for name, namespace in nodes:
+        for name, namespace, seen_from, prefix in nodes:
             try:
                 names = [
                     n
                     for getter in (
-                        observer.get_publisher_names_and_types_by_node,
-                        observer.get_subscriber_names_and_types_by_node,
+                        seen_from.get_publisher_names_and_types_by_node,
+                        seen_from.get_subscriber_names_and_types_by_node,
                     )
                     for n, _ in getter(name, namespace)
                 ]
@@ -267,9 +314,9 @@ def test_simad_2240_every_name_is_under_a_test_prefix(run, observer):
             outside |= {
                 n
                 for n in names
-                if n not in allowed and not n.startswith(prefixes)
+                if n not in allowed and not n.startswith(prefix)
             }
-    assert found == {n for n, _ in nodes}, found
+    assert found == {n for n, *_ in nodes}, found
     assert not outside, sorted(outside)
 
 
@@ -296,3 +343,110 @@ def test_simad_2260_a_withheld_topic_is_named_in_one_stall(run, observer):
     )
     assert len(stalls) == 1, blog.read_text(errors="replace")[-800:]
     assert stalls[0].strip() == "collision_count", stalls
+
+
+class Listener:
+    """What a node on the stack domain hears of the devkit."""
+
+    TF_TOPICS = ("/tf", f"{dl.PREFIX}/tf", dl.DEVKIT_TF)
+
+    def __init__(self, context):
+        from tf2_msgs.msg import TFMessage
+
+        self.context = context
+        self.node = rclpy.create_node("simad_2250_listener", context=context)
+        self.frames = set()
+        for name in self.TF_TOPICS:
+            self.node.create_subscription(
+                TFMessage,
+                name,
+                lambda m: self.frames.update(
+                    {t.child_frame_id for t in m.transforms}
+                    | {t.header.frame_id for t in m.transforms}
+                ),
+                QoSProfile(
+                    history=HistoryPolicy.KEEP_LAST,
+                    depth=100,
+                    reliability=ReliabilityPolicy.RELIABLE,
+                    durability=DurabilityPolicy.VOLATILE,
+                ),
+            )
+        self.executor = SingleThreadedExecutor(context=context)
+        self.executor.add_node(self.node)
+
+    def spin(self, seconds):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.executor.spin_once(timeout_sec=0.02)
+
+    def leaked_topics(self):
+        return sorted(
+            name
+            for name, _ in self.node.get_topic_names_and_types()
+            if ("/autodrive/" in name or f"_dk{dl.STACK_DOMAIN}/" in name)
+            and self.node.count_publishers(name) > 0  # not our own listening
+        )
+
+    def close(self):
+        self.executor.shutdown()
+        self.node.destroy_node()
+
+
+def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
+    tmp_path, run, observer
+):
+    """SIMAD-2250: the stand-in publishes the devkit's `/tf` (world ->
+    roboracer_1 -> ... -> lidar) on the devkit domain S+1 (S-1 if S+1 > 101;
+    here `_devkit_launch.devkit_domain()`), B bridges it to the stack
+    domain S, and within 5 s of contract data flowing nothing named
+    `roboracer_1` and no `/autodrive/` or `_dk<S>/` topic exists on S, while
+    `/scan` does flow. Names carry S, so a neighbour on S+1 running this
+    test cannot hear this one's stand-in. Positive control first, in the same
+    test: with the stand-in on the stack domain the same listener sees
+    `roboracer_1` and the `_dk<S>/` topics within 5 s, so "never appears"
+    cannot pass on a listener that hears nothing. B refuses a devkit domain
+    equal to its own, naming the TF collision."""
+    listener = Listener(observer.stack_context)
+    try:
+        control, _, _ = dl.start_standin(
+            tmp_path,
+            *dl.STATIONARY,
+            "--pace",
+            "recorded",
+            "--count",
+            "200",
+            "--wait-subscribers",
+            "0",  # nothing subscribes the control's topics
+            domain=dl.STACK_DOMAIN,
+            replies="control.jsonl",
+        )
+        try:
+            listener.spin(5.0)
+            assert "roboracer_1" in listener.frames, listener.frames
+            assert listener.leaked_topics(), "the control left no topic"
+        finally:
+            dl.stop(control, timeout_s=10.0)
+        listener.spin(1.0)
+        listener.frames.clear()
+        scans = []
+        observer.stack.create_subscription(
+            LaserScan, dl.topic("/scan"), scans.append, SENSOR
+        )
+        run(*dl.STATIONARY, "--pace", "recorded", "--count", "400")
+        spin_until(
+            observer, lambda: len(scans) > 20, 30.0, "contract data flowing"
+        )
+        end = time.monotonic() + 5.0
+        while time.monotonic() < end:
+            listener.spin(0.1)
+            observer.spin_once()
+        assert not any("roboracer_1" in f for f in listener.frames), (
+            listener.frames
+        )
+        assert listener.leaked_topics() == []
+    finally:
+        listener.close()
+    clash, log = dl.start_bridge(tmp_path, devkit_domain_id=dl.STACK_DOMAIN)
+    code = clash.wait(timeout=60.0)
+    text = log.read_text(errors="replace")
+    assert code != 0 and "TF" in text and str(dl.STACK_DOMAIN) in text, text

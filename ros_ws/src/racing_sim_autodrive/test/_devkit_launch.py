@@ -5,7 +5,7 @@ B and the devkit stand-in are started as processes. Stack-side names go under
 `devkit_namespace` and `devkit_reset_topic`) under `DEVKIT_PREFIX`, which
 carries the stack domain `S`, so that two workers on neighbouring domains never
 share a name on either of them (plan P6). The devkit domain is `S+1` (`S-1` if
-that exceeds 101) once step 7 gives B a second domain.
+that exceeds 101): B holds the devkit side on a second rclpy context there.
 """
 
 import os
@@ -42,8 +42,9 @@ def topic(name: str) -> str:
 
 
 def devkit_domain() -> int:
-    """The domain the stand-in runs on (this step: the stack domain)."""
-    return STACK_DOMAIN
+    """The domain the stand-in and B's devkit side run on: S+1, or S-1 if
+    S+1 is past the last valid domain (101)."""
+    return STACK_DOMAIN + 1 if STACK_DOMAIN + 1 <= 101 else STACK_DOMAIN - 1
 
 
 def check_not_live_devkit() -> None:
@@ -68,6 +69,7 @@ def start_bridge(tmp_path, **parameters):
         "scenario_id": "porto",
         "devkit_namespace": NAMESPACE,
         "devkit_reset_topic": RESET_TOPIC,
+        "devkit_domain_id": devkit_domain(),
         **parameters,
     }
     params = tmp_path / "params.yaml"

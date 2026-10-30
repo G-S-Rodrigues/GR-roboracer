@@ -27,9 +27,11 @@ import rclpy
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
+from rclpy.context import Context
 from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -200,6 +202,23 @@ class DevkitNode(ContractNode):
         super().__init__()
         namespace = self._text("devkit_namespace")
         reset_topic = self._text("devkit_reset_topic")
+        domain = self.get_parameter("devkit_domain_id").value
+        own = self.context.get_domain_id()
+        if domain == own:
+            raise ValueError(
+                f"devkit_domain_id {domain} is this node's own ROS domain:"
+                " the devkit's global /tf (world -> roboracer_1 -> lidar)"
+                " would join the stack's TF tree and break base_link ->"
+                " lidar. Run the devkit on its own domain."
+            )
+        # The devkit side lives in a second rclpy context on its own domain
+        # (ruling E1): its /tf and /autodrive/* never reach the stack graph.
+        self.devkit_context = Context()
+        rclpy.init(
+            context=self.devkit_context,
+            domain_id=int(domain),
+            signal_handler_options=SignalHandlerOptions.NO,
+        )
         self._commands = devkit.DevkitCommands()
         self._stall = bridge.StallWatch(STALL_TIMEOUT_S)
         self._stall_connected = False
@@ -207,6 +226,7 @@ class DevkitNode(ContractNode):
             namespace,
             reset_topic,
             self._on_assembled,
+            context=self.devkit_context,
             node_namespace=self.get_namespace(),
         )
         self.create_timer(STALL_PERIOD_S, self._watch_stalls)
@@ -215,6 +235,7 @@ class DevkitNode(ContractNode):
     def _build_session(self, vehicle, world_to_map, track):
         self.declare_parameter("devkit_namespace", "/autodrive/roboracer_1")
         self.declare_parameter("devkit_reset_topic", "/autodrive/reset_command")
+        self.declare_parameter("devkit_domain_id", Parameter.Type.INTEGER)
         return devkit.make_session(vehicle, world_to_map, track)
 
     def _on_assembled(self, assembled: devkit.AssembledFrame) -> None:
@@ -264,30 +285,52 @@ class DevkitNode(ContractNode):
 
 
 def main(args=None) -> None:
-    # B owns the signals: rclpy's own handler would shut the context down
-    # before the zero commands could leave (plan P4).
+    # B owns the signals: rclpy's own handler would shut a context down
+    # before the zero commands could leave (plan P4). Two contexts, two
+    # executors, two threads; the devkit context is shut down last.
     stop = threading.Event()
     for number in (signal.SIGINT, signal.SIGTERM):
         signal.signal(number, lambda *_: stop.set())
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = None
-    executor = SingleThreadedExecutor()
+    executors = []
+    thread = None
     try:
         node = DevkitNode()
-        executor.add_node(node)
-        executor.add_node(node.link.node)
+        stack = SingleThreadedExecutor()
+        stack.add_node(node)
+        devkit_executor = SingleThreadedExecutor(context=node.devkit_context)
+        devkit_executor.add_node(node.link.node)
+        executors = [stack, devkit_executor]
+
+        def spin_devkit() -> None:
+            try:
+                while not stop.is_set():
+                    devkit_executor.spin_once(timeout_sec=SPIN_TIMEOUT_S)
+            except Exception:
+                stop.set()  # an executor thread's failure ends main too
+                raise
+
+        thread = threading.Thread(target=spin_devkit, daemon=True)
+        thread.start()
         while rclpy.ok() and not stop.is_set():
-            executor.spin_once(timeout_sec=SPIN_TIMEOUT_S)
+            stack.spin_once(timeout_sec=SPIN_TIMEOUT_S)
     finally:
         _ignore_signals()
+        stop.set()
+        if thread is not None:
+            thread.join(timeout=5.0)
         if node is not None:
-            node.shutdown_commands()
-        executor.shutdown()
+            node.shutdown_commands()  # both contexts still alive
+        for executor in executors:
+            executor.shutdown()
         if node is not None:
             node.link.node.destroy_node()
             node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+        if node is not None:
+            node.devkit_context.try_shutdown()  # last
         _ignore_signals()
 
 
