@@ -80,9 +80,16 @@ def _text(raw: Mapping[str, str], key: str) -> str:
 
 
 def _vec(raw: Mapping[str, str], key: str, count: int) -> tuple[float, ...]:
+    text = _text(raw, key)
     try:
-        values = tuple(float(t) for t in _text(raw, key).split())
+        values = tuple(float(t) for t in text.split())
     except ValueError as error:
+        if any("," in t for t in text.split()):
+            raise FrameError(
+                f"{key!r} carries a comma-decimal number ({text[:40]!r}): "
+                "the Windows sim is running under a comma-decimal locale "
+                "(e.g. pt-PT); set the Windows culture to en-US"
+            ) from None
         raise FrameError(f"{key!r} is not numeric: {error}") from None
     if len(values) != count:
         raise FrameError(f"{key!r} has {len(values)} values, want {count}")

@@ -1,7 +1,20 @@
-"""Capability vocabulary and gating shared by the conformance launch files.
+"""Capability vocabulary, gating and per-backend expectations shared by the
+conformance launch files.
 
-The names mirror ``contract.hpp``; ADAPT-1020 fails if they drift.
+The names mirror ``contract.hpp``; ADAPT-1020 fails if they drift. Which
+backend a launch file starts, and what it is expected to lack, is the
+``BACKENDS`` row that ``RACING_SIM_BACKEND`` names (default the gym).
 """
+
+import os
+import sys
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+# The frame /scan is stamped in: mirrors contract.hpp kLaserFrame (CHECK-2020
+# guards it), and the AutoDRIVE devkit publishes its LaserScan in it too.
+SCAN_FRAME = "lidar"
 
 CLOCK_PARAMETER = "capability.clock"
 RESET_PARAMETER = "capability.reset"
@@ -101,9 +114,193 @@ UNGATED = frozenset(
         "ADAPT-2150",
     }
 )
-# What the backend the four launch files start is expected to lack. They
-# launch the gym, which has every capability.
-BACKEND_EXPECTED_NOT_APPLICABLE = frozenset()
+REPO = Path(__file__).resolve().parents[4]
+GYM = "f1tenth_gym_jax"
+AUTODRIVE = "autodrive"
+
+
+@dataclass(frozen=True)
+class Backend:
+    """One backend's launch and what the conformance tests expect of it.
+
+    ``actions`` builds the launch actions for a launch file from the gym
+    parameter list that file would pass (a path or a dict); a backend takes
+    from it what it has (the autodrive row takes only ``capability.*``).
+    ``odom_max_median_period_s`` is None for the gym, whose ADAPT-2030 keeps
+    its literal 100 Hz +- 20 % check as its own code path.
+    """
+
+    name: str
+    actions: Callable[[Sequence], list]
+    expected_not_applicable: frozenset
+    odom_max_median_period_s: float | None
+    expected_h: Callable[[], float]
+    expected_clock: str
+    clock_override: str
+
+
+def _gym_actions(parameters=None):
+    import launch_ros.actions
+
+    arguments = {}
+    if parameters:
+        arguments["parameters"] = list(parameters)
+    return [
+        launch_ros.actions.Node(
+            package="racing_sim_gym_jax",
+            executable="racing_sim_gym_jax_node",
+            output="screen",
+            **arguments,
+        )
+    ]
+
+
+def _gym_h():
+    from f1tenth_gym_jax.envs.utils import Param
+
+    return Param().h
+
+
+# One source with the server tests: racing_sim_autodrive/test/_vehicle_values.py
+# (part 4's files; h and the steering limit anchored there; kp/ki UNTUNED).
+AUTODRIVE_REPLAY_START_FRAME = 90
+
+
+def _autodrive_vehicle() -> dict:
+    directory = str(REPO / "ros_ws/src/racing_sim_autodrive/test")
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    import _vehicle_values
+
+    return _vehicle_values.vehicle()
+
+
+def _autodrive_actions(parameters=None):
+    """The server on an ephemeral port (never the sim's 4567), then the
+    replay as the sim once the server says it is listening."""
+    import socket
+
+    import launch
+    import launch.actions
+    import launch.event_handlers
+    import launch_ros.actions
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    capabilities = {}
+    for entry in parameters or ():
+        if isinstance(entry, dict):
+            capabilities.update(
+                {k: v for k, v in entry.items() if k.startswith("capability.")}
+            )
+    server = launch_ros.actions.Node(
+        package="racing_sim_autodrive",
+        executable="racing_sim_autodrive_server",
+        name="racing_sim",
+        parameters=[
+            {
+                **_autodrive_vehicle(),
+                "world_to_map.x": 0.0,
+                "world_to_map.y": 0.0,
+                "world_to_map.yaw": 0.0,
+                "track_path": str(REPO / "config" / "tracks" / "porto.yaml"),
+                "scenario_id": "porto",
+                "port": port,
+                "host": "127.0.0.1",
+                **capabilities,
+            }
+        ],
+        output="screen",
+    )
+    # --start-frame is inside the recorded driving segment (frames ~90-355),
+    # so the 2 s ADAPT-2110 window cannot reach the loop wrap or the reset
+    # segment (frames ~470-480) that re-anchors dead reckoning.
+    replay = launch.actions.ExecuteProcess(
+        cmd=[
+            sys.executable,
+            "-m",
+            "racing_sim_autodrive.replay",
+            "--fixture",
+            str(
+                REPO
+                / "ros_ws/src/racing_sim_autodrive/test/fixtures"
+                / "porto_stream.jsonl.gz"
+            ),
+            "--url",
+            f"http://127.0.0.1:{port}",
+            "--pace",
+            "recorded",
+            "--loop",
+            "--start-frame",
+            str(AUTODRIVE_REPLAY_START_FRAME),
+        ],
+        output="screen",
+    )
+
+    def start_replay(event):
+        text = event.text.decode(errors="replace")
+        if "listening on" in text:
+            return [replay]
+        return None
+
+    return [
+        server,
+        launch.actions.RegisterEventHandler(
+            launch.event_handlers.OnProcessIO(
+                target_action=server,
+                on_stdout=start_replay,
+                on_stderr=start_replay,
+            )
+        ),
+    ]
+
+
+BACKENDS = {
+    GYM: Backend(
+        name=GYM,
+        actions=_gym_actions,
+        # The gym has every capability.
+        expected_not_applicable=frozenset(),
+        odom_max_median_period_s=None,
+        expected_h=_gym_h,
+        expected_clock=OWNS_CLOCK,
+        clock_override=FREE_RUNNING,
+    ),
+    AUTODRIVE: Backend(
+        name=AUTODRIVE,
+        actions=_autodrive_actions,
+        expected_not_applicable=frozenset(
+            {
+                "ADAPT-2050",
+                "ADAPT-2070",
+                "ADAPT-2075",
+                "ADAPT-2080",
+                "ADAPT-2085",
+                "ADAPT-2090",
+                "ADAPT-2120",
+                "ADAPT-2160",
+            }
+        ),
+        # >= 20 Hz, the spec's nominal. One-sided, and on replay it measures
+        # the replay's pacing (one publish per frame).
+        odom_max_median_period_s=0.05,
+        expected_h=lambda: _autodrive_vehicle()["h"],
+        expected_clock=FREE_RUNNING,
+        # Not the declared value, or ADAPT-2145 would be vacuous.
+        clock_override=OWNS_CLOCK,
+    ),
+}
+
+
+def backend() -> Backend:
+    """The row ``RACING_SIM_BACKEND`` names; an unknown name raises."""
+    name = os.environ.get("RACING_SIM_BACKEND", GYM)
+    if name not in BACKENDS:
+        raise ValueError(
+            f"RACING_SIM_BACKEND={name!r} is not one of {sorted(BACKENDS)}"
+        )
+    return BACKENDS[name]
 
 
 def not_applicable(requirements, declared):
@@ -124,7 +321,7 @@ def applicable(testcase, node, test_id):
     """True when the running backend can run ``test_id``.
 
     Otherwise prints ``NOT APPLICABLE <reason>`` and returns False, and fails
-    the test unless the id is in BACKEND_EXPECTED_NOT_APPLICABLE: an
+    the test unless the id is in the backend row's expected_not_applicable: an
     unexpected not-applicable must never read as a pass.
     """
     cls = type(testcase)
@@ -136,5 +333,5 @@ def applicable(testcase, node, test_id):
     if reason is None:
         return True
     print(f"NOT APPLICABLE {reason}")
-    testcase.assertIn(test_id, BACKEND_EXPECTED_NOT_APPLICABLE, reason)
+    testcase.assertIn(test_id, backend().expected_not_applicable, reason)
     return False

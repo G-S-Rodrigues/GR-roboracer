@@ -44,7 +44,7 @@ inline constexpr std::string_view kCapabilityStartHeldParameter{
 inline constexpr std::string_view kMapFrame{"map"};
 inline constexpr std::string_view kOdomFrame{"odom"};
 inline constexpr std::string_view kBaseFrame{"base_link"};
-inline constexpr std::string_view kLaserFrame{"laser"};
+inline constexpr std::string_view kLaserFrame{"lidar"};
 
 inline constexpr double kDefaultPublishRateHz{100.0};
 inline constexpr std::size_t kSensorQueueDepth{5};

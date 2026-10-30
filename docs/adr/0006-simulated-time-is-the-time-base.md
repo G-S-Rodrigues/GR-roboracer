@@ -105,3 +105,8 @@ Consequences for a `free_running` backend:
 - `time_scale` and `start_held` do not exist there; the conformance tests that need them are
   reported not applicable by name, never skipped.
 - Gotcha #19's deterministic t=0 becomes "the first frame after a reset" (part 8 defines it).
+- **2026-10-28 (autodrive-sim part 7): a `free_running` AutoDRIVE backend stamps with the node clock at
+  frame receipt, as the official devkit does.** Its `dt` for the throttle loop and dead reckoning is
+  `V1 Lap Time` deltas under our own server (development only; `dt_source=lap_time`, the default), or
+  consecutive receipt stamps on the node clock (`dt_source=receipt`, the race-time path, since
+  `lap_time` is a restricted topic). Both fall back to feedforward when `dt` is missing.
