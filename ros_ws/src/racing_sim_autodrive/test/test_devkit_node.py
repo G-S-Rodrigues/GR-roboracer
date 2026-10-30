@@ -94,6 +94,13 @@ def observer():
     observers.close()
 
 
+def _tail(log, needle):
+    lines = [
+        x for x in log.read_text(errors="replace").splitlines() if needle in x
+    ]
+    return lines[-1] if lines else f"(no {needle!r} line)"
+
+
 def stamp_ns(message):
     return message.header.stamp.sec * 10**9 + message.header.stamp.nanosec
 
@@ -162,13 +169,23 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
     stack.create_subscription(Imu, dl.topic("/imu"), imus.append, SENSOR)
     stack.create_subscription(Odometry, dl.topic("/odom"), odoms.append, STATE)
     spin(observer, 0.5)
-    _, _, standin, _, _ = run(
+    bridge, blog, standin, _, slog = run(
         *dl.STATIONARY, "--pace", "recorded", "--count", str(FRAMES)
     )
     spin_until(
         observer, lambda: standin.poll() is not None, 60.0, "stand-in done"
     )
     spin(observer, 1.0)
+    if len(scans) < int(0.98 * (FRAMES - 1)):
+        dl.stop(bridge, timeout_s=10.0)  # B logs its counters on shutdown
+        pytest.fail(
+            f"{len(scans)} /scan of {FRAMES - 1} (need"
+            f" {int(0.98 * (FRAMES - 1))}); truth {len(truth)}, imu"
+            f" {len(imus)}, odom {len(odoms)}; stand-in:"
+            f" {_tail(slog, 'frames published')};"
+            f" B: {_tail(blog, 'assembler:')};"
+            f" B resync: {_tail(blog, 'resyncing')}"
+        )
     assert len(scans) >= int(0.98 * (FRAMES - 1)), len(scans)
     assert len(scans) <= FRAMES - 1
     assert len(scans[0].ranges) == 1081
