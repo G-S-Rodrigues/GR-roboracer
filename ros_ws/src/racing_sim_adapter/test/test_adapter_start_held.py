@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 
 import launch
-import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 import pytest
@@ -51,21 +50,23 @@ CLOCK_QOS = QoSProfile(
 
 @pytest.mark.launch_test
 def generate_test_description():
-    backend = launch_ros.actions.Node(
-        package="racing_sim_gym_jax",
-        executable="racing_sim_gym_jax_node",
-        parameters=[
-            {
-                "start_held": True,
-                # ADAPT-2145: a capability is the backend's to declare;
-                # this override must be ignored.
-                "capability.clock": "free_running",
-            }
-        ],
-        output="screen",
-    )
     return launch.LaunchDescription(
-        [backend, launch_testing.actions.ReadyToTest()]
+        [
+            *conformance.backend().actions(
+                [
+                    {
+                        "start_held": True,
+                        # ADAPT-2145: a capability is the backend's to
+                        # declare; this override, the value the backend does
+                        # NOT declare, must be ignored.
+                        "capability.clock": (
+                            conformance.backend().clock_override
+                        ),
+                    }
+                ]
+            ),
+            launch_testing.actions.ReadyToTest(),
+        ]
     )
 
 
@@ -87,7 +88,10 @@ class TestAdapterStartHeld(unittest.TestCase):
         rclpy.shutdown()
 
     def _require_adapter(self) -> None:
-        required_topics = {CLOCK_TOPIC, ODOMETRY_TOPIC}
+        required_topics = {ODOMETRY_TOPIC}
+        # Only a backend that owns the clock publishes /clock.
+        if conformance.backend().expected_clock == conformance.OWNS_CLOCK:
+            required_topics.add(CLOCK_TOPIC)
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
             topics = {
@@ -161,11 +165,12 @@ class TestAdapterStartHeld(unittest.TestCase):
             self.assertLess(earlier, later, "/clock must advance once released")
 
     def test_adapt_2145_a_launch_override_of_a_capability_is_ignored(self):
-        """ADAPT-2145: this launch passes capability.clock=free_running; the
-        backend still reads back owns_clock, because a capability is what
-        the backend is, not something a launch can configure."""
+        """ADAPT-2145: this launch passes capability.clock as the value the
+        backend does not declare (the row's clock_override); the backend
+        still reads back its own, because a capability is what the backend
+        is, not something a launch can configure."""
         self._require_adapter()
         declared = conformance.declared_capabilities(self.node)
-        self.assertEqual(
-            declared[conformance.CLOCK_PARAMETER], conformance.OWNS_CLOCK
-        )
+        expected = conformance.backend().expected_clock
+        self.assertNotEqual(conformance.backend().clock_override, expected)
+        self.assertEqual(declared[conformance.CLOCK_PARAMETER], expected)

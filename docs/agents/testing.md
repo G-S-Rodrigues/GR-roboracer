@@ -31,9 +31,9 @@ belongs there when its cost is laps rather than seconds and what it catches is a
 combination shows.
 
 A red nightly leaves evidence: node logs and Robot output (`logs-<region>-seed-<n>`, failed jobs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the pose-source data report (`pose-source-report`: `log/pose-source-report/{report.md,report.json}`, from `slam`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop.jsonl`, whose stamps locate a lost stretch of availability), and, when a
 `run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
-(`supervisor-lag`, `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
+(`supervisor-lag`, `supervisor-clock-late` (the first status ever is already STALE), `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`); a t=0 wait that never hears the supervisor's `~/clock_received` raises with `verdict=supervisor-clock-unheard`. Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
 prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and bounds the pooled median and
 the maximum of those runs (`log/sim-5030.json` also carries `by_seed`, evidence only), not their max-min spread (one tail run sets the spread; the samples behind the
 bound are in the test).
@@ -104,7 +104,9 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 1, `sim/` | `python3 -m pytest sim/tests -k sim_1010` |
 | 1, `scripts/` | `python3 -m pytest scripts/tests -k check_1010` |
 | 1, `raceline/` | `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests -k raceline_1010` |
+| 1, ament_python | `python3 -m pytest ros_ws/src/racing_sim_autodrive/test -k simad_1010` |
 | 2 | `launch_test ros_ws/src/<pkg>/test/<file>.py` (the file is the smallest unit: launch_testing has no per-case filter) |
+| 2, ament_python | `ROS_DOMAIN_ID=<n> python3 -m pytest ros_ws/src/racing_sim_autodrive/test/test_server_node.py` (pytest collects the `@pytest.mark.launch_test` file; `colcon test` runs the same) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
 | manual, host | `docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh` (GPU-3010) |
 | 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
@@ -119,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **212 tier-1, 24 tier-2, 12 tier-3, 4 tier-4, 6 tier-5.**
+Current counts: **292 tier-1, 33 tier-2, 13 tier-3, 5 tier-4, 8 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -131,6 +133,7 @@ and `ACC-4040`; tier 5 `SIM-5010/5020/5030`.
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
 The nightly-flake work added tier 1 `EVAL-1060`.
 The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
+The MOLA pose-source work added tier 1 `BRINGUP-1520` to `BRINGUP-1570` and `BRINGUP-2500` (estimate held until the start pose is applied), tier 3 `SIM-3510`, nightly `SIM-5520`, and tier 4 `ACC-4510`.
 The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
 The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130` (nine IDs, 1085 among them).
 `raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.
@@ -147,6 +150,8 @@ The optimized-raceline runner work (part 4) added tier 1 `RACELINE-1310` to `RAC
 The nightly-split work (part 7.0) added tier 1 `CHECK-1510/1520` (`scripts/tests/test_nightly_regions.py`; `tests/nightly_regions.yaml` assigns each nightly test to a region, `slam`, `path_planning`, `control` or `shared`, plus the implicit `static`).
 The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
 
+The evaluation-harness work (SLAM part 7) added tier 1 `SIMJAX-1500/1510` (and amended `SIMJAX-1060`: `spielberg_1080.yaml` may differ in `num_beams` and `fov`, by file name), `EVAL-1500..1540` (`racing_evaluation.map_accuracy`), `CHECK-1820..1870` and `CHECK-1851` (`scripts/pose_source_report.py`); tier 5 `SIM-5510`, assigned to `slam`. `run_scenario` takes optional `probes` (`tests/lib/racing_test_keywords/probes.py`); the wiring has no tier-1 test.
+
 The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).
 
 The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHECK-1420/1430`, `SIM-1080`; tier 2 `PP-2010`; tier 3 `SIM-3110`.
@@ -154,12 +159,26 @@ The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHEC
 The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
 
 The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
+
+The frame-rename work (autodrive R1) added tier 1 `CHECK-2010/2020`.
+
 The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
+
+The t=0 clock work (F1) added tier 1 `CHECK-1950` to `CHECK-1990` (`scripts/tests/test_scenario_runner_t0.py`) and tier 2 `SAFE-2010`, `SAFE-2020` (`racing_safety_supervisor/test/test_supervisor_clock_received.py`).
 
 The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/1020/1030` (1030 also pins the exact guard shape, with a negative case), `SIMJAX-1150`; tier 2 `ADAPT-2140/2145/2150/2160`. Conformance tests select by the backend's declared capabilities (`racing_sim_adapter/test/conformance.py`); a not-applicable test prints `NOT APPLICABLE <id>: ...` and returns (no skip marker), and ADAPT-2150 pins the set.
 The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
 
 The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
+The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen IDs, `scripts/tests/test_autodrive_identify.py`, 1715 in `test_autodrive_record.py`) and `BRINGUP-1055` (BRINGUP-1050 now skips the vehicle files in `NOT_GYM_CAST`; 1055 keeps that list to committed, non-gym files).
+
+The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
+
+The AutoDRIVE part-7 work (our Socket.IO server) added tier 1 `SIMAD-1150` to `SIMAD-1270` (thirteen IDs: the Socket.IO pins, the ROS-free bridge session, the replay schedule, the comma-decimal locale error) `ADAPT-1040` and `ADAPT-1050` (every launch registration carries its own `RACING_SIM_BACKEND`; SIMAD-1150 also checks the running image has the pinned closure, so a stale image fails by name), and tier 2 `SIMAD-2010` to `SIMAD-2050` (the server node against `racing_sim_autodrive.replay`, on an ephemeral port, never the sim's 4567). The four `racing_sim_adapter` launch files are registered a second time (`test_adapter_<name>_autodrive`) with `RACING_SIM_BACKEND=autodrive`; `conformance.BACKENDS` holds each backend's launch, its expected not-applicable set and its per-backend expectations (ADAPT-2030 rate, 2130 h, 2145 clock), and the variable defaults to the gym. The tier-1 and tier-2 AutoDRIVE tests need the Socket.IO closure (`docker/dev-tools-requirements.txt`) on `PYTHONPATH`. The live sim run (port 4567) is a recorded manual step, not a gate.
+
+The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
+
+The evaluation-isolation work (E1) added tier 2 `EVAL-2030` (one case in each of `test_evaluation_node.py` and `test_evaluation_node_pose.py`: neither the evaluator nor the test node has a topic outside the file's prefix; `test/graph_isolation.py`), and moved EVAL-2010/2020 under `/test_eval2010/`, `/test_eval2020/`.
 
 The min-time work (part 8) added tier 1 `RACELINE-1410/1415/1420/1425/1430/1435/1440/1445/1450/1465/1470` (`raceline/tests`; 1435 is the real chain on the oval, a few seconds), `CHECK-1560/1570`, `BRINGUP-1180` and an extension of `CHECK-1510/1520` for the `path_planning_mintime` region; tier 3 `SIM-3120`; tier 5 `SIM-5060`, which runs a solve only on a night the optimizer code changed (it records that it did not otherwise).
 
@@ -184,8 +203,8 @@ The min-time work (part 8) added tier 1 `RACELINE-1410/1415/1420/1425/1430/1435/
 - **That the `racing_sim_adapter` contract is backend-neutral.** With one backend, tier 2 proves
   gym_jax satisfies the contract, not that the contract is general. ADAPT-2060 checks this
   structurally (no gym_jax symbol in the headers); structure is not semantics. Capability selection now exists
-  (ADAPT-1010..1030, 2140..2150), but neutrality is genuinely resolved only when a second backend
-  lands (part 7).
+  (ADAPT-1010..1030, 2140..2150), but a second backend (the AutoDRIVE server, replayed) now runs the same files
+  (`RACING_SIM_BACKEND`); neutrality against the live sim is the recorded manual step.
 - **RViz visual correctness.** A TF sign error passes every numeric test and is obvious to a human
   instantly. Manual — see `racing_vehicle_description/CLAUDE.md`.
 - **GPU passthrough.** Not assertable without a GPU runner. Manual: `GPU-3010` in the `gpu` stage

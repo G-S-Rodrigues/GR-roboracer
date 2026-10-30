@@ -7,7 +7,7 @@ cd /ws && source /ws/setup.sh
 set +e
 NAME=$1; D=$2; shift 2; [ "$1" = -- ] && shift
 [ "$#" -gt 0 ] || { echo "no launch command"; exit 2; }
-PAT='install/racing_|ros2 launch|rviz2|ffmpeg|grab_rviz|lib/slam_toolbox/|lib/nav2_|robot_state_publisher'
+PAT='install/racing_|ros2 launch|rviz2|ffmpeg|grab_rviz|lib/slam_toolbox/|lib/nav2_|lib/mola_launcher|racing_mola_map_alignment|robot_state_publisher'
 left() { ps -eo pid,stat,args | grep -E "$PAT" | grep -v grep | grep -v defunct; }
 if [ -n "$(left)" ]; then echo "LEFTOVERS (stale graph):"; left; exit 3; fi
 mkdir -p "$D"; rm -f "$D/$NAME"-*
@@ -40,7 +40,7 @@ kill -TERM $GRAB; sleep 1; exec 3>&-
 wait $FF
 kill -INT $CLK
 kill -INT -- -$LPID 2>/dev/null; sleep 10
-pkill -f install/racing_; pkill -f lib/slam_toolbox/; pkill -f lib/nav2_
+pkill -f install/racing_; pkill -f lib/slam_toolbox/; pkill -f lib/nav2_; pkill -f lib/mola_launcher; pkill -f racing_mola_map_alignment; pkill -f mola-cli
 pkill -f robot_state_publisher; pkill -f rviz2; sleep 3
 if [ -n "$(left)" ]; then echo "SURVIVORS:"; left; pkill -9 -f "$PAT"; sleep 1; fi
 rm -f "$D/$NAME.fifo"

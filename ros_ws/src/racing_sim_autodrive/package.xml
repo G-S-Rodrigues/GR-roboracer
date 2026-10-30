@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>racing_sim_autodrive</name>
+  <version>0.1.0</version>
+  <description>ROS-free core shared by the AutoDRIVE simulator front ends.</description>
+  <maintainer email="guilherme6821@gmail.com">Guilherme Rodrigues</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>racing_common</exec_depend>
+  <exec_depend>racing_interfaces</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>ackermann_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <!-- python-socketio, python-engineio, gevent, gevent-websocket and
+       websocket-client are pip pins in docker/dev-tools-requirements.txt
+       (SIMAD-1150), not rosdep keys. -->
+
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>launch</test_depend>
+  <test_depend>launch_ros</test_depend>
+  <test_depend>launch_testing</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

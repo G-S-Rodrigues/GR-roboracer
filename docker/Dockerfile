@@ -29,6 +29,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
+# MOLA's closure is pinned by name (docker/apt-preferences/mola.closure, CHECK-1880);
+# the catch-all stanza fails the build rather than let a newer version in.
+COPY docker/apt-preferences/mola.pref /etc/apt/preferences.d/mola.pref
+
 # ros-jazzy-asio-cmake-module is listed explicitly because rosdep does NOT
 # resolve it: it is a transitive export dependency of serial_driver, and
 # vesc_driver fails to configure without it.
@@ -46,6 +50,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ros-jazzy-nav2-amcl \
         ros-jazzy-nav2-map-server \
         ros-jazzy-nav2-lifecycle-manager \
+        ros-jazzy-mola-lidar-odometry \
     && rm -rf /var/lib/apt/lists/*
 
 
@@ -78,6 +83,10 @@ RUN . /opt/ros/jazzy/setup.sh \
 # --------------------------------------------------------------------------
 FROM underlay AS dev
 
+# ffmpeg and the DejaVu font are the docs video tooling: record.sh encodes
+# the RViz capture and encode.sh burns the speed label (owner ruling
+# 2026-10-28, ADR 0002 amendment). fonts-dejavu-core is listed although RViz
+# pulls it today: encode.sh reads that exact font file.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -90,6 +99,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libgtest-dev libgmock-dev \
         ros-dev-tools \
         ros-jazzy-rviz2 \
+        ffmpeg fonts-dejavu-core \
         ros-jazzy-launch-testing ros-jazzy-launch-testing-ament-cmake \
         ros-jazzy-ament-cmake-clang-format \
     && rm -rf /var/lib/apt/lists/*

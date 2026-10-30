@@ -23,6 +23,7 @@ Shared arguments: `seed:=`, `time_scale:=` (scales the wall rate, never the phys
 | `ground_truth` | ground truth | support node | [Ground truth](#ground-truth-reference-stack) |
 | `slam_toolbox` + `drive_on_estimate:=false` | ground truth | slam_toolbox | [slam_toolbox](#online-slam-toolbox-evaluation) |
 | `amcl` | the amcl estimate | amcl | [amcl](#amcl-closed-loop) |
+| `mola` + `drive_on_estimate:=false` | ground truth | MOLA-LO (via `mola_map`) | [mola](#mola-open-loop) |
 
 ## Ground-truth reference stack
 
@@ -62,6 +63,24 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios
 loop, with the car still on ground truth, pass `drive_on_estimate:=false`. amcl publishes its
 particles on `/particle_cloud`; viewing them in RViz needs `nav2_rviz_plugins`, which the image does
 not install.
+
+## MOLA open loop
+
+**Drives on:** ground truth; MOLA-LO's estimate is published on `/localization/odom` and scored.
+MOLA localizes on the map it built itself in one mapping lap, committed in
+`config/scenarios/maps/Spielberg/mola/` (`Spielberg.mm` and the provenance `Spielberg.yaml`), not on
+the survey grid, so its error includes that map's own error.
+**Selected by:** `pose_source:=mola drive_on_estimate:=false`.
+
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg_1080.yaml pose_source:=mola drive_on_estimate:=false seed:=42
+```
+
+Use the 1080-beam scenario at 1x: scan matching is wall-clock work, so a faster simulated clock drops
+scans. The support node publishes no estimate until MOLA's pose is within 5 m of the start pose it is told
+on `/initialpose` (a plausibility check on MOLA's own output, with no yaw check). Launching it with
+`drive_on_estimate:=true`, the default, logs a warning and is allowed. No closed-loop lap is backed for `mola`: its worst error, 3.1 m, is above the
+1.83 m `amcl` closed loop is accepted at.
 
 ## Planning and raceline generation
 

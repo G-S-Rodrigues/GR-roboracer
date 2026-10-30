@@ -82,12 +82,16 @@ Traps any task in this repository can hit. Each one cost real time at least once
     unrecoverable stop during startup, on a graph that is otherwise perfectly healthy. Symptom: an
     emergency stop already latched at t=0, with no fault anywhere in the logs. The fix is a
     deterministic t=0 — wait for every participant, then call the sim node's `~/reset` — never a
-    longer timeout.
+    longer timeout. That wait also covers the supervisor's `~/clock_received` (its first `/clock`
+    delivery). The working explanation, which the owner ruled on and nobody measured, is that a
+    best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
+    STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
+    latch (Step 1) and 1 of 48 lag runs (Step A).
 
 10. **A stale ROS graph outlives the launch that started it.** `pkill -f 'ros2 launch'` kills the
     launcher and leaves every node running; they keep publishing on the same `ROS_DOMAIN_ID` and
     contaminate the next run with a *second* supervisor and controller. Symptom: impossible message
-    rates, or an emergency stop latched before your run began. Kill `install/racing_` too, and note
+    rates, or an emergency stop latched before your run began. Kill `install/racing_` too, `lib/mola_launcher`, `mola-cli` (measured outliving `ros2 launch` by 15 minutes, `test_mola_map.py`) and `racing_mola_map_alignment` (`pose_source:=mola`'s `map -> mola_map` static_transform_publisher lives under `/opt/ros`, so the first pattern never matched it), and note
     that `ros2 node list` shows stale discovery entries for a few seconds after.
 
 ## Simulation
@@ -218,6 +222,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
     `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
     the axle centre (a wheel radius higher), because every mesh is authored there.
+    The lidar's TF frame is lidar, renamed from laser on 2026-10-28 to match the AutoDRIVE devkit;
+    device identifiers (laser_x, LaserMount, the racing_sim_gym_jax.laser module) keep the old word,
+    and a bag or RViz config recorded before the rename still names laser.
 
 ## AutoDRIVE
 
@@ -265,7 +272,43 @@ Traps any task in this repository can hit. Each one cost real time at least once
     recreate them. `dev` is the shared container, mounted on the worktree as `/ws`. Always name the
     autodrive service and pass `--no-deps`; never `down`.
 
-35. **A reference CSV's rounding changes IPOPT's iteration path, and nothing errors.** The same
+35. **Receive time is not the AutoDRIVE sim's time.** Encoder speed on the recorded 3.5-4.9 s straight
+    (16 frame pairs, wheel radius 0.059) differs from `V1 Linear Velocity` x by a median 0.006 m/s (max
+    0.007) when dt is the `V1 Lap Time` delta, and by 0.106 (max 0.305) when dt is the receive time of
+    the frame, 0.069 (max 0.214) over windows of at least 0.5 s. Sim time over wall time, over sliding 3 s
+    windows within each stretch where the lap time rises (296 windows), ran 0.90-1.04, and the frame period was ~80 ms there against an 18 ms median overall. Nothing
+    errors: a wall-clock dt gives a plausible speed. `racing_sim_autodrive.sim_dt` is the lap-time delta;
+    it is `None` whenever the lap clock does not rise (40 pairs in the fixture, all while the reset
+    level was held; a drop at the lap line is presumed, not recorded). Lap time is not a race-time
+    input. Which clock a front end feeds the throttle loop is open topic autodrive-clock-for-dt.
+
+36. **AutoDRIVE's pose, velocity and steering are three different things.** `V1 Position` is the rear
+    axle (the frame `roboracer_1`), `V1 Linear Velocity` is the body's (about the CoG, 0.155 m ahead)
+    velocity in the car frame, and `V1 Steering` is the slewed actual angle, not the command. Measured
+    on the identification recording: pose lateral speed 0.0003 m/s, vy/omega 0.160 m. A converter or
+    speed loop that treats them as one point is wrong by lr and nothing errors. The same file also
+    cannot measure a top speed on Porto (about 8 m of straight; highest steady 2.977 m/s), and its
+    braking depends on speed (8.4 / 5.8 / 6.0 m/s^2 from 0.5 / 3 / 4.9 m/s): never read one number
+    from `identified.yaml` as the car's.
+
+37. **The AutoDRIVE server's `/ground_truth/scan` is lidar-relative; the gym's is CoG-relative.**
+    `racing_metrics` reads `/ground_truth/scan` for `minimum_wall_clearance` and `collision_count` (#17).
+    The gym casts that scan from `base_link`, so those metrics measure the vehicle's CoG. The AutoDRIVE
+    server (`racing_sim_autodrive`) republishes the sim's own scan, cast from its lidar mount, so the
+    same two metrics would measure from the lidar (about 0.27 m ahead of the rear axle) with no error
+    and no flag. Never compare clearance or collision counts across the two simulators as one number.
+    The two truth scans also carry different labels, each honest: the gym stamps `/ground_truth/scan`
+    `base_link`, the AutoDRIVE server stamps it `lidar`. `racing_metrics` ignores the label, so the
+    origin mismatch still goes unflagged.
+
+38. **The Windows AutoDRIVE sim writes and parses numbers in the Windows culture.** Under pt-PT it
+    sent `'V1 Throttle': '0,0000'` and stalled on our reply of `0.0`: the car never starts, nothing
+    errors. `Set-Culture en-US` fixed it (measured 2026-10-30, `docs/agents/running-wsl.md`). Set it
+    for the sitting and restore the saved culture after; `Set-Culture` is a persistent per-user
+    setting. A stand-in server or client for the sim should fail loudly on a comma decimal in the
+    first message.
+
+39. **A reference CSV's rounding changes IPOPT's iteration path, and nothing errors.** The same
     minimum-time optimum took 817 iterations from the in-memory reference and 1715 from the one read
     back from a CSV (1e-9 rounding), then 1518 with the 0.01 m width extra (which also moves the line:
     objective 32.5316 to 32.5664). Why the counts differ is still open (topic

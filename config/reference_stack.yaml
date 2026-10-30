@@ -91,6 +91,21 @@ roles:
           - ros_ws/src/racing_sim_adapter/*
           - ros_ws/src/racing_evaluation/*
         verified_by: [SIM-3080, ACC-4030, ACC-4040]
+      - implementation: mola
+        package: mola_lidar_odometry
+        # MOLA-LO's lidar2d pipeline, localization only, on the map MOLA
+        # built itself in a mapping lap (config/scenarios/maps/<map>/mola/,
+        # with provenance; owner ruling 2026-10-25).
+        paths:
+          - ros_ws/src/racing_bringup/racing_bringup/estimators.py
+          - ros_ws/src/racing_bringup/racing_bringup/support_node.py  # BRINGUP-2500 hold
+          - config/localization/mola_*.yaml
+          - config/scenarios/maps/*/mola/*
+          - scripts/mola_map_track.sh
+          - ros_ws/src/racing_sim_gym_jax/*
+          - ros_ws/src/racing_sim_adapter/*
+          - ros_ws/src/racing_evaluation/*
+        verified_by: [SIM-3510, ACC-4510]
   planner:
     # The scenario's centerline, published on /trajectory; renamed from
     # track_raceline 2026-10-21, owner ruling 2026-10-11, behaviour unchanged.

@@ -31,9 +31,10 @@ TIME_SCALE = 5.0
 LAP_WALL_SECONDS = 65.0
 # 3x the measured wall time, as SIM-3090.
 TIMEOUT_SECONDS = 3.0 * LAP_WALL_SECONDS
-# Seed 42's lap, 113.08 s in 3 of 3 runs. The window is SIM-3090's lap_time
-# tolerance (scripts/compare_metrics.py FLOAT_TOLERANCES), which carries the
-# same seed-42 5x precedent.
+# Seed 42's lap, 113.08 s in 3 of 3 runs (0.00 s spread). 0.05 is this test's
+# own window, set at FLOAT_TOLERANCES' lap_time value when SIM-3110 landed.
+# FLOAT_TOLERANCES moved to 0.1 on 2026-10-28 for the analytic-circle spread
+# and this did not follow.
 LAP_TIME = 113.08
 LAP_TIME_TOLERANCE = 0.05
 

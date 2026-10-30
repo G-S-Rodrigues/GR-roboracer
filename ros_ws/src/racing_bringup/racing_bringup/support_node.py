@@ -56,6 +56,15 @@ LATCHED_QOS = QoSProfile(
 # for RViz's "2D Pose Estimate", a human putting the car roughly where it
 # is, not ground truth handed to the estimator exactly. A zero covariance
 # would start AMCL at the truth and make its first seconds unmeasurable.
+# How near the start pose a hold-until-applied estimate must be to count as
+# having applied it: ten of the 0.5 m standard deviations above. MOLA's
+# untold estimate is tens of metres off, its applied one about 1 m (the
+# map's own drift at the start). Measured in the sim (commit 8d61a49,
+# part 1): untold about 34 m off, applied about 1 m. It is a plausibility
+# gate, not proof MOLA applied anything: on a car, wheel odometry starts
+# at 0, so an untold estimate sits at the mapping-lap start and passes if
+# the car is set down within this radius of it. There is no yaw check.
+START_POSE_RADIUS = 5.0
 INITIAL_POSE_VARIANCES = (0.25, 0.25, 0.06853891945200942)
 
 
@@ -214,6 +223,15 @@ class SupportNode(Node):
         # measures. slam_toolbox needs none: it defines `map` as where it
         # starts.
         self.declare_parameter("initial_pose_topic", "")
+        # MOLA-LO applies /initialpose only after the ICP of its first scan;
+        # until then its map -> odom is the pose it would have untold. True
+        # composes nothing until the composed pose is within
+        # START_POSE_RADIUS of the start pose published here, then never
+        # holds again. Judged from the estimator's own output against the
+        # pose it was told (read back from initial_pose_topic), so it holds on a
+        # car with no ground truth
+        # (BRINGUP-2500).
+        self.declare_parameter("hold_estimate_until_initial_pose", False)
 
         track_path = Path(
             self.get_parameter("track_path").get_parameter_value().string_value
@@ -273,6 +291,14 @@ class SupportNode(Node):
             else None
         )
         self._initial_pose_sent = False
+        self._initial_pose_xy: tuple[float, float] | None = None
+        self._start_pose_applied = False
+        self._hold_logged = False
+        self._hold_until_initial_pose = (
+            self.get_parameter("hold_estimate_until_initial_pose")
+            .get_parameter_value()
+            .bool_value
+        )
         self._latest_truth: Odometry | None = None
         self._latest_dead_reckoning: Odometry | None = None
         self.create_subscription(
@@ -284,6 +310,16 @@ class SupportNode(Node):
         self.create_subscription(
             Odometry, "/odom", self._on_dead_reckoning, LATCHED_QOS.depth
         )
+        if initial_pose_topic:
+            # The start pose is whatever is published here: the sim's own
+            # latched publish loops back, and on a car it is the operator's
+            # RViz pose, with no ground truth anywhere (BRINGUP-2500).
+            self.create_subscription(
+                PoseWithCovarianceStamped,
+                initial_pose_topic,
+                self._on_initial_pose,
+                LATCHED_QOS,
+            )
 
         self._publish_static_artifacts(track_path, raceline_path)
 
@@ -348,6 +384,14 @@ class SupportNode(Node):
         # only delivered to a late subscriber while its publisher exists.
         self._initial_pose_publisher.publish(initial)
         self._initial_pose_sent = True
+        self._initial_pose_xy = (
+            truth.pose.pose.position.x,
+            truth.pose.pose.position.y,
+        )
+
+    def _on_initial_pose(self, message: PoseWithCovarianceStamped) -> None:
+        position = message.pose.pose.position
+        self._initial_pose_xy = (position.x, position.y)
 
     def _on_dead_reckoning(self, message: Odometry) -> None:
         self._latest_dead_reckoning = message
@@ -380,6 +424,24 @@ class SupportNode(Node):
             (translation.x, translation.y, yaw),
             _planar_pose(dead_reckoning),
         )
+        if self._hold_until_initial_pose and not self._start_pose_applied:
+            start = self._initial_pose_xy
+            if start is None or (
+                math.hypot(x - start[0], y - start[1]) > START_POSE_RADIUS
+            ):
+                if not self._hold_logged:
+                    self._hold_logged = True
+                    self.get_logger().info(
+                        "holding the estimate until it is within "
+                        f"{START_POSE_RADIUS} m of the start pose "
+                        + (
+                            "(no /initialpose received yet)"
+                            if start is None
+                            else f"{start}"
+                        )
+                    )
+                return
+            self._start_pose_applied = True
         composed = Odometry()
         composed.header.stamp = dead_reckoning.header.stamp
         composed.header.frame_id = self._map_frame

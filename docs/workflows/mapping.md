@@ -90,6 +90,12 @@ owns `map -> odom`. As a racing pose source (`pose_source:=slam_toolbox`), slam_
 scans, owns `map -> odom`, saves no map, and its estimate is scored against ground truth. See
 [online slam_toolbox evaluation](racing.md#online-slam-toolbox-evaluation).
 
+## The MOLA map
+
+The map `pose_source:=mola` localizes on, `config/scenarios/maps/Spielberg/mola/Spielberg.mm`, was
+made by one mapping lap (seed 7) with `./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml config/scenarios/maps/Spielberg/mola/Spielberg`,
+whose provenance is the `.yaml` beside it. A mapping workflow of its own replaces this later.
+
 ## Demonstration
 
 A recorded mapping run is in [Results](../results.md#mapping-demonstration).

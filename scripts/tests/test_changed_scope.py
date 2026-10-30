@@ -391,22 +391,24 @@ def test_check_1150_the_real_map_loads_with_its_shape() -> None:
     stack = load_stack(REPO_ROOT)
 
     keys = {impl.key for impl in stack.implementations}
-    assert len(stack.implementations) == 9
+    assert len(stack.implementations) == 10
     assert "planner=optimized_raceline" in keys
     assert "pose_source=amcl" in keys
     assert "pose_source=slam_toolbox" in keys
+    assert "pose_source=mola" in keys
     amcl = next(i for i in stack.implementations if i.name == "amcl")
     assert amcl.tag == "impl:pose_source=amcl"
     assert amcl.default is False
     assert set(amcl.verified_by) == {"SIM-3080", "ACC-4030", "ACC-4040"}
     assert set(stack.system_tests) == {
         f"SIM-{n}" for n in range(3010, 3121, 10)
-    }
+    } | {"SIM-3510"}
     assert set(stack.acceptance_tags) == {
         "ACC-4010",
         "ACC-4020",
         "ACC-4030",
         "ACC-4040",
+        "ACC-4510",
     }
 
 
