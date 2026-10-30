@@ -65,7 +65,7 @@ def test_bringup_1820_the_1080_file_differs_by_its_measured_keys() -> None:
     small = _parameters(FILE_64)
     large = _parameters(FILE_1080)
 
-    assert KEYS_64 <= set(small), KEYS_64 - set(small)
+    assert set(small) >= KEYS_64, KEYS_64 - set(small)
 
     differing = {
         key

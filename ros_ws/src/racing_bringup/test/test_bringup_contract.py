@@ -1050,16 +1050,18 @@ def test_bringup_1810_the_scenario_selects_the_slam_toolbox_file(
 
     monkeypatch.chdir(REPOSITORY_ROOT)
     expected = {64: SLAM_TOOLBOX_64, 1080: SLAM_TOOLBOX_1080}
-    scenarios = sorted((REPOSITORY_ROOT / "config" / "scenarios").glob("*.yaml"))
+    scenarios = sorted(
+        (REPOSITORY_ROOT / "config" / "scenarios").glob("*.yaml")
+    )
     assert scenarios
     for scenario in scenarios:
         beams = yaml.safe_load(scenario.read_text())["parameters"]["num_beams"]
         module, context = _launch_context(
             scenario=str(scenario), pose_source="slam_toolbox"
         )
-        assert _slam_toolbox_configuration(module, context) == expected[beams], (
-            scenario.name
-        )
+        assert (
+            _slam_toolbox_configuration(module, context) == expected[beams]
+        ), scenario.name
 
     document = yaml.safe_load(
         (REPOSITORY_ROOT / "config/scenarios/spielberg.yaml").read_text()
@@ -1067,11 +1069,15 @@ def test_bringup_1810_the_scenario_selects_the_slam_toolbox_file(
     document["parameters"]["num_beams"] = 720
     base = REPOSITORY_ROOT / "config" / "scenarios"
     document["track"] = str((base / document["track"]).resolve())
-    document["map_directory"] = str((base / document["map_directory"]).resolve())
+    document["map_directory"] = str(
+        (base / document["map_directory"]).resolve()
+    )
     odd = tmp_path / "odd.yaml"
     odd.write_text(yaml.safe_dump(document))
     module, context = _launch_context(
         scenario=str(odd), pose_source="slam_toolbox"
     )
-    with pytest.raises(RuntimeError, match=r"(?s)64.*1080.*slam_toolbox_config"):
+    with pytest.raises(
+        RuntimeError, match=r"(?s)64.*1080.*slam_toolbox_config"
+    ):
         module._launch_nodes(context, "", "")
