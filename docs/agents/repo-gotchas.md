@@ -296,3 +296,10 @@ Traps any task in this repository can hit. Each one cost real time at least once
     The two truth scans also carry different labels, each honest: the gym stamps `/ground_truth/scan`
     `base_link`, the AutoDRIVE server stamps it `lidar`. `racing_metrics` ignores the label, so the
     origin mismatch still goes unflagged.
+
+38. **The Windows AutoDRIVE sim writes and parses numbers in the Windows culture.** Under pt-PT it
+    sent `'V1 Throttle': '0,0000'` and stalled on our reply of `0.0`: the car never starts, nothing
+    errors. `Set-Culture en-US` fixed it (measured 2026-10-30, `docs/agents/running-wsl.md`). Set it
+    for the sitting and restore the saved culture after; `Set-Culture` is a persistent per-user
+    setting. A stand-in server or client for the sim should fail loudly on a comma decimal in the
+    first message.
