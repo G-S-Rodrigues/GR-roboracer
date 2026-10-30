@@ -83,8 +83,10 @@ Traps any task in this repository can hit. Each one cost real time at least once
     emergency stop already latched at t=0, with no fault anywhere in the logs. The fix is a
     deterministic t=0 — wait for every participant, then call the sim node's `~/reset` — never a
     longer timeout. That wait also covers the supervisor's `~/clock_received` (its first `/clock`
-    delivery): a best-effort `/clock` writer matched after t=0 left the supervisor's clock at 0
-    and latched STALE with no gap in the drive stream (F1).
+    delivery). The working explanation, which the owner ruled on and nobody measured, is that a
+    best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
+    STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
+    latch (Step 1) and 1 of 48 lag runs (Step A).
 
 10. **A stale ROS graph outlives the launch that started it.** `pkill -f 'ros2 launch'` kills the
     launcher and leaves every node running; they keep publishing on the same `ROS_DOMAIN_ID` and

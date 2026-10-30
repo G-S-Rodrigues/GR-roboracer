@@ -106,9 +106,10 @@ class SafetySupervisorNode : public rclcpp::Node {
             });
         // F1: rclcpp's TimeSource reader is invisible to node code, and a held
         // sim's /clock = 0 leaves now() at 0, so nothing else can say whether
-        // this node has heard /clock. A test harness releasing t=0 before that
-        // point gets a first evaluation past the stale window and a latched
-        // STOP (repo-gotchas #19; F1 finding). Inert without use_sim_time (a
+        // this node has heard /clock. The working explanation (owner-ruled,
+        // not measured; repo-gotchas #19, F1 finding) is that a harness
+        // releasing t=0 before that point gives a first evaluation past the
+        // stale window and a latched STOP. Inert without use_sim_time (a
         // real car). A stand-in for the TimeSource reader: that one is created
         // in the Node base constructor, before this, so it is matched no later
         // than this one.
