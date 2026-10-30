@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -89,27 +90,54 @@ def _allowed(rel: str, line: str) -> bool:
     return (rel, line) in ALLOWED
 
 
-def _text_files():
-    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+def _tracked(root: Path) -> list[Path] | None:
+    """`git ls-files` under `root`, or None when git cannot answer (a host
+    worktree seen from dev, gotcha 23)."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [root / n.decode() for n in out.split(b"\0") if n]
+
+
+def _walked(root: Path):
+    """Fallback: every file on disk, minus `.claude/` except its skills."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel = Path(dirpath).relative_to(root).parts
         dirnames[:] = [
             d
             for d in dirnames
             if d not in SKIP_DIRS
             and not (d.startswith(".") and d.endswith("_cache"))
         ]
+        if rel == (".claude",):
+            dirnames[:] = [d for d in dirnames if d == "skills"]
+            continue
         for name in filenames:
-            path = Path(dirpath) / name
-            if path.suffix in SKIP_SUFFIXES or path.resolve() == THIS_FILE:
-                continue
-            if path.is_symlink() or not path.is_file():
-                continue
-            data = path.read_bytes()
-            if b"\0" in data:
-                continue
-            try:
-                yield path, data.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
+            yield Path(dirpath) / name
+
+
+def _text_files(root: Path = REPO_ROOT, use_git: bool = True):
+    """Text files of the tracked tree; with no git, the walk fallback."""
+    paths = _tracked(root) if use_git else None
+    for path in _walked(root) if paths is None else paths:
+        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+            continue
+        if path.suffix in SKIP_SUFFIXES or path.resolve() == THIS_FILE:
+            continue
+        if path.is_symlink() or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if b"\0" in data:
+            continue
+        try:
+            yield path, data.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
 
 
 FLAGGED = [
@@ -222,3 +250,39 @@ def test_check_2020_every_frame_mirror_equals_the_contract() -> None:
     joint = root.find(f"./joint[@name='rear_axle_to_{frame}']")
     assert joint is not None, f"no joint rear_axle_to_{frame}"
     assert joint.find("child").attrib["link"] == frame
+
+
+def _git_init(root: Path) -> None:
+    for args in (["init", "-q"], ["config", "user.email", "t@t"]):
+        subprocess.run(["git", "-C", str(root), *args], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.name", "t"], check=True
+    )
+
+
+def test_check_2010_only_tracked_files_are_walked(tmp_path: Path) -> None:
+    """An untracked or git-ignored file naming the old frame is not read."""
+    bad = f'frame_id: "{OLD}"\n'
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text("ignored.txt\n")
+    (tmp_path / "tracked.txt").write_text(bad)
+    (tmp_path / "ignored.txt").write_text(bad)
+    (tmp_path / "untracked.txt").write_text(bad)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", ".gitignore", "tracked.txt"],
+        check=True,
+    )
+    seen = {p.name for p, _ in _text_files(tmp_path)}
+    assert seen == {".gitignore", "tracked.txt"}
+
+
+def test_check_2010_without_git_local_claude_files_are_skipped(
+    tmp_path: Path,
+) -> None:
+    """With no git to ask, `.claude/` is skipped except `.claude/skills/`."""
+    (tmp_path / ".claude/skills").mkdir(parents=True)
+    (tmp_path / ".claude/settings.local.json").write_text("{}")
+    (tmp_path / ".claude/skills/a.md").write_text("x")
+    (tmp_path / "b.md").write_text("x")
+    seen = {p.name for p, _ in _text_files(tmp_path, use_git=False)}
+    assert seen == {"a.md", "b.md"}
