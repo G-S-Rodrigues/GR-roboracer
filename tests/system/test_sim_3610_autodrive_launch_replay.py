@@ -44,11 +44,16 @@ from racing_test_keywords.scenario_runner import (
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+# The slice the conformance replay loops (7.1): one definition of where the
+# fixture starts driving.
+sys.path.append(str(REPOSITORY_ROOT / "ros_ws/src/racing_sim_autodrive/test"))
+from _replay_loop import PORTO_DRIVING_LOOP  # noqa: E402
+
 FIXTURE = (
     REPOSITORY_ROOT
     / "ros_ws/src/racing_sim_autodrive/test/fixtures/porto_stream.jsonl.gz"
 )
-START_FRAME = 132  # the fixture drives frames 132..337 (7.1)
+START_FRAME = PORTO_DRIVING_LOOP[0]  # the fixture drives 132..337 (7.1)
 LAST_FRAME = 448  # the recorded reset is frame 449
 FRAMES = LAST_FRAME + 1 - START_FRAME
 STARTUP_SECONDS = 120.0
@@ -71,14 +76,20 @@ def _free_port() -> int:
 
 
 def _use_sim_time(node_name: str) -> str:
-    result = subprocess.run(
-        ["ros2", "param", "get", f"/{node_name}", "use_sim_time"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    return result.stdout.strip()
+    """`ros2 param get`, retried: a node is in the graph a moment before its
+    parameter services answer."""
+    deadline = time.monotonic() + 30.0
+    while True:
+        result = subprocess.run(
+            ["ros2", "param", "get", f"/{node_name}", "use_sim_time"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if result.stdout.strip() or time.monotonic() > deadline:
+            return result.stdout.strip() or result.stderr.strip()
+        time.sleep(1.0)
 
 
 def _stop(process: subprocess.Popen) -> None:
@@ -150,11 +161,13 @@ def test_sim_3610_autodrive_launch_replay_runs_on_wall_time_without_a_latch():
             )
             while replay.poll() is None:
                 rclpy.spin_once(node, timeout_sec=0.02)
-            end = time.monotonic() + 1.0
-            while time.monotonic() < end:
-                rclpy.spin_once(node, timeout_sec=0.02)
+            # Read at the replay's end: once the frames stop so do the
+            # controller's commands, and the supervisor then rightly latches
+            # STALE_INPUT 100 ms later. That is the end of the window, not a
+            # fault in it.
             stale = observer.stale_count
             latch = observer.first_latch
+            trace = observer._startup_trace()
         finally:
             if observer is not None:
                 observer.close()
@@ -173,7 +186,7 @@ def test_sim_3610_autodrive_launch_replay_runs_on_wall_time_without_a_latch():
         assert value.endswith("False"), f"{name}: use_sim_time {value!r}"
     throttles = [float(r["V1 Throttle"]) for r in replies]
     assert max(throttles) > 0.0, "the controller's speed never reached a reply"
-    assert stale == 0, f"STALE_INPUT x{stale}; first latch {latch}"
+    assert stale == 0, f"STALE_INPUT x{stale}; first latch {latch}{trace}"
     # The disconnect at the end of the replay is logged as an ERROR by design
     # (the sim never reconnects, gotcha 30); any other server ERROR is a fault.
     errors = [
