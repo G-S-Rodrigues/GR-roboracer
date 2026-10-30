@@ -167,6 +167,8 @@ The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/te
 
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
 
+The MOLA mapping work (SLAM part 2) added tier 1 `BRINGUP-1700/1710/1720/1730/1740/1750/1760/1770` (`test_mola_map.py`; 1560 now pins three differing values, including the localization `icp_prior_weight` 5), `EVAL-1550`, `EVAL-1560` (`racing_evaluation`) and `RACELINE-1510`; tier 3 `SIM-3530`; nightly `SIM-5520` gained the grid comparison and `test_sim_5520_shifted_grid_is_named`.
+
 ## The tests that matter most
 
 - **COMMON-1060** — the gym_jax action mapping. It fails silently; this is the only thing that

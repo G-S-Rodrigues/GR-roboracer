@@ -92,9 +92,33 @@ scans, owns `map -> odom`, saves no map, and its estimate is scored against grou
 
 ## The MOLA map
 
-The map `pose_source:=mola` localizes on, `config/scenarios/maps/Spielberg/mola/Spielberg.mm`, was
-made by one mapping lap (seed 7) with `./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml config/scenarios/maps/Spielberg/mola/Spielberg`,
-whose provenance is the `.yaml` beside it. A mapping workflow of its own replaces this later.
+MOLA-LO builds its own map with one mapping lap. From `/ws`, after a `colcon build`:
+
+```bash
+./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml config/scenarios/maps/Spielberg/mola/Spielberg 7
+```
+
+The car drives one lap at 1x on ground truth while `mola_mapping.launch.py` runs MOLA-LO's lidar
+pipeline beside it. MOLA reads only `/scan` and `/odom`, never ground truth. The script writes:
+
+- `Spielberg.mm`, MOLA's native map, which `pose_source:=mola` localizes on;
+- `Spielberg_grid.png` and `Spielberg_grid.yaml`, an occupancy grid in the world frame, in the
+  `map_server` format that `amcl`, the raceline extractor and `racing_evaluation` read unchanged;
+- `Spielberg.yaml`, the provenance: the command, seed, tool versions, file hashes and `T_map_mola`.
+
+`T_map_mola` is the car's ground-truth pose when MOLA processed its first scan. It places the map in
+the world and is used only to score the run and to export the grid. A real car has no ground truth, so
+there `T` is the identity and the map stays in MOLA's own frame. Loop closure is not used: on this 2D
+data MOLA accepted none.
+
+To watch it in RViz, start the stack in one shell with `start_held:=true`, run
+`ros2 launch racing_bringup mola_mapping.launch.py simplemap_output:=/tmp/lap.simplemap` in
+another, then call the simulator's `~/reset`. Its arguments are in
+[Configuration](../configuration.md#mola-mapping-launch).
+
+Mapping is not reproducible: two runs of the same command give different maps (one lap with no loop
+closure drifts differently each time). The committed map is one such run, reviewed as a diff. Its
+quality against the track's true walls is in [Results](../results.md#mola-map-accuracy).
 
 ## Demonstration
 

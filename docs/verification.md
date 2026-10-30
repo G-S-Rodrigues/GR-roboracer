@@ -19,6 +19,12 @@ angles and the safety supervisor.
 - METRICS-1010: the metrics accumulator.
 - SIMJAX-1090: the scan angles of a real `GymBackend`.
 - SAFE-1020: stale input stops the car.
+- BRINGUP-1700 to BRINGUP-1730: the MOLA mapping launch and script. The launch starts only MOLA with no initial map, the script drives it, and no kill watchdog holds the caller's pipe (BRINGUP-1770).
+- BRINGUP-1740: the committed MOLA map's provenance agrees with its grid files (hashes, sizes, pipeline).
+- BRINGUP-1750: the committed grid is in the world frame: its wall 95th-percentile distance to the track's true walls is within a measured bound, and a grid rotated 90 degrees is far outside it.
+- BRINGUP-1760: the committed grid and the `.mm` agree under the provenance's start-pose transform, with no ground truth. It is the frame check a real car's map can use.
+- EVAL-1550 and EVAL-1560: the scenario's true wall grid, and the nearest-neighbour measure between a grid and a `.mm` layer.
+- RACELINE-1510: the raceline extractor reads the committed MOLA grid unchanged and returns a closed track whose length is within a measured tolerance of the committed track's.
 
 ## 2. Launch and contract tests
 
@@ -41,7 +47,7 @@ bound it against ground truth.
 - SIM-3090: the Spielberg lap matches `tests/golden/spielberg_baseline.json`.
 - SIM-3110: the Spielberg lap on the committed minimum-curvature line (`planner:=optimized_raceline speed_source:=trajectory`, default vehicle, seed 42) completes with 0 collisions and 0 saturation events, at its own measured lap time of 113.08 s (tolerance 0.05 s).
 - SIM-3070: with the car driving on ground truth, `slam_toolbox` publishes an estimate whose RMSE against ground truth is within 4.0 m. The test is open loop and does not claim the estimate is good.
-- SIM-3510: with the car driving on ground truth (open loop), `mola` localizes on the map MOLA built itself (1080 beams, 1x, seed 42): position RMSE within 2.5 m, maximum within 4.5 m, available in at least 0.99 of samples (five laps measured 1.547-1.556 m, 3.076-3.097 m, 0.9974 or better); the offline score must agree.
+- SIM-3510: with the car driving on ground truth (open loop), `mola` localizes on the map MOLA built itself (1080 beams, 1x, seed 42): position RMSE within 2.5 m, maximum within 4.5 m, available in at least 0.99 of samples (five laps measured 0.704-2.131 m, 1.414-4.149 m, 0.9975 or better); the offline score must agree.
 - SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate is available in at least 0.99 of samples and its position RMSE is within 0.65 m (the seed-42 bound).
 
 ## 4. Acceptance tests (Robot Framework)

@@ -1,42 +1,21 @@
 # racing_bringup
 
-Launch files and the one support node the vertical slice needs but no other package owns.
+Launch files and the one support node the slice needs but no other package owns (Python: ROS-only
+scaffolding, kept out of `racing_common`).
 
-## Why this package exists
+## Contract
 
-Every other node in the slice is a thin shell around a ROS-free class (see each sibling package's
-own `CLAUDE.md`). None of them are responsible for the three things a human watching RViz actually
-needs: the raceline on `/trajectory`, the track geometry on `/track/boundaries` and
-`/visualization/track`, and the `map -> odom` TF of the ground-truth pose source (the correction that
-makes `map -> odom -> base_link` the true pose; `racing_sim_gym_jax` broadcasts `odom -> base_link`
-from its dead reckoning). The launch file remaps the controller's `/odom` to `/ground_truth/odom`.
-`support_node.py` is the ROS-only home for those three gaps — it is scaffolding, not
-domain logic, and stays out of `racing_common`. Under an estimator it stops broadcasting `map -> odom`
-(`publish_map_to_odom: false`) and publishes `composed_odometry_topic` = latest `map -> odom` ∘ `/odom`,
-the control-rate Odometry in `map` the controller drives on (BRINGUP-1040, BRINGUP-2010).
+`support_node.py` owns `/trajectory`, `/track/boundaries`, `/visualization/track` and the
+ground-truth `map -> odom` TF (the controller's `/odom` is remapped to `/ground_truth/odom`). Under
+an estimator it stops broadcasting `map -> odom` (`publish_map_to_odom: false`) and publishes
+`composed_odometry_topic` = latest `map -> odom` o `/odom` in `map`, which the controller drives on
+(BRINGUP-1040, BRINGUP-2010). `amcl` starts `nav2_map_server` on the scenario's grid (BRINGUP-1060)
+and takes its start pose from `initial_pose_topic` (BRINGUP-2020).
 
 ## Running it
 
-```
-ros2 launch racing_bringup sim_pure_pursuit.launch.py
-```
+Run from the repository root; paths resolve relative to the working directory.
+`ros2 launch racing_bringup sim_pure_pursuit.launch.py`. Launch arguments and fields:
+`docs/configuration.md`. Tests: `./scripts/check.sh --fast`.
 
-Run from the repository root. The launch file and every node it starts resolve
-`config/vehicles/f1tenth_default.yaml` and the scenario/track paths as paths relative to the current
-working directory — the same convention `scripts/check.sh` and each node's own parameter defaults
-already use.
-
-Launch arguments: `scenario`, `vehicle` (default
-`config/vehicles/f1tenth_default.yaml`; `f1tenth_gym_limits.yaml` is the 20 m/s
-gym-limits car, nightly only; a missing file raises), `seed`, `recording_path`, `use_rviz`, `time_scale` (default 1.0;
-scales wall rate, never physics), `start_held` (default false; sim stays frozen until `~/reset`),
-`estimate_topic` — the pose `racing_evaluation` scores, ground truth by default (SIM-3060),
-`pose_source` (`ground_truth` | `slam_toolbox` | `amcl`) — who owns `map -> odom`, and
-`drive_on_estimate` (default true) — whether the controller drives on it or only ground truth
-(SIM-3070). `amcl` also starts `nav2_map_server` on the scenario's committed occupancy grid
-(BRINGUP-1060) and takes its start pose from the support node's `initial_pose_topic`
-(BRINGUP-2020) — the sim draws that pose from the seed, so it cannot be configured.
-
-Also `planner` (`track_centerline` default | `optimized_raceline`), `raceline_optimizer`
-(`tum_mincurv_iqp`) and `speed_source` (unset by default | `curvature_schedule` | `trajectory`), which the
-controller reads. Trap: the resolver fails closed (BRINGUP-1160); it never falls back to the centerline.
+Trap: the planner resolver fails closed (BRINGUP-1160); it never falls back to the centerline.
