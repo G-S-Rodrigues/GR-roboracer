@@ -32,6 +32,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Simulation | [`f1tenth_gym_jax`](docs/workflows/racing.md#simulation) | Available | ROS 2 simulation and headless JAX rollouts. |
 | Simulation | AutoDRIVE | In development | Future simulation workflow for mapped tracks without ground-truth centerlines. |
 | Mapping and SLAM | [SLAM Toolbox survey mapping](docs/workflows/mapping.md#survey-mapping) | Available | Builds a map while the vehicle drives on ground truth. |
+| Mapping and SLAM | [MOLA-LO mapping](docs/workflows/mapping.md#the-mola-map) | Available | Builds a 2D lidar map from one lap on ground truth, with no ground truth in the map; wall 95th-percentile deviation 0.79-1.57 m over ten laps ([Results](docs/results.md#mola-map-accuracy)), not survey quality. |
 | Mapping and SLAM | FAR-LIO / LiDAR-inertial methods | Exploratory | Research direction; no current implementation. |
 | Localization | [`ground_truth`](docs/workflows/racing.md#ground-truth-reference-stack) | Available | Exact simulator pose in the reference stack. |
 | Localization | [`slam_toolbox`](docs/workflows/racing.md#online-slam-toolbox-evaluation) | Available | Online estimate evaluation while driving on ground truth; driving on its estimate latches a `TRACK_LIMIT` stop. |
