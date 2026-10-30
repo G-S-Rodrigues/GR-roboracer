@@ -120,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **264 tier-1, 26 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **268 tier-1, 26 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -172,6 +172,7 @@ The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen ID
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
 
 The AutoDRIVE visual-model work (V1) added tier 1 `DESC-1030` to `DESC-1090` (`racing_vehicle_description/test/test_description.py`, `test_autodrive_description.py`; 1030 parametrises the structure tests over `urdf/descriptions.yaml`), `BRINGUP-1056/1057`, `CHECK-2030` (`scripts/tests/test_autodrive_meshes.py`); tier 2 `DESC-2010`. `CHECK-2020` now loops over every mapped URDF.
+The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
 
 ## The tests that matter most
 
