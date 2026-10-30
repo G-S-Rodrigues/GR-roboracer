@@ -55,8 +55,9 @@ backend, which does not exist yet; the gym cannot run it (it simulates a differe
 read from the sim's own prefab and guide (`config/vehicles/autodrive_roboracer/source.yaml`, every
 value anchored to a pinned line) and its measurements are written only by
 `tools/autodrive_identify.py` (`identified.yaml`). Its speed, acceleration and steering-rate caps are
-the default's, and its laser mount is the true 0.2733 m, which differs from the shared URDF's by about
-14 mm until the AutoDRIVE description lands. The measured values (top speed not measured, braking
+the default's, and its laser mount is the true 0.2733 m, which matches its own description,
+`autodrive_roboracer.urdf` (the AutoDRIVE RoboRacer model, imported from AutoDRIVE's BSD-2 FBX at full
+resolution, about 47 MB). To look at it: `ros2 launch racing_vehicle_description display.launch.py vehicle:=config/vehicles/autodrive_roboracer.yaml`. The measured values (top speed not measured, braking
 depending on speed) are under [AutoDRIVE car identification](results.md#autodrive-car-identification).
 
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
@@ -102,7 +103,7 @@ scored, and its default already follows the pose source. Both stay today-only ad
 schema_version: 1  # Available: 1
 workflow: mapping  # Available: mapping, racing
 scenario: config/scenarios/spielberg_survey.yaml  # Available: config/scenarios/spielberg_survey.yaml (exact sensors)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not)
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not). The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
   pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
@@ -140,7 +141,7 @@ is a reviewed diff. The example writes to `log/maps/Spielberg` so following it i
 schema_version: 1  # Available: 1
 workflow: racing  # Available: mapping, racing
 scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Committed but not runnable: config/scenarios/porto.yaml (AutoDRIVE practice track; no simulator runs it until `simulator:=autodrive`)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not)
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not). The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
 stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
   pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl, mola
