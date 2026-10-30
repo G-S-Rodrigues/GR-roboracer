@@ -70,3 +70,13 @@ route needs the Windows sim running against it, not an offline replay.
 - Route around a permission block: if launching the sim or sending clicks is refused, stop and ask
   the owner. Only an explicit owner approval covers it.
 - Leave a second listener on 4567 or a sim running when you are done.
+
+## The launch switch (part 8b)
+
+`simulator:=autodrive` on `sim_pure_pursuit.launch.py` starts our server (`autodrive_bridge:=ours`);
+the argument table and refusals are in `docs/configuration.md`. `config/autodrive/porto_frame.yaml`
+is `measured: derived` (two offline fits, tx +-0.15 m); part 10's lap measures it. SIM-3610 drives the
+whole launch from the recorded stream on an ephemeral port and judges STALE_INPUT only up to the
+replay's last frame: after it the commands stop and the supervisor rightly latches 100 ms later. The
+sim races the track clockwise while `porto.yaml`'s centerline is counter-clockwise (open topic
+porto-race-direction); Pure Pursuit on that centerline is part 10's to settle.
