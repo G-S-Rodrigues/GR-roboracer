@@ -296,6 +296,11 @@ class BridgeSession:
         """The throttle loop's integral (tests, diagnostics)."""
         return self._loop.integral
 
+    @property
+    def awaiting_reset(self) -> bool:
+        """A reset was sent and the sim has not yet shown it (front end B)."""
+        return self._awaiting_reset
+
     def request_reset(self) -> None:
         """From the `~/reset` service: the next reply carries Reset True."""
         with self._level_lock:
