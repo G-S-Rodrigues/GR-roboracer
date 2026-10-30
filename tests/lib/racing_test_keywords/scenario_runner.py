@@ -64,12 +64,13 @@ BRINGUP_LAUNCH_FILE = (
     / "sim_pure_pursuit.launch.py"
 )
 METRICS_TOPIC = "/scenario/metrics"
-METRICS_QOS = QoSProfile(
+LATCHED_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
     depth=1,
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
+METRICS_QOS = LATCHED_QOS
 
 # The supervisor's pose input: ground truth, not the dead reckoning on /odom
 # (racing_safety_supervisor/src/node.cpp says why).
@@ -103,6 +104,13 @@ CLOCK_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,
 )
+
+# The supervisor's own report that it has received a /clock message (latched,
+# only under use_sim_time; racing_safety_supervisor/src/node.cpp). Its
+# /clock reader is rclcpp's internal one, which no other node can observe,
+# and a held sim's /clock = 0 leaves now() at 0, so an endpoint wait cannot
+# say it is in step. F1 Step 1 and Step A; repo-gotchas #19, #32.
+SUPERVISOR_CLOCK_TOPIC = "/racing_safety_supervisor/clock_received"
 
 RESET_SERVICE = "/racing_sim/reset"
 # Where an active pose source puts the pose the controller may drive on:
@@ -266,6 +274,7 @@ class _HangObserver:
         self.first_latch = None
         self.stale_count = 0
         self.clock = None
+        self._statuses_before_latch = 0
         self._node = node
         self._drive_stamps: deque[float] = deque()
         self._status_stamps: deque[float] = deque()
@@ -319,6 +328,8 @@ class _HangObserver:
         seconds = self._seconds(message.header.stamp)
         if message.reason != SafetyStatus.REASON_NONE:
             self.first_latch = message
+        else:
+            self._statuses_before_latch += 1
         if self._last_status is not None:
             self._max_status_gap = max(
                 self._max_status_gap, seconds - self._last_status
@@ -362,7 +373,14 @@ class _HangObserver:
         yet the supervisor's own status stamps skip at least that window - it
         judged a queue it had not read. ``controller-silent``: the status
         stamps are continuous and no command is stamped inside the window.
-        Anything else is ``unclassified``.
+        ``supervisor-clock-late``: the first status the supervisor ever
+        published is already STALE_INPUT, stamped at or past the window, with
+        commands inside it - its clock stood at 0 while the drive stream ran
+        and then jumped (F1). With the t=0 wait on ``~/clock_received`` in
+        place this means the supervisor had heard /clock before release yet
+        its clock did not advance through the window. This observer's own
+        subscription can also be late, so it is a verdict about the first
+        status seen, not proof. Anything else is ``unclassified``.
         """
         if self.first_latch is None:
             return "no-latch"
@@ -373,6 +391,13 @@ class _HangObserver:
             if latch - STALE_INPUT_WINDOW_SECONDS < stamp <= latch
         ]
         status_skipped = self._max_status_gap >= STALE_INPUT_WINDOW_SECONDS
+        if (
+            self.first_latch.reason == SafetyStatus.REASON_STALE_INPUT
+            and self._statuses_before_latch == 0
+            and latch >= STALE_INPUT_WINDOW_SECONDS - 1e-9
+            and in_window
+        ):
+            return "supervisor-clock-late"
         if in_window and status_skipped:
             return "supervisor-lag"
         if not in_window and not status_skipped:
@@ -446,6 +471,11 @@ def _reset_at_deterministic_t0(
     `timeout` per participant or per topic - so one slow participant cannot
     hand every later wait a full fresh budget on top of the time already
     spent.
+
+    The last wait is different in kind: the supervisor's own latched
+    ``~/clock_received``, the first /clock message its reader delivered. The
+    waits above prove discovery; this one proves delivery, and only the
+    supervisor can see its own reader.
     """
     deadline = time.monotonic() + timeout
 
@@ -493,6 +523,21 @@ def _reset_at_deterministic_t0(
             wait_for_message(
                 node, Odometry, ESTIMATE_TOPIC, RELIABLE_QOS, _remaining()
             )
+
+    # A first delivery, reported by the supervisor itself: the endpoint waits
+    # above prove discovery, not that its /clock reader is matched, and a
+    # supervisor released before that stamps its first evaluation past the
+    # stale window (gotcha #19). The wait shares the deadline; it is not a
+    # retry and not a longer timeout.
+    try:
+        wait_for_message(
+            node, Clock, SUPERVISOR_CLOCK_TOPIC, LATCHED_QOS, _remaining()
+        )
+    except TimeoutError as error:
+        raise TimeoutError(
+            "racing_safety_supervisor heard no /clock before t=0 "
+            f"(verdict=supervisor-clock-unheard): {error}"
+        ) from error
 
     client = node.create_client(Reset, RESET_SERVICE)
     if not client.wait_for_service(timeout_sec=_remaining()):

@@ -83,6 +83,10 @@ RUN . /opt/ros/jazzy/setup.sh \
 # --------------------------------------------------------------------------
 FROM underlay AS dev
 
+# ffmpeg and the DejaVu font are the docs video tooling: record.sh encodes
+# the RViz capture and encode.sh burns the speed label (owner ruling
+# 2026-10-28, ADR 0002 amendment). fonts-dejavu-core is listed although RViz
+# pulls it today: encode.sh reads that exact font file.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -95,6 +99,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libgtest-dev libgmock-dev \
         ros-dev-tools \
         ros-jazzy-rviz2 \
+        ffmpeg fonts-dejavu-core \
         ros-jazzy-launch-testing ros-jazzy-launch-testing-ament-cmake \
         ros-jazzy-ament-cmake-clang-format \
     && rm -rf /var/lib/apt/lists/*

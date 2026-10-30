@@ -5,6 +5,7 @@
 **Supersedes:** none
 **Amended:** 2026-10-13 — §4, by issue #12 part 1 (a ROS-free `raceline/` uv project may run in `dev`).
 **Amended:** 2026-10-25 — §4, by issue #47 part 3 (a `gpu` stage).
+**Amended:** 2026-10-28 — §4, by part V0 (video tooling in `dev`).
 
 ## Context
 
@@ -55,6 +56,13 @@ volumes (§3, gotcha 21) and its own `ROS_DOMAIN_ID`, because it shares the comp
 The costs: `gpu` carries everything in `dev`, including its uv and the CPU gym, and adds CUDA; a CUDA
 bug in a GPU node is caught by the owner's hand run (GPU-3010), not by CI; and a `dev` rebuild
 invalidates `gpu`.
+
+**Amendment 2026-10-28 (§4, part V0).** `dev` also carries `ffmpeg` and `fonts-dejavu-core`, by owner
+ruling, so a docs recording (`record.sh`, `encode.sh`) needs no hand install. `gpu` inherits them
+(it is `FROM dev`); `fast-sim` and `runtime` do not get them. They are unpinned, like the rest of
+the `dev` apt layer. The cost is the apt layer's size growth (measured in the PR body) and one cold
+`dev` cache. It reverses the 2026-10-21 docs-run ruling (D1) that kept ffmpeg out of the image,
+which was procedural: this ADR never forbade it.
 
 ## Consequences
 
