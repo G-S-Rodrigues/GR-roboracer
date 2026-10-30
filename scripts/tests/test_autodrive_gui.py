@@ -95,8 +95,9 @@ def test_check_1675_taken_port_and_dead_bridge_fail(tmp_path) -> None:
 def test_check_1680_printed_windows_steps(tmp_path) -> None:
     """CHECK-1680: the script passes `bash -n`, and on success prints the
     steps that worked live: save and set the culture, restore it, the asset
-    and its hash, a path placeholder, the launch flags, Connect only when not
-    connected, and teleop for Autonomous mode."""
+    and its hash, a path placeholder, the launch flags, one Connection
+    click, Trackcam by five Camera Switch presses, the helper, and teleop
+    for Autonomous mode."""
     assert SCRIPT.is_file(), "scripts/autodrive_gui.sh missing"
     syntax = subprocess.run(
         ["bash", "-n", str(SCRIPT)], capture_output=True, text=True
@@ -113,8 +114,33 @@ def test_check_1680_printed_windows_steps(tmp_path) -> None:
         "Expand-Archive",
         "<folder for the sim>",
         "-ip 127.0.0.1 -port 4567",
-        "only if the window shows it is",
+        "click Connection once",
+        "Camera Switch five times",
+        "scripts/windows/autodrive.ps1",
         "teleop_keyboard",
         "ROS_DOMAIN_ID=66",
     ):
         assert needle in out, needle
+
+
+def test_check_1685_windows_helper_is_committed_and_referenced() -> None:
+    """CHECK-1685: the optional Windows helper exists, takes the sim path as
+    a parameter (no owner path pinned), keeps the verified parameters, and is
+    named by the printed steps and by docs/agents/autodrive.md."""
+    helper = REPO_ROOT / "scripts" / "windows" / "autodrive.ps1"
+    assert helper.is_file(), "scripts/windows/autodrive.ps1 missing"
+    text = helper.read_text()
+    for needle in (
+        "$SimPath",
+        "$Ip",
+        "$Port",
+        "-NoConnect",
+        "-NoTrackcam",
+        "$LoadSeconds",
+        "0.379",
+        "0.563",
+    ):
+        assert needle in text, needle
+    assert "C:\\dev" not in text and "172.24" not in text
+    for ref in (SCRIPT, REPO_ROOT / "docs" / "agents" / "autodrive.md"):
+        assert "windows/autodrive.ps1" in ref.read_text(), ref

@@ -120,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **255 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **256 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -168,7 +168,7 @@ The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen ID
 
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
 
-The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675` and `CHECK-1680` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
+The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
 
 ## The tests that matter most
 

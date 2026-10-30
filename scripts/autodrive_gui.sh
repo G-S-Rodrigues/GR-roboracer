@@ -59,9 +59,14 @@ Open a NEW PowerShell window (the culture applies to new processes), then:
   (Get-FileHash sim.zip -Algorithm SHA256).Hash   # must be 2D3E5CC7073009D8F28F41B2266C129DD64210688C70228A6811B844EE48A751
   Expand-Archive sim.zip \$dir
   & "\$dir\\autodrive_simulator\\AutoDRIVE Simulator.exe" -ip 127.0.0.1 -port 4567
-The flags connect on their own: click Connect only if the window shows it is
-not connected (a click opens a second socket). In Autonomous mode the car does
-not move until something sends commands; Manual mode drives from the window.
+The flags only fill the address; the window never connects by itself. Open
+Menu, click Connection once (only if not already Connected; a second click
+disconnects), and trust the session id in the bridge log, not the label.
+Menu > Camera Switch five times from Driver's Eye reaches Trackcam; no flag
+selects a camera. scripts/windows/autodrive.ps1 does these clicks (verified at
+one 1920x991 window); docs/agents/autodrive.md has the facts.
+In Autonomous mode the car does not move until something sends commands;
+Manual mode drives from the window.
 Keyboard teleop for Autonomous mode:
   docker exec -it $name bash -lc 'source /opt/ros/humble/setup.bash && source install/setup.bash && export ROS_DOMAIN_ID=$domain && ros2 run autodrive_roboracer teleop_keyboard'
 When done, restore the culture you wrote down, e.g. Set-Culture pt-PT
