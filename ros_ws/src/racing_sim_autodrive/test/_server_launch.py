@@ -18,6 +18,24 @@ PORTO = REPO / "config" / "tracks" / "porto.yaml"
 
 VEHICLE = _vehicle_values.vehicle()
 
+# colcon runs other packages' tier-2 tests in parallel on one domain, so the
+# server's absolute names must not land on the shared graph (SIMAD-2100).
+PREFIX = "/test_simad"
+ABSOLUTE_NAMES = (
+    "/scan",
+    "/ground_truth/scan",
+    "/imu",
+    "/odom",
+    "/ground_truth/odom",
+    "/ground_truth/track_relative_state",
+    "/tf",
+    "/drive",
+)
+
+
+def topic(name: str) -> str:
+    return f"{PREFIX}{name}"
+
 
 def free_port() -> int:
     """An ephemeral port, never the sim's 4567 (held by other parts)."""
@@ -55,6 +73,8 @@ def server_description(port: int, **overrides):
         package="racing_sim_autodrive",
         executable="racing_sim_autodrive_server",
         name="racing_sim",
+        namespace=PREFIX,
+        remappings=[(n, topic(n)) for n in ABSOLUTE_NAMES],
         parameters=[parameters],
         output="screen",
     )
