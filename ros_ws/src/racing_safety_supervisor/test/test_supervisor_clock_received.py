@@ -52,6 +52,7 @@ def _supervisor(name, use_sim_time):
         package="racing_safety_supervisor",
         executable="racing_safety_supervisor_node",
         name=name,
+        namespace=PREFIX,
         parameters=[{"track_path": str(TRACK), "use_sim_time": use_sim_time}],
         remappings=[
             ("/drive", f"{PREFIX}/{name}/drive"),
@@ -109,10 +110,10 @@ class TestClockReceived(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.01)
 
     def test_safe_2010_first_heard_clock_is_latched_once(self):
-        topic = "/safe_sim/clock_received"
+        topic = f"{PREFIX}/safe_sim/clock_received"
         self.assertTrue(
             self._spin_until(lambda: self.node.count_publishers(topic) >= 1),
-            "no publisher on /safe_sim/clock_received",
+            f"no publisher on {topic}",
         )
         listener_a = []
         self.node.create_subscription(
@@ -150,12 +151,12 @@ class TestClockReceived(unittest.TestCase):
         # its discovery implies the block's endpoints would be announced.
         client = self.node.create_client(
             Trigger,
-            "/safe_wall/clear_emergency_stop",
+            f"{PREFIX}/safe_wall/clear_emergency_stop",
         )
         self.assertTrue(client.wait_for_service(timeout_sec=TIMEOUT_SECONDS))
         self._spin_for(0.5)
         self.assertEqual(
-            self.node.count_publishers("/safe_wall/clock_received"), 0
+            self.node.count_publishers(f"{PREFIX}/safe_wall/clock_received"), 0
         )
         subscribers = self.node.get_subscriptions_info_by_topic(
             f"{PREFIX}/clock"
