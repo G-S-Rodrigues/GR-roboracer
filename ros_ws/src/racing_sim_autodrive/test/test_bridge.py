@@ -94,7 +94,12 @@ def test_simad_1160_malformed_frame_raises_and_fallback_is_stopped(raws):
 def test_simad_1170_ground_truth_is_the_cog_in_the_map_frame(raws):
     """SIMAD-1170: truth = V1 Position moved lr along heading
     (`rear_axle_to_cog`), then through world_to_map, at z = h; the twist is
-    `V1 Linear Velocity` as reported (already the CoG, part 5 finding c)."""
+    `V1 Linear Velocity` as reported (already the CoG, part 5 finding c).
+
+    The fixture's spawn is this move: V1 Position (0.8013, 3.1583) at yaw
+    3pi/2 is a CoG at (0.8013, 3.0030), 0.155 m (AutoDRIVE's lr 0.15532, not
+    the gym's 0.17145) along -y. That is part 7's first-seen (0.802, 3.003),
+    not a spawn mismatch."""
     world_to_map = Pose2D(1.5, -2.0, 0.4)
     session = _session(world_to_map=world_to_map)
     k = 300
