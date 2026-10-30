@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -232,3 +233,69 @@ class TestServerNode(unittest.TestCase):
         self.assertTrue(
             all(b > a for a, b in zip(odom, odom[1:], strict=False))
         )
+
+    def test_simad_2080_every_frame_is_answered_under_a_drive_flood(self):
+        """SIMAD-2080: a controller publishing /drive in a tight loop must not
+        starve the Socket.IO hub. 300 frames at recorded pace (the sim's own
+        pace, many frames in flight) get 300 replies.
+
+        Why: in CI the rclpy executor thread, busy with the /drive flood,
+        held the GIL and the hub's replies drained at 9-30 per second, so
+        the replay ended with replies missing (the ADAPT-2110 stall). Lockstep
+        cannot see it: one frame in flight, so no reply is ever late."""
+        import tempfile
+
+        publisher = self.node.create_publisher(
+            AckermannDriveStamped, "/drive", STATE
+        )
+        message = AckermannDriveStamped()
+        message.drive.speed = 2.0
+        message.drive.steering_angle = 0.1
+        stop = threading.Event()
+
+        def flood():
+            while not stop.is_set():
+                publisher.publish(message)
+
+        thread = threading.Thread(target=flood, daemon=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            thread.start()
+            try:
+                replies, _ = self._replay(
+                    Path(tmp) / "replies.jsonl",
+                    "--pace",
+                    "recorded",
+                    "--count",
+                    str(FRAMES),
+                )
+            finally:
+                stop.set()
+                thread.join(timeout=5.0)
+        self.assertEqual(len(replies), FRAMES)
+
+    def test_simad_2090_a_silent_client_gets_one_stall_warning(
+        self, proc_output
+    ):
+        """SIMAD-2090: 20 frames, then the client holds the socket open and
+        silent for 1.5 s: the server logs the stall with its counters
+        (entered = exited = emitted: every frame it took it answered; the
+        counts are cumulative over the server's life, shared by this file's
+        tests) and dumps the stacks of every thread, so a stuck server is
+        never silent (gotcha 29)."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                "20",
+                "--hold-s",
+                "1.5",
+            )
+        proc_output.assertWaitFor(
+            "stall: no Bridge frame handled for", timeout=5
+        )
+        proc_output.assertWaitFor(
+            re.compile(r"entered=(\d+) exited=\1 emitted=\1"), timeout=5
+        )
+        proc_output.assertWaitFor("Current thread", timeout=5)

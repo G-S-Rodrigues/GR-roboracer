@@ -98,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--loop", action="store_true")
     parser.add_argument("--count", type=int, default=None)
     parser.add_argument("--replies-out", type=Path, default=None)
+    parser.add_argument(
+        "--hold-s",
+        type=float,
+        default=0.0,
+        help="keep the socket open and silent this long after the last reply",
+    )
     return parser
 
 
@@ -163,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        if args.hold_s > 0:
+            time.sleep(args.hold_s)
         client.disconnect()
         if args.replies_out is not None:
             with args.replies_out.open("w") as out:
