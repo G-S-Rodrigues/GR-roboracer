@@ -111,3 +111,59 @@ def test_simad_1250_bad_arguments_raise(records):
         list(
             replay.schedule(records, pace="lockstep", start_frame=len(records))
         )
+
+
+def test_simad_1310_end_frame_bounds_the_loop(records):
+    """SIMAD-1310: `end_frame` (exclusive) ends the segment: a loop restarts
+    at `start_frame` after `end_frame - 1`, recorded gaps hold inside it and
+    the wrap waits a recorded period; without `loop` the plan stops at
+    `end_frame - 1`; `end_frame=None` is today's behaviour; a bad end
+    raises."""
+    looped = list(
+        itertools.islice(
+            replay.schedule(
+                records,
+                pace="lockstep",
+                start_frame=2,
+                loop=True,
+                end_frame=5,
+            ),
+            7,
+        )
+    )
+    assert [i for i, _, _ in looped] == [2, 3, 4, 2, 3, 4, 2]
+    recorded = list(
+        itertools.islice(
+            replay.schedule(
+                records,
+                pace="recorded",
+                start_frame=2,
+                loop=True,
+                end_frame=5,
+            ),
+            5,
+        )
+    )
+    assert recorded[0][1] == 0.0
+    for k in (1, 2):
+        expected = records[recorded[k][0]][0] - records[recorded[k][0] - 1][0]
+        assert recorded[k][1] == pytest.approx(expected, abs=1e-9)
+    assert 0.0 < recorded[3][1] < 0.5
+    once = list(
+        replay.schedule(records, pace="lockstep", start_frame=2, end_frame=5)
+    )
+    assert [i for i, _, _ in once] == [2, 3, 4]
+    assert list(
+        replay.schedule(records, pace="recorded", start_frame=100)
+    ) == list(
+        replay.schedule(
+            records, pace="recorded", start_frame=100, end_frame=None
+        )
+    )
+    for bad in (2, 0, len(records) + 1):
+        with pytest.raises(ValueError):
+            list(
+                replay.schedule(
+                    records, pace="lockstep", start_frame=2, end_frame=bad
+                )
+            )
