@@ -299,4 +299,3 @@ class TestServerNode(unittest.TestCase):
             re.compile(r"entered=(\d+) exited=\1 emitted=\1"), timeout=5
         )
         proc_output.assertWaitFor("Current thread", timeout=5)
-

@@ -453,4 +453,3 @@ def test_simad_1340_stall_watch_report_carries_counters_and_gap():
     assert "entered=4" in report and "exited=3" in report
     assert "emitted=3" in report
     assert "1.50 s" in report
-
