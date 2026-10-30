@@ -163,8 +163,12 @@ def test_bringup_1560_localization_pipeline_differs_by_three_values() -> None:
         if a != b
     ]
     assert differing == [
-        # Part 2's tuned mapping value; localization keeps MOLA's default.
-        ("icp_prior_weight: 50.0", "icp_prior_weight: 1.0"),
+        # Part 2's tuned mapping value (50). Localization is 5, measured
+        # (SIM-3510 seed 42, 1x): on the seed-7 map at the default 1.0, 2 of
+        # 5 runs pass (rmse 2.27, 2.29) and 3 diverge (37.7 m); at 5 it is
+        # 0.751/0.752/0.742 (3/3), at 50 0.70/0.69/0.69. The older map is
+        # unchanged by it (1.550-1.554 at 1.0; 1.558/1.562/1.555 at 5).
+        ("icp_prior_weight: 50.0", "icp_prior_weight: 5.0"),
         ("maximum_sigma: 1.0", "maximum_sigma: 0.5"),
         (
             'threshold: "2.0*ADAPTIVE_THRESHOLD_SIGMA"',
