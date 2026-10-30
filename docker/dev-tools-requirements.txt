@@ -17,6 +17,24 @@
 # To bump: in a throwaway container off the `underlay` stage, install the new
 # top-level set unpinned, take `pip3 freeze` of what pip installed (not the
 # Debian-owned dists), and commit the result as a reviewed diff.
+# The AutoDRIVE Socket.IO closure (part 7), Linux/CPython 3.12. The sim speaks
+# Engine.IO v3 and python-socketio 5.x drops every event (config/autodrive/
+# simulator.yaml, gotcha 30), so the server needs 4.2.0 / 3.13.0. engineio's
+# threading mode has no WebSocket upgrade, which the sim's client requires, so
+# the server runs on gevent + gevent-websocket. websocket-client is the replay
+# client's transport (the same WebSocket the sim uses).
+# Source: tools/autodrive_record.py.lock; SIMAD-1150 fails if the two differ.
+# Debian owns six 1.16.0 (satisfies python-socketio's six>=1.9) and pyyaml, so
+# they are absent; cffi/pycparser are lock entries behind win32/PyPy markers.
+# To bump: re-record with the recorder, then bump both files together.
+python-socketio==4.2.0
+python-engineio==3.13.0
+gevent==26.9.0
+gevent-websocket==0.10.1
+greenlet==3.5.6
+zope-event==6.2
+zope-interface==8.7
+websocket-client==1.9.2
 cfgv==3.5.0
 click==8.5.0
 colorama==0.4.6

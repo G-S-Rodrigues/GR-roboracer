@@ -206,3 +206,131 @@ def test_adapt_1030_every_conformance_test_is_classified_and_guarded() -> None:
         test_id for test_id in ungated if _applicable_calls(methods[test_id][1])
     )
     assert not guarded, f"ungated but guarded: {guarded}"
+
+
+def _capabilities_by_path(path: Path) -> dict:
+    """A backend's stdlib-only capabilities.py, loaded with no ROS and no
+    package import (the gym's package pulls JAX in)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CAPABILITIES
+
+
+SOURCES = Path(__file__).parents[2]
+BACKEND_CAPABILITIES = {
+    conformance.GYM: SOURCES
+    / "racing_sim_gym_jax"
+    / "racing_sim_gym_jax"
+    / "capabilities.py",
+    conformance.AUTODRIVE: SOURCES
+    / "racing_sim_autodrive"
+    / "racing_sim_autodrive"
+    / "capabilities.py",
+}
+
+
+def _mismatches(backends: dict) -> dict[str, set[str]]:
+    """Row name -> ids where its expected_not_applicable differs from what
+    its capabilities module makes not applicable."""
+    found = {}
+    for name, row in backends.items():
+        declared = _capabilities_by_path(BACKEND_CAPABILITIES[name])
+        computed = set(
+            conformance.not_applicable(conformance.REQUIREMENTS, declared)
+        )
+        if computed != set(row.expected_not_applicable):
+            found[name] = computed ^ set(row.expected_not_applicable)
+    return found
+
+
+def test_adapt_1040_each_backend_row_expects_what_its_capabilities_imply():
+    """ADAPT-1040: for every BACKENDS row, expected_not_applicable equals
+    not_applicable(REQUIREMENTS, that backend's capabilities module). A row
+    cannot drift from what the backend declares, and an extra id is named."""
+    from dataclasses import replace
+
+    assert set(conformance.BACKENDS) == set(BACKEND_CAPABILITIES)
+    assert _mismatches(conformance.BACKENDS) == {}
+    extra = dict(conformance.BACKENDS)
+    extra[conformance.AUTODRIVE] = replace(
+        extra[conformance.AUTODRIVE],
+        expected_not_applicable=extra[
+            conformance.AUTODRIVE
+        ].expected_not_applicable
+        | {"ADAPT-2010"},
+    )
+    assert _mismatches(extra) == {conformance.AUTODRIVE: {"ADAPT-2010"}}
+
+
+def test_adapt_1040_backend_selection_defaults_to_the_gym_and_rejects_unknown(
+    monkeypatch,
+):
+    """ADAPT-1040: RACING_SIM_BACKEND unset is the gym; a name not in the
+    table raises rather than silently running the gym."""
+    import pytest
+
+    monkeypatch.delenv("RACING_SIM_BACKEND", raising=False)
+    assert conformance.backend().name == conformance.GYM
+    monkeypatch.setenv("RACING_SIM_BACKEND", conformance.AUTODRIVE)
+    assert conformance.backend().name == conformance.AUTODRIVE
+    monkeypatch.setenv("RACING_SIM_BACKEND", "nope")
+    with pytest.raises(ValueError, match="nope"):
+        conformance.backend()
+
+
+CMAKE = Path(__file__).parents[1] / "CMakeLists.txt"
+
+
+def _launch_registrations(text: str) -> dict[str, list[str]]:
+    """CTest name of every add_launch_test -> the RACING_SIM_BACKEND values
+    set on it by a `set_property(TEST <name> ... ENVIRONMENT ...)`."""
+    names = []
+    for call in re.findall(r"add_launch_test\(([^)]*)\)", text):
+        target = re.search(r"TARGET\s+(\S+)", call)
+        source = re.search(r"test/(\S+\.py)", call).group(1)
+        names.append(target.group(1) if target else f"test_{source}")
+    backends: dict[str, list[str]] = {name: [] for name in names}
+    for name, tail in re.findall(
+        r"set_property\(TEST\s+(\S+)\s+APPEND PROPERTY ENVIRONMENT\s+"
+        r"([^)]*)\)",
+        text,
+    ):
+        backends.setdefault(name, []).extend(
+            re.findall(r"RACING_SIM_BACKEND=(\S+)", tail)
+        )
+    return {n: backends[n] for n in names}
+
+
+def test_adapt_1050_every_launch_registration_runs_the_backend_it_names():
+    """ADAPT-1050: each add_launch_test carries exactly one
+    RACING_SIM_BACKEND, `autodrive` for a target ending `_autodrive` and
+    `f1tenth_gym_jax` for the others. add_launch_test has no ENV argument, so
+    a lost property would silently rerun the gym under an `_autodrive` name
+    and pass (seen before the property route)."""
+    found = _launch_registrations(CMAKE.read_text())
+    assert len(found) == 8
+    for name, values in found.items():
+        want = (
+            conformance.AUTODRIVE
+            if name.endswith("_autodrive")
+            else conformance.GYM
+        )
+        assert values == [want], name
+
+
+def test_adapt_1050_negative_a_lost_property_is_reported():
+    """ADAPT-1050 negative: the scan is not vacuous."""
+    text = (
+        "add_launch_test(test/test_adapter_contract.py\n"
+        "  TARGET test_adapter_contract_autodrive TIMEOUT 30)\n"
+        "set_property(TEST test_adapter_contract_autodrive APPEND PROPERTY"
+        " ENVIRONMENT\n  RACING_SIM_BACKEND=autodrive)\n"
+        "add_launch_test(test/test_adapter_start_held.py TIMEOUT 30)\n"
+    )
+    assert _launch_registrations(text) == {
+        "test_adapter_contract_autodrive": ["autodrive"],
+        "test_test_adapter_start_held.py": [],
+    }

@@ -129,6 +129,21 @@ def test_simad_1040_missing_key_raises_camera_and_euler_optional():
     assert core.decode_frame(raw).ranges is not None
 
 
+def test_simad_1270_comma_decimal_number_fails_loudly_naming_the_locale():
+    """SIMAD-1270: a Windows sim under a comma-decimal locale (pt-PT) sends
+    'V1 Throttle': '0,0000'. That is a FrameError (the node logs it at ERROR
+    and sends the stopped fallback) whose text names the cause and the fix
+    (en-US culture), not a bare float() message."""
+    _, sim, _ = _fixture()
+    raw = dict(sim[1])
+    raw["V1 Throttle"] = "0,0000"
+    with pytest.raises(core.FrameError) as caught:
+        core.decode_frame(raw)
+    text = str(caught.value)
+    assert "V1 Throttle" in text
+    assert "comma" in text and "locale" in text and "en-US" in text
+
+
 def test_simad_1060_quaternion_yaw_matches_euler_yaw():
     """SIMAD-1060: quaternion yaw equals the Euler yaw on every frame."""
     _, sim, _ = _fixture()
