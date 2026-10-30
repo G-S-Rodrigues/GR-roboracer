@@ -142,6 +142,9 @@ class Step:
     track_state: TrackState | None
     speed: float | None  # encoder speed
     dt: float | None
+    throttle: float  # what `reply` formats; front end B publishes these
+    steering: float  # normalized, [-1, 1]
+    reset: bool
 
 
 class StallWatch:
@@ -320,8 +323,20 @@ class BridgeSession:
         `fallback_reply()`. `received_at` (node clock, s) is used only with
         `dt_source="receipt"`.
         """
+        return self.on_sim_frame(core.decode_frame(raw), drive, received_at)
+
+    def on_sim_frame(
+        self,
+        frame: core.SimFrame,
+        drive: DriveRequest | None,
+        received_at: float | None = None,
+    ) -> Step:
+        """One decoded frame -> the reply and the states to publish.
+
+        The seam front end B uses: it builds the `SimFrame` from the
+        devkit's ROS values (`core.frame_from_devkit`) and has no raw dict.
+        """
         vehicle = self._vehicle
-        frame = core.decode_frame(raw)
         prev = self._prev
         dt = self._dt(frame, received_at)
         speed = (
@@ -421,4 +436,7 @@ class BridgeSession:
             track_state=track_state,
             speed=speed,
             dt=dt,
+            throttle=throttle,
+            steering=steering,
+            reset=fire,
         )
