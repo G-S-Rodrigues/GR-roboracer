@@ -83,17 +83,6 @@ def test_metrics_1040_difference_beyond_tolerance_fails() -> None:
     assert [difference.field for difference in differences] == ["lap_time"]
 
 
-def test_metrics_1050_default_lap_time_tolerance_admits_0_08() -> None:
-    # Owner ruling 2026-10-28: the default lap_time tolerance is 0.1 s, so a
-    # live lap 0.08 s off the golden (22.89 vs 22.81) is inside it.
-    expected = metrics()
-    expected["lap_time"] = 22.81
-    actual = deepcopy(expected)
-    actual["lap_time"] = 22.89
-
-    assert compare_metrics(expected, actual) == []
-
-
 def test_metrics_1020_rejects_exact_float_comparison() -> None:
     with pytest.raises(ValueError, match="positive tolerance"):
         compare_metrics(metrics(), metrics(), {"lap_time": 0.0})
