@@ -120,6 +120,10 @@ def test_bringup_1620_autodrive_launches_our_server_and_no_gym() -> None:
     default = _packages(_nodes(module, context))
     assert "racing_sim_gym_jax" in default
     assert "racing_sim_autodrive" not in default
+    # The server's own inputs are read only when it launches: a bad port
+    # cannot break a gym launch that never uses it.
+    module, context = _launch_context(autodrive_port="not-a-port")
+    assert _packages(_nodes(module, context)) == default
 
     module, context = _launch_context(autodrive_port="4999", **AUTODRIVE)
     nodes = _nodes(module, context)
@@ -160,7 +164,20 @@ def test_bringup_1630_use_sim_time_follows_the_clock_capability() -> None:
     launch-time control."""
     module, context = _launch_context()
     gym = _nodes(module, context)
-    assert len(gym) >= 8
+    # The exact graph (the removed test pinned the 9-node set): the gym
+    # launch, and the autodrive one with its server in the gym's place.
+    gym_packages = sorted(_packages(gym))
+    assert gym_packages == [
+        "racing_bringup",
+        "racing_controller_baseline",
+        "racing_evaluation",
+        "racing_metrics",
+        "racing_recording",
+        "racing_safety_supervisor",
+        "racing_sim_gym_jax",
+        "robot_state_publisher",
+        "rviz2",
+    ]
     for node in gym:
         if node._Node__package == "racing_sim_gym_jax":
             assert _sim_time(context, node) == "absent"
@@ -169,7 +186,10 @@ def test_bringup_1630_use_sim_time_follows_the_clock_capability() -> None:
 
     module, context = _launch_context(**AUTODRIVE)
     autodrive = _nodes(module, context)
-    assert len(autodrive) == len(gym)
+    assert sorted(_packages(autodrive)) == sorted(
+        "racing_sim_autodrive" if name == "racing_sim_gym_jax" else name
+        for name in gym_packages
+    )
     for node in autodrive:
         if node._Node__package == "racing_sim_autodrive":
             assert _sim_time(context, node) == "absent"
@@ -278,9 +298,10 @@ def test_bringup_1660_autodrive_refuses_what_it_cannot_do(
 
 def test_bringup_1670_server_values_are_part_4s_numbers() -> None:
     """BRINGUP-1670: config/vehicles/autodrive_roboracer/server.yaml carries
-    the server's seven vehicle values, and lr, wheel_radius and
-    throttle_gain are the ones source.yaml and identified.yaml state, so the
-    launch cannot start the server on a drifted copy."""
+    the server's seven vehicle values, and each is the number its source
+    states (lr, wheel_radius: source.yaml; throttle_gain, h, the steering
+    limit: identified.yaml; kp and ki, untuned until part 10, are pinned
+    here), so the launch cannot start the server on a drifted copy."""
     directory = REPOSITORY_ROOT / "config" / "vehicles" / "autodrive_roboracer"
     server = yaml.safe_load((directory / "server.yaml").read_text())[
         "racing_sim"
@@ -302,3 +323,30 @@ def test_bringup_1670_server_values_are_part_4s_numbers() -> None:
         server["throttle_gain"]
         == identified["measurements"]["throttle_gain"]["value"]
     )
+    assert server["h"] == identified["measurements"]["rest_height"]["value"]
+    assert (
+        server["max_steering_angle"]
+        == identified["measurements"]["steering"]["limit"]["value"]
+    )
+    # No source states the gains: they are part 10's to tune, and a change
+    # here is a reviewed one.
+    assert (server["kp"], server["ki"]) == (0.02, 0.05)
+
+
+def test_bringup_1680_trajectory_speed_is_refused_on_a_map_with_no_raceline():
+    """BRINGUP-1680: `speed_source:=trajectory` on a map whose raceline_path
+    resolves empty (Porto has no `<map>_raceline.csv`, so `track_centerline`
+    drives the centerline at speed 0) is an error naming the map, instead of
+    a car that never moves; the curvature schedule and a map with a raceline
+    still launch."""
+    module, context = _launch_context(speed_source="trajectory", **AUTODRIVE)
+    with pytest.raises(RuntimeError, match=r"porto.*no raceline") as refused:
+        module._launch_nodes(context, "", "")
+    assert "speed_source" in str(refused.value)
+    module, context = _launch_context(**AUTODRIVE)
+    assert module._launch_nodes(context, "", "")
+    module, context = _launch_context(
+        speed_source="trajectory",
+        scenario="config/scenarios/spielberg.yaml",
+    )
+    assert module._launch_nodes(context, "", "")

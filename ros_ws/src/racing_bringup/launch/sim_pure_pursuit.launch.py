@@ -41,8 +41,9 @@ SIMULATOR_CAPABILITIES = {
 }
 # What `simulator:=autodrive` runs: the only vehicle and the only track the
 # AutoDRIVE build has active, the server's values and the world_to_map it
-# publishes under (config/autodrive/porto_frame.yaml: identity until part 10
-# measures it). Paths are repository-relative, like the rest of this file.
+# publishes under (config/autodrive/porto_frame.yaml: derived, not measured,
+# until part 10's lap measures it; plan D3). Paths are repository-relative,
+# like the rest of this file.
 AUTODRIVE_VEHICLE = "autodrive_roboracer"
 AUTODRIVE_SCENARIO = "porto"
 AUTODRIVE_SERVER_CONFIG = "config/vehicles/autodrive_roboracer/server.yaml"
@@ -221,6 +222,19 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         )
     except (ValueError, FileNotFoundError) as error:
         raise RuntimeError(str(error)) from error
+    if (
+        speed_source == "trajectory"
+        and tracks["racing_bringup_support"]["raceline_path"] == ""
+    ):
+        # track_centerline on a map with no raceline publishes the
+        # centerline at speed 0: the car would never move, with no error.
+        raise RuntimeError(
+            "speed_source:=trajectory on "
+            f"{Path(scenario.perform(context)).stem}: the map has no "
+            "raceline, so track_centerline publishes its centerline at "
+            "speed 0 and the car would not move; use the default "
+            "speed_source (curvature_schedule)"
+        )
 
     # The simulator owns the clock (ADR 0006): it publishes /clock from its
     # own simulated-time counter and stays off use_sim_time so its wall
@@ -244,22 +258,26 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     # Front end A: our Socket.IO server the sim connects to. It listens before
     # the sim exists and never owns /clock (free-running, ADR 0006). The values
     # file is the server's, not the vehicle file (BRINGUP-1670).
-    autodrive_node = Node(
-        package="racing_sim_autodrive",
-        executable="racing_sim_autodrive_server",
-        name="racing_sim",
-        parameters=[
-            AUTODRIVE_SERVER_CONFIG,
-            {
-                **_world_to_map(),
-                "track_path": tracks["racing_safety_supervisor"]["track_path"],
-                "scenario_id": AUTODRIVE_SCENARIO,
-                "port": int(
-                    LaunchConfiguration("autodrive_port").perform(context)
-                ),
-            },
-        ],
-    )
+    autodrive_node = None
+    if use_autodrive:
+        autodrive_node = Node(
+            package="racing_sim_autodrive",
+            executable="racing_sim_autodrive_server",
+            name="racing_sim",
+            parameters=[
+                AUTODRIVE_SERVER_CONFIG,
+                {
+                    **_world_to_map(),
+                    "track_path": tracks["racing_safety_supervisor"][
+                        "track_path"
+                    ],
+                    "scenario_id": AUTODRIVE_SCENARIO,
+                    "port": int(
+                        LaunchConfiguration("autodrive_port").perform(context)
+                    ),
+                },
+            ],
+        )
     support_node = Node(
         package="racing_bringup",
         executable="racing_bringup_support",
@@ -362,7 +380,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         condition=IfCondition(use_rviz),
     )
     return [
-        autodrive_node if use_autodrive else sim_node,
+        autodrive_node if autodrive_node is not None else sim_node,
         support_node,
         controller_node,
         supervisor_node,
