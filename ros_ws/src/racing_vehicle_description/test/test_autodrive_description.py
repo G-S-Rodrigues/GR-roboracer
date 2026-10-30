@@ -16,7 +16,8 @@ Re-measured 2026-10-30 on the committed STLs (measured / tolerance):
 - wheel centre z: 0.66 mm / 2 mm; catches 9.2 mm.
 - tyre radius: 2.0 mm under the collider's 0.059 / 2.5 mm.
 - front overhang: 4.76 mm past 0.09 (margin 0.24 mm of 5); rear edge
-  (0.05 % quantile of x) 2.14 mm inside 0.08; length 2.61 mm over 0.500 / 5 mm each.
+  (0.05 % quantile of x) 2.14 mm inside 0.08; length 2.61 mm over 0.500;
+  5 mm each.
 - chassis lateral centre: 1.75 mm / 3 mm.
 - lidar horizontal centre: 6.12 mm (x), 1.75 mm (y) off the frame origin /
   8 mm.
@@ -174,8 +175,8 @@ def test_desc_1070_mesh_body_has_the_cars_length_and_sits_on_the_ground() -> (
     shock tower stick out further (to -0.104) and are the only things that
     do, so the edge is taken at the 0.05 % quantile of the chassis
     vertices' x (the committed mesh puts it 2.1 mm inside 0.08; the
-    0.1 % quantile gives 3.05 mm, the 1 % one 12.3 mm), which ignores the few hundred
-    vertices of those two parts.
+    0.1 % quantile gives 3.05 mm, the 1 % one 12.3 mm), which ignores the
+    few hundred vertices of those two parts.
     """
     root = _root()
     chassis = _chassis(root)
