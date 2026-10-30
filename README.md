@@ -34,7 +34,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Mapping and SLAM | [SLAM Toolbox survey mapping](docs/workflows/mapping.md#survey-mapping) | Available | Builds a map while the vehicle drives on ground truth. |
 | Mapping and SLAM | FAR-LIO / LiDAR-inertial methods | Exploratory | Research direction; no current implementation. |
 | Localization | [`ground_truth`](docs/workflows/racing.md#ground-truth-reference-stack) | Available | Exact simulator pose in the reference stack. |
-| Localization | [`slam_toolbox`](docs/workflows/racing.md#online-slam-toolbox-evaluation) | Available | Online estimate evaluation while driving on ground truth; driving on its estimate latches a `TRACK_LIMIT` stop. |
+| Localization | [`slam_toolbox`](docs/workflows/racing.md#online-slam-toolbox-evaluation) | Available | Online estimate evaluation while driving on ground truth, with parameter files for the 64- and 1080-beam lidar; driving on its estimate latches a `TRACK_LIMIT` stop. |
 | Localization | [`amcl`](docs/workflows/racing.md#amcl-closed-loop) | Available | Saved-map localization and verified closed-loop driving on Spielberg. |
 | Localization | [`mola`](docs/workflows/racing.md#mola-open-loop) | Available | MOLA-LO lidar localization on the map MOLA built itself, scored open loop on Spielberg (1080 beams, 1x); no closed-loop lap is backed. |
 | Planning and raceline generation | [`track_centerline`](docs/workflows/racing.md#planning-and-raceline-generation) | Available | Default runtime planner (`planner:=track_centerline`): publishes the centerline at constant speed. Renamed from `track_raceline`. |

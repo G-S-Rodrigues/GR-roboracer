@@ -36,7 +36,11 @@ Spielberg: `slam_toolbox` within 4.0 m RMSE and `amcl` within 0.65 m, each with 
 0.99 (ACC-4030). `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
 loop: ATE RMSE 1.547-1.556 m (median 1.552) and maximum 3.076-3.097 m over five laps, availability
 0.9974 or better, bounded at 2.5 m RMSE (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
-(ACC-4040). See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
+(ACC-4040). `slam_toolbox` with its 1080-beam file (selected by `spielberg_1080`), 5x, open loop, six laps over
+seeds 42 and 7: ATE RMSE 0.81-1.25 m, maximum 1.53-2.24 m, map median 0.28-0.56 m and 95th percentile
+0.92-1.93 m from the true walls, availability 0.9996 or better; bounded at 1.57 m RMSE and 2.80 m maximum
+(SIM-3550). The 64-beam file on the same scenario gave 6.9-8.2 m RMSE, which is the number this replaced.
+See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
 
 The denser surveys beside the committed grid, measured against the track's ground-truth walls, have a
 95th-percentile wall deviation of 0.067 m at 0.05 m cells, 0.049 m at 0.025 m and 0.046 m at 0.02 m
@@ -50,7 +54,9 @@ The nightly records every pose source on `spielberg` (64 beams) and `spielberg_1
 estimate's error and availability, the rate of changed poses, the scan rate, CPU per scan and the produced
 map's distance to the true walls. The wall distance is the raw distance from each occupied cell's centre
 to the gym map image's wall faces, so a perfect map at 0.05 m cells scores 0.025 m, not 0. The report is
-data: it ranks nothing and bounds no value. No numbers are published here until a nightly produces them.
+data: it ranks nothing and bounds no value. No numbers are published here until a nightly produces them. From the merge of the 1080 slam_toolbox
+file, its `spielberg_1080` rows run that file instead of the 64-beam one, so earlier and later rows are not
+the same configuration.
 
 ## Mapping demonstration
 

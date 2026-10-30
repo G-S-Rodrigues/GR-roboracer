@@ -120,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **238 tier-1, 25 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **241 tier-1, 25 tier-2, 13 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -166,6 +166,7 @@ The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts
 The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
 
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
+The slam_toolbox 1080-beam work added tier 1 `BRINGUP-1800` (the `slam_toolbox_config` argument), `BRINGUP-1810` (the scenario selects the file) and `BRINGUP-1820` (the 1080 file's keys), and tier 3 `SIM-3550`.
 
 ## The tests that matter most
 
