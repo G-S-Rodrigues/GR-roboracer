@@ -62,6 +62,16 @@ fails with `ModuleNotFoundError: sim`, so run it as a module. It regenerates the
 under `config/scenarios/maps` from the canonical track, byte-identically. The live scenario must
 not set physics parameters the rollout does not (SIMJAX-1060).
 
+## The AutoDRIVE simulator's window (Linux)
+
+**Unverified:** this section has not been run on a Linux machine; the window was tested only on
+Windows (see `docs/agents/running-wsl.md`). The simulator ships as a Linux binary in the pinned
+`autodrive-sim` image, which runs headless by default (`-batchmode -nographics`). To see it you
+need Docker, an NVIDIA GPU with Vulkan and an X11 display: start `autodrive-devkit` with
+`AUTODRIVE_ROS_DOMAIN_ID=<id other than 42> docker compose -f docker/docker-compose.yaml --profile autodrive run --rm --no-deps -d -p 127.0.0.1:4567:4567 autodrive-devkit`,
+then run the sim binary from the image without `-batchmode -nographics`, with
+`-ip 127.0.0.1 -port 4567`. The simulator is not yet driven by our stack.
+
 ## When a run misbehaves
 
 Symptoms and fixes (latched stop, silent topics, stale launches) are in
