@@ -242,6 +242,33 @@ class TestServerNode(unittest.TestCase):
             all(b > a for a, b in zip(odom, odom[1:], strict=False))
         )
 
+    def test_simad_2060_timings_out_has_a_latency_per_sent_frame(self):
+        """SIMAD-2060: `--timings-out` writes one {frame, sent_ns,
+        reply_ns} row per frame sent, each reply later than its send and
+        within the replay's reply wait (the figures part 8's rate bar is
+        read from; the default replay writes nothing)."""
+        import tempfile
+
+        from racing_sim_autodrive import replay
+
+        with tempfile.TemporaryDirectory() as tmp:
+            timings = Path(tmp) / "timings.jsonl"
+            self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                "300",
+                "--timings-out",
+                str(timings),
+            )
+            rows = [
+                json.loads(line) for line in timings.read_text().splitlines()
+            ]
+        self.assertEqual(len(rows), 300)
+        for row in rows:
+            latency = (row["reply_ns"] - row["sent_ns"]) * 1e-9
+            self.assertGreater(latency, 0.0, row)
+            self.assertLess(latency, replay.REPLY_WAIT_S, row)
+
     def test_simad_2080_every_frame_is_answered_under_a_drive_flood(self):
         """SIMAD-2080: a controller publishing /drive in a tight loop must not
         starve the Socket.IO hub. 300 frames at recorded pace (the sim's own
