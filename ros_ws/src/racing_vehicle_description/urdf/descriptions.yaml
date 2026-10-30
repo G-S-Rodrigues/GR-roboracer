@@ -1,0 +1,6 @@
+# Which URDF draws which vehicle (vehicle file stem -> file in this directory).
+# Read by racing_bringup (description_for) and display.launch.py; pinned by
+# DESC-1090 and BRINGUP-1056. A new config/vehicles/*.yaml needs an entry here.
+f1tenth_default: f1tenth.urdf
+f1tenth_gym_limits: f1tenth.urdf
+autodrive_roboracer: autodrive_roboracer.urdf
