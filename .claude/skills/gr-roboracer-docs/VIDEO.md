@@ -14,8 +14,8 @@ setup on the WSL2 host is in `docs/agents/running-wsl.md`. `ffmpeg` and the labe
 under its own tag. If `ffmpeg -version` fails in it, the image predates that change: rebuild it
 under your own tag, never `gr-roboracer:dev`; do not install by hand.
 
-**Done when** `ffmpeg -version` succeeds in your container, the other sessions have acknowledged and `ps` in your container shows no
-`install/racing_`, `ros2 launch`, `rviz2` or `ffmpeg` process.
+**Done when** `ffmpeg -version` succeeds in your container, the other sessions have acknowledged
+and `ps` in your container shows no `install/racing_`, `ros2 launch`, `rviz2` or `ffmpeg` process.
 
 ## 1. Record
 
