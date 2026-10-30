@@ -278,8 +278,13 @@ class DevkitNode(ContractNode):
     def shutdown_commands(self) -> None:
         a = self.link.assembler
         self.get_logger().info(
-            f"assembler: resyncs={a.resyncs} dropped={a.dropped_frames} "
-            f"lost={ {t: n for t, n in a.lost.items() if n} }"
+            f"assembler: emitted={a.emitted} resyncs={a.resyncs} "
+            f"dropped={a.dropped_frames} "
+            f"stamp_dropped={a.stamp_dropped} "
+            f"learn_dropped={a.learn_dropped} "
+            f"learn_stamp_dropped={a.learn_stamp_dropped} "
+            f"lost={ {t: n for t, n in a.lost.items() if n} } "
+            f"first_seen={a.first_seen} synced_at={a.synced_at}"
         )
         self.link.shutdown_commands(self._commands.pending_reset)
 

@@ -89,7 +89,8 @@ porto-race-direction); Pure Pursuit on that centerline is part 10's to settle.
 The devkit container bridges the simulator's Socket.IO to 13 ROS topics on its own domain `D`; B holds two
 rclpy contexts, the stack's and `D`, and feeds the same `BridgeSession` as A through `on_sim_frame`. Frames are
 assembled by DDS `publication_sequence_number` (a gap is a lost frame, dropped and counted, never paired
-across). The stamp and `dt` come from the devkit's `lidar` header stamp. Commands are latched on the devkit:
+across). A frame whose stamps spread beyond 16 ms (a publisher preempted mid-burst) is dropped alone and
+counted as `stamp_dropped`, with no resync; ips != odom, a sequence regression or a backlog still resyncs. The stamp and `dt` come from the devkit's `lidar` header stamp. Commands are latched on the devkit:
 steering and throttle are published once per assembled frame (not as `/drive` arrives), and reset is held True until the session sees the reset take
 effect, then False.
 

@@ -177,9 +177,11 @@ def test_simad_1430_ips_not_equal_to_odom_position_resyncs():
 
 
 @pytest.mark.parametrize("which", ["source", "header"])
-def test_simad_1430_spread_beyond_skew_resyncs(which):
+def test_simad_1430_spread_beyond_skew_drops_one_frame_without_resync(which):
     """SIMAD-1430: a frame whose `source_timestamp` spread (or header-stamp
-    spread) is beyond SKEW_S is dropped and resyncs."""
+    spread) is beyond SKEW_S (a publisher preempted mid-burst) is dropped and
+    counted in `stamp_dropped`, with no resync: its identity is exact by
+    sequence, so the next frame is emitted at once."""
     assembler = devkit.DevkitAssembler()
     _after_learning(assembler)
     shift = int(3 * devkit.SKEW_S * 1e9)
@@ -192,11 +194,35 @@ def test_simad_1430_spread_beyond_skew_resyncs(which):
                 item["header_stamp_ns"] += shift
 
     got = feed(assembler, burst(2, tweak=tweak))
-    assert got == [] and assembler.resyncs == 1
+    assert got == []
+    assert assembler.resyncs == 0
+    assert assembler.stamp_dropped == 1 and assembler.dropped_frames == 1
     got = []
     for f in range(3, 9):
         got += feed(assembler, burst(f))
-    assert [frame_of(a) for a in got][-2:] == [7, 8]
+    assert [frame_of(a) for a in got] == [3, 4, 5, 6, 7, 8]
+    assert assembler.resyncs == 0
+
+
+def test_simad_1430_a_stamp_failure_while_learning_keeps_the_offsets():
+    """SIMAD-1430: burst 1 has a stamp spread beyond SKEW_S while the
+    assembler is learning. Its sequences are exact, so it still confirms
+    burst 0's offsets: it syncs on it, drops that one frame (counted), and
+    frame 2 is emitted at once rather than two bursts later."""
+    assembler = devkit.DevkitAssembler()
+    shift = int(3 * devkit.SKEW_S * 1e9)
+
+    def tweak(topic, item):
+        if topic == "imu":
+            item["source_stamp_ns"] += shift
+
+    got = feed(assembler, burst(0))
+    got += feed(assembler, burst(1, tweak=tweak))
+    for f in range(2, 6):
+        got += feed(assembler, burst(f))
+    assert [frame_of(a) for a in got] == [2, 3, 4, 5]
+    assert assembler.resyncs == 0
+    assert assembler.stamp_dropped == 1 and assembler.dropped_frames == 1
 
 
 def test_simad_1430_one_dropped_lap_time_loses_one_frame_only():

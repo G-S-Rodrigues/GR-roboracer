@@ -14,7 +14,8 @@ identical across topics for a frame, `source_timestamp` spread within a frame
 p100 7.2 ms against consecutive-frame gaps down to 4.2 ms. A window wide
 enough for the spread (2 x 7.2 ms) is wider than the gap, so it cannot tell
 frames apart; the sequence number can. The spread and the header stamps stay
-as sanity checks with a loose bound.
+as sanity checks with a loose bound: a frame that fails only them is dropped
+and counted (`stamp_dropped`), with no resync.
 
 Offsets between a topic's sequence and the lidar's are learned, not assumed:
 at (re)sync, from bursts whose 13 heads are all present, and the assembler is
@@ -87,6 +88,9 @@ SKEW_S = 0.016
 # An incomplete backlog this deep means a topic is gone: resync.
 _MAX_FRAMES = 64
 _LIDAR = "lidar"
+# What `_build` returns for a frame it rejects: stamps only, or the data.
+_STAMPS = "stamps"
+_DATA = "data"
 
 
 @dataclass(frozen=True)
@@ -98,8 +102,14 @@ class AssembledFrame:
 class DevkitAssembler:
     def __init__(self) -> None:
         self.resyncs = 0
+        self.emitted = 0
+        self.synced_at: int | None = None  # lidar sequence of the sync
         self.dropped_frames = 0
+        self.learn_dropped = 0  # bursts given up while learning
+        self.learn_stamp_dropped = 0  # of those, by the stamp checks
+        self.stamp_dropped = 0  # of those, by the stamp checks alone
         self.lost = dict.fromkeys(REQUIRED, 0)
+        self.first_seen: dict[str, int] = {}  # a topic's first sequence
         self._in_error = False
         self._reset_state()
 
@@ -119,7 +129,12 @@ class DevkitAssembler:
             _LOG.error("devkit frame assembler resyncing: %s", why)
         self._reset_state()
 
-    def offer(
+    def offer(self, *args, **kwargs) -> list[AssembledFrame]:
+        out = self._offer(*args, **kwargs)
+        self.emitted += len(out)
+        return out
+
+    def _offer(
         self,
         topic: str,
         value,
@@ -128,6 +143,7 @@ class DevkitAssembler:
         header_stamp_ns: int | None = None,
     ) -> list[AssembledFrame]:
         item = (value, source_stamp_ns, sequence, header_stamp_ns)
+        self.first_seen.setdefault(topic, sequence)
         last = self._last.get(topic)
         if last is not None and sequence <= last:
             self._resync(f"{topic} sequence {sequence} after {last}")
@@ -171,7 +187,14 @@ class DevkitAssembler:
                 break
             del self._frames[fid]
             frame = self._build(parts)
-            if frame is None:
+            if frame == _STAMPS:
+                # A publisher preempted mid-burst: the frame's identity is
+                # exact by sequence, so drop it alone and carry on.
+                self.dropped_frames += 1
+                self.stamp_dropped += 1
+                self._dead = {d for d in self._dead if d > fid}
+                continue
+            if isinstance(frame, str):
                 self.dropped_frames += 1
                 self._resync(f"frame {fid} failed the sanity checks")
                 break
@@ -213,6 +236,7 @@ class DevkitAssembler:
                 t1 = pending[first][1][1]
                 if any(pending[t][0][1] >= t1 for t in rest):
                     pending[first].popleft()  # a topic missed this burst
+                    self.learn_dropped += 1
                     self._candidate = None
                     continue
             base = pending[_LIDAR][0][2]
@@ -221,39 +245,50 @@ class DevkitAssembler:
                 break  # cannot yet tell it from the next burst
             parts = {t: pending[t].popleft() for t in REQUIRED}
             frame = self._build(parts)
-            if frame is None:
+            if frame == _DATA:
+                self.learn_dropped += 1
                 self._candidate = None  # not a clean burst: start over
                 continue
+            # A burst that fails only the stamp checks has exact sequences,
+            # so it still confirms the offsets; it just is not emitted.
+            stamps_bad = frame == _STAMPS
+            if stamps_bad:
+                self.learn_stamp_dropped += 1
             if self._candidate != offsets:
                 self._candidate = offsets
                 continue
             self._offsets = offsets
             self._synced = True
+            self.synced_at = base
             self._candidate = None
             for t in REQUIRED:  # whatever queued behind the burst
                 for it in pending[t]:
                     fid = it[2] - offsets[t]
                     self._frames.setdefault(fid, {})[t] = it
                 pending[t].clear()
-            out.append(frame)
+            if stamps_bad:
+                self.dropped_frames += 1
+                self.stamp_dropped += 1
+            else:
+                out.append(frame)
             out.extend(self._drain())
             self._in_error = False
             break
         return out
 
     @staticmethod
-    def _build(parts: dict[str, tuple]) -> AssembledFrame | None:
+    def _build(parts: dict[str, tuple]) -> AssembledFrame | str:
         sources = [p[1] for p in parts.values()]
         if (max(sources) - min(sources)) * 1e-9 > SKEW_S:
-            return None
+            return _STAMPS
         heads = [parts[t][3] for t in HEADERED]
         if (max(heads) - min(heads)) * 1e-9 > SKEW_S:
-            return None
+            return _STAMPS
         v = {t: parts[t][0] for t in REQUIRED}
         ips = tuple(v["ips"])
         position, velocity = v["odom"]
         if ips != tuple(position):
-            return None
+            return _DATA
         orientation, angular, linear = v["imu"]
         ranges, scan_time = v["lidar"]
         sample = core.DevkitSample(
