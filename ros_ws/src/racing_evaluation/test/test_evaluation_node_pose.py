@@ -6,9 +6,15 @@ exactly as it scores a nav_msgs/Odometry one.
 analytic circle's centerline and the estimate sits 0.3 m to its left, so the
 node must report 0.3 m of position and lateral error. Only the node's message
 translation differs from EVAL-2010; the core is the same.
+
+EVAL-2030: neither the evaluator nor this test's own node has a data topic
+outside ``/test_eval2020/``. A stray ``/ground_truth/odom`` publisher with a
+later stamp (AutoDRIVE's server stamps wall clock) makes the Aligner
+declare every waiting truth sample unavailable.
 """
 
 import math
+import sys
 import time
 import unittest
 from pathlib import Path
@@ -30,11 +36,17 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import graph_isolation  # noqa: E402
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 TRACK = REPOSITORY_ROOT / "config" / "tracks" / "analytic_circle.yaml"
 ESTIMATE_TOPIC = "/test/pose_estimate"
 TRUTH_TOPIC = "/ground_truth/odom"
 ERROR_TOPIC = "/evaluation/localization_error"
+PREFIX = "/test_eval2020"
+EVALUATOR_NAME = "racing_evaluation"  # what the launch produces today
+EVALUATOR_NAMESPACE = "/"
 OFFSET = 0.3
 PERIOD = 0.01
 
@@ -83,6 +95,16 @@ class TestEvaluationNodePose(unittest.TestCase):
     def setUpClass(cls):
         rclpy.init()
         cls.node = rclpy.create_node("racing_evaluation_pose_test")
+        cls.received = []
+        cls.node.create_subscription(
+            LocalizationError, ERROR_TOPIC, cls.received.append, RELIABLE_QOS
+        )
+        cls.truth = cls.node.create_publisher(
+            Odometry, TRUTH_TOPIC, RELIABLE_QOS
+        )
+        cls.estimate = cls.node.create_publisher(
+            PoseWithCovarianceStamped, ESTIMATE_TOPIC, RELIABLE_QOS
+        )
 
     @classmethod
     def tearDownClass(cls):
@@ -101,14 +123,7 @@ class TestEvaluationNodePose(unittest.TestCase):
             endpoint.topic_type, "geometry_msgs/msg/PoseWithCovarianceStamped"
         )
 
-        received: list[LocalizationError] = []
-        self.node.create_subscription(
-            LocalizationError, ERROR_TOPIC, received.append, RELIABLE_QOS
-        )
-        truth = self.node.create_publisher(Odometry, TRUTH_TOPIC, RELIABLE_QOS)
-        estimate = self.node.create_publisher(
-            PoseWithCovarianceStamped, ESTIMATE_TOPIC, RELIABLE_QOS
-        )
+        received, truth, estimate = self.received, self.truth, self.estimate
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline and not (
             truth.get_subscription_count() and estimate.get_subscription_count()
@@ -148,3 +163,20 @@ class TestEvaluationNodePose(unittest.TestCase):
             self.assertAlmostEqual(message.lateral_error, OFFSET, places=6)
             self.assertAlmostEqual(message.longitudinal_error, 0.0, places=6)
             self.assertAlmostEqual(message.heading_error, 0.0, places=9)
+
+    def test_eval_2030_pose_topics_stay_under_prefix(self):
+        evaluator = graph_isolation.data_topics(
+            self.node, EVALUATOR_NAME, EVALUATOR_NAMESPACE
+        )
+        own = graph_isolation.data_topics(
+            self.node, self.node.get_name(), self.node.get_namespace()
+        )
+        self.assertEqual(len(evaluator), 3, f"evaluator topics: {evaluator}")
+        self.assertEqual(len(own), 3, f"test node topics: {own}")
+        self.assertEqual(
+            {
+                "evaluator": graph_isolation.outside(evaluator, PREFIX),
+                "test node": graph_isolation.outside(own, PREFIX),
+            },
+            {"evaluator": [], "test node": []},
+        )
