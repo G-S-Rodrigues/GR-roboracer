@@ -16,5 +16,10 @@ T_map_mola:
   z: 0.074
   yaw: -0.06665
 T_source: first_processed_scan
-mm_sha256: 4a8972258e487a338e3222ed0bd36c0eca71dfb4f1925b6f3210a35c38b01093
-mm_bytes: 55751
+mm_sha256: 5b4ec525f900ddc715ffdd8671f1a53f3a95e53efb24459fce3c8f3e5b66414a
+mm_bytes: 54708
+loop_closure: false
+grid_image: Spielberg_grid.png
+grid_sha256: c89d8afa6e4d06a3939000944fa3a6b73d6e6e142ef023fcd1ca49991190fbca
+grid_bytes: 108837
+grid_pipeline: config/localization/mola_sm2grid.yaml
