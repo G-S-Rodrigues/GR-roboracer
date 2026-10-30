@@ -54,8 +54,13 @@ class TestServerUp(unittest.TestCase):
             publishers = subscribers = services = []
 
             def complete():
+                # measured 10 publishers: /parameter_events, /rosout and
+                # /test_simad/{ground_truth/odom, ground_truth/scan,
+                # ground_truth/track_relative_state, imu, odom,
+                # racing_sim/wheel_encoders, scan, tf}; sole sub
+                # /test_simad/drive
                 return (
-                    len(publishers) >= 8
+                    len(publishers) >= 10
                     and any(n.endswith("/drive") for n, _ in subscribers)
                     and any(n.endswith("/reset") for n, _ in services)
                 )
