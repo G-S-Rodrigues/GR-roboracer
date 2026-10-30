@@ -111,7 +111,9 @@ def main(argv: list[str] | None = None) -> int:
         "--timings-out",
         type=Path,
         default=None,
-        help="write {frame, sent_ns, reply_ns} per frame (perf_counter_ns)",
+        help="write {frame, sent_ns, reply_ns} per frame (perf_counter_ns); "
+        "lockstep only: sends and replies are paired by order, so a lost "
+        "reply shifts every later row",
     )
     args = parser.parse_args(argv)
 

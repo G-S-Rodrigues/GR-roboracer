@@ -7,7 +7,8 @@
 # Why nodelay: without it the socat hop holds small Engine.IO writes for
 # Nagle and delayed ACK (measured 48 ms p50 per reply, 4.5 ms with it);
 # docs/agents/autodrive.md has the numbers. AUTODRIVE_WSL_IP overrides the
-# address (it changes on a WSL restart).
+# address (it changes on a WSL restart). socat's output goes to the pidfile's
+# sibling .log so a caller that captures our output is not held until it exits.
 set -euo pipefail
 
 relay=autodrive-route-relay
@@ -55,7 +56,8 @@ docker run -d --rm --name "$relay" --network "$network" \
     "$image" python3 /relay.py >/dev/null
 
 socat "TCP-LISTEN:4567,bind=$wsl_ip,fork,reuseaddr,nodelay" \
-    "TCP:127.0.0.1:4567,nodelay" &
+    "TCP:127.0.0.1:4567,nodelay" \
+    </dev/null >"${pidfile%.pid}.log" 2>&1 &
 echo "$!" >"$pidfile"
 sleep 1
 if ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
