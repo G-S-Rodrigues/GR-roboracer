@@ -12,6 +12,12 @@ VEHICLE_CONFIG = (
     REPOSITORY_ROOT / "config" / "vehicles" / "f1tenth_default.yaml"
 )
 VEHICLE_FILES = sorted((REPOSITORY_ROOT / "config" / "vehicles").glob("*.yaml"))
+# Vehicle files the gym never runs: the sim casts nothing for them, so the
+# URDF's laser mount (the gym car's) is not their premise. Each one's mount is
+# pinned to its own source instead (CHECK-1790). A name here must be a
+# committed file, or the exclusion silently outlives the file.
+NOT_GYM_CAST = frozenset({"autodrive_roboracer"})
+GYM_CAST_FILES = [p for p in VEHICLE_FILES if p.stem not in NOT_GYM_CAST]
 
 
 def _literal_keyword(call: ast.Call, name: str) -> str | None:
@@ -342,14 +348,14 @@ def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
         assert tags == expected, test_id
 
 
-@pytest.mark.parametrize("vehicle_file", VEHICLE_FILES, ids=lambda p: p.stem)
+@pytest.mark.parametrize("vehicle_file", GYM_CAST_FILES, ids=lambda p: p.stem)
 def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     vehicle_file: Path,
 ) -> None:
-    """BRINGUP-1050: the sim's laser mount is the URDF's rear_axle_to_laser.
+    """BRINGUP-1050: the sim's laser mount is the URDF's rear_axle_to_lidar.
 
-    /scan is stamped in frame `laser` and every estimator places its beams
-    through TF rear_axle -> laser, which robot_state_publisher takes from the
+    /scan is stamped in frame `lidar` and every estimator places its beams
+    through TF rear_axle -> lidar, which robot_state_publisher takes from the
     URDF. The vehicle file states the mount from the rear axle (the frame
     every source measures the lidar from: AutoDRIVE roboracer_1, the
     f1tenth_simulator scan_distance_to_base_link); the sim converts it to
@@ -359,6 +365,10 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     shape): a mismatch shifts every scan point by the difference, and reads
     as localization error, never as a fault. The sim is planar, so a mount
     it cannot represent (roll, pitch) fails here too.
+    Only the vehicle files the gym casts for: NOT_GYM_CAST lists the rest
+    (the AutoDRIVE car, whose lidar is the simulator's own and whose true
+    mount differs from the URDF's by about 14 mm until part 8), and
+    test_bringup_1055 keeps that list honest.
     """
     import xml.etree.ElementTree as ElementTree
 
@@ -370,9 +380,9 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     joint = (
         ElementTree.parse(urdf)
         .getroot()
-        .find("./joint[@name='rear_axle_to_laser']")
+        .find("./joint[@name='rear_axle_to_lidar']")
     )
-    assert joint is not None, "no joint rear_axle_to_laser"
+    assert joint is not None, "no joint rear_axle_to_lidar"
     assert joint.find("parent").attrib["link"] == "rear_axle"
     origin = joint.find("origin")
     assert origin is not None
@@ -500,6 +510,22 @@ def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
     module, context = _launch_context(vehicle="config/vehicles/no_such.yaml")
     with pytest.raises(RuntimeError, match="no_such.yaml"):
         module._launch_nodes(context, "", "")
+
+
+def test_bringup_1055_the_exclusion_list_names_only_committed_files() -> None:
+    """BRINGUP-1055: NOT_GYM_CAST excludes real vehicle files, and no file the
+    gym casts for hides in it.
+
+    Each assert reads the module's own list. The first fails when an excluded
+    name is stale or renamed (BRINGUP-1050 would then quietly cover one file
+    fewer than it claims). The second fails when either of the two files the
+    gym casts for is added to NOT_GYM_CAST (1050 would then skip it with no
+    error). A third gym vehicle file added to the list is not caught: only
+    these two names are known to be the gym's.
+    """
+    committed = {p.stem for p in VEHICLE_FILES}
+    assert committed >= NOT_GYM_CAST
+    assert {"f1tenth_default", "f1tenth_gym_limits"}.isdisjoint(NOT_GYM_CAST)
 
 
 def test_bringup_1100_every_vehicle_file_covers_the_defaults_keys() -> None:

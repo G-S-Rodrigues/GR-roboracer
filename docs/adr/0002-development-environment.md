@@ -115,3 +115,10 @@ These are the corrections the plan did not anticipate; each is also recorded as 
   `jax[cuda12]>=0.6.1,<0.7`, unsatisfiable against the gym's `jax>=0.7.2,<0.8`; upstream resolves it
   with a pyproject override that only takes effect when uv operates *on that project*. Installing the
   gym as a dependency requires reproducing that override explicitly.
+- **2026-10-28 (autodrive-sim part 7): the dev image carries the Socket.IO closure.** Our AutoDRIVE
+  server and its replay client import python-socketio 4.2.0, python-engineio 3.13.0, gevent 26.9.0 and
+  gevent-websocket 0.10.1 (the sim speaks Engine.IO v3; repo-gotchas #30); with their dependencies the
+  closure is 8 pins (adding greenlet, zope-event, zope-interface, websocket-client), in
+  `docker/dev-tools-requirements.txt` beside the dev tools and guarded by SIMAD-1150. The rebuild of
+  the shared image follows the part's merge; until then its gate runs with the closure in a worktree
+  `PYTHONPATH`.
