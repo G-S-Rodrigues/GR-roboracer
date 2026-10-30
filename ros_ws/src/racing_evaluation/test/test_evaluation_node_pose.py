@@ -7,7 +7,7 @@ analytic circle's centerline and the estimate sits 0.3 m to its left, so the
 node must report 0.3 m of position and lateral error. Only the node's message
 translation differs from EVAL-2010; the core is the same.
 
-Every node and topic here is renamed to a ``/test_eval2020/`` name, as
+The evaluator and every topic here are renamed to a ``/test_eval2020/`` name, as
 METRICS-1030 and PP-2010 do, because colcon runs tier-2 tests in parallel on
 one domain and other tests (SIMAD-2010..2050) publish ``/ground_truth/odom``.
 

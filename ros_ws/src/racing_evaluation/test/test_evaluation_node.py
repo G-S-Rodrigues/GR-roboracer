@@ -6,7 +6,7 @@ estimate is the same pose 0.3 m to its left. The node must report 0.3 m of
 position and lateral error, then, once the estimate stops, NaN errors with
 ``available`` false - never a zero.
 
-Every node and topic here is renamed to a ``/test_eval2010/`` name, as
+The evaluator and every topic here are renamed to a ``/test_eval2010/`` name, as
 METRICS-1030 and PP-2010 do, because colcon runs tier-2 tests in parallel on
 one domain and other tests (SIMAD-2010..2050) publish ``/ground_truth/odom``.
 
