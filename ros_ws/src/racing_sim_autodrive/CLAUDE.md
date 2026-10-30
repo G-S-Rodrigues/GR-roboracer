@@ -17,3 +17,4 @@ Test: `colcon test --packages-select racing_sim_autodrive --event-handlers conso
 `test/fixtures/porto_stream.jsonl.gz`); needs the Socket.IO closure on `PYTHONPATH` (testing.md).
 
 Trap: `V1 Position` is the rear axle; publish `rear_axle_to_cog`, never the raw pose (gotcha 26).
+SIMAD-1320 reads `racing_sim_adapter/test/conformance.py`; a change to only that file does not select it outside the nightly.

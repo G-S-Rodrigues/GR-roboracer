@@ -166,7 +166,7 @@ def _gym_h():
 def _load_replay_loop():
     directory = str(REPO / "ros_ws/src/racing_sim_autodrive/test")
     if directory not in sys.path:
-        sys.path.insert(0, directory)
+        sys.path.append(directory)
     import _replay_loop
 
     return _replay_loop.PORTO_DRIVING_LOOP
