@@ -9,16 +9,20 @@ RVIZ_PATH = PACKAGE_ROOT / "rviz" / "sim_pure_pursuit.rviz"
 
 
 def test_urdf_has_canonical_vehicle_and_laser_frames() -> None:
-    """The description connects laser to rear_axle with a fixed joint."""
+    """The description connects lidar to rear_axle with a fixed joint."""
     root = ET.parse(URDF_PATH).getroot()
     links = {link.attrib["name"] for link in root.findall("link")}
-    assert {"base_link", "laser"}.issubset(links)
+    assert {"base_link", "lidar"}.issubset(links)
 
-    laser_joint = root.find("./joint[@name='rear_axle_to_laser']")
+    laser_joint = root.find("./joint[@name='rear_axle_to_lidar']")
     assert laser_joint is not None
     assert laser_joint.attrib["type"] == "fixed"
     assert laser_joint.find("parent").attrib["link"] == "rear_axle"
-    assert laser_joint.find("child").attrib["link"] == "laser"
+    assert laser_joint.find("child").attrib["link"] == "lidar"
+    # The rename must not move the mount (rear_axle -> lidar).
+    origin = laser_joint.find("origin")
+    assert origin.attrib["xyz"] == "0.275 0.0 0.105"
+    assert origin.attrib["rpy"] == "0 0 0"
 
 
 def test_urdf_is_visualization_only() -> None:

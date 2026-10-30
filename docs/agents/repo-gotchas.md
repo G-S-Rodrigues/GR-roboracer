@@ -222,6 +222,9 @@ Traps any task in this repository can hit. Each one cost real time at least once
     under amcl in part 3.1b); the car is then drawn 0.074 m low in RViz (numbers unaffected).
     `rear_axle` is the **ground point** under the rear-axle midpoint (z = -h from `base_link`), not
     the axle centre (a wheel radius higher), because every mesh is authored there.
+    The lidar's TF frame is lidar, renamed from laser on 2026-10-28 to match the AutoDRIVE devkit;
+    device identifiers (laser_x, LaserMount, the racing_sim_gym_jax.laser module) keep the old word,
+    and a bag or RViz config recorded before the rename still names laser.
 
 ## AutoDRIVE
 
@@ -287,3 +290,10 @@ Traps any task in this repository can hit. Each one cost real time at least once
     cannot measure a top speed on Porto (about 8 m of straight; highest steady 2.977 m/s), and its
     braking depends on speed (8.4 / 5.8 / 6.0 m/s^2 from 0.5 / 3 / 4.9 m/s): never read one number
     from `identified.yaml` as the car's.
+
+38. **The Windows AutoDRIVE sim writes and parses numbers in the Windows culture.** Under pt-PT it
+    sent `'V1 Throttle': '0,0000'` and stalled on our reply of `0.0`: the car never starts, nothing
+    errors. `Set-Culture en-US` fixed it (measured 2026-10-30, `docs/agents/running-wsl.md`). Set it
+    for the sitting and restore the saved culture after; `Set-Culture` is a persistent per-user
+    setting. A stand-in server or client for the sim should fail loudly on a comma decimal in the
+    first message.

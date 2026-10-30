@@ -120,7 +120,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **257 tier-1, 27 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **263 tier-1, 27 tier-2, 12 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -158,6 +158,9 @@ The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHEC
 The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
 
 The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
+
+The frame-rename work (autodrive R1) added tier 1 `CHECK-2010/2020`.
+
 The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
 
 The t=0 clock work (F1) added tier 1 `CHECK-1950` to `CHECK-1990` (`scripts/tests/test_scenario_runner_t0.py`) and tier 2 `SAFE-2010`, `SAFE-2020` (`racing_safety_supervisor/test/test_supervisor_clock_received.py`).
@@ -169,6 +172,8 @@ The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/te
 The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen IDs, `scripts/tests/test_autodrive_identify.py`, 1715 in `test_autodrive_record.py`) and `BRINGUP-1055` (BRINGUP-1050 now skips the vehicle files in `NOT_GYM_CAST`; 1055 keeps that list to committed, non-gym files).
 
 The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
+
+The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
 
 ## The tests that matter most
 
