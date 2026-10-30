@@ -1,13 +1,19 @@
-"""Tier 1: the replay schedule (SIMAD-1250). Pure, no socket, no ROS."""
+"""Tier 1: the replay schedule (SIMAD-1250, SIMAD-1310) and the loop the
+conformance launch configures (SIMAD-1320). Pure, no socket, no ROS; the
+last one reaches the adapter's conformance module and the vehicle values."""
 
 import gzip
 import itertools
 import json
+import math
+import statistics
+import sys
 from pathlib import Path
 
 import pytest
 from racing_sim_autodrive import replay
 
+HERE = Path(__file__).resolve().parent
 FIXTURE = Path(__file__).parent / "fixtures" / "porto_stream.jsonl.gz"
 
 
@@ -167,3 +173,90 @@ def test_simad_1310_end_frame_bounds_the_loop(records):
                     records, pace="lockstep", start_frame=2, end_frame=bad
                 )
             )
+
+
+def test_simad_1320_conformance_loop_moves_the_car_in_every_window():
+    """SIMAD-1320: the loop the conformance launch passes to the replay
+    (parsed back through the replay's own parser), played at recorded pace,
+    moves the CoG more than 1.5 m (3x ADAPT-2110's 0.5 m) in every 2 s
+    window; a window across the wrap still moves it more than 0.5 m with the
+    wrap jump taken out; no step inside the loop is a teleport, reset or
+    respawn; and the median period meets ADAPT-2030's 50 ms."""
+    for directory in (HERE, HERE.parents[1] / "racing_sim_adapter" / "test"):
+        if str(directory) not in sys.path:
+            sys.path.insert(0, str(directory))
+    import _replay_loop
+    import _vehicle_values
+    import conformance
+    from racing_sim_autodrive import core
+
+    args = replay.build_parser().parse_args(
+        conformance.autodrive_replay_args(port=0)
+    )
+    assert args.pace == "recorded"
+    assert args.loop
+    assert Path(args.fixture).resolve() == FIXTURE.resolve()
+    assert (args.start_frame, args.end_frame) == _replay_loop.PORTO_DRIVING_LOOP
+    assert args.start_frame == 132, args.start_frame
+    assert args.end_frame == 338, args.end_frame
+
+    lr = _vehicle_values.vehicle()["lr"]
+    frames = replay.load_frames(args.fixture)
+    cog = []
+    for _, raw in frames:
+        pose = core.rear_axle_to_cog(
+            core.frame_pose(core.decode_frame(raw)), lr
+        )
+        cog.append((pose.x, pose.y))
+
+    end = len(frames) if args.end_frame is None else args.end_frame
+    n = end - args.start_frame
+    plan = list(
+        replay.schedule(
+            frames,
+            args.pace,
+            args.start_frame,
+            args.loop,
+            count=3 * n,
+            end_frame=args.end_frame,
+        )
+    )
+    times, indices = [], []
+    clock = 0.0
+    for index, delay, _ in plan:
+        clock += delay
+        times.append(clock)
+        indices.append(index)
+
+    def dist(a, b):
+        return math.hypot(cog[a][0] - cog[b][0], cog[a][1] - cog[b][1])
+
+    steps = [
+        (indices[k - 1], indices[k])
+        for k in range(1, len(plan))
+        if indices[k] == indices[k - 1] + 1
+    ]
+    for a, b in steps:
+        assert dist(a, b) <= 0.1, f"step {dist(a, b):.3f} m at {b}"
+    delays = [d for _, d, _ in plan[1:]]
+    assert statistics.median(delays) <= 0.05
+
+    for first in range(n):
+        last = max(
+            k for k in range(len(plan)) if times[k] <= times[first] + 2.0
+        )
+        moved = dist(indices[first], indices[last])
+        name = f"window {indices[first]}->{indices[last]}"
+        assert moved > 1.5, f"{name} moved {moved:.3f} m"
+        wraps = [
+            k
+            for k in range(first + 1, last + 1)
+            if indices[k] != indices[k - 1] + 1
+        ]
+        if wraps:
+            k = wraps[0]
+            kept = max(
+                dist(indices[first], indices[k - 1]),
+                dist(indices[k], indices[last]),
+            )
+            assert kept > 0.5, f"{name} moved {kept:.3f} m without the jump"
