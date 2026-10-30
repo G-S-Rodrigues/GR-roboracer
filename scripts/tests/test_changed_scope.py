@@ -402,7 +402,7 @@ def test_check_1150_the_real_map_loads_with_its_shape() -> None:
     assert set(amcl.verified_by) == {"SIM-3080", "ACC-4030", "ACC-4040"}
     assert set(stack.system_tests) == {
         f"SIM-{n}" for n in range(3010, 3111, 10)
-    } | {"SIM-3510", "SIM-3610"}
+    } | {"SIM-3510", "SIM-3530", "SIM-3610"}
     assert set(stack.acceptance_tags) == {
         "ACC-4010",
         "ACC-4020",
