@@ -20,6 +20,7 @@ from racing_bringup.estimators import amcl, mola, slam_toolbox
 from racing_bringup.scenario_parameters import (
     PLANNERS,
     RACELINE_OPTIMIZERS,
+    scan_beam_count,
     track_parameters,
 )
 
@@ -50,6 +51,17 @@ POSE_SOURCE_CONFIGS = {
     "slam_toolbox": "config/localization/slam_toolbox_online.yaml",
     "amcl": "config/localization/amcl.yaml",
     "mola": "config/localization/mola_lidar2d.yaml",
+}
+# slam_toolbox's file by the lidar's beam count, read from the scenario
+# (`parameters.num_beams`). The 64-beam file drifts 7-9 m at 1080 beams (part
+# 8 diagnosis) and the 1080 file differs from it by one measured key, so the
+# scenario picks; an unknown count is an error, never the nearest file
+# (a real car passes `slam_toolbox_config:=` itself). The 64 file stays
+# POSE_SOURCE_CONFIGS' entry, and stays runnable on any scenario by the
+# override (ADR 0005).
+SLAM_TOOLBOX_CONFIGS = {
+    64: "config/localization/slam_toolbox_online.yaml",
+    1080: "config/localization/slam_toolbox_online_1080.yaml",
 }
 # Where nav2_amcl's and MOLA's initial pose comes from. The sim places the
 # car at an arc length drawn from the run's seed (f110_env.reset), so no
@@ -274,12 +286,20 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         recording_node,
         robot_state_publisher_node,
         rviz_node,
-        *_pose_source_nodes(pose_source, tracks, slam_toolbox_config),
+        *_pose_source_nodes(
+            pose_source,
+            tracks,
+            slam_toolbox_config,
+            Path(scenario.perform(context)),
+        ),
     ]
 
 
 def _pose_source_nodes(
-    pose_source: str, tracks: dict, slam_toolbox_config: str = ""
+    pose_source: str,
+    tracks: dict,
+    slam_toolbox_config: str = "",
+    scenario: Path | None = None,
 ) -> list:
     """The nodes `pose_source` adds; none for ground truth, which the
     support node already serves."""
@@ -295,7 +315,19 @@ def _pose_source_nodes(
     if pose_source == "mola":
         # MOLA's map is derived from the same grid, for the same reason.
         return mola(configuration, tracks["map_server"]["yaml_filename"])
-    return slam_toolbox("mapping", [slam_toolbox_config or configuration])
+    if slam_toolbox_config:
+        return slam_toolbox("mapping", [slam_toolbox_config])
+    try:
+        beams = scan_beam_count(scenario)
+    except (ValueError, FileNotFoundError) as error:
+        raise RuntimeError(str(error)) from error
+    if beams not in SLAM_TOOLBOX_CONFIGS:
+        raise RuntimeError(
+            f"no slam_toolbox file for {beams} beams (known: "
+            f"{sorted(SLAM_TOOLBOX_CONFIGS)}); pass slam_toolbox_config:= "
+            "to name one"
+        )
+    return slam_toolbox("mapping", [SLAM_TOOLBOX_CONFIGS[beams]])
 
 
 def generate_launch_description() -> LaunchDescription:

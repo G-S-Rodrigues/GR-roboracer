@@ -949,6 +949,12 @@ def test_bringup_1570_warns_when_mola_is_driven_on_its_own_estimate(
 SLAM_TOOLBOX_64 = (
     REPOSITORY_ROOT / "config" / "localization" / "slam_toolbox_online.yaml"
 )
+SLAM_TOOLBOX_1080 = (
+    REPOSITORY_ROOT
+    / "config"
+    / "localization"
+    / "slam_toolbox_online_1080.yaml"
+)
 
 
 def _slam_toolbox_configuration(module, context) -> Path:
@@ -1025,4 +1031,47 @@ def test_bringup_1800_slam_toolbox_config_is_a_launch_argument(
         slam_toolbox_config=str(copy),
     )
     with pytest.raises(RuntimeError, match="slam_toolbox_config"):
+        module._launch_nodes(context, "", "")
+
+
+def test_bringup_1810_the_scenario_selects_the_slam_toolbox_file(
+    monkeypatch, tmp_path
+) -> None:
+    """BRINGUP-1810: with no `slam_toolbox_config`, the launch hands
+    slam_toolbox the file made for the scenario's lidar - 64 beams the
+    original, 1080 beams the 1080 file - and a beam count it has no file for
+    is an error naming the known counts and the override, never the nearest
+    file (a silent mismatch is what part 8 measured at 7-9 m).
+
+    Every committed scenario is covered, so a new one must declare a count
+    this table knows or fail here rather than in a lap.
+    """
+    import yaml
+
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    expected = {64: SLAM_TOOLBOX_64, 1080: SLAM_TOOLBOX_1080}
+    scenarios = sorted((REPOSITORY_ROOT / "config" / "scenarios").glob("*.yaml"))
+    assert scenarios
+    for scenario in scenarios:
+        beams = yaml.safe_load(scenario.read_text())["parameters"]["num_beams"]
+        module, context = _launch_context(
+            scenario=str(scenario), pose_source="slam_toolbox"
+        )
+        assert _slam_toolbox_configuration(module, context) == expected[beams], (
+            scenario.name
+        )
+
+    document = yaml.safe_load(
+        (REPOSITORY_ROOT / "config/scenarios/spielberg.yaml").read_text()
+    )
+    document["parameters"]["num_beams"] = 720
+    base = REPOSITORY_ROOT / "config" / "scenarios"
+    document["track"] = str((base / document["track"]).resolve())
+    document["map_directory"] = str((base / document["map_directory"]).resolve())
+    odd = tmp_path / "odd.yaml"
+    odd.write_text(yaml.safe_dump(document))
+    module, context = _launch_context(
+        scenario=str(odd), pose_source="slam_toolbox"
+    )
+    with pytest.raises(RuntimeError, match=r"(?s)64.*1080.*slam_toolbox_config"):
         module._launch_nodes(context, "", "")

@@ -78,6 +78,23 @@ def _optimized_raceline(
     return str(csv)
 
 
+def scan_beam_count(scenario_path: Path) -> int:
+    """The number of beams the scenario's lidar casts (`parameters.num_beams`).
+
+    No default is guessed: a scenario that does not say is an error, because a
+    wrong count selects a wrong parameter file without a word.
+    """
+    document = yaml.safe_load(
+        Path(scenario_path).read_text(encoding="utf-8")
+    )
+    try:
+        return int(document["parameters"]["num_beams"])
+    except (KeyError, TypeError) as error:
+        raise ValueError(
+            f"{scenario_path} declares no parameters.num_beams"
+        ) from error
+
+
 def track_parameters(
     scenario_path: Path,
     *,
