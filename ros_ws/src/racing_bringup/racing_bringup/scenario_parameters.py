@@ -84,9 +84,7 @@ def scan_beam_count(scenario_path: Path) -> int:
     No default is guessed: a scenario that does not say is an error, because a
     wrong count selects a wrong parameter file without a word.
     """
-    document = yaml.safe_load(
-        Path(scenario_path).read_text(encoding="utf-8")
-    )
+    document = yaml.safe_load(Path(scenario_path).read_text(encoding="utf-8"))
     try:
         return int(document["parameters"]["num_beams"])
     except (KeyError, TypeError) as error:
