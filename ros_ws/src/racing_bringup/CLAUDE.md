@@ -14,9 +14,8 @@ and takes its start pose from `initial_pose_topic` (BRINGUP-2020).
 
 ## Running it
 
-Run from the repository root; paths resolve relative to the working directory.
-`ros2 launch racing_bringup sim_pure_pursuit.launch.py`. Launch arguments and fields:
-`docs/configuration.md`. Tests: `./scripts/check.sh --fast`.
+From the repository root: `ros2 launch racing_bringup sim_pure_pursuit.launch.py` (paths are
+relative to the working directory). Arguments: `docs/configuration.md`. Tests: `./scripts/check.sh --fast`.
 
 Trap: the planner resolver fails closed (BRINGUP-1160); it never falls back to the centerline,
 except `track_centerline` on a map with no `<map>_raceline.csv` (Porto), whose speed is 0, so
