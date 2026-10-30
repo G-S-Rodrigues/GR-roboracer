@@ -1,0 +1,14 @@
+# Where AutoDRIVE's world frame sits in the Porto map frame
+# (config/tracks/porto.yaml), for `simulator:=autodrive` (#44 part 8, plan D3).
+#
+# IDENTITY AND NOT MEASURED, AND NOT PLAUSIBLE: part 10 measures the real
+# transform from a lap. Part 8 step 9 projected the fixture's spawn CoG
+# (0.8013, 3.0030, yaw 3pi/2) onto config/tracks/porto.yaml at identity and
+# got d = -1.28 m (the half-width there is 0.89 m) and a heading error of
+# 1.57 rad against the tangent. Escalated as plan D3; this file is a
+# placeholder until it is ruled.
+measured: false
+world_to_map:
+  x: 0.0
+  y: 0.0
+  yaw: 0.0

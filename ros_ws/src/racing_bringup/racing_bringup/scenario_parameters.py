@@ -21,6 +21,14 @@ REPORTING_KEYS = ("scenario_id", "track_version")
 
 PLANNERS = ("track_centerline", "optimized_raceline")
 RACELINE_OPTIMIZERS = ("tum_mincurv_iqp",)
+# The simulators the launch can start (config/reference_stack.yaml's
+# `simulator` role: BRINGUP-1600), and which front end drives AutoDRIVE's.
+SIMULATORS = ("f1tenth_gym_jax", "autodrive")
+AUTODRIVE_BRIDGES = ("ours", "official")
+# Vehicle files the gym cannot cast a scan for: the launch refuses them on the
+# gym and points at `simulator:=autodrive`. BRINGUP-1650 keeps this equal to
+# the contract test's NOT_GYM_CAST.
+GYM_INCOMPATIBLE_VEHICLES = frozenset({"autodrive_roboracer"})
 
 
 def _vehicle_version(vehicle_path: Path) -> str:
