@@ -52,6 +52,14 @@ class TestServerUp(unittest.TestCase):
         node = rclpy.create_node("simad_2100_probe")
         try:
             publishers = subscribers = services = []
+
+            def complete():
+                return (
+                    len(publishers) >= 8
+                    and any(n.endswith("/drive") for n, _ in subscribers)
+                    and any(n.endswith("/reset") for n, _ in services)
+                )
+
             deadline = time.monotonic() + 10.0
             while time.monotonic() < deadline:
                 rclpy.spin_once(node, timeout_sec=0.1)
@@ -67,11 +75,7 @@ class TestServerUp(unittest.TestCase):
                     )
                 except NodeNameNonExistentError:
                     continue  # not discovered yet
-                if (
-                    len(publishers) >= 8
-                    and any(n.endswith("/drive") for n, _ in subscribers)
-                    and any(n.endswith("/reset") for n, _ in services)
-                ):
+                if complete():
                     break
         finally:
             node.destroy_node()
@@ -85,6 +89,12 @@ class TestServerUp(unittest.TestCase):
         )
         self.assertEqual(outside, [], f"{full}: names outside {namespace}")
         self.assertNotEqual(namespace, "/", f"{full}: root namespace")
+        # never pass on an empty or partial graph: discovery must have finished
+        self.assertTrue(
+            complete(),
+            f"{full}: graph incomplete after 10 s: pubs {publishers}, "
+            f"subs {subscribers}, services {services}",
+        )
 
 
 @launch_testing.post_shutdown_test()

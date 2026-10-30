@@ -314,5 +314,6 @@ Traps any task in this repository can hit. Each one cost real time at least once
     "0 not >= 25" in 2 of 5 runs, 0 of 5 without it). Symptom: a cross-package flake that never
     reproduces alone. Remedy: a `PREFIX` constant, `namespace=PREFIX` **and** a remap for every
     absolute name (a namespace alone does not move `/x`), as METRICS-1030 and `_server_launch.py` do.
-    SIMAD-2100 is the guard to copy. Not yet true repo-wide: the adapter conformance launches (gym
-    and autodrive rows) still use global names until 7.3b.
+    SIMAD-2100 is the guard to copy on the sending side; on the receiving side
+    `racing_evaluation/test/graph_isolation.py` (EVAL-2030) is. Still leaking: the
+    `racing_sim_adapter` conformance servers (gym and autodrive rows), which use global names.

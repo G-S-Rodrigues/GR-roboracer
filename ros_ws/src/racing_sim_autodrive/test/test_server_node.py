@@ -76,7 +76,10 @@ class TestServerNode(unittest.TestCase):
     def _wait_for_server(self):
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
-            if "racing_sim" in self.node.get_node_names():
+            if (
+                "racing_sim",
+                launch_support.PREFIX,
+            ) in self.node.get_node_names_and_namespaces():
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.fail("racing_sim not found")
