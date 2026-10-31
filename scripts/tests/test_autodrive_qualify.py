@@ -87,6 +87,9 @@ def test_check_2150_bad_domain_and_missing_dev_are_refused(tmp_path) -> None:
         done, calls = _run(tmp_path, "bad", *args, "--dry-run")
         assert done.returncode == 2, (args, done.stderr)
         assert not any("compose" in c for c in calls), calls
+    done, calls = _run(tmp_path, "novalue", "--domain")
+    assert done.returncode == 2, done.stderr
+    assert not any("compose" in c for c in calls), calls
     done, calls = _run(
         tmp_path, "nodev", "--domain", "64", "--dry-run", STUB_PS=""
     )

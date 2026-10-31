@@ -14,8 +14,14 @@ workdir=/ws
 dry=0
 while [ $# -gt 0 ]; do
     case "$1" in
-    --domain) domain="${2:-}"; shift 2 ;;
-    --workdir) workdir="${2:-}"; shift 2 ;;
+    --domain | --workdir)
+        if [ $# -lt 2 ]; then
+            echo "$1 needs a value" >&2
+            exit 2
+        fi
+        if [ "$1" = "--domain" ]; then domain="$2"; else workdir="$2"; fi
+        shift 2
+        ;;
     --dry-run) dry=1; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
