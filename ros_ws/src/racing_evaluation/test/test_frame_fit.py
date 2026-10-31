@@ -79,7 +79,7 @@ def _perturbed(poses, error: Correction) -> np.ndarray:
 
 def test_eval_1610_a_known_offset_is_recovered(grid):
     """EVAL-1610: poses displaced by (0.12, -0.03, 0.01 rad) are corrected
-    back to within 0.02 m and 0.005 rad, the residual near the scan's own
+    back to within 0.03 m and 0.005 rad, the residual near the scan's own
     cell-size floor."""
     poses = _poses()
     scans = _cast(grid, poses)
