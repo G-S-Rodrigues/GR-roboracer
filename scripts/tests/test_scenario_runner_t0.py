@@ -212,6 +212,7 @@ class _ScriptedNode:
         return (topic, callback)
 
     def create_publisher(self, *args, **kwargs):
+        self.events.append("create_publisher")
         return _FakePublisher(self.events)
 
     def destroy_subscription(self, subscription) -> None:
@@ -348,6 +349,10 @@ def test_check_2210_reset_precedes_the_first_injected_odom(track_limit_run):
     assert resets[0][2] <= 5.0
     assert "publish" in events
     assert events.index(resets[0]) < events.index("publish")
+    # R4: the publisher exists before the reset, so its DDS matching runs
+    # while the sim is held.
+    assert "create_publisher" in events
+    assert events.index("create_publisher") < events.index(resets[0])
 
 
 def test_check_2220_a_failed_reset_injects_nothing_and_carries_the_record(
