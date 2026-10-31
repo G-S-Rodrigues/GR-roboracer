@@ -42,8 +42,8 @@ SIMULATOR_CAPABILITIES = {
 }
 # What `simulator:=autodrive` runs: the only vehicle and the only track the
 # AutoDRIVE build has active, the server's values and the world_to_map it
-# publishes under (config/autodrive/porto_frame.yaml: derived, not measured,
-# until part 10's lap measures it; plan D3). Paths are repository-relative,
+# publishes under (config/autodrive/porto_frame.yaml: measured in part 10;
+# plan D3). Paths are repository-relative,
 # like the rest of this file.
 AUTODRIVE_VEHICLE = "autodrive_roboracer"
 AUTODRIVE_SCENARIO = "porto"

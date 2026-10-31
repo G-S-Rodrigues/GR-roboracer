@@ -38,9 +38,7 @@ def grid():
 
 def _poses(count=24) -> np.ndarray:
     """CoG poses along the centerline, heading along it."""
-    rows = yaml.safe_load(PORTO_TRACK.read_text(encoding="utf-8"))[
-        "centerline"
-    ]
+    rows = yaml.safe_load(PORTO_TRACK.read_text(encoding="utf-8"))["centerline"]
     xy = np.array([r[:2] for r in rows])
     index = np.linspace(0, len(xy), count, endpoint=False).astype(int)
     ahead = xy[(index + 3) % len(xy)] - xy[index]
@@ -93,9 +91,7 @@ def test_eval_1610_a_known_offset_is_recovered(grid):
         angle_increment=ANGLE_INC,
         laser_x=LASER_X,
     )
-    undone = apply_correction(
-        _perturbed(poses, PERTURBATION), fit.correction
-    )
+    undone = apply_correction(_perturbed(poses, PERTURBATION), fit.correction)
     assert np.abs(undone[:, :2] - poses[:, :2]).max() <= 0.03
     assert abs(fit.correction.dyaw + PERTURBATION.dyaw) <= 0.005
     assert fit.points >= 200
