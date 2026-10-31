@@ -54,7 +54,8 @@ from `config/reference_stack.yaml`, which is a test map, not this schema.
 ## The AutoDRIVE vehicle
 
 `config/vehicles/autodrive_roboracer.yaml` is the league car's file for the AutoDRIVE simulator
-backend, which does not exist yet; the gym cannot run it (it simulates a different car). Its geometry is
+backend (`simulator:=autodrive`, see [The AutoDRIVE simulator](#the-autodrive-simulator)); the gym
+cannot run it (it simulates a different car). Its geometry is
 read from the sim's own prefab and guide (`config/vehicles/autodrive_roboracer/source.yaml`, every
 value anchored to a pinned line) and its measurements are written only by
 `tools/autodrive_identify.py` (`identified.yaml`). Its speed, acceleration and steering-rate caps are
@@ -65,8 +66,8 @@ depending on speed) are under [AutoDRIVE car identification](results.md#autodriv
 
 Its minimum-time dynamics file, `config/vehicles/autodrive_roboracer/tum_mintime.yaml`, is derived from
 the same sources and AutoDRIVE's simulator code, with each value's provenance in
-`config/vehicles/tum_mintime/reference.yaml`. The car has no tyre set and no committed minimum-time
-raceline, so `raceline_optimizer:=tum_mintime` cannot run on it yet.
+`config/vehicles/tum_mintime/reference.yaml`. The car has no tyre set, so `raceline_optimizer:=tum_mintime` cannot run on it yet, and no committed
+raceline of either kind (minimum-curvature or minimum-time) exists for it.
 
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):

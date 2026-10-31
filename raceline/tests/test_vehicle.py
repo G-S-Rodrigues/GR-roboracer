@@ -278,8 +278,9 @@ STEMS = ("f1tenth_default", "f1tenth_gym_limits")
 # F1TENTH value pins and the tyre sets stay on STEMS.
 DYNAMICS_STEMS = sorted(p.stem for p in VEHICLES.glob("*.yaml"))
 TYRE_SETS = ("forzaeth_f110", "gym_fit")
-# Values every committed file holds, from the gym's Param @1b4eb3f (the
-# reference file's sources) and the 8F gym ini (tire_params_mintime).
+# Values both F1TENTH files hold (not every committed file), from the gym's
+# Param @1b4eb3f (the reference file's sources) and the 8F gym ini
+# (tire_params_mintime).
 DYNAMICS = {
     "mass": 3.74,
     "I_z": 0.04712,

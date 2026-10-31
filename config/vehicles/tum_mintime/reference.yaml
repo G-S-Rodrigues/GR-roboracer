@@ -38,23 +38,56 @@ tyres:
   C_rear:  # 1, Pacejka shape factor; 1.2, both sets
   eps_rear:  # 1, load sensitivity of the friction coefficient; -0.1, both sets
   E_rear:  # 1, Pacejka curvature factor; 0.85, both sets
-# autodrive_roboracer/tum_mintime.yaml (part 8 addendum, 2026-10-31): source per key; ASSUMPTION marks a value no AutoDRIVE source gives.
-#   Sources: SRC = config/vehicles/autodrive_roboracer/source.yaml, ID = identified.yaml, VEH = config/vehicles/autodrive_roboracer.yaml;
-#   prefab/VC = Tinker-Twins/AutoDRIVE@75b7df5 Assets/Prefabs/F1TENTH/F1TENTH.prefab and Assets/Scripts/VehicleController.cs (the SHA SRC pins).
-#   mass 3.47: SRC values.sprung_mass_kg (prefab :31647 m_Mass), the Rigidbody PhysX integrates; a WheelCollider.mass (SRC wheel_mass_kg 0.109 x4) is not chassis mass. Unity's WheelCollider docs are silent on adding it (A1), so the sprung mass stands; the alternative is SRC total_mass_kg 3.906.
-#   I_z 0.03264: ASSUMPTION. SRC yaw_inertia is null (prefab :31660 m_ImplicitTensor 1, PhysX computes it from a MeshCollider). Scaled from the gym's 0.04712 (raceline/README.md "Gym vehicle parameters") by mass and body extent: 0.04712 x (3.47/3.74) x ((0.50^2+0.27^2)/(0.58^2+0.31^2)). Not modelled: Rigidbody angular drag 0.1 (SRC angular_drag, prefab :31649).
-#   wheelbase_front 0.17468: VEH racing_controller_baseline.wheelbase 0.33 (= SRC wheelbase_m) minus lr 0.15532; check_dynamics holds lf + lr to VEH's wheelbase within 1 mm.
+# autodrive_roboracer/tum_mintime.yaml (part 8 addendum, 2026-10-31): source per
+#   key; ASSUMPTION marks a value no AutoDRIVE source gives.
+#   Sources: SRC = config/vehicles/autodrive_roboracer/source.yaml, ID =
+#     identified.yaml, VEH = config/vehicles/autodrive_roboracer.yaml;
+#   prefab/VC = Tinker-Twins/AutoDRIVE@75b7df5
+#     Assets/Prefabs/F1TENTH/F1TENTH.prefab and
+#     Assets/Scripts/VehicleController.cs (the SHA SRC pins).
+#   mass 3.47: SRC values.sprung_mass_kg (prefab :31647 m_Mass), the Rigidbody
+#     PhysX integrates; a WheelCollider.mass (SRC wheel_mass_kg 0.109 x4) is not
+#     chassis mass. Unity's WheelCollider docs are silent on adding it (A1), so
+#     the sprung mass stands; the alternative is SRC total_mass_kg 3.906.
+#   I_z 0.03264: ASSUMPTION. SRC yaw_inertia is null (prefab :31660
+#     m_ImplicitTensor 1, PhysX computes it from a MeshCollider). Scaled from
+#     the gym's 0.04712 (raceline/README.md "Gym vehicle parameters") by mass
+#     and body extent: 0.04712 x (3.47/3.74) x
+#     ((0.50^2+0.27^2)/(0.58^2+0.31^2)). Not modelled: Rigidbody angular drag
+#     0.1 (SRC angular_drag, prefab :31649).
+#   wheelbase_front 0.17468: VEH racing_controller_baseline.wheelbase 0.33 (=
+#     SRC wheelbase_m) minus lr 0.15532; check_dynamics holds lf + lr to VEH's
+#     wheelbase within 1 mm.
 #   wheelbase_rear 0.15532: SRC com_x_lr_m; VEH header "lr = 0.15532".
-#   cog_z 0.07354: ID measurements.rest_height.value (n 12242); VEH header "h = 0.0735".
+#   cog_z 0.07354: ID measurements.rest_height.value (n 12242); VEH header "h =
+#     0.0735".
 #   length 0.5: SRC body_length_m.
-#   track_width_front 0.236: SRC track_width_m; the four WheelCollider transforms in the prefab sit at x = +-0.118.
+#   track_width_front 0.236: SRC track_width_m; the four WheelCollider
+#     transforms in the prefab sit at x = +-0.118.
 #   track_width_rear 0.236: as track_width_front (one value for both axles).
-#   k_brake_front 0.5: prefab :31691 brakeType 0 = CAWB; VC applies the same BrakeTorque to all four wheels, so half is on the front axle. MonoBehaviour field, not read from the build.
-#   k_drive_front 0.5: prefab :31690 driveType 5 = CAWD; VC gives DriveTorque/4 to each wheel. MonoBehaviour field, not read from the build. (The F1TENTH gym car is rear driven: 0.0.)
-#   k_roll 0.5: four WheelColliders with spring 500 (SRC suspension_spring), equal track front and rear, no anti-roll bar in VC.
-#   t_delta 0.349067: delta_max / t_delta bounds the steering rate; delta_max 0.5236 (VEH maximum_steering_angle) over min(VEH maximum_steering_rate 1.5, ID steering.slew 3.2) = 1.5 rad/s. Goes stale silently if VEH maximum_steering_rate changes.
-#   t_drive 0.1: ASSUMPTION. The sim has no force-rate limit (VC sets DriveTorque every physics step, fixed step 0.001 s from the source tip's TimeManager, not read from the build) and the stack has no jerk cap; 0.1 is the value both F1TENTH files use.
+#   k_brake_front 0.5: prefab :31691 brakeType 0 = CAWB; VC applies the same
+#     BrakeTorque to all four wheels, so half is on the front axle.
+#     MonoBehaviour field, not read from the build.
+#   k_drive_front 0.5: prefab :31690 driveType 5 = CAWD; VC gives DriveTorque/4
+#     to each wheel. MonoBehaviour field, not read from the build. (The F1TENTH
+#     gym car is rear driven: 0.0.)
+#   k_roll 0.5: four WheelColliders with spring 500 (SRC suspension_spring),
+#     equal track front and rear, no anti-roll bar in VC.
+#   t_delta 0.349067: delta_max / t_delta bounds the steering rate; delta_max
+#     0.5236 (VEH maximum_steering_angle) over min(VEH maximum_steering_rate
+#     1.5, ID steering.slew 3.2) = 1.5 rad/s. Goes stale silently if VEH
+#     maximum_steering_rate changes.
+#   t_drive 0.1: ASSUMPTION. The sim has no force-rate limit (VC sets
+#     DriveTorque every physics step, fixed step 0.001 s from
+#     AutoDRIVE@75b7df5's TimeManager, not read from the build) and the stack
+#     has no jerk cap; 0.1 is the value both F1TENTH files use.
 #   t_brake 0.1: ASSUMPTION. As t_drive (VC applies the brake torque directly).
-#   c_roll 0.0: WheelColliders model no rolling resistance. ID throttle_gain.by_throttle gives v = throttle x gain; a line v = a x throttle + b over its four points has a 24.755, b +0.0092 m/s (a constant resistance would make b negative). Not modelled: Rigidbody linear drag 0.273 (SRC linear_drag), which TUM has no term for.
-#   liftcoeff_front 0.0: no script attached to the F1TENTH prefab applies an aerodynamic force (AutomobileController, the one with downForce, is not attached).
+#   c_roll 0.0: WheelColliders model no rolling resistance. ID
+#     throttle_gain.by_throttle gives v = throttle x gain; a line v = a x
+#     throttle + b over its four points has a 24.755, b +0.0092 m/s (a constant
+#     resistance would make b negative). Not modelled: Rigidbody linear drag
+#     0.273 (SRC linear_drag), which TUM has no term for.
+#   liftcoeff_front 0.0: no script attached to the F1TENTH prefab applies an
+#     aerodynamic force (AutomobileController, the one with downForce, is not
+#     attached).
 #   liftcoeff_rear 0.0: as liftcoeff_front.
