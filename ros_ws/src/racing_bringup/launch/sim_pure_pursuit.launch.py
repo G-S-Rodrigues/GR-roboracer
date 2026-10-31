@@ -24,6 +24,7 @@ from racing_bringup.scenario_parameters import (
     PLANNERS,
     RACELINE_OPTIMIZERS,
     SIMULATORS,
+    scan_beam_count,
     track_parameters,
 )
 from racing_bringup.vehicle_description import description_for
@@ -74,6 +75,17 @@ POSE_SOURCE_CONFIGS = {
     "slam_toolbox": "config/localization/slam_toolbox_online.yaml",
     "amcl": "config/localization/amcl.yaml",
     "mola": "config/localization/mola_lidar2d.yaml",
+}
+# slam_toolbox's file by the lidar's beam count, read from the scenario
+# (`parameters.num_beams`). The 64-beam file drifts 7-9 m at 1080 beams (part
+# 8 diagnosis) and the 1080 file differs from it by one measured key, so the
+# scenario picks; an unknown count is an error, never the nearest file
+# (a real car passes `slam_toolbox_config:=` itself). The 64 file stays
+# POSE_SOURCE_CONFIGS' entry, and stays runnable on any scenario by the
+# override (ADR 0005).
+SLAM_TOOLBOX_CONFIGS = {
+    64: "config/localization/slam_toolbox_online.yaml",
+    1080: "config/localization/slam_toolbox_online_1080.yaml",
 }
 # Where nav2_amcl's and MOLA's initial pose comes from. The sim places the
 # car at an arc length drawn from the run's seed (f110_env.reset), so no
@@ -177,6 +189,24 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     if pose_source not in ("ground_truth", *POSE_SOURCE_CONFIGS):
         raise RuntimeError(f"unknown pose_source: {pose_source}")
     estimating = pose_source != "ground_truth"
+    # Which parameter file slam_toolbox loads, when the caller names one.
+    # Resolved only for slam_toolbox: given to another source it would be
+    # ignored silently, so it is an error there (ADR 0005: the file of one
+    # beam count must stay runnable on any scenario; a real car has no
+    # scenario; a variant is measured without editing a tracked file).
+    slam_toolbox_config = LaunchConfiguration("slam_toolbox_config").perform(
+        context
+    )
+    if slam_toolbox_config:
+        if pose_source != "slam_toolbox":
+            raise RuntimeError(
+                "slam_toolbox_config is only valid with "
+                f"pose_source:=slam_toolbox, not {pose_source}"
+            )
+        if not Path(slam_toolbox_config).is_file():
+            raise RuntimeError(
+                f"slam_toolbox_config file not found: {slam_toolbox_config}"
+            )
     # Whether the controller drives on that estimate or keeps ground truth
     # while the estimator is merely scored. Open loop is how an estimator
     # too rough to race on is still measured (SIM-3070); it changes nothing
@@ -389,12 +419,22 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         recording_node,
         robot_state_publisher_node,
         rviz_node,
-        *_pose_source_nodes(pose_source, tracks, use_sim_time),
+        *_pose_source_nodes(
+            pose_source,
+            tracks,
+            use_sim_time,
+            slam_toolbox_config,
+            Path(scenario.perform(context)),
+        ),
     ]
 
 
 def _pose_source_nodes(
-    pose_source: str, tracks: dict, use_sim_time: bool
+    pose_source: str,
+    tracks: dict,
+    use_sim_time: bool,
+    slam_toolbox_config: str = "",
+    scenario: Path | None = None,
 ) -> list:
     """The nodes `pose_source` adds; none for ground truth, which the
     support node already serves."""
@@ -418,7 +458,19 @@ def _pose_source_nodes(
             tracks["map_server"]["yaml_filename"],
             use_sim_time,
         )
-    return slam_toolbox("mapping", [configuration], use_sim_time)
+    if slam_toolbox_config:
+        return slam_toolbox("mapping", [slam_toolbox_config], use_sim_time)
+    try:
+        beams = scan_beam_count(scenario)
+    except (ValueError, FileNotFoundError) as error:
+        raise RuntimeError(str(error)) from error
+    if beams not in SLAM_TOOLBOX_CONFIGS:
+        raise RuntimeError(
+            f"no slam_toolbox file for {beams} beams (known: "
+            f"{sorted(SLAM_TOOLBOX_CONFIGS)}); pass slam_toolbox_config:= "
+            "to name one"
+        )
+    return slam_toolbox("mapping", [SLAM_TOOLBOX_CONFIGS[beams]], use_sim_time)
 
 
 def _launch_described(context, description_share: Path, rviz_config: str):
@@ -484,6 +536,10 @@ def generate_launch_description() -> LaunchDescription:
         choices=["", *SPEED_SOURCES],
     )
 
+    slam_toolbox_config_arg = DeclareLaunchArgument(
+        "slam_toolbox_config", default_value=""
+    )
+
     return LaunchDescription(
         [
             scenario_arg,
@@ -502,6 +558,7 @@ def generate_launch_description() -> LaunchDescription:
             planner_arg,
             raceline_optimizer_arg,
             speed_source_arg,
+            slam_toolbox_config_arg,
             OpaqueFunction(
                 function=_launch_described,
                 args=[description_share, rviz_config],

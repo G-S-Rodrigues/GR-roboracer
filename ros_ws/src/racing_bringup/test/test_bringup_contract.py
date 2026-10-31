@@ -916,6 +916,143 @@ def test_bringup_1570_warns_when_mola_is_driven_on_its_own_estimate(
     assert warnings_for(pose_source="amcl", drive_on_estimate="true") == []
 
 
+SLAM_TOOLBOX_64 = (
+    REPOSITORY_ROOT / "config" / "localization" / "slam_toolbox_online.yaml"
+)
+SLAM_TOOLBOX_1080 = (
+    REPOSITORY_ROOT
+    / "config"
+    / "localization"
+    / "slam_toolbox_online_1080.yaml"
+)
+
+
+def _slam_toolbox_configuration(module, context) -> Path:
+    """The parameter file the launch hands slam_toolbox.
+
+    `_launched` keeps dict entries only, so a file path is invisible to it:
+    read it from the node's own parameter list instead.
+    """
+    from launch.utilities import perform_substitutions
+
+    nodes = [
+        node
+        for node in module._launch_nodes(context, "", "")
+        if getattr(node, "_Node__package", None) == "slam_toolbox"
+    ]
+    assert len(nodes) == 1
+    files = []
+    for entry in _node_parameters(context, nodes[0]):
+        if isinstance(entry, dict):
+            continue
+        if hasattr(entry, "evaluate"):
+            entry = entry.evaluate(context)
+        elif isinstance(entry, tuple):
+            entry = perform_substitutions(context, list(entry))
+        files.append(Path(entry).resolve())
+    assert len(files) == 1, files
+    return files[0]
+
+
+def test_bringup_1800_slam_toolbox_config_is_a_launch_argument(
+    monkeypatch, tmp_path
+) -> None:
+    """BRINGUP-1800: `slam_toolbox_config:=<file>` is the parameter file
+    slam_toolbox loads, empty means the one the launch chooses, and a wrong
+    value is an error rather than a fallback.
+
+    The argument exists so the 64-beam file stays runnable on any scenario
+    (ADR 0005), so a car with no scenario can name its own, and so a variant
+    can be measured without editing a tracked file. It is resolved only for
+    `pose_source:=slam_toolbox`: given to another source it would be ignored
+    without a word.
+    """
+    import shutil
+
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    scenario = "config/scenarios/spielberg.yaml"
+
+    module, context = _launch_context(
+        scenario=scenario, pose_source="slam_toolbox"
+    )
+    assert _slam_toolbox_configuration(module, context) == SLAM_TOOLBOX_64
+
+    copy = tmp_path / "variant.yaml"
+    shutil.copy(SLAM_TOOLBOX_64, copy)
+    module, context = _launch_context(
+        scenario=scenario,
+        pose_source="slam_toolbox",
+        slam_toolbox_config=str(copy),
+    )
+    assert _slam_toolbox_configuration(module, context) == copy.resolve()
+
+    missing = tmp_path / "no_such_file.yaml"
+    module, context = _launch_context(
+        scenario=scenario,
+        pose_source="slam_toolbox",
+        slam_toolbox_config=str(missing),
+    )
+    with pytest.raises(RuntimeError, match="no_such_file.yaml"):
+        module._launch_nodes(context, "", "")
+
+    module, context = _launch_context(
+        scenario=scenario,
+        pose_source="amcl",
+        slam_toolbox_config=str(copy),
+    )
+    with pytest.raises(RuntimeError, match="slam_toolbox_config"):
+        module._launch_nodes(context, "", "")
+
+
+def test_bringup_1810_the_scenario_selects_the_slam_toolbox_file(
+    monkeypatch, tmp_path
+) -> None:
+    """BRINGUP-1810: with no `slam_toolbox_config`, the launch hands
+    slam_toolbox the file made for the scenario's lidar - 64 beams the
+    original, 1080 beams the 1080 file - and a beam count it has no file for
+    is an error naming the known counts and the override, never the nearest
+    file (a silent mismatch is what part 8 measured at 7-9 m).
+
+    Every committed scenario is covered, so a new one must declare a count
+    this table knows or fail here rather than in a lap.
+    """
+    import yaml
+
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    expected = {64: SLAM_TOOLBOX_64, 1080: SLAM_TOOLBOX_1080}
+    scenarios = sorted(
+        (REPOSITORY_ROOT / "config" / "scenarios").glob("*.yaml")
+    )
+    assert scenarios
+    for scenario in scenarios:
+        beams = yaml.safe_load(scenario.read_text())["parameters"]["num_beams"]
+        module, context = _launch_context(
+            scenario=str(scenario), pose_source="slam_toolbox"
+        )
+        assert (
+            _slam_toolbox_configuration(module, context) == expected[beams]
+        ), scenario.name
+
+    document = yaml.safe_load(
+        (REPOSITORY_ROOT / "config/scenarios/spielberg.yaml").read_text()
+    )
+    document["parameters"]["num_beams"] = 720
+    base = REPOSITORY_ROOT / "config" / "scenarios"
+    document["track"] = str((base / document["track"]).resolve())
+    document["map_directory"] = str(
+        (base / document["map_directory"]).resolve()
+    )
+    odd = tmp_path / "odd.yaml"
+    odd.write_text(yaml.safe_dump(document))
+    module, context = _launch_context(
+        scenario=str(odd), pose_source="slam_toolbox"
+    )
+    with pytest.raises(
+        RuntimeError, match=r"(?s)64.*1080.*slam_toolbox_config"
+    ):
+        module._launch_nodes(context, "", "")
+
+
 def _description_share():
     return REPOSITORY_ROOT / "ros_ws/src/racing_vehicle_description"
 

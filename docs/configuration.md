@@ -105,6 +105,11 @@ simulator, so the capability table still lists it as in development.
   ignored with `ground_truth`. `true` is acceptance-backed for `amcl`. No acceptance lap backs it
   for `slam_toolbox` or `mola`, which is measured open loop only, so use `false` there.
 - `scenario` and `vehicle`: the track and sensor setup, and the vehicle parameter file.
+- `slam_toolbox_config` (`slam_toolbox` only): the parameter file slam_toolbox loads. Empty (the default) lets
+  the scenario's lidar choose: `config/localization/slam_toolbox_online.yaml` for 64 beams,
+  `config/localization/slam_toolbox_online_1080.yaml` for 1080, and any other beam count is an error that
+  names the override. A path replaces the choice (a real car with no scenario passes one). With any other
+  pose source it is an error.
 - `planner`, `raceline_optimizer` and `speed_source` (racing): which line `/trajectory` carries
   (`track_centerline` by default, or `optimized_raceline`), which optimizer's committed line
   (`tum_mincurv_iqp`, the only one), and how the controller picks its speed (`curvature_schedule`
@@ -138,6 +143,7 @@ stack:
 runtime:
   seed: 42  # Available: any non-negative integer
   time_scale: 1.0  # Available: any positive number
+  slam_toolbox_config: ""  # Available: empty (chosen by the scenario's num_beams, 64 or 1080) or a parameter file path; slam_toolbox only
   recording_path: log/mapping.jsonl  # Available: any writable path
 mapping:
   output: log/maps/Spielberg  # Available: any path stem; writes <stem>.png and <stem>.yaml
@@ -216,6 +222,7 @@ looks the same to a scan matcher.
 | `stack.speed_source` | `speed_source:=` | Also settable in the vehicle file's `racing_controller_baseline` block; a given argument wins. |
 | `runtime.seed` | `seed:=` | `map_track.sh` forces `42`. |
 | `runtime.time_scale` | `time_scale:=` | `map_track.sh` passes none, so it runs at the default `1.0`. |
+| `runtime.slam_toolbox_config` | `slam_toolbox_config:=` | Empty by default: the scenario's `num_beams` picks the file. `slam_toolbox` only; an error with any other pose source. The mapping launch declares it too, but it runs `ground_truth`, so a value there is an error. |
 | `runtime.drive_on_estimate` | `drive_on_estimate:=` | Ignored with `ground_truth`. |
 | `runtime.recording_path` | `recording_path:=` | `map_track.sh` forces `log/mapping.jsonl`. |
 | `mapping.output` | second argument of `map_track.sh` | No launch argument. |
