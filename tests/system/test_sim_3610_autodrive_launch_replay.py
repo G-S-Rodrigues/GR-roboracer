@@ -16,8 +16,8 @@ controller now aligned to the track (part 10's CW porto.yaml) the supervisor
 latches COMMAND_LIMIT about 6 frames before the replay's frame 337 (measured:
 frame 337 fails; 328, 324, 320 and 300 pass), which would
 fail the mid-stream check for a reason that is the recording's, not the launch
-wiring's, so the window ends before it, with a margin. The recording's own reset is at frame 449 and the replay can
-never show one, so a window past it would only wait out `RESET_WAIT_FRAMES`
+wiring's, so the window ends before it, with a margin. The recording's own
+reset is at frame 449 and the replay can never show one, so a window past it would only wait out `RESET_WAIT_FRAMES`
 with an ERROR (SIMAD-1190); and there is no `--loop`, whose wrap would teleport
 the car. Frame 132 starts the driving segment (the fixture respawns at
 frames 83 and 131 and drives to about 337; it stands from about 360).
