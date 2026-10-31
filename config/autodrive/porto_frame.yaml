@@ -1,0 +1,27 @@
+# Where AutoDRIVE's world frame sits in the Porto map frame
+# (config/tracks/porto.yaml), for `simulator:=autodrive` (#44 part 8, plan D3,
+# ruled 2026-10-30 ~12:35).
+#
+# DERIVED, NOT MEASURED. Part 10's lap confirms tx and replaces "derived" with
+# "measured". The map pose is the world pose rotated by `yaw` then shifted:
+#   x_map = cos(yaw)*x_world - sin(yaw)*y_world + x
+#   y_map = sin(yaw)*x_world + cos(yaw)*y_world + y
+#   yaw_map = yaw_world + yaw
+# which at yaw = pi/2 is x_map = -y_world + x, y_map = x_world + y. A proper
+# rotation, no reflection. The fixture's spawn CoG (0.8013, 3.0030, yaw 3pi/2)
+# lands at (-5.90, 2.00) facing yaw 0 on the straight.
+#
+# Two independent fits agree (offline, 2026-10-30):
+#   1. ICP of the scene's 21 Porto checkpoints against porto.yaml's
+#      centerline: 90.36 deg, t = (-2.92, 1.17).
+#   2. Scan matching of 14 fixture scans against Porto.pgm: 90.0 deg,
+#      t = (-2.76, 1.22), median residual 0.084 m.
+# Uncertainty: x (along the track, weakly observable) +-0.15 m, y +-0.03 m.
+#
+# Not settled here: the sim races clockwise and porto.yaml's centerline is
+# counter-clockwise (open topic porto-race-direction); part 10 decides.
+measured: derived
+world_to_map:
+  x: -2.9
+  y: 1.2
+  yaw: 1.5707963267948966

@@ -55,8 +55,11 @@ def _value(parameter_value):
     return None
 
 
-def declared_capabilities(node, backend="racing_sim", timeout=20.0):
+def declared_capabilities(node, backend=None, timeout=20.0):
     """Read the backend's five capability parameters through ROS.
+
+    ``backend`` is the node's name; None means the running row's
+    ``node_fqn()``.
 
     Returns ``{name: value}``; a parameter the backend did not declare
     reads as ``None``.
@@ -64,6 +67,8 @@ def declared_capabilities(node, backend="racing_sim", timeout=20.0):
     import rclpy
     from rcl_interfaces.srv import GetParameters
 
+    if backend is None:
+        backend = node_fqn()
     # A bare service client, not AsyncParameterClient: Jazzy's has no destroy,
     # and one left behind per call keeps its six clients on the node.
     client = node.create_client(GetParameters, f"{backend}/get_parameters")
@@ -112,9 +117,34 @@ UNGATED = frozenset(
         "ADAPT-2140",
         "ADAPT-2145",
         "ADAPT-2150",
+        "ADAPT-2170",
     }
 )
 REPO = Path(__file__).resolve().parents[4]
+ADAPTER_NAME = "racing_sim"
+# The absolute names a backend creates; a row remaps them under its prefix
+# (a namespace alone does not move "/x"). A second copy of
+# racing_sim_autodrive/test/_server_launch.py ABSOLUTE_NAMES: ADAPT-2170 and
+# SIMAD-2100 each fail by name on a name their copy misses.
+CONTRACT_TOPICS = (
+    "/scan",
+    "/ground_truth/scan",
+    "/imu",
+    "/odom",
+    "/ground_truth/odom",
+    "/ground_truth/track_relative_state",
+    "/tf",
+    "/drive",
+)
+CLOCK_TOPIC = "/clock"
+GYM_NAMESPACE = "/test_adapt_gym"
+AUTODRIVE_NAMESPACE = "/test_adapt_autodrive"
+
+
+def _prefixed(namespace: str, name: str) -> str:
+    return name if namespace == "/" else f"{namespace}{name}"
+
+
 GYM = "f1tenth_gym_jax"
 AUTODRIVE = "autodrive"
 
@@ -137,6 +167,10 @@ class Backend:
     expected_h: Callable[[], float]
     expected_clock: str
     clock_override: str
+    # The row's namespace ("/" = the root, the leak ADAPT-2170 forbids) and
+    # the absolute names it remaps under it.
+    namespace: str = "/"
+    remapped: tuple[str, ...] = ()
 
 
 def _gym_actions(parameters=None):
@@ -145,10 +179,20 @@ def _gym_actions(parameters=None):
     arguments = {}
     if parameters:
         arguments["parameters"] = list(parameters)
+    # colcon runs other packages' tier-2 tests in parallel on one domain, so
+    # the node's absolute names (and its /clock, which every use_sim_time
+    # node on the domain would follow) must not land on the shared graph
+    # (ADAPT-2170, gotcha #39). The prefix is test-only: production launches
+    # keep the global names.
     return [
         launch_ros.actions.Node(
             package="racing_sim_gym_jax",
             executable="racing_sim_gym_jax_node",
+            namespace=GYM_NAMESPACE,
+            remappings=[
+                (n, _prefixed(GYM_NAMESPACE, n))
+                for n in CONTRACT_TOPICS + (CLOCK_TOPIC,)
+            ],
             output="screen",
             **arguments,
         )
@@ -163,7 +207,16 @@ def _gym_h():
 
 # One source with the server tests: racing_sim_autodrive/test/_vehicle_values.py
 # (part 4's files; h and the steering limit anchored there; kp/ki UNTUNED).
-AUTODRIVE_REPLAY_START_FRAME = 90
+def _load_replay_loop():
+    directory = str(REPO / "ros_ws/src/racing_sim_autodrive/test")
+    if directory not in sys.path:
+        sys.path.append(directory)
+    import _replay_loop
+
+    return _replay_loop.PORTO_DRIVING_LOOP
+
+
+AUTODRIVE_REPLAY_START_FRAME, AUTODRIVE_REPLAY_END_FRAME = _load_replay_loop()
 
 
 def _autodrive_vehicle() -> dict:
@@ -173,6 +226,28 @@ def _autodrive_vehicle() -> dict:
     import _vehicle_values
 
     return _vehicle_values.vehicle()
+
+
+def autodrive_replay_args(port: int) -> list[str]:
+    """The replay's argv after `-m racing_sim_autodrive.replay`: ROS-free, so
+    SIMAD-1320 parses what the conformance launch really runs."""
+    return [
+        "--fixture",
+        str(
+            REPO
+            / "ros_ws/src/racing_sim_autodrive/test/fixtures"
+            / "porto_stream.jsonl.gz"
+        ),
+        "--url",
+        f"http://127.0.0.1:{port}",
+        "--pace",
+        "recorded",
+        "--loop",
+        "--start-frame",
+        str(AUTODRIVE_REPLAY_START_FRAME),
+        "--end-frame",
+        str(AUTODRIVE_REPLAY_END_FRAME),
+    ]
 
 
 def _autodrive_actions(parameters=None):
@@ -198,6 +273,11 @@ def _autodrive_actions(parameters=None):
         package="racing_sim_autodrive",
         executable="racing_sim_autodrive_server",
         name="racing_sim",
+        # Parallel colcon tests share the domain (ADAPT-2170, gotcha #39).
+        namespace=AUTODRIVE_NAMESPACE,
+        remappings=[
+            (n, _prefixed(AUTODRIVE_NAMESPACE, n)) for n in CONTRACT_TOPICS
+        ],
         parameters=[
             {
                 **_autodrive_vehicle(),
@@ -213,27 +293,19 @@ def _autodrive_actions(parameters=None):
         ],
         output="screen",
     )
-    # --start-frame is inside the recorded driving segment (frames ~90-355),
-    # so the 2 s ADAPT-2110 window cannot reach the loop wrap or the reset
-    # segment (frames ~470-480) that re-anchors dead reckoning.
+    # The replay loops only the driving frames [132, 338), so any 2 s window,
+    # wherever the test's wall clock puts it, moves the car at least 1.82 m
+    # (CoG) at recorded pace (SIMAD-1320). The wrap jumps truth about 3.5 m
+    # back while odom holds; that cannot fake "moved" (every looped frame is
+    # moving) nor "drift" (an odom that copies truth jumps with it). The
+    # window still assumes the server handles frames at the recorded pace;
+    # under load it may not (fix part 7.1 PR, part 8 rate fix).
     replay = launch.actions.ExecuteProcess(
         cmd=[
             sys.executable,
             "-m",
             "racing_sim_autodrive.replay",
-            "--fixture",
-            str(
-                REPO
-                / "ros_ws/src/racing_sim_autodrive/test/fixtures"
-                / "porto_stream.jsonl.gz"
-            ),
-            "--url",
-            f"http://127.0.0.1:{port}",
-            "--pace",
-            "recorded",
-            "--loop",
-            "--start-frame",
-            str(AUTODRIVE_REPLAY_START_FRAME),
+            *autodrive_replay_args(port),
         ],
         output="screen",
     )
@@ -266,6 +338,8 @@ BACKENDS = {
         expected_h=_gym_h,
         expected_clock=OWNS_CLOCK,
         clock_override=FREE_RUNNING,
+        namespace=GYM_NAMESPACE,
+        remapped=CONTRACT_TOPICS + (CLOCK_TOPIC,),
     ),
     AUTODRIVE: Backend(
         name=AUTODRIVE,
@@ -289,6 +363,8 @@ BACKENDS = {
         expected_clock=FREE_RUNNING,
         # Not the declared value, or ADAPT-2145 would be vacuous.
         clock_override=OWNS_CLOCK,
+        namespace=AUTODRIVE_NAMESPACE,
+        remapped=CONTRACT_TOPICS,
     ),
 }
 
@@ -335,3 +411,24 @@ def applicable(testcase, node, test_id):
     print(f"NOT APPLICABLE {reason}")
     testcase.assertIn(test_id, backend().expected_not_applicable, reason)
     return False
+
+
+def topic(name: str) -> str:
+    """``name`` (absolute) as the running row's backend publishes it."""
+    return _prefixed(backend().namespace, name)
+
+
+def node_fqn() -> str:
+    return topic(f"/{ADAPTER_NAME}")
+
+
+def service(name: str) -> str:
+    """A private service of the backend."""
+    return f"{node_fqn()}/{name}"
+
+
+def adapter_present(node) -> bool:
+    """The backend's node is in the graph under the row's namespace (the bare
+    name would also match another package's ``racing_sim``)."""
+    ns = backend().namespace
+    return (ADAPTER_NAME, ns) in node.get_node_names_and_namespaces()

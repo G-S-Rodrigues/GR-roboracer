@@ -21,6 +21,14 @@ REPORTING_KEYS = ("scenario_id", "track_version")
 
 PLANNERS = ("track_centerline", "optimized_raceline")
 RACELINE_OPTIMIZERS = ("tum_mincurv_iqp", "tum_mintime")
+# The simulators the launch can start (config/reference_stack.yaml's
+# `simulator` role: BRINGUP-1600), and which front end drives AutoDRIVE's.
+SIMULATORS = ("f1tenth_gym_jax", "autodrive")
+AUTODRIVE_BRIDGES = ("ours", "official")
+# Vehicle files the gym cannot cast a scan for: the launch refuses them on the
+# gym and points at `simulator:=autodrive`. BRINGUP-1650 keeps this equal to
+# the contract test's NOT_GYM_CAST.
+GYM_INCOMPATIBLE_VEHICLES = frozenset({"autodrive_roboracer"})
 
 
 def _vehicle_version(vehicle_path: Path) -> str:
@@ -91,7 +99,9 @@ def track_parameters(
     `<map>_raceline.csv` for the committed
     `config/racelines/<track>/<vehicle version>/<optimizer>.csv`. It fails
     closed: an unknown name, a missing file or a sidecar that disagrees raises,
-    and the centerline is never a fallback.
+    and the centerline is never a fallback. Under the default
+    `track_centerline`, a map with no `<map>_raceline.csv` gets an empty
+    `raceline_path`, which means "drive the centerline".
     """
     if planner not in PLANNERS:
         raise ValueError(f"unknown planner {planner!r}; one of {PLANNERS}")
@@ -118,6 +128,10 @@ def track_parameters(
         raceline = _optimized_raceline(
             track_file, raceline_optimizer, vehicle_path
         )
+    elif not Path(raceline).is_file():
+        # A map with no raceline of its own (Porto's is part 11's): the
+        # support node then publishes the track's centerline (BRINGUP-1580).
+        raceline = ""
     # The track's committed occupancy grid, surveyed by scripts/map_track.sh
     # and served to nav2_amcl by nav2_map_server. Derived from the scenario's
     # own map for the same reason the raceline is: a hand-set grid path is a

@@ -39,4 +39,7 @@ scales wall rate, never physics), `start_held` (default false; sim stays frozen 
 
 Also `planner` (`track_centerline` default | `optimized_raceline`), `raceline_optimizer`
 (`tum_mincurv_iqp` default | `tum_mintime`) and `speed_source` (unset by default | `curvature_schedule` | `trajectory`), which the
-controller reads. Trap: the resolver fails closed (BRINGUP-1160); it never falls back to the centerline.
+controller reads. `simulator` (`f1tenth_gym_jax` default | `autodrive`), `autodrive_bridge` (`ours`) and
+`autodrive_port` (4567) pick the simulator (docs/configuration.md). Trap: the resolver fails closed
+(BRINGUP-1160); it never falls back to the centerline, except `track_centerline` on a map with no
+`<map>_raceline.csv` (Porto), whose speed is 0, so `speed_source:=trajectory` there is refused (BRINGUP-1680).
