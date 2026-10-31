@@ -121,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **308 tier-1, 42 tier-2, 13 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **313 tier-1, 43 tier-2, 13 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -221,3 +221,5 @@ The AutoDRIVE isolation work (part 7.3b) added tier 1 `ADAPT-1060` (no `test_ada
   `scripts/compare_metrics.py` carries the measurement that justifies its size.
 
 The AutoDRIVE part-8b work (launch switch) added tier 1 `BRINGUP-1580` (a track with no raceline file is driven on its centerline; `track_parameters`) and `BRINGUP-1600` to `BRINGUP-1670` and `BRINGUP-1680` (`test_launch_simulator_arg.py`: `speed_source:=trajectory` refused on a map with no raceline; the `simulator` and `autodrive_bridge` arguments, the autodrive Node, `use_sim_time` following `capability.clock` on every node and estimator, the gym's refusal of `autodrive_roboracer`, autodrive's refusals, `server.yaml` pinned to `source.yaml`/`identified.yaml`), tier 2 `BRINGUP-2030` (the support node's centerline `/trajectory`) and tier 3 `SIM-3610` (`simulator:=autodrive` against the recorded stream, no simulator: `ROS_DOMAIN_ID=<n> python3 -m pytest tests/system/test_sim_3610_autodrive_launch_replay.py`). Counts by ID: 298 + 10 = 308 tier-1, 39 + 1 = 40 tier-2, 12 + 1 = 13 tier-3. The shutdown fix then added tier 2 `SIMAD-2110` and `SIMAD-2111` (`test_server_node_signals.py`: the server exits 0 on one SIGINT, on two a gap apart, and with a client replaying; a plain pytest that starts the server itself), so 40 + 2 = 42 tier-2. `test_launch_runs_on_simulated_time` (no ID) was replaced by `BRINGUP-1630`, which launches both values instead of reading a literal `True`, and keeps its `time_scale` declaration assert; `BRINGUP-1056` now launches `autodrive_roboracer` on `simulator:=autodrive`. `reference_stack.yaml` lists autodrive as a simulator alternative (CHECK-1150: 11 implementations).
+
+The sim-`/imu` work (SLAM part 5a) added tier 1 `SIMJAX-1520/1530` (`test_imu.py`: `/imu` linear acceleration is (Δv/dt, v·ω, +g); none on the first step after a reset), `SIMJAX-1550` (`noise.imu` parses, zero default, negative rejected; no committed scenario sets it), `SIMJAX-1560/1570` (`test_noise.py`: IMU noise seeded and restarted by a reseed; scan and odometry streams bit-identical with it on) and tier 2 `SIMJAX-1540` (`test_imu_node.py`, a launch test selected by file: `colcon test --packages-select racing_sim_gym_jax --pytest-args -k test_imu_node`). Counts by ID: 308 + 5 = 313 tier-1, 42 + 1 = 43 tier-2. SIM-3510 is the proof that MOLA is unmoved (it reads `/imu`'s gyro only).

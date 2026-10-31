@@ -3,7 +3,8 @@
 Purpose: expose one warmed `f1tenth_gym_jax` environment through the backend-neutral ROS contract.
 
 Public contract: noisy `/scan` and `/odom` (frame `odom`, plus TF `odom -> base_link`), exact
-`/ground_truth/scan` and `/ground_truth/odom` (frame `map`), `/imu`, `/drive`, `~/reset`, and `~/step_mode`.
+`/ground_truth/scan` and `/ground_truth/odom` (frame `map`), `/imu` (`base_link`, with
+`linear_acceleration` = (Δv/dt, v·ω, +g); scenario `noise.imu` is off by default), `/drive`, `~/reset`, and `~/step_mode`.
 It declares every capability read-only (`capabilities.py`, ADAPT-2140).
 base_link is the centre of gravity (z = h); `rear_axle` is its URDF child. `/scan` (frame `lidar`) is cast
 at `laser_x/y/yaw` measured from the rear axle, minus lr (BRINGUP-1050, ADAPT-2120); `/ground_truth/scan`
