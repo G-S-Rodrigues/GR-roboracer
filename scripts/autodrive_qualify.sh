@@ -51,8 +51,8 @@ if [ "$dry" -eq 1 ]; then
     exit 0
 fi
 
+trap 'docker stop "$sim" >/dev/null 2>&1' EXIT INT TERM
 eval "$compose"
 status=0
 eval "$run" || status=1
-$stop >/dev/null 2>&1 || true
 exit "$status"
