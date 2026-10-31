@@ -77,6 +77,36 @@ if(BUILD_TESTING)
   )
   set_property(TEST test_adapter_time_scale_autodrive APPEND PROPERTY ENVIRONMENT
     RACING_SIM_BACKEND=autodrive)
+  # ... and against front end B, the official devkit bridge fed by the
+  # devkit stand-in.
+  add_launch_test(test/test_adapter_contract.py
+    TARGET test_adapter_contract_autodrive_official
+    TIMEOUT 60
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_contract_autodrive_official APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive_official)
+  add_launch_test(test/test_adapter_start_held.py
+    TARGET test_adapter_start_held_autodrive_official
+    TIMEOUT 60
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_start_held_autodrive_official APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive_official)
+  add_launch_test(test/test_adapter_laser_origin.py
+    TARGET test_adapter_laser_origin_autodrive_official
+    TIMEOUT 60
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_laser_origin_autodrive_official APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive_official)
+  add_launch_test(test/test_adapter_time_scale.py
+    TARGET test_adapter_time_scale_autodrive_official
+    TIMEOUT 60
+    LABELS "tier2"
+  )
+  set_property(TEST test_adapter_time_scale_autodrive_official APPEND PROPERTY ENVIRONMENT
+    RACING_SIM_BACKEND=autodrive_official)
 endif()
 
 ament_export_include_directories(include)

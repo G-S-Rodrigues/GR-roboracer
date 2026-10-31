@@ -139,6 +139,7 @@ CONTRACT_TOPICS = (
 CLOCK_TOPIC = "/clock"
 GYM_NAMESPACE = "/test_adapt_gym"
 AUTODRIVE_NAMESPACE = "/test_adapt_autodrive"
+AUTODRIVE_OFFICIAL_NAMESPACE = "/test_adapt_autodrive_official"
 
 
 def _prefixed(namespace: str, name: str) -> str:
@@ -147,6 +148,7 @@ def _prefixed(namespace: str, name: str) -> str:
 
 GYM = "f1tenth_gym_jax"
 AUTODRIVE = "autodrive"
+AUTODRIVE_OFFICIAL = "autodrive_official"
 
 
 @dataclass(frozen=True)
@@ -328,6 +330,118 @@ def _autodrive_actions(parameters=None):
     ]
 
 
+def official_domains() -> tuple[int, int]:
+    """(stack domain S, devkit domain): S+1, or S-1 if S+1 > 101 (plan P6).
+
+    A row that runs the devkit side on a live devkit's domain would
+    subscribe to the real car: refuse it, naming both.
+    """
+    stack = int(os.environ.get("ROS_DOMAIN_ID", "0"))
+    devkit = stack + 1 if stack + 1 <= 101 else stack - 1
+    live = os.environ.get("AUTODRIVE_ROS_DOMAIN_ID")
+    if live is not None and int(live) in (stack, devkit):
+        raise AssertionError(
+            f"stack domain {stack} / devkit domain {devkit} equals"
+            f" AUTODRIVE_ROS_DOMAIN_ID={live}: a test must never subscribe"
+            " to the live devkit"
+        )
+    return stack, devkit
+
+
+def _autodrive_official_actions(parameters=None):
+    """Front end B, then the devkit stand-in looping the same driving frames
+    as the autodrive row, once B says it is up. Devkit-side names sit under
+    a prefix that carries S, on the devkit domain, so a neighbour on S+1
+    never shares one."""
+    import launch
+    import launch.actions
+    import launch.event_handlers
+    import launch_ros.actions
+
+    stack, devkit = official_domains()
+    devkit_prefix = f"/test_adapt_autodrive_official_dk{stack}"
+    namespace = f"{devkit_prefix}/autodrive/roboracer_1"
+    reset_topic = f"{devkit_prefix}/autodrive/reset_command"
+    capabilities = {}
+    for entry in parameters or ():
+        if isinstance(entry, dict):
+            capabilities.update(
+                {k: v for k, v in entry.items() if k.startswith("capability.")}
+            )
+    bridge = launch_ros.actions.Node(
+        package="racing_sim_autodrive",
+        executable="racing_sim_autodrive_devkit",
+        name="racing_sim",
+        namespace=AUTODRIVE_OFFICIAL_NAMESPACE,
+        remappings=[
+            (n, _prefixed(AUTODRIVE_OFFICIAL_NAMESPACE, n))
+            for n in CONTRACT_TOPICS
+        ],
+        parameters=[
+            {
+                **_autodrive_vehicle(),
+                "world_to_map.x": 0.0,
+                "world_to_map.y": 0.0,
+                "world_to_map.yaw": 0.0,
+                "track_path": str(REPO / "config" / "tracks" / "porto.yaml"),
+                "scenario_id": "porto",
+                "devkit_namespace": namespace,
+                "devkit_reset_topic": reset_topic,
+                "devkit_domain_id": devkit,
+                **capabilities,
+            }
+        ],
+        output="screen",
+    )
+    standin = launch.actions.ExecuteProcess(
+        cmd=[
+            sys.executable,
+            "-m",
+            "racing_sim_autodrive.devkit_standin",
+            "--fixture",
+            str(
+                REPO
+                / "ros_ws/src/racing_sim_autodrive/test/fixtures"
+                / "porto_stream.jsonl.gz"
+            ),
+            "--namespace",
+            namespace,
+            "--reset-topic",
+            reset_topic,
+            "--tf-topic",
+            f"{devkit_prefix}/tf",
+            "--pace",
+            "recorded",
+            "--loop",
+            "--start-frame",
+            str(AUTODRIVE_REPLAY_START_FRAME),
+            "--end-frame",
+            str(AUTODRIVE_REPLAY_END_FRAME),
+            "--wait-subscribers",
+            "10",
+        ],
+        additional_env={"ROS_DOMAIN_ID": str(devkit)},
+        output="screen",
+    )
+
+    def start_standin(event):
+        text = event.text.decode(errors="replace")
+        if "devkit bridge on" in text:
+            return [standin]
+        return None
+
+    return [
+        bridge,
+        launch.actions.RegisterEventHandler(
+            launch.event_handlers.OnProcessIO(
+                target_action=bridge,
+                on_stdout=start_standin,
+                on_stderr=start_standin,
+            )
+        ),
+    ]
+
+
 BACKENDS = {
     GYM: Backend(
         name=GYM,
@@ -364,6 +478,31 @@ BACKENDS = {
         # Not the declared value, or ADAPT-2145 would be vacuous.
         clock_override=OWNS_CLOCK,
         namespace=AUTODRIVE_NAMESPACE,
+        remapped=CONTRACT_TOPICS,
+    ),
+    AUTODRIVE_OFFICIAL: Backend(
+        name=AUTODRIVE_OFFICIAL,
+        actions=_autodrive_official_actions,
+        expected_not_applicable=frozenset(
+            {
+                "ADAPT-2050",
+                "ADAPT-2070",
+                "ADAPT-2075",
+                "ADAPT-2080",
+                "ADAPT-2085",
+                "ADAPT-2090",
+                "ADAPT-2120",
+                "ADAPT-2160",
+            }
+        ),
+        # >= 20 Hz, the spec's nominal. One-sided, and on replay it measures
+        # the replay's pacing (one publish per frame).
+        odom_max_median_period_s=0.05,
+        expected_h=lambda: _autodrive_vehicle()["h"],
+        expected_clock=FREE_RUNNING,
+        # Not the declared value, or ADAPT-2145 would be vacuous.
+        clock_override=OWNS_CLOCK,
+        namespace=AUTODRIVE_OFFICIAL_NAMESPACE,
         remapped=CONTRACT_TOPICS,
     ),
 }

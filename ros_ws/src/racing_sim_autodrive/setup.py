@@ -26,7 +26,11 @@ setup(
         "console_scripts": [
             "racing_sim_autodrive_server = "
             "racing_sim_autodrive.server_node:main",
+            "racing_sim_autodrive_devkit = "
+            "racing_sim_autodrive.devkit_node:main",
             "racing_sim_autodrive_replay = racing_sim_autodrive.replay:main",
+            "racing_sim_autodrive_devkit_standin = "
+            "racing_sim_autodrive.devkit_standin:main",
         ],
     },
 )

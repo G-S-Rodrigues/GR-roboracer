@@ -109,6 +109,7 @@ The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` aft
 | 2, ament_python | `ROS_DOMAIN_ID=<n> python3 -m pytest ros_ws/src/racing_sim_autodrive/test/test_server_node.py` (pytest collects the `@pytest.mark.launch_test` file; `colcon test` runs the same) |
 | 3 | `python3 -m pytest tests/system/test_sim_3060_evaluator_identity.py` |
 | manual, host | `docker compose -f docker/docker-compose.yaml run --rm gpu bash /ws/docker/gpu/smoke.sh` (GPU-3010) |
+| local, devkit container | `ROS_DOMAIN_ID=<S> AUTODRIVE_ROS_DOMAIN_ID=<D> python3 -m pytest tests/autodrive -s` (SIM-3710/3720; needs `autodrive-devkit` up, fails when it is down) |
 | 4 | `robot --pythonpath tests/lib --outputdir log/robot --test 'Vehicle Completes Baseline Lap Safely' tests/acceptance` |
 
 A C++ edit reaches none of these until
@@ -121,7 +122,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **308 tier-1, 42 tier-2, 13 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **317 tier-1, 49 tier-2, 14 tier-3, 5 tier-4, 7 tier-5**, plus 2 local tests in `tests/autodrive` (not counted by any gate).
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -221,3 +222,8 @@ The AutoDRIVE isolation work (part 7.3b) added tier 1 `ADAPT-1060` (no `test_ada
   `scripts/compare_metrics.py` carries the measurement that justifies its size.
 
 The AutoDRIVE part-8b work (launch switch) added tier 1 `BRINGUP-1580` (a track with no raceline file is driven on its centerline; `track_parameters`) and `BRINGUP-1600` to `BRINGUP-1670` and `BRINGUP-1680` (`test_launch_simulator_arg.py`: `speed_source:=trajectory` refused on a map with no raceline; the `simulator` and `autodrive_bridge` arguments, the autodrive Node, `use_sim_time` following `capability.clock` on every node and estimator, the gym's refusal of `autodrive_roboracer`, autodrive's refusals, `server.yaml` pinned to `source.yaml`/`identified.yaml`), tier 2 `BRINGUP-2030` (the support node's centerline `/trajectory`) and tier 3 `SIM-3610` (`simulator:=autodrive` against the recorded stream, no simulator: `ROS_DOMAIN_ID=<n> python3 -m pytest tests/system/test_sim_3610_autodrive_launch_replay.py`). Counts by ID: 298 + 10 = 308 tier-1, 39 + 1 = 40 tier-2, 12 + 1 = 13 tier-3. The shutdown fix then added tier 2 `SIMAD-2110` and `SIMAD-2111` (`test_server_node_signals.py`: the server exits 0 on one SIGINT, on two a gap apart, and with a client replaying; a plain pytest that starts the server itself), so 40 + 2 = 42 tier-2. `test_launch_runs_on_simulated_time` (no ID) was replaced by `BRINGUP-1630`, which launches both values instead of reading a literal `True`, and keeps its `time_scale` declaration assert; `BRINGUP-1056` now launches `autodrive_roboracer` on `simulator:=autodrive`. `reference_stack.yaml` lists autodrive as a simulator alternative (CHECK-1150: 11 implementations).
+
+The AutoDRIVE part-9 work (official devkit bridge) added tier 1 `SIMAD-1400` to `SIMAD-1470` (eight IDs;
+with `BRINGUP-1690`, which replaces `BRINGUP-1610`'s refusal, nine IDs, counted by ID), tier 2 `SIMAD-2200` to `SIMAD-2260`, tier 3
+`SIM-3620`, and the local `tests/autodrive` `SIM-3710/3720`.
+
