@@ -274,6 +274,9 @@ def test_raceline_1240_loader_raises_on_a_missing_vehicle_file(tmp_path):
 
 REFERENCE = VEHICLES / "tum_mintime/reference.yaml"
 STEMS = ("f1tenth_default", "f1tenth_gym_limits")
+# Every committed vehicle needs a dynamics file (load_vehicle requires it); the
+# F1TENTH value pins and the tyre sets stay on STEMS.
+DYNAMICS_STEMS = sorted(p.stem for p in VEHICLES.glob("*.yaml"))
 TYRE_SETS = ("forzaeth_f110", "gym_fit")
 # Values every committed file holds, from the gym's Param @1b4eb3f (the
 # reference file's sources) and the 8F gym ini (tire_params_mintime).
@@ -322,15 +325,27 @@ def _gaps(runtime: Path, section: str) -> list[str]:
     return gaps
 
 
-def _runtime_files():
-    for stem in STEMS:
+def _dynamics_files():
+    for stem in DYNAMICS_STEMS:
         yield stem, VEHICLES / stem / "tum_mintime.yaml", "dynamics"
+
+
+def _runtime_files():
+    yield from _dynamics_files()
+    for stem in STEMS:
         for name in TYRE_SETS:
             yield (
                 stem,
                 VEHICLES / stem / f"tum_mintime_tyres_{name}.yaml",
                 "tyres",
             )
+
+
+def _assert_exists(stem, runtime):
+    assert runtime.is_file(), (
+        f"{stem} has no {runtime.relative_to(VEHICLES)}: "
+        "every committed vehicle needs one"
+    )
 
 
 @pytest.mark.parametrize("stem", STEMS)
@@ -367,6 +382,7 @@ def test_raceline_1410_committed_dynamics_and_tyres_load(stem):
 def test_raceline_1410_runtime_keys_equal_the_reference_keys_both_ways(
     stem, runtime, section
 ):
+    _assert_exists(stem, runtime)
     assert _gaps(runtime, section) == []
 
 
@@ -396,6 +412,7 @@ def test_raceline_1410_the_key_check_names_key_and_file_in_each_direction(
     ids=lambda path: f"{path.parent.name}/{path.name}",
 )
 def test_raceline_1410_runtime_files_carry_no_comment(runtime):
+    _assert_exists(runtime.parent.name, runtime)
     assert "#" not in runtime.read_text()
 
 
@@ -454,9 +471,11 @@ def test_raceline_1410_loader_raises_when_lf_plus_lr_is_off_the_wheelbase(
         check_dynamics(limits)
 
 
-@pytest.mark.parametrize("stem", STEMS)
+@pytest.mark.parametrize("stem", DYNAMICS_STEMS)
 def test_raceline_1410_committed_dynamics_match_their_wheelbase(stem):
     from raceline.vehicle import check_dynamics, load_vehicle
+
+    _assert_exists(stem, VEHICLES / stem / "tum_mintime.yaml")
 
     # default: 0.33 against lf + lr 0.3302 (0.2 mm), inside the 1 mm tolerance.
     check_dynamics(load_vehicle(VEHICLES / f"{stem}.yaml"))
