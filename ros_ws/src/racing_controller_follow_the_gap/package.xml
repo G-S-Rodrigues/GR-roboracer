@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>racing_controller_follow_the_gap</name>
+  <version>0.1.0</version>
+  <description>Scan-only follow-the-gap controller: needs no centerline, so it can drive a track nobody has mapped yet.</description>
+  <maintainer email="guilherme6821@gmail.com">Guilherme Rodrigues</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <exec_depend>ackermann_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>launch_ros</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>python3-yaml</test_depend>
+  <test_depend>racing_evaluation</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
