@@ -293,7 +293,9 @@ def track_limit_run(monkeypatch):
         lambda path: path,
     )
     monkeypatch.setattr(launch_module, "LaunchDescription", list)
-    monkeypatch.setattr(scenario_runner, "ensure_rclpy_initialized", lambda: None)
+    monkeypatch.setattr(
+        scenario_runner, "ensure_rclpy_initialized", lambda: None
+    )
     monkeypatch.setattr(scenario_runner, "reset_rclpy", lambda: None)
     monkeypatch.setattr(
         scenario_runner.rclpy, "create_node", lambda *a, **k: node
@@ -369,15 +371,11 @@ def test_check_2230_a_latched_run_names_the_first_non_none_status(
     latched = SafetyStatus.CLAMP_ESTOP
     track_limit_run.state["script"] = [
         (
-            _real_status(
-                0.14, 96, SafetyStatus.REASON_STALE_INPUT
-            ),
+            _real_status(0.14, 96, SafetyStatus.REASON_STALE_INPUT),
             _real_drive(0.0, 0.0),
         ),
         (
-            _real_status(
-                0.15, latched, SafetyStatus.REASON_ESTOP_LATCHED
-            ),
+            _real_status(0.15, latched, SafetyStatus.REASON_ESTOP_LATCHED),
             _real_drive(0.0, 0.0),
         ),
     ]
@@ -443,7 +441,7 @@ def _has_held_start(node: ast.AST) -> bool:
     for child in ast.walk(node):
         if not isinstance(child, ast.Dict):
             continue
-        for key, value in zip(child.keys, child.values):
+        for key, value in zip(child.keys, child.values, strict=True):
             if (
                 isinstance(key, ast.Constant)
                 and key.value == "start_held"
