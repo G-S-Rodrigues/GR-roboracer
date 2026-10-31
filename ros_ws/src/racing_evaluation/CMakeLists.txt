@@ -14,7 +14,7 @@ install(PROGRAMS scripts/racing_evaluation_node
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
-  foreach(tier1_test availability error align map_accuracy)
+  foreach(tier1_test availability error align map_accuracy frame_fit)
     ament_add_pytest_test(test_${tier1_test} test/test_${tier1_test}.py
       APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
     )
