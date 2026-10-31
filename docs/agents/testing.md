@@ -121,7 +121,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **308 tier-1, 42 tier-2, 13 tier-3, 5 tier-4, 7 tier-5.**
+Current counts: **321 tier-1, 42 tier-2, 15 tier-3, 5 tier-4, 7 tier-5.**
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -188,6 +188,8 @@ The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHE
 
 The evaluation-isolation work (E1) added tier 2 `EVAL-2030` (one case in each of `test_evaluation_node.py` and `test_evaluation_node_pose.py`: neither the evaluator nor the test node has a topic outside the file's prefix; `test/graph_isolation.py`), and moved EVAL-2010/2020 under `/test_eval2010/`, `/test_eval2020/`.
 The AutoDRIVE isolation work (part 7.3b) added tier 1 `ADAPT-1060` (no `test_adapter_*.py` names a global topic or service; a negative case keeps the scan honest) and tier 2 `ADAPT-2170` (in `test_adapter_contract.py`, so it runs on both rows: the backend has no topic outside its row prefix, via `racing_evaluation/test/graph_isolation.py`). The conformance servers now run under `/test_adapt_gym` and `/test_adapt_autodrive` with every absolute name remapped, and the gym row also remaps `/clock`, so ADAPT-2075's `use_sim_time` consumer remaps `/clock` to match. The tests name topics through `conformance.topic()`.
+
+The MOLA mapping work (SLAM part 2) added tier 1 `BRINGUP-1700/1710/1720/1730/1740/1750/1760/1770/1780` (`test_mola_map.py`; 1560 now pins three differing values, including the localization `icp_prior_weight` 5), `EVAL-1550`, `EVAL-1560` (`racing_evaluation`) and `RACELINE-1510`; tier 3 `SIM-3530`; nightly `SIM-5520` gained the grid comparison and `test_sim_5520_rotated_grid_is_named`.
 
 ## The tests that matter most
 

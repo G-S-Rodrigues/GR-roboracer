@@ -119,6 +119,17 @@ scored, and its default already follows the pose source. Both stay today-only ad
 
 `visualization.rviz` opens RViz (`use_rviz:=`). The supported mapping script always turns it off.
 
+## MOLA mapping launch
+
+`mola_mapping.launch.py` runs MOLA-LO's mapping lap and nothing else; `scripts/mola_map_track.sh`
+starts it beside the held stack and is the supported entry point
+([the MOLA map](workflows/mapping.md#the-mola-map)).
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `simplemap_output` | required | Where MOLA writes the lap's `.simplemap` when it is stopped. |
+| `configuration` | `config/localization/mola_lidar2d_mapping.yaml` | MOLA-LO's launch arguments, as a yaml. |
+
 ## Mapping example
 
 > **Target contract, not yet executable.** No launcher reads this YAML yet. Run today's command shown beside it.

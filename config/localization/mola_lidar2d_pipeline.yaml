@@ -1,5 +1,5 @@
 # MOLA-LO lidar2d pipeline for this stack: ros-jazzy-mola-lidar-odometry 3.3.0's
-# pipelines/lidar2d.yaml with FOUR values changed (everything else is upstream's).
+# pipelines/lidar2d.yaml with FIVE values changed (everything else is upstream's).
 # Tuned on config/scenarios/spielberg_1080.yaml (1080-beam Hokuyo-class scan)
 # only; on the 64-beam spielberg.yaml scan the stock pipeline is 4.6-5.1 m
 # wrong over the first 5 s (part 1 of the MOLA plan).
@@ -11,6 +11,12 @@
 #   min_translation_between_keyframes  stock expression -> 0.2 m
 #   adaptive_threshold.initial_sigma   0.50 -> 0.30 m
 #   adaptive_threshold.maximum_sigma   2.00 -> 1.00 m
+#   icp_prior_weight                   1.0 (default, absent) -> 50.0  (part 2 tuning:
+#       the car's own constant-velocity prior pins the registration; over
+#       two laps x seeds 7 and 42 the wall p95 against the gym map fell from
+#       0.52-2.49 m to 0.88-1.15 m and extract_track closed on all four laps;
+#       5.0 and 20 also close more laps than 1.0, 200 closes none; see
+#       .scratch/roboracer-slam/run/p2-tuning/results.jsonl)
 # =====================================================================================
 # Pipeline: point-to-gridmap 2D ICP
 #
@@ -79,6 +85,7 @@ params:
 
   # Minimum ICP quality to insert it into the map:
   min_icp_goodness: 0.25
+  icp_prior_weight: 50.0
 
   # Adaptive threshold:
   adaptive_threshold:

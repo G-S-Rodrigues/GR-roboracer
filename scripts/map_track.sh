@@ -38,13 +38,14 @@ case "$stem" in
 *) output=$(pwd)/$stem ;;
 esac
 
-ros2 launch racing_bringup slam_toolbox_mapping.launch.py \
+setsid ros2 launch racing_bringup slam_toolbox_mapping.launch.py \
     scenario:="$scenario" use_rviz:=false seed:=42 \
     recording_path:=log/mapping.jsonl >log/mapping_launch.log 2>&1 &
 launch=$!
-# Match the node executables' path, never a bare "slam_toolbox": pkill -f
-# would also kill any shell whose command line merely mentions it.
-trap 'kill -INT "$launch" 2>/dev/null; sleep 5; pkill -f install/racing_ || true; pkill -f lib/slam_toolbox/ || true; pkill -f robot_state_publisher || true' EXIT
+# The launch is its own session (setsid execs in place, so $! is its session
+# and process-group id); the cleanup signals only that group, never a process
+# name, which would also hit any other stack in this container.
+trap 'kill -TERM -- "-$launch" 2>/dev/null || true; sleep 5; kill -KILL -- "-$launch" 2>/dev/null || true' EXIT
 
 # The lap's metrics are latched once it completes.
 timeout "$lap_wait" ros2 topic echo --once \

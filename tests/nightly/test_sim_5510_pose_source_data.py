@@ -52,8 +52,11 @@ import json
 from pathlib import Path
 
 import racing_common
-import yaml
-from racing_evaluation.map_accuracy import load_grid, map_to_wall
+from racing_evaluation.map_accuracy import (
+    load_grid,
+    map_to_wall,
+    scenario_truth_grid,
+)
 from racing_test_keywords.probes import LastMapProbe, ProcessCpuProbe, RateProbe
 from racing_test_keywords.scenario_runner import (
     BRINGUP_LAUNCH_FILE,
@@ -101,15 +104,6 @@ def launch_keys() -> list[str]:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return list(module.POSE_SOURCE_CONFIGS)
-
-
-def truth_grid(scenario: str):
-    """The scenario's gym map image: what the sim lidar hits."""
-    path = REPO / SCENARIOS[scenario]
-    document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    name = document["environment"]["map"]
-    base = path.parent / document["map_directory"] / name
-    return load_grid(base / f"{name}.yaml")
 
 
 def one_run(source: str, scenario: str, seed: int, track_length, tmp: Path):
@@ -161,7 +155,9 @@ def one_run(source: str, scenario: str, seed: int, track_length, tmp: Path):
     accuracy = None
     grid = last_map.grid()
     if grid is not None and grid.occupied.any():
-        accuracy = dataclasses.asdict(map_to_wall(grid, truth_grid(scenario)))
+        accuracy = dataclasses.asdict(
+            map_to_wall(grid, scenario_truth_grid(REPO / SCENARIOS[scenario]))
+        )
     return record(
         source,
         scenario,
@@ -177,7 +173,9 @@ def one_run(source: str, scenario: str, seed: int, track_length, tmp: Path):
 
 def reference_row() -> dict:
     """The committed survey grid, measured with this metric (O2)."""
-    accuracy = map_to_wall(load_grid(SURVEY), truth_grid("spielberg"))
+    accuracy = map_to_wall(
+        load_grid(SURVEY), scenario_truth_grid(REPO / SCENARIOS["spielberg"])
+    )
     return {
         "map": str(SURVEY.relative_to(REPO)),
         "definition": (

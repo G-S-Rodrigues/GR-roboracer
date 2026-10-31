@@ -1,0 +1,12 @@
+%YAML 1.2
+---
+image: Spielberg_grid.png
+resolution: 0.05000000074505806
+origin:
+  - -81.0
+  - -20.0
+  - 0.0
+negate: 0
+occupied_thresh: 0.65000000000000002
+free_thresh: 0.19600000000000001
+mode: trinary
