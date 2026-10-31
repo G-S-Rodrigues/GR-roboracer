@@ -108,9 +108,7 @@ ACCELERATION = (0.5, -1.0, 9.81)
 
 def _imu_sequence(seed, noise, count=20):
     streams = NoiseStreams.from_seed(seed, REFERENCE_NOISE, noise)
-    return [
-        streams.apply_imu(0.3, ACCELERATION) for _ in range(count)
-    ]
+    return [streams.apply_imu(0.3, ACCELERATION) for _ in range(count)]
 
 
 def test_simjax_1560_imu_noise_is_seeded_and_reseeding_restarts_it():

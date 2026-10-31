@@ -31,13 +31,13 @@ from tf2_ros import TransformBroadcaster
 from .backend import DriveCommand, GymBackend, Snapshot
 from .capabilities import CAPABILITIES
 from .clock import simulated_clock_message, step_due, wall_timer_period
+from .imu import body_acceleration
 from .laser import (
     SCAN_FRAME,
     LaserMount,
     declared_angle_increment,
     gym_angle_increment,
 )
-from .imu import body_acceleration
 from .noise import (
     NoiseStreams,
     OdometryState,

@@ -191,7 +191,9 @@ class ImuNoise:
             return ImuBias(0.0, (0.0, 0.0, 0.0))
         gyro = float(rng.normal(0.0, 1.0) * self.gyro_bias)
         accel = rng.normal(0.0, 1.0, 3) * self.accel_bias
-        return ImuBias(gyro, (float(accel[0]), float(accel[1]), float(accel[2])))
+        return ImuBias(
+            gyro, (float(accel[0]), float(accel[1]), float(accel[2]))
+        )
 
 
 def apply_imu_noise(
@@ -211,10 +213,10 @@ def apply_imu_noise(
     gyro = angular_velocity_z + bias.gyro_z
     if noise.gyro_sigma > 0.0:
         gyro += float(rng.normal(0.0, 1.0) * noise.gyro_sigma)
-    accel = tuple(a + b for a, b in zip(acceleration, bias.accel))
+    accel = tuple(a + b for a, b in zip(acceleration, bias.accel, strict=True))
     if noise.accel_sigma > 0.0:
         draws = rng.normal(0.0, 1.0, 3) * noise.accel_sigma
-        accel = tuple(a + float(d) for a, d in zip(accel, draws))
+        accel = tuple(a + float(d) for a, d in zip(accel, draws, strict=True))
     return gyro, accel
 
 
@@ -238,9 +240,9 @@ class NoiseStreams:
     def from_seed(
         cls, seed: int, odometry: OdometryNoise, imu: ImuNoise
     ) -> NoiseStreams:
-        scan_seed, odometry_seed, imu_seed = np.random.SeedSequence(
-            seed
-        ).spawn(3)
+        scan_seed, odometry_seed, imu_seed = np.random.SeedSequence(seed).spawn(
+            3
+        )
         scan_rng = np.random.default_rng(scan_seed)
         odometry_rng = np.random.default_rng(odometry_seed)
         imu_rng = np.random.default_rng(imu_seed)
