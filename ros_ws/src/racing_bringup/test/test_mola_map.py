@@ -91,6 +91,32 @@ def test_bringup_1510_the_provenance_is_complete_and_true_to_the_files() -> (
     assert (REPOSITORY_ROOT / provenance["scenario"]).is_file()
 
 
+def _assert_scoped_cleanup(script: str) -> None:
+    """Each launch starts under `setsid` and is signalled only through its own
+    session or process group; no kill or lookup matches a process name, so
+    another stack in the same container is never touched (gotcha #10)."""
+    code = "\n".join(
+        line
+        for line in script.splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    launches = re.findall(r"^\s*(\S+ )?ros2 launch\b", code, re.MULTILINE)
+    assert launches, "no ros2 launch"
+    assert all(prefix == "setsid " for prefix in launches), launches
+    # Every process lookup follows a pid (the watchdog's `pgrep -P`,
+    # BRINGUP-1770); none matches a name.
+    lookups = re.findall(r"\bpgrep\b[^\n]*", code)
+    assert all(re.match(r'pgrep -P "\$\w+"', s) for s in lookups), lookups
+    assert not re.search(r"\b(pidof|killall)\b", code)
+    assert not re.search(r"\bpkill\b[^\n]*\s-\w*f", code)
+    # A pkill is allowed only as `pkill [-SIG] -s "$sid"`: a session, no name.
+    for call in re.findall(r"\bpkill\b[^;&|\n']*", code):
+        assert re.fullmatch(r'pkill( -[A-Z]+)? -s "\$\w+"\s*', call), call
+    # The EXIT trap signals the launch's process group.
+    trap = re.search(r"^trap '(?!echo).*' EXIT$", code, re.MULTILINE)
+    assert trap and re.search(r'kill [^;]*-- "?-\$', trap.group(0)), trap
+
+
 def test_bringup_1540_the_mapping_script_never_fails_silently() -> None:
     """Under `set -e` a bare failing test left the script exiting with no
     message after the lap (seen once). Every exit names its line, and the
@@ -98,22 +124,20 @@ def test_bringup_1540_the_mapping_script_never_fails_silently() -> None:
     script = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()
     assert re.search(r"^trap 'echo .*LINENO.*' ERR$", script, re.MULTILINE)
     assert 'wait "$mola"' in script
-    # No process-name match; the watchdog's `pgrep -P <pid>` (BRINGUP-1770)
-    # follows a parent pid, which is not one.
-    assert "pgrep -f" not in script
-    # `ros2 launch` was measured to leave mola-cli running for 15 minutes
-    # after a SIGINT (it never saved the simplemap): the signal goes to
-    # mola-cli itself, which saves on SIGINT.
-    assert "pkill -INT -f lib/mola_launcher/mola-cli" in script
+    _assert_scoped_cleanup(script)
+    # `ros2 launch` alone was measured to leave mola-cli running for 15
+    # minutes after a SIGINT (it never saved the simplemap): the SIGINT goes
+    # to the mapping launch's whole session, which reaches mola-cli.
+    assert re.search(r'^pkill -INT -s "\$mola"', script, re.MULTILINE)
     # The recording is read for T only after the stack that writes it has
     # exited: read while it ran, its last line was cut mid-write and the
     # provenance step died on a JSONDecodeError.
     assert script.index('wait "$launch"') < script.index('mola_mapping.jsonl"')
-    # Under `set -e` a failing kill ended the EXIT trap before its pkills ran
+    # Under `set -e` a failing kill ended the EXIT trap before it finished
     # and left the stack running (gotcha #10); SIGINT to a background job is
     # ignored, so the launch is stopped with SIGTERM.
     assert 'kill -INT "$launch"' not in script
-    assert 'kill -TERM "$mola" "$launch" 2>/dev/null || true' in script
+    assert 'kill -TERM -- "-$mola" "-$launch" 2>/dev/null || true' in script
     # The stack is stopped mid-write, so the recording's last line is cut.
     assert "json.JSONDecodeError" in script
     # The metrics subscriber starts while the sim is held, not after t=0.
@@ -122,11 +146,12 @@ def test_bringup_1540_the_mapping_script_never_fails_silently() -> None:
     )
 
 
-def test_bringup_1550_the_alignment_publisher_is_killable_by_name() -> None:
-    """The stock `static_transform_publisher` lives under /opt/ros, so
-    `pkill -f install/racing_` never matched it and it outlived the stack
-    (gotcha #10). It carries a racing_ node name, which is on its command
-    line, and the pattern is in the documented kill lists."""
+def test_bringup_1550_the_alignment_publisher_dies_with_its_session() -> None:
+    """The stock `static_transform_publisher` lives under /opt/ros, so a
+    path-matching kill never reached it and it outlived the stack (gotcha
+    #10). It is a child of the mapping launch, so the launch's own session
+    cleanup reaches it with no name match (it keeps its racing_ node name,
+    which the gotcha's kill lists use)."""
     from racing_bringup.estimators import mola
     from racing_bringup.scenario_parameters import track_parameters
 
@@ -137,15 +162,18 @@ def test_bringup_1550_the_alignment_publisher_is_killable_by_name() -> None:
     name = static._Node__node_name  # not expanded before launch
     assert name == "racing_mola_map_alignment"
     script = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()
-    assert "pkill -f racing_mola_map_alignment" in script
+    _assert_scoped_cleanup(script)
+    assert "setsid ros2 launch racing_bringup mola_mapping.launch.py" in script
+    assert "pkill -f racing_mola_map_alignment" not in script
     gotchas = (REPOSITORY_ROOT / "docs/agents/repo-gotchas.md").read_text()
     assert "racing_mola_map_alignment" in gotchas
 
 
 def test_bringup_1560_localization_pipeline_differs_by_three_values() -> None:
-    """The mapping pipeline made the committed map and stays unchanged; the
-    localization copy narrows ICP's search window and nothing else, so the
-    map keeps coming from the committed mapping pipeline."""
+    """The mapping pipeline made the committed map; the localization copy
+    differs from it in exactly three values (a lower ICP prior weight and a
+    narrower search window, listed below), so the map keeps coming from the
+    committed mapping pipeline."""
 
     def values(name: str) -> list[str]:
         text = (REPOSITORY_ROOT / "config" / "localization" / name).read_text()
@@ -504,3 +532,13 @@ def test_bringup_1770_a_watchdog_never_holds_the_callers_pipe() -> None:
     elapsed = time.monotonic() - started
     assert completed.stdout == "done\n"
     assert elapsed < 5, f"capture held open {elapsed:.1f} s by a watchdog"
+
+
+def test_bringup_1780_the_slam_toolbox_script_cleans_up_its_own_session() -> (
+    None
+):
+    """scripts/map_track.sh used container-wide `pkill -f` in its EXIT trap:
+    it killed any other stack in the container (2026-10-30 incident)."""
+    script = (REPOSITORY_ROOT / "scripts" / "map_track.sh").read_text()
+    _assert_scoped_cleanup(script)
+    assert "pkill -f" not in script

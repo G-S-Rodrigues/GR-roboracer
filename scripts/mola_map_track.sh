@@ -65,17 +65,18 @@ stop_watchdog() {
     [ -z "$children" ] || kill $children 2>/dev/null || true
 }
 
-ros2 launch racing_bringup sim_pure_pursuit.launch.py \
+setsid ros2 launch racing_bringup sim_pure_pursuit.launch.py \
     scenario:="$scenario" use_rviz:=false seed:="$seed" start_held:=true \
     time_scale:="$time_scale" recording_path:=log/mola_mapping.jsonl \
     >log/mola_mapping_launch.log 2>&1 &
 launch=$!
-ros2 launch racing_bringup mola_mapping.launch.py \
+setsid ros2 launch racing_bringup mola_mapping.launch.py \
     simplemap_output:="$simplemap" >log/mola_mapping_mola.log 2>&1 &
 mola=$!
-# Match the node executables' path, never a bare "mola": pkill -f would also
-# kill any shell whose command line merely mentions it.
-trap 'kill -TERM "$mola" "$launch" 2>/dev/null || true; sleep 5; pkill -f lib/mola_launcher/ || true; pkill -f install/racing_ || true; pkill -f racing_mola_map_alignment || true; pkill -f robot_state_publisher || true' EXIT
+# Each launch is its own session (setsid execs in place, so $! is its session
+# and process-group id), and the cleanup signals only those groups: never a
+# process name, which would also hit any other stack in this container.
+trap 'kill -TERM -- "-$mola" "-$launch" 2>/dev/null || true; sleep 5; kill -KILL -- "-$mola" "-$launch" 2>/dev/null || true' EXIT
 
 # Deterministic t=0: the sim is held at clock 0 and republishes its snapshot.
 # Wait for MOLA to subscribe /scan and process its first scan - which it logs
@@ -113,10 +114,10 @@ grep -q "lap_completed: true" log/mola_mapping_metrics.txt
 
 # A clean MOLA shutdown writes the simplemap before the launch exits; wait on
 # the launch's own pid (a watchdog kills it if the save hangs).
-# SIGINT goes to mola-cli itself: sent only to `ros2 launch` it was measured to
-# leave mola-cli running for 15 minutes, never saving.
-kill -INT "$mola" 2>/dev/null || true
-pkill -INT -f lib/mola_launcher/mola-cli || true
+# SIGINT goes to the whole mapping session, so it reaches mola-cli itself:
+# sent only to `ros2 launch` it was measured to leave mola-cli running for 15
+# minutes, never saving.
+pkill -INT -s "$mola" || true
 start_watchdog 900 "$mola"
 wait "$mola" || true
 stop_watchdog
