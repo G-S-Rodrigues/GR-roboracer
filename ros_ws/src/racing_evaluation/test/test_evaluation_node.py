@@ -8,7 +8,8 @@ position and lateral error, then, once the estimate stops, NaN errors with
 
 The evaluator and every topic here are renamed to a ``/test_eval2010/`` name, as
 METRICS-1030 and PP-2010 do, because colcon runs tier-2 tests in parallel on
-one domain and other tests (SIMAD-2010..2050) publish ``/ground_truth/odom``.
+one domain and another test once published a global
+``/ground_truth/odom`` (SIMAD-2010..2050, now under ``/test_simad``).
 
 EVAL-2030: neither the evaluator nor this test's own node has a data topic
 outside ``/test_eval2010/``. A stray ``/ground_truth/odom`` publisher with a
