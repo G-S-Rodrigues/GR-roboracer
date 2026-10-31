@@ -42,9 +42,8 @@ ROS_DOMAIN_ID=62 ros2 launch racing_bringup sim_pure_pursuit.launch.py simulator
   vehicle:=config/vehicles/autodrive_roboracer.yaml scenario:=config/scenarios/porto.yaml use_rviz:=false
 ```
 
-The simulator then connects to the devkit container's port 4567, not to the launch. Showing the simulator's
-window is in [agents/running-wsl.md](agents/running-wsl.md). Stop the container with `docker compose ... stop
-autodrive-devkit`, never `down`.
+The simulator then connects to the devkit container's port 4567, not to the launch. Stop the container with
+`docker compose ... stop autodrive-devkit`, never `down`.
 
 The minimum-curvature line from `config/racelines/`, raced at its own speed:
 
