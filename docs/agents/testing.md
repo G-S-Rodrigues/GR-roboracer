@@ -161,6 +161,8 @@ The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`
 The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
 
 The frame-rename work (autodrive R1) added tier 1 `CHECK-2010/2020`.
+The part-8 addendum added no test ID: `RACELINE-1410`'s dynamics checks now cover every committed
+vehicle's `tum_mintime.yaml`, and `CHECK-2010`'s allowlist is empty.
 
 The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
 

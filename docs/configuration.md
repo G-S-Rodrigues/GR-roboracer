@@ -63,6 +63,11 @@ the default's, and its laser mount is the true 0.2733 m, which matches its own d
 resolution, about 47 MB). To look at it: `ros2 launch racing_vehicle_description display.launch.py vehicle:=config/vehicles/autodrive_roboracer.yaml`. The measured values (top speed not measured, braking
 depending on speed) are under [AutoDRIVE car identification](results.md#autodrive-car-identification).
 
+Its minimum-time dynamics file, `config/vehicles/autodrive_roboracer/tum_mintime.yaml`, is derived from
+the same sources and AutoDRIVE's simulator code, with each value's provenance in
+`config/vehicles/tum_mintime/reference.yaml`. The car has no tyre set and no committed minimum-time
+raceline, so `raceline_optimizer:=tum_mintime` cannot run on it yet.
+
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):
 

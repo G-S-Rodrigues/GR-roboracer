@@ -359,6 +359,13 @@ done
   A new vehicle needs `config/vehicles/<stem>.yaml` and its own directory
   `config/vehicles/<stem>/` holding `tum_mintime.yaml` (`load_vehicle` reads
   the tables from the yaml path minus `.yaml`).
+  `autodrive_roboracer` has one, derived from AutoDRIVE's source, identification
+  and simulator code (each value's provenance is in
+  `config/vehicles/tum_mintime/reference.yaml`), but no tyre set yet, so
+  `--optimizer tum_mintime` on it stops with `tyre file not found:
+  .../autodrive_roboracer/tum_mintime_tyres_gym_fit.yaml`. Its min-curv ini
+  records mass 3.47 and length 0.50 (inert there, as the comment above
+  `tum_ini` says).
   The solver's outcome is the yaml's top-level `solver:` (status, iterations,
   wall time), outside the inputs a regeneration must reproduce. The solve is
   bounded at 3036 iterations and 1200 s. A width extra of 0.01 m per side is
