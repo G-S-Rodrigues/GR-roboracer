@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 THIS_FILE = Path(__file__).resolve()
@@ -24,7 +25,10 @@ HEADER = (
     REPO_ROOT
     / "ros_ws/src/racing_sim_adapter/include/racing_sim_adapter/contract.hpp"
 )
-URDF = REPO_ROOT / "ros_ws/src/racing_vehicle_description/urdf/f1tenth.urdf"
+DESCRIPTION = REPO_ROOT / "ros_ws/src/racing_vehicle_description"
+URDF = DESCRIPTION / "urdf/f1tenth.urdf"
+# The lidar mesh of f1tenth.urdf and of autodrive_roboracer.urdf.
+LIDAR_MESHES = ("hokuyo.stl", "autodrive_roboracer/lidar.stl")
 # Module-level `NAME = "..."` mirrors of the contract's scan frame.
 MIRRORS = (
     ("ros_ws/src/racing_sim_adapter/test/conformance.py", "SCAN_FRAME"),
@@ -229,6 +233,16 @@ def _assigned(path: Path, name: str) -> str:
     raise AssertionError(f"{path}: no module-level {name} = '...'")
 
 
+def _mapped_urdfs() -> list[Path]:
+    """Every URDF named in urdf/descriptions.yaml (CHECK-2020 loops)."""
+    mapping = yaml.safe_load(
+        (DESCRIPTION / "urdf/descriptions.yaml").read_text()
+    )
+    return [
+        DESCRIPTION / "urdf" / name for name in sorted(set(mapping.values()))
+    ]
+
+
 def test_check_2020_every_frame_mirror_equals_the_contract() -> None:
     """CHECK-2020: contract.hpp's kLaserFrame, the Python mirrors and the
     URDF link carrying the lidar mesh all name the same frame."""
@@ -240,19 +254,22 @@ def test_check_2020_every_frame_mirror_equals_the_contract() -> None:
     assert frame == EXPECTED, f"kLaserFrame {frame!r} != {EXPECTED!r}"
     for rel, name in MIRRORS:
         assert _assigned(REPO_ROOT / rel, name) == frame, rel
-    root = ET.parse(URDF).getroot()
-    sensors = [
-        link.attrib["name"]
-        for link in root.findall("link")
-        if any(
-            m.attrib.get("filename", "").endswith("hokuyo.stl")
-            for m in link.iter("mesh")
+    for urdf in _mapped_urdfs():
+        root = ET.parse(urdf).getroot()
+        sensors = [
+            link.attrib["name"]
+            for link in root.findall("link")
+            if any(
+                m.attrib.get("filename", "").endswith(LIDAR_MESHES)
+                for m in link.iter("mesh")
+            )
+        ]
+        assert sensors == [frame], (
+            f"{urdf.name}: lidar link {sensors} != {frame!r}"
         )
-    ]
-    assert sensors == [frame], f"URDF lidar link {sensors} != {frame!r}"
-    joint = root.find(f"./joint[@name='rear_axle_to_{frame}']")
-    assert joint is not None, f"no joint rear_axle_to_{frame}"
-    assert joint.find("child").attrib["link"] == frame
+        joint = root.find(f"./joint[@name='rear_axle_to_{frame}']")
+        assert joint is not None, f"{urdf.name}: no joint rear_axle_to_{frame}"
+        assert joint.find("child").attrib["link"] == frame, urdf.name
 
 
 def _git_init(root: Path) -> None:

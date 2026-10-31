@@ -32,7 +32,7 @@ These are always launched and have no field. Nothing selects them.
 
 | Role | Available (racing) | Available (mapping) | Planned | Reference default |
 |---|---|---|---|---|
-| `simulator` | `f1tenth_gym_jax` | `f1tenth_gym_jax` | an AutoDRIVE simulator (no identifier yet) | `f1tenth_gym_jax` |
+| `simulator` | `f1tenth_gym_jax`, `autodrive` (in development: see [AutoDRIVE](#the-autodrive-simulator)) | `f1tenth_gym_jax` | none | `f1tenth_gym_jax` |
 | `pose_source` | `ground_truth`, `slam_toolbox`, `amcl`, `mola` | `ground_truth` | none | `ground_truth` |
 | `mapper` | none (racing has no mapper) | `slam_toolbox` | none | n/a |
 | `planner` | `track_centerline`, `optimized_raceline` | `track_centerline` | none | `track_centerline` |
@@ -42,7 +42,10 @@ These are always launched and have no field. Nothing selects them.
 at constant speed. It was called `track_raceline` before part 6 of issue #12 renamed it for what it
 is. `optimized_raceline` publishes the committed minimum-curvature line
 `config/racelines/<track>/<vehicle version>/<raceline_optimizer>.csv` instead. A missing or
-mismatched line is an error: the launch never falls back to the centerline. Exploratory methods
+mismatched line is an error: the launch never falls back to the centerline. The one exception runs
+the other way: under `track_centerline` a map with no `<map>_raceline.csv` (Porto has none yet) is
+driven on its own centerline, published at speed 0 so the controller's schedule sets the speed;
+`speed_source:=trajectory` there is refused, naming the map, because the car would never move. Exploratory methods
 (MPC/MPCC, learned control, FAR-LIO) have no identifier and are not listed here.
 
 The reference default is the composition every new implementation is verified in. Its names come
@@ -55,8 +58,9 @@ backend, which does not exist yet; the gym cannot run it (it simulates a differe
 read from the sim's own prefab and guide (`config/vehicles/autodrive_roboracer/source.yaml`, every
 value anchored to a pinned line) and its measurements are written only by
 `tools/autodrive_identify.py` (`identified.yaml`). Its speed, acceleration and steering-rate caps are
-the default's, and its laser mount is the true 0.2733 m, which differs from the shared URDF's by about
-14 mm until the AutoDRIVE description lands. The measured values (top speed not measured, braking
+the default's, and its laser mount is the true 0.2733 m, which matches its own description,
+`autodrive_roboracer.urdf` (the AutoDRIVE RoboRacer model, imported from AutoDRIVE's BSD-2 FBX at full
+resolution, about 47 MB). To look at it: `ros2 launch racing_vehicle_description display.launch.py vehicle:=config/vehicles/autodrive_roboracer.yaml`. The measured values (top speed not measured, braking
 depending on speed) are under [AutoDRIVE car identification](results.md#autodrive-car-identification).
 
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
@@ -71,9 +75,31 @@ env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
     --out config/vehicles/autodrive_roboracer/identified.yaml
 ```
 
+## The AutoDRIVE simulator
+
+`simulator:=autodrive` (racing launch only) starts `racing_sim_autodrive_server` in place of the
+gym. It listens on a Socket.IO port that the AutoDRIVE simulator connects to once, so start the
+launch first. Its arguments:
+
+- `autodrive_bridge:=ours` (default) or `official`; `official` (the devkit's own bridge) is not
+  built yet and is refused.
+- `autodrive_port:=` the port the server listens on (default `4567`, `bridge_port` in
+  `config/autodrive/simulator.yaml`).
+
+The server's vehicle values are in `config/vehicles/autodrive_roboracer/server.yaml`, one comment per
+value, and where AutoDRIVE's world sits in the Porto map is in `config/autodrive/porto_frame.yaml`
+(rotation 90 degrees, translation (-2.9, 1.2) m, derived from two fits and not yet measured from a
+lap). The simulator has no time scaling and no held start, so `time_scale` other than 1 and
+`start_held:=true` are errors; so are any vehicle but `autodrive_roboracer` and any scenario but
+`porto`, the only track the build has active. Every node then runs on wall time (`use_sim_time`
+false), because AutoDRIVE publishes no clock. `seed` is accepted; a reset returns to the start pose.
+
+Status: the launch is tested against a recorded AutoDRIVE stream, not yet against the live
+simulator, so the capability table still lists it as in development.
+
 ## Runtime controls
 
-- `seed` and `time_scale` (the ratio of simulated time to wall clock).
+- `simulator`, `seed` and `time_scale` (the ratio of simulated time to wall clock; 1 under `autodrive`).
 - `recording_path`: where the run record is written.
 - `drive_on_estimate` (racing only): drive on the estimator's pose instead of ground truth. It is
   ignored with `ground_truth`. `true` is acceptance-backed for `amcl`. No acceptance lap backs it
@@ -107,9 +133,9 @@ scored, and its default already follows the pose source. Both stay today-only ad
 schema_version: 1  # Available: 1
 workflow: mapping  # Available: mapping, racing
 scenario: config/scenarios/spielberg_survey.yaml  # Available: config/scenarios/spielberg_survey.yaml (exact sensors)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not)
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Runs on `simulator: autodrive` only: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; the gym refuses it). The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
 stack:
-  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
+  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer only)
   pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
   mapper: slam_toolbox  # Available: slam_toolbox (survey mapper, never owns map -> odom)
   planner: track_centerline  # Available: track_centerline
@@ -145,10 +171,10 @@ is a reviewed diff. The example writes to `log/maps/Spielberg` so following it i
 # Racing: one lap with a selected stack.
 schema_version: 1  # Available: 1
 workflow: racing  # Available: mapping, racing
-scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Committed but not runnable: config/scenarios/porto.yaml (AutoDRIVE practice track; no simulator runs it until `simulator:=autodrive`)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Committed but not runnable: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; no simulator runs it until `simulator:=autodrive`, and the gym must not)
+scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Runs on `simulator: autodrive` only: config/scenarios/porto.yaml (the AutoDRIVE practice track; the gym has no map for it)
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Runs on `simulator: autodrive` only: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; the gym refuses it). The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
 stack:
-  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax. Planned: an AutoDRIVE simulator
+  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer only)
   pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl, mola
   planner: track_centerline  # Available: track_centerline, optimized_raceline
   raceline_optimizer: tum_mincurv_iqp  # Available: tum_mincurv_iqp (used by optimized_raceline)
@@ -187,7 +213,7 @@ looks the same to a scan matcher.
 | `workflow` | none | `mapping` runs `slam_toolbox_mapping.launch.py` or `map_track.sh`; `racing` runs `sim_pure_pursuit.launch.py`. |
 | `scenario` | `scenario:=` | Also supplies amcl's map grid. |
 | `vehicle` | `vehicle:=` | `map_track.sh` passes no vehicle, so it always uses the launch default `config/vehicles/f1tenth_default.yaml`. Another value needs the direct mapping launch, and that launch does not save a map: the mapping guide covers saving. |
-| `stack.simulator` | none | One implementation today, always launched. |
+| `stack.simulator` | `simulator:=` | `f1tenth_gym_jax` (default) or `autodrive`; anything else is an error. See [The AutoDRIVE simulator](#the-autodrive-simulator). |
 | `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox`, `amcl` and `mola` are accepted; anything else is an error. |
 | `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
 | `stack.planner` | `planner:=` | `track_centerline` (default) or `optimized_raceline`; anything else is an error. |

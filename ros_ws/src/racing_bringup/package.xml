@@ -26,6 +26,7 @@
   <exec_depend>racing_metrics</exec_depend>
   <exec_depend>racing_recording</exec_depend>
   <exec_depend>racing_safety_supervisor</exec_depend>
+  <exec_depend>racing_sim_autodrive</exec_depend>
   <exec_depend>racing_sim_gym_jax</exec_depend>
   <exec_depend>racing_vehicle_description</exec_depend>
   <exec_depend>rclpy</exec_depend>

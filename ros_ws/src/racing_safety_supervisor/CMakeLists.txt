@@ -7,6 +7,7 @@ find_package(nav_msgs REQUIRED)
 find_package(racing_common REQUIRED)
 find_package(racing_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rosgraph_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED src/supervisor.cpp)
@@ -22,7 +23,7 @@ add_executable(${PROJECT_NAME}_node src/node.cpp)
 target_compile_features(${PROJECT_NAME}_node PUBLIC cxx_std_17)
 target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
 ament_target_dependencies(${PROJECT_NAME}_node
-  ackermann_msgs nav_msgs racing_interfaces rclcpp std_srvs
+  ackermann_msgs nav_msgs racing_interfaces rclcpp rosgraph_msgs std_srvs
 )
 
 install(TARGETS ${PROJECT_NAME}
@@ -49,6 +50,12 @@ if(BUILD_TESTING)
     RACING_SAFETY_TEST_TRACK="${CMAKE_CURRENT_SOURCE_DIR}/../../../config/tracks/analytic_circle.yaml"
   )
   set_tests_properties(supervisor_test PROPERTIES LABELS "tier1")
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_supervisor_clock_received.py
+    TIMEOUT 30
+    LABELS "tier2"
+  )
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

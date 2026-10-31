@@ -334,3 +334,79 @@ def test_adapt_1050_negative_a_lost_property_is_reported():
         "test_adapter_contract_autodrive": ["autodrive"],
         "test_test_adapter_start_held.py": [],
     }
+
+
+_NAME_SHAPED = re.compile(r"/[A-Za-z_~][\w/~]*")
+
+
+def _is_topic_call(node: ast.AST) -> bool:
+    """`topic(...)` or `<anything>.topic(...)`: the sanctioned way to name
+    a topic."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return (isinstance(func, ast.Name) and func.id == "topic") or (
+        isinstance(func, ast.Attribute) and func.attr == "topic"
+    )
+
+
+def _global_names(source: str) -> list[str]:
+    """Every name-shaped absolute string in `source`: a str literal that is
+    `/name`-shaped, or an f-string whose first part is a literal starting `/`.
+    Not reported: a first argument of `topic(...)`, the inner parts of an
+    f-string (it is judged once, by its first part), and prose such as
+    "/clock must advance" (not name-shaped)."""
+    tree = ast.parse(source)
+    skipped: set[int] = set()
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if _is_topic_call(node) and node.args:
+            skipped.add(id(node.args[0]))
+        elif isinstance(node, ast.JoinedStr):
+            for part in node.values:
+                skipped.add(id(part))
+            first = node.values[0] if node.values else None
+            if (
+                isinstance(first, ast.Constant)
+                and isinstance(first.value, str)
+                and first.value.startswith("/")
+            ):
+                found.append(ast.unparse(node))
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in skipped
+            and _NAME_SHAPED.fullmatch(node.value)
+        ):
+            found.append(node.value)
+    return found
+
+
+def test_adapt_1060_no_conformance_file_names_a_global_topic_or_service():
+    """ADAPT-1060: no test_adapter_*.py names a topic or service by a global
+    literal; they go through conformance.topic()/service() so the row's
+    namespace applies. This is the receiving side of ADAPT-2170 (the test
+    nodes hold no lasting subscription a live probe could see). Known false
+    negative, accepted: a relative name ("scan") on the root-namespace test
+    node also resolves globally; it fails functionally (no data under the
+    prefix) instead.
+
+    Other known blind spots, also accepted: remap strings such as
+    "/clock:=/x"; names built as "/" + name; f-strings that start with a
+    variable; and global names reached through conformance constants such
+    as CLOCK_TOPIC."""
+    paths = sorted(Path(__file__).parent.glob("test_adapter_*.py"))
+    assert len(paths) == 4, paths
+    leaks = {path.name: _global_names(path.read_text()) for path in paths}
+    assert {name: names for name, names in leaks.items() if names} == {}
+
+
+def test_adapt_1060_negative_a_planted_global_name_is_reported():
+    """ADAPT-1060 negative: the scan is not vacuous."""
+    source = (
+        'X = "/scan"\n'
+        'Y = f"/{a}/reset"\n'
+        'Z = conformance.topic("/odom")\n'
+        'M = "/clock must advance"\n'
+    )
+    assert _global_names(source) == ["/scan", "f'/{a}/reset'"]

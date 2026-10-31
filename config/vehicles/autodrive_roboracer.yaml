@@ -21,10 +21,10 @@
 #
 # Reference point (repo-gotchas #26): AutoDRIVE's pose is the REAR AXLE;
 # base_link is the CoG, lr = 0.15532 ahead, at h = 0.0735.
-# laser_x is the true 0.2733 and does NOT match the one shared URDF (0.275, rear
-# axle 0.17145 behind base_link rather than 0.15532): the TF base_link -> lidar
-# is about 14 mm off under simulator:=autodrive until part 8 gives it its own
-# description. BRINGUP-1050 therefore skips this file (NOT_GYM_CAST).
+# laser_x is the true 0.2733 and matches this vehicle's own description
+# (racing_vehicle_description/urdf/autodrive_roboracer.urdf, rear axle 0.15532
+# behind base_link). BRINGUP-1050 skips this file (NOT_GYM_CAST); BRINGUP-1057
+# pins it to that URDF.
 
 racing_sim:
   ros__parameters:

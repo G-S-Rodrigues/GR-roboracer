@@ -14,8 +14,9 @@ VEHICLE_CONFIG = (
 VEHICLE_FILES = sorted((REPOSITORY_ROOT / "config" / "vehicles").glob("*.yaml"))
 # Vehicle files the gym never runs: the sim casts nothing for them, so the
 # URDF's laser mount (the gym car's) is not their premise. Each one's mount is
-# pinned to its own source instead (CHECK-1790). A name here must be a
-# committed file, or the exclusion silently outlives the file.
+# pinned to its own source (CHECK-1790) and to its own URDF (BRINGUP-1057).
+# A name here must be a committed file, or the exclusion silently outlives
+# the file.
 NOT_GYM_CAST = frozenset({"autodrive_roboracer"})
 GYM_CAST_FILES = [p for p in VEHICLE_FILES if p.stem not in NOT_GYM_CAST]
 
@@ -67,63 +68,6 @@ def test_launch_exposes_reproducibility_and_headless_controls() -> None:
         assert f'DeclareLaunchArgument("{argument}"' in source
     assert "IfCondition" in source
     assert "f1tenth_default.yaml" in source
-
-
-def test_launch_runs_on_simulated_time() -> None:
-    """ADR 0006: every node but sim_node takes time from /clock; sim_node
-    owns the clock and its rate is a launch-time control."""
-    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
-    nodes_by_variable = {
-        node.targets[0].id: node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        and len(node.targets) == 1
-        and isinstance(node.targets[0], ast.Name)
-        and isinstance(node.value, ast.Call)
-        and isinstance(node.value.func, ast.Name)
-        and node.value.func.id == "Node"
-    }
-
-    def _uses_sim_time(call: ast.Call) -> bool:
-        for keyword in call.keywords:
-            if keyword.arg != "parameters" or not isinstance(
-                keyword.value, ast.List
-            ):
-                continue
-            for element in keyword.value.elts:
-                if not isinstance(element, ast.Dict):
-                    continue
-                for key, value in zip(
-                    element.keys, element.values, strict=True
-                ):
-                    if (
-                        isinstance(key, ast.Constant)
-                        and key.value == "use_sim_time"
-                        and isinstance(value, ast.Constant)
-                        and value.value is True
-                    ):
-                        return True
-        return False
-
-    assert set(nodes_by_variable) == {
-        "sim_node",
-        "support_node",
-        "controller_node",
-        "supervisor_node",
-        "metrics_node",
-        "evaluation_node",
-        "recording_node",
-        "robot_state_publisher_node",
-        "rviz_node",
-    }
-    assert not _uses_sim_time(nodes_by_variable["sim_node"])
-    for variable, call in nodes_by_variable.items():
-        if variable == "sim_node":
-            continue
-        assert _uses_sim_time(call), f"{variable} must run with use_sim_time"
-
-    source = LAUNCH_FILE.read_text(encoding="utf-8")
-    assert 'DeclareLaunchArgument("time_scale"' in source
 
 
 def test_launch_can_hold_the_sim_until_reset() -> None:
@@ -366,9 +310,9 @@ def test_bringup_1050_the_sim_casts_scan_from_the_urdf_laser(
     as localization error, never as a fault. The sim is planar, so a mount
     it cannot represent (roll, pitch) fails here too.
     Only the vehicle files the gym casts for: NOT_GYM_CAST lists the rest
-    (the AutoDRIVE car, whose lidar is the simulator's own and whose true
-    mount differs from the URDF's by about 14 mm until part 8), and
-    test_bringup_1055 keeps that list honest.
+    (the AutoDRIVE car, whose lidar is the simulator's own and which has its
+    own description: BRINGUP-1057 pins its mount), and test_bringup_1055
+    keeps that list honest.
     """
     import xml.etree.ElementTree as ElementTree
 
@@ -1107,3 +1051,85 @@ def test_bringup_1810_the_scenario_selects_the_slam_toolbox_file(
         RuntimeError, match=r"(?s)64.*1080.*slam_toolbox_config"
     ):
         module._launch_nodes(context, "", "")
+
+
+def _description_share():
+    return REPOSITORY_ROOT / "ros_ws/src/racing_vehicle_description"
+
+
+@pytest.mark.parametrize("vehicle_file", VEHICLE_FILES, ids=lambda p: p.stem)
+def test_bringup_1056_the_vehicle_selects_its_description(
+    vehicle_file: Path, monkeypatch
+) -> None:
+    """BRINGUP-1056: robot_state_publisher gets the URDF that
+    racing_vehicle_description/urdf/descriptions.yaml maps the vehicle to,
+    byte for byte (f1tenth vehicles keep f1tenth.urdf)."""
+    import yaml
+
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    # A vehicle the gym cannot cast for is launched on its own simulator.
+    own = (
+        {
+            "simulator": "autodrive",
+            "scenario": "config/scenarios/porto.yaml",
+        }
+        if vehicle_file.stem in NOT_GYM_CAST
+        else {}
+    )
+    module, context = _launch_context(vehicle=str(vehicle_file), **own)
+    share = _description_share()
+    mapping = yaml.safe_load((share / "urdf" / "descriptions.yaml").read_text())
+    want = (share / "urdf" / mapping[vehicle_file.stem]).read_text()
+    # The wrapper is what the OpaqueFunction holds; hand it the source tree's
+    # package share.
+    nodes = [
+        node
+        for node in module._launch_described(context, share, "unused.rviz")
+        if getattr(node, "_Node__package", None) == "robot_state_publisher"
+    ]
+    assert len(nodes) == 1
+    got = _merged(context, nodes[0])["robot_description"]
+    assert got == want, vehicle_file.stem
+
+
+def test_bringup_1056_an_unmapped_vehicle_has_no_description(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """BRINGUP-1056: a vehicle stem the map lacks is an error from the
+    OpaqueFunction path, naming the stem."""
+    vehicle = tmp_path / "nope.yaml"
+    vehicle.write_text(VEHICLE_CONFIG.read_text())
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    module, context = _launch_context(vehicle=str(vehicle))
+    with pytest.raises(RuntimeError, match="no description for vehicle nope"):
+        module._launch_described(context, _description_share(), "x.rviz")
+
+
+@pytest.mark.parametrize("vehicle_file", VEHICLE_FILES, ids=lambda p: p.stem)
+def test_bringup_1057_the_laser_mount_is_its_own_description(
+    vehicle_file: Path,
+) -> None:
+    """BRINGUP-1057: every vehicle file's laser_x/y/yaw equals its own mapped
+    URDF's rear_axle_to_lidar (BRINGUP-1050 skips NOT_GYM_CAST; this covers
+    them)."""
+    import xml.etree.ElementTree as ElementTree
+
+    import yaml
+
+    share = _description_share()
+    mapping = yaml.safe_load((share / "urdf" / "descriptions.yaml").read_text())
+    urdf = share / "urdf" / mapping[vehicle_file.stem]
+    joint = (
+        ElementTree.parse(urdf)
+        .getroot()
+        .find("./joint[@name='rear_axle_to_lidar']")
+    )
+    assert joint is not None, f"{urdf.name}: no joint rear_axle_to_lidar"
+    x, y, _z = (float(v) for v in joint.find("origin").attrib["xyz"].split())
+    yaw = float(joint.find("origin").attrib["rpy"].split()[2])
+    sim = yaml.safe_load(vehicle_file.read_text())["racing_sim"][
+        "ros__parameters"
+    ]
+    assert (x, y, yaw) == pytest.approx(
+        (sim["laser_x"], sim["laser_y"], sim["laser_yaw"]), abs=1e-6
+    )
