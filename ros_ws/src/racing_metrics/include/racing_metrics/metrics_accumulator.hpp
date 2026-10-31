@@ -56,6 +56,8 @@ class MetricsAccumulator {
    public:
     // `laps` (>= 1) is how many laps complete the run. lap_time stays the
     // first lap's time, so laps = 1 is exactly the single-lap behaviour.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): a length in
+    // metres and a lap count; the callers name both.
     MetricsAccumulator(RunProvenance provenance, double track_length,
                        std::uint32_t laps = 1);
 

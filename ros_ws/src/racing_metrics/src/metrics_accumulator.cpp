@@ -59,6 +59,7 @@ std::string escape_json(std::string_view value) {
 
 }  // namespace
 
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 MetricsAccumulator::MetricsAccumulator(RunProvenance provenance,
                                        double track_length, std::uint32_t laps)
     : provenance_(std::move(provenance)),
@@ -71,6 +72,7 @@ MetricsAccumulator::MetricsAccumulator(RunProvenance provenance,
         throw std::invalid_argument("track_length must be finite and positive");
     }
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 void MetricsAccumulator::observe(const MetricsSample &sample) {
     if (lap_completed_) {
