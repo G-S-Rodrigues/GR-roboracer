@@ -11,6 +11,7 @@ other packages' tier-2 tests in parallel on one domain.
 """
 
 import json
+import subprocess
 import time
 import unittest
 from pathlib import Path
@@ -42,6 +43,11 @@ TRACK = (
     / "analytic_circle.yaml"
 )
 TIMEOUT_SECONDS = 10.0
+# METRICS-2010: a second node, laps:=2, on its own names.
+PREFIX2 = "/test_metrics2010"
+NODE2 = "metrics_2010"
+OUTPUT2 = Path(f"/tmp/test_metrics2010_{time.time_ns()}.json")
+CIRCLE_LENGTH = 61.2293492  # 8 * 20 * sin(pi/8): analytic_circle.yaml
 
 # node.cpp: reliable, depth 10 on the state input; reliable + transient_local
 # depth 1 on the metrics output.
@@ -81,6 +87,28 @@ def generate_test_description():
                 ],
                 output="screen",
             ),
+            launch_ros.actions.Node(
+                package="racing_metrics",
+                executable="racing_metrics_node",
+                name=NODE2,
+                parameters=[
+                    {
+                        "track_path": str(TRACK),
+                        "output_path": str(OUTPUT2),
+                        "laps": 2,
+                    }
+                ],
+                remappings=[
+                    ("/scenario/metrics", f"{PREFIX2}/metrics"),
+                    ("/ground_truth/scan", f"{PREFIX2}/scan"),
+                    ("/safety/status", f"{PREFIX2}/status"),
+                    (
+                        "/ground_truth/track_relative_state",
+                        f"{PREFIX2}/state",
+                    ),
+                ],
+                output="screen",
+            ),
             launch_testing.actions.ReadyToTest(),
         ]
     )
@@ -111,6 +139,7 @@ class TestMetricsFinalize(unittest.TestCase):
         cls.node.destroy_node()
         rclpy.shutdown()
         OUTPUT.unlink(missing_ok=True)
+        OUTPUT2.unlink(missing_ok=True)
 
     def _spin(self, seconds):
         deadline = time.monotonic() + seconds
@@ -160,3 +189,63 @@ class TestMetricsFinalize(unittest.TestCase):
         self.assertTrue(second.success, second.message)
         self._spin(1.0)
         self.assertEqual(len(self.received), 1)
+
+    def test_metrics_2010_laps_two_publishes_both_laps_once(self):
+        """METRICS-2010: with ``laps:=2`` nothing is published after the first
+        lap; on the second ``laps_completed`` is 2 and ``lap_times`` holds both
+        durations (the first lap's time is ``lap_time``). ``laps:=0`` is
+        refused at start-up."""
+        received = []
+        self.node.create_subscription(
+            ScenarioMetrics, f"{PREFIX2}/metrics", received.append, METRICS_QOS
+        )
+        scans = self.node.create_publisher(
+            LaserScan, f"{PREFIX2}/scan", qos_profile_sensor_data
+        )
+        states = self.node.create_publisher(
+            TrackRelativeState, f"{PREFIX2}/state", RELIABLE_QOS
+        )
+        scan = LaserScan()
+        scan.ranges = [1.0, 2.0]
+        for _ in range(20):  # let discovery settle, then give it a clearance
+            scans.publish(scan)
+            self._spin(0.05)
+        step = CIRCLE_LENGTH / 8.0
+        counts = []
+        for i in range(1, 2 * 8 + 3):
+            scans.publish(scan)
+            state = TrackRelativeState()
+            state.header.stamp.sec = 1 + i // 100
+            state.header.stamp.nanosec = (i % 100) * 10_000_000
+            state.s = (step * i) % CIRCLE_LENGTH
+            states.publish(state)
+            self._spin(0.03)
+            counts.append(len(received))
+        self._spin(0.5)
+        self.assertEqual(len(received), 1, counts)
+        self.assertEqual(max(counts[:8]), 0, counts)  # silent after lap 1
+        message = received[0]
+        self.assertTrue(message.lap_completed)
+        self.assertEqual(message.laps_completed, 2)
+        self.assertEqual(len(message.lap_times), 2)
+        self.assertAlmostEqual(message.lap_times[0], message.lap_time)
+        self.assertGreater(min(message.lap_times), 0.0)
+
+        refused = subprocess.run(
+            [
+                "ros2",
+                "run",
+                "racing_metrics",
+                "racing_metrics_node",
+                "--ros-args",
+                "-p",
+                f"track_path:={TRACK}",
+                "-p",
+                "laps:=0",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("laps must be at least 1", refused.stderr)

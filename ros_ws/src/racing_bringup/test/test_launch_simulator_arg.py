@@ -423,3 +423,27 @@ def test_bringup_1690_official_bridge_launches_the_devkit_node(
         autodrive_devkit_domain="abc", **AUTODRIVE
     )
     assert "racing_sim_autodrive" in _packages(_nodes(module, context))
+
+
+def test_bringup_1910_laps_reaches_the_metrics_node() -> None:
+    """BRINGUP-1910: `laps:=` (default 1, #44 part 10) is how many laps
+    complete the run; it is forwarded to racing_metrics and to no other node,
+    and the default leaves today's single lap."""
+    module, context = _launch_context()
+    assert "laps" in _declared(module)
+    metrics = [
+        n
+        for n in _nodes(module, context)
+        if n._Node__package == "racing_metrics"
+    ]
+    assert len(metrics) == 1
+    assert int(_merged(context, metrics[0])["laps"]) == 1
+
+    module, context = _launch_context(laps="12")
+    nodes = _nodes(module, context)
+    carrying = [
+        n._Node__package for n in nodes if "laps" in _merged(context, n)
+    ]
+    assert carrying == ["racing_metrics"]
+    metrics = [n for n in nodes if n._Node__package == "racing_metrics"]
+    assert int(_merged(context, metrics[0])["laps"]) == 12
