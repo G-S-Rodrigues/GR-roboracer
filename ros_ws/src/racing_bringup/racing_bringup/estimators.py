@@ -230,9 +230,10 @@ def mola_mapping(configuration: str, simplemap_output: str) -> list:
     `configuration` is config/localization/mola_lidar2d_mapping.yaml. MOLA
     defines the frame here, so there is no alignment publisher and no initial
     map. `MOLA_SIMPLEMAP_OUTPUT` is an environment variable the pipeline reads
-    (pipelines/blocks/simplemap.yaml), not a launch argument. Every value that
-    selects a time base (`use_sim_time`) comes from the yaml and is never set
-    here. Reads committed files only and spawns nothing at description time.
+    (pipelines/blocks/simplemap.yaml), not a launch argument. The time base
+    (`use_sim_time`) is "True", `mola_launch_arguments`' default, matching the
+    yaml; this function sets no value of its own. Reads committed files only
+    and spawns nothing at description time.
     """
     share = Path(get_package_share_directory("mola_lidar_odometry"))
     return [

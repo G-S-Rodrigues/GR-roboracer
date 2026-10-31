@@ -19,7 +19,7 @@ angles and the safety supervisor.
 - METRICS-1010: the metrics accumulator.
 - SIMJAX-1090: the scan angles of a real `GymBackend`.
 - SAFE-1020: stale input stops the car.
-- BRINGUP-1700 to BRINGUP-1730: the MOLA mapping launch and script. The launch starts only MOLA with no initial map, the script drives it, and no kill watchdog holds the caller's pipe (BRINGUP-1770).
+- BRINGUP-1700 to BRINGUP-1730: the MOLA mapping launch and script. The launch starts only MOLA with no initial map, the script drives it, and no kill watchdog holds the caller's pipe (BRINGUP-1770). Both mapping scripts start each launch under `setsid` and clean up by their own process group, never by a process name (BRINGUP-1540, 1550, 1780).
 - BRINGUP-1740: the committed MOLA map's provenance agrees with its grid files (hashes, sizes, pipeline).
 - BRINGUP-1750: the committed grid is in the world frame: its wall 95th-percentile distance to the track's true walls is within a measured bound, and a grid rotated 90 degrees is far outside it.
 - BRINGUP-1760: the committed grid and the `.mm` agree under the provenance's start-pose transform, with no ground truth. It is the frame check a real car's map can use.

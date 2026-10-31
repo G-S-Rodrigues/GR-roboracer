@@ -430,8 +430,8 @@ def test_bringup_1750_the_grid_is_in_the_world_frame() -> None:
     """BRINGUP-1750: the committed grid's wall p95 against the gym map is
     within `FRAME_P95_BOUND`, so a grid left in `mola_map`, or placed with a
     wrong T, is caught in seconds. The bound is this test's own, copied as a
-    number from SIM-3530's five seed-42 laps. Bite proof: the grid rotated
-    90 degrees about its centre is at least 3x the bound."""
+    number from SIM-3530's ten laps (seeds 7 and 42). Bite proof: the grid
+    rotated 90 degrees about its centre is at least 3x the bound."""
     from racing_evaluation.map_accuracy import (
         load_grid,
         map_to_wall,

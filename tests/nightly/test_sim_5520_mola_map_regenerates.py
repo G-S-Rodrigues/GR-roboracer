@@ -67,10 +67,11 @@ NEAREST_NEIGHBOUR_P95_TOLERANCE = 1.9
 # T identical to the 4th decimal (spread 0 -> the floors above stand);
 # voxel p95 0.35-0.80 m and grid p95 0.40-0.81 m (the two agree within 0.05
 # m in each pair; spread 0.46 m, the existing 1.9 m stands as 2.4x the
-# worst). The grid tolerance is a new constant: 1.9 m, the voxel one. A
+# worst). The grid tolerance is a new constant: 1.62 m, 2x the worst grid
+# p95 (0.81 m), the rule above. A
 # 90 degree rotated copy of the committed grid scores 32.2 / 61.2 m (>= 3x).
 # No existing tolerance moved.
-GRID_NEAREST_NEIGHBOUR_P95_TOLERANCE = 1.9
+GRID_NEAREST_NEIGHBOUR_P95_TOLERANCE = 1.62
 
 
 def _document(path: Path) -> dict:
@@ -169,7 +170,7 @@ def _copy_map(directory: Path) -> Path:
     return copy
 
 
-def test_sim_5520_shifted_grid_is_named(tmp_path: Path) -> None:
+def test_sim_5520_rotated_grid_is_named(tmp_path: Path) -> None:
     """The committed map with its occupancy grid ROTATED 90 degrees about
     its centre (np.rot90 of the PNG, the yaml origin recomputed so the centre
     stays put) is named by the grid check. A rotation, not a shift: a shift

@@ -57,7 +57,7 @@ TIMEOUT_SECONDS = 900.0
 #   s7  (script)     1.010 0.250 +0.0798 43644
 #   s7  (committed)  0.821 0.214 +0.0771 43631  <- fewest cells
 # worst p95 1.565 -> 1.96; worst median 0.410 -> 0.52; worst |signed_mean|
-# 0.1604 -> 0.21 (0.2005 rounded up); fewest cells 43 631 x 0.8 -> 34 900.
+# 0.1604 -> 0.21 (0.2005 rounded up); fewest cells 43 631 x 0.8 -> 34 905.
 # The spread (p95 0.79-1.57 m over identical-seed laps) is MOLA's lap-to-lap
 # drift with no loop closure, not noise in the scorer, and it is wider than
 # the baseline pipeline's: the bound guards against a different map, not
@@ -69,7 +69,7 @@ MEASUREMENT = (
     "m, median 0.196-0.410 m, signed_mean +0.0770..+0.1604 m, 43 631-43 835 "
     "wall cells"
 )
-MIN_CELLS = 34900
+MIN_CELLS = 34905
 P95_BOUND = 1.96
 MEDIAN_BOUND = 0.52
 SIGNED_BOUND = 0.21
@@ -79,9 +79,9 @@ Q3_MEAN_TARGET = 0.03
 
 def test_sim_3530_mapping_lap_grid_fits_the_walls(tmp_path: Path) -> None:
     stem = tmp_path / "Spielberg"
-    # Output goes to a file, never a pipe: the script's background
-    # watchdogs inherit a pipe and hold it open for up to 900 s after the
-    # script exits (measured: a capture_output run timed out at 905 s).
+    # Output goes to a file, never a pipe: a log file is simpler to
+    # read back after a failure. (The script's watchdogs no longer hold a
+    # pipe open, BRINGUP-1770; this once timed out at 905 s.)
     log = tmp_path / "mola_map_track.log"
     with log.open("w") as handle:
         completed = subprocess.run(

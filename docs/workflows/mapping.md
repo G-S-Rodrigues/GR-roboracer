@@ -108,8 +108,8 @@ pipeline beside it. MOLA reads only `/scan` and `/odom`, never ground truth. The
 
 `T_map_mola` is the car's ground-truth pose when MOLA processed its first scan. It places the map in
 the world and is used only to score the run and to export the grid. A real car has no ground truth, so
-there `T` is the identity and the map stays in MOLA's own frame. Loop closure is not used: on this 2D
-data MOLA accepted none.
+there `T` is the identity and the map stays in MOLA's own frame. Loop closure is not used: loop
+closure was tried and did not change the map (part 10).
 
 To watch it in RViz, start the stack in one shell with `start_held:=true`, run
 `ros2 launch racing_bringup mola_mapping.launch.py simplemap_output:=/tmp/lap.simplemap` in
