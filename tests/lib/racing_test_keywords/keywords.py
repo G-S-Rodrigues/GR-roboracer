@@ -197,14 +197,20 @@ class RacingTestKeywords:
             )
 
     def safety_clamp_should_include_track_limit(self) -> None:
-        active_clamps = self._require_violation()["active_clamps"]
+        violation = self._require_violation()
+        active_clamps = violation["active_clamps"]
         if not active_clamps & SafetyStatus.CLAMP_TRACK_LIMIT:
             raise AssertionError(
                 "expected CLAMP_TRACK_LIMIT in active_clamps, "
-                f"was {active_clamps}"
+                f"was {active_clamps}; "
+                f"safety: {violation.get('safety_record', 'none')}"
             )
 
     def commanded_speed_should_be_zero(self) -> None:
-        speed = self._require_violation()["speed"]
+        violation = self._require_violation()
+        speed = violation["speed"]
         if speed != 0.0:
-            raise AssertionError(f"expected commanded speed 0.0, was {speed}")
+            raise AssertionError(
+                f"expected commanded speed 0.0, was {speed}; "
+                f"safety: {violation.get('safety_record', 'none')}"
+            )

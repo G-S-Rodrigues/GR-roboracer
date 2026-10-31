@@ -776,10 +776,22 @@ def run_scenario_with_track_limit_violation(
     controller's ``/controller/drive``), proving the supervisor's TRACK_LIMIT
     clamp stops the vehicle inside the *complete* composed graph — not just in
     the isolated-node case SIM-3010 covers.
+
+    The launch is held and injection starts only after
+    ``_reset_at_deterministic_t0`` has released t=0 (repo-gotchas #19), so
+    the supervisor's clock has moved before the first fake odometry. The
+    outcome's ``safety_record`` is the first non-NONE ``/safety/status`` the
+    stack reported, for a failure message that names a latch.
     """
     ensure_rclpy_initialized()
 
-    launch_arguments = {"seed": str(seed), "use_rviz": "false"}
+    # The sim is held until _reset_at_deterministic_t0 releases it (gotcha
+    # #19; F1 fixed this only for run_scenario, F2 for this runner).
+    launch_arguments = {
+        "seed": str(seed),
+        "use_rviz": "false",
+        "start_held": "true",
+    }
     if scenario is not None:
         launch_arguments["scenario"] = scenario
 
@@ -801,6 +813,7 @@ def run_scenario_with_track_limit_violation(
 
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_track_limit_injector")
+        observer = _HangObserver(node)
         drive_messages: list[AckermannDriveStamped] = []
         status_messages: list[SafetyStatus] = []
         try:
@@ -810,9 +823,13 @@ def run_scenario_with_track_limit_violation(
                 {ODOMETRY_TOPIC, DRIVE_TOPIC, SAFETY_STATUS_TOPIC},
                 settle_timeout,
             )
+            # Created before the reset so its DDS matching with the
+            # supervisor's reader runs while the sim is held (gotcha #32);
+            # nothing is published until t=0.
             publisher = node.create_publisher(
                 Odometry, ODOMETRY_TOPIC, RELIABLE_QOS
             )
+            _reset_at_deterministic_t0(node, seed, settle_timeout)
             fake_odometry = Odometry()
             fake_odometry.header.frame_id = "map"
             fake_odometry.child_frame_id = "base_link"
@@ -857,12 +874,17 @@ def run_scenario_with_track_limit_violation(
                 outcome["steering_angle"] = drive_messages[
                     -1
                 ].drive.steering_angle
+                outcome["safety_record"] = observer.describe()
             finally:
                 node.destroy_subscription(drive_sub)
                 node.destroy_subscription(status_sub)
+        except TimeoutError as error:
+            failure.append(TimeoutError(f"{error} [{observer.describe()}]"))
+            failure[0].__cause__ = error
         except BaseException as error:  # noqa: BLE001
             failure.append(error)
         finally:
+            observer.close()
             node.destroy_node()
             service.shutdown()
 
