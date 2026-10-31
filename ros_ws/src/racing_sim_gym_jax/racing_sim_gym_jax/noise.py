@@ -161,3 +161,107 @@ def integrate_noisy_odometry(
             math.sin(previous.yaw + yaw), math.cos(previous.yaw + yaw)
         ),
     )
+
+
+@dataclass(frozen=True)
+class ImuBias:
+    """One run's constant IMU bias, drawn once, not per tick."""
+
+    gyro_z: float
+    accel: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class ImuNoise:
+    """IMU noise magnitudes, as configured in a scenario file (`noise.imu`).
+
+    Sigmas are per-sample white noise on the z gyro and on each accelerometer
+    axis; the biases are the std of a per-run constant offset. All zero means
+    an exact /imu.
+    """
+
+    gyro_sigma: float
+    accel_sigma: float
+    gyro_bias: float
+    accel_bias: float
+
+    def draw_bias(self, rng: np.random.Generator) -> ImuBias:
+        """Draw this run's bias; with both stds zero, draws nothing."""
+        if self.gyro_bias == 0.0 and self.accel_bias == 0.0:
+            return ImuBias(0.0, (0.0, 0.0, 0.0))
+        gyro = float(rng.normal(0.0, 1.0) * self.gyro_bias)
+        accel = rng.normal(0.0, 1.0, 3) * self.accel_bias
+        return ImuBias(gyro, (float(accel[0]), float(accel[1]), float(accel[2])))
+
+
+def apply_imu_noise(
+    rng: np.random.Generator,
+    angular_velocity_z: float,
+    acceleration: tuple[float, float, float],
+    noise: ImuNoise,
+    bias: ImuBias,
+) -> tuple[float, tuple[float, float, float]]:
+    """Return the noisy (gyro z, acceleration): the run's bias plus white noise.
+
+    With zero sigma and zero bias the inputs come back exactly and nothing is
+    drawn, so switching IMU noise off cannot shift any stream.
+    """
+    if noise.gyro_sigma < 0.0 or noise.accel_sigma < 0.0:
+        raise ValueError("IMU noise sigmas must be >= 0")
+    gyro = angular_velocity_z + bias.gyro_z
+    if noise.gyro_sigma > 0.0:
+        gyro += float(rng.normal(0.0, 1.0) * noise.gyro_sigma)
+    accel = tuple(a + b for a, b in zip(acceleration, bias.accel))
+    if noise.accel_sigma > 0.0:
+        draws = rng.normal(0.0, 1.0, 3) * noise.accel_sigma
+        accel = tuple(a + float(d) for a, d in zip(accel, draws))
+    return gyro, accel
+
+
+@dataclass
+class NoiseStreams:
+    """The run's independent noise streams, all spawned from one seed.
+
+    Children of `SeedSequence(seed)` are keyed by index, so the IMU as a third
+    child leaves the scan (0) and odometry (1) streams exactly as they were
+    (SIMJAX-1570).
+    """
+
+    scan_rng: np.random.Generator
+    odometry_rng: np.random.Generator
+    imu_rng: np.random.Generator
+    odometry_calibration: OdometryCalibration
+    imu_noise: ImuNoise
+    imu_bias: ImuBias
+
+    @classmethod
+    def from_seed(
+        cls, seed: int, odometry: OdometryNoise, imu: ImuNoise
+    ) -> NoiseStreams:
+        scan_seed, odometry_seed, imu_seed = np.random.SeedSequence(
+            seed
+        ).spawn(3)
+        scan_rng = np.random.default_rng(scan_seed)
+        odometry_rng = np.random.default_rng(odometry_seed)
+        imu_rng = np.random.default_rng(imu_seed)
+        return cls(
+            scan_rng=scan_rng,
+            odometry_rng=odometry_rng,
+            imu_rng=imu_rng,
+            odometry_calibration=odometry.draw_calibration(odometry_rng),
+            imu_noise=imu,
+            imu_bias=imu.draw_bias(imu_rng),
+        )
+
+    def apply_imu(
+        self,
+        angular_velocity_z: float,
+        acceleration: tuple[float, float, float],
+    ) -> tuple[float, tuple[float, float, float]]:
+        return apply_imu_noise(
+            self.imu_rng,
+            angular_velocity_z,
+            acceleration,
+            self.imu_noise,
+            self.imu_bias,
+        )

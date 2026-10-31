@@ -4,8 +4,11 @@ import math
 
 import numpy as np
 from racing_sim_gym_jax.noise import (
+    ImuNoise,
+    NoiseStreams,
     OdometryNoise,
     OdometryState,
+    apply_imu_noise,
     apply_scan_noise,
     body_frame_delta,
     integrate_noisy_odometry,
@@ -94,3 +97,64 @@ def test_simjax_1025_noise_free_odometry_is_exact():
     assert math.isclose(estimate.x, truth[-1].x, abs_tol=1e-9)
     assert math.isclose(estimate.y, truth[-1].y, abs_tol=1e-9)
     assert math.isclose(estimate.yaw, truth[-1].yaw, abs_tol=1e-9)
+
+
+IMU_NOISE = ImuNoise(
+    gyro_sigma=0.01, accel_sigma=0.2, gyro_bias=0.002, accel_bias=0.05
+)
+NO_IMU_NOISE = ImuNoise(0.0, 0.0, 0.0, 0.0)
+ACCELERATION = (0.5, -1.0, 9.81)
+
+
+def _imu_sequence(seed, noise, count=20):
+    streams = NoiseStreams.from_seed(seed, REFERENCE_NOISE, noise)
+    return [
+        streams.apply_imu(0.3, ACCELERATION) for _ in range(count)
+    ]
+
+
+def test_simjax_1560_imu_noise_is_seeded_and_reseeding_restarts_it():
+    """SIMJAX-1560: one seed gives one IMU noise sequence (bias included),
+    another seed a different one, and a reseed - the `~/reset` path - starts
+    the sequence over."""
+    first = _imu_sequence(7, IMU_NOISE)
+    assert first == _imu_sequence(7, IMU_NOISE)
+    assert first != _imu_sequence(8, IMU_NOISE)
+    assert first[0] != (0.3, ACCELERATION), "noise must change the reading"
+
+    streams = NoiseStreams.from_seed(7, REFERENCE_NOISE, IMU_NOISE)
+    drawn = [streams.apply_imu(0.3, ACCELERATION) for _ in range(5)]
+    streams = NoiseStreams.from_seed(7, REFERENCE_NOISE, IMU_NOISE)
+    assert [streams.apply_imu(0.3, ACCELERATION) for _ in range(5)] == drawn
+
+
+def test_simjax_1560_zero_imu_noise_is_exact_and_draws_nothing():
+    """Off means exact, and off draws nothing, so turning it off cannot shift
+    any stream."""
+    rng = np.random.default_rng(3)
+    untouched = np.random.default_rng(3)
+    bias = NO_IMU_NOISE.draw_bias(rng)
+    assert apply_imu_noise(rng, 0.3, ACCELERATION, NO_IMU_NOISE, bias) == (
+        0.3,
+        ACCELERATION,
+    )
+    assert rng.random() == untouched.random()
+
+
+def test_simjax_1570_imu_noise_leaves_scan_and_odometry_streams_alone():
+    """SIMJAX-1570: with IMU noise on, the scan and odometry streams are
+    bit-identical to IMU noise off. The IMU has its own third child of the
+    run seed's SeedSequence; a draw from either of the others would shift
+    every later scan or odometry sample."""
+    on = NoiseStreams.from_seed(7, REFERENCE_NOISE, IMU_NOISE)
+    off = NoiseStreams.from_seed(7, REFERENCE_NOISE, NO_IMU_NOISE)
+    scan_on, scan_off, odometry_on, odometry_off = [], [], [], []
+    for _ in range(50):
+        on.apply_imu(0.3, ACCELERATION)
+        scan_on.append(on.scan_rng.normal())
+        scan_off.append(off.scan_rng.normal())
+        odometry_on.append(on.odometry_rng.normal())
+        odometry_off.append(off.odometry_rng.normal())
+    assert on.odometry_calibration == off.odometry_calibration
+    assert np.array_equal(scan_on, scan_off)
+    assert np.array_equal(odometry_on, odometry_off)

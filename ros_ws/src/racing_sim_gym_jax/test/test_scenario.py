@@ -79,6 +79,63 @@ def test_simjax_1055_noise_section_is_optional_and_validated(tmp_path):
         load_scenario(quiet)
 
 
+def test_simjax_1550_imu_noise_is_optional_zero_default_and_validated(
+    tmp_path,
+):
+    """SIMJAX-1550: `noise.imu.{gyro_sigma, accel_sigma, gyro_bias,
+    accel_bias}` parse; absent, every one is zero (exact); a negative one is
+    rejected."""
+    root = Path(__file__).resolve().parents[4] / "config" / "scenarios"
+    document = yaml.safe_load(
+        (root / "contract_test.yaml").read_text(encoding="utf-8")
+    )
+    document["track"] = str(root / document["track"])
+    document["map_directory"] = str(root / document["map_directory"])
+    path = tmp_path / "imu.yaml"
+
+    def load(imu):
+        document["noise"] = {**(document.get("noise") or {})}
+        document["noise"].pop("imu", None)
+        if imu is not None:
+            document["noise"]["imu"] = imu
+        path.write_text(yaml.safe_dump(document), encoding="utf-8")
+        return load_scenario(path).imu_noise
+
+    exact = load(None)
+    assert (
+        exact.gyro_sigma,
+        exact.accel_sigma,
+        exact.gyro_bias,
+        exact.accel_bias,
+    ) == (0.0, 0.0, 0.0, 0.0)
+    noisy = load(
+        {
+            "gyro_sigma": 0.01,
+            "accel_sigma": 0.2,
+            "gyro_bias": 0.002,
+            "accel_bias": 0.05,
+        }
+    )
+    assert (
+        noisy.gyro_sigma,
+        noisy.accel_sigma,
+        noisy.gyro_bias,
+        noisy.accel_bias,
+    ) == (0.01, 0.2, 0.002, 0.05)
+    for key in ("gyro_sigma", "accel_sigma", "gyro_bias", "accel_bias"):
+        with pytest.raises(ValueError, match="non-negative"):
+            load({key: -0.1})
+
+
+def test_simjax_1550_no_committed_scenario_sets_imu_noise():
+    """D1: IMU noise is off in every committed scenario, so no golden and no
+    existing run changes."""
+    root = Path(__file__).resolve().parents[4] / "config" / "scenarios"
+    for path in sorted(root.glob("*.yaml")):
+        scenario = load_scenario(path)
+        assert not any(vars(scenario.imu_noise).values()), path.name
+
+
 def _flatten(node, prefix=""):
     if isinstance(node, dict):
         out = {}

@@ -37,7 +37,9 @@ from .laser import (
     declared_angle_increment,
     gym_angle_increment,
 )
+from .imu import body_acceleration
 from .noise import (
+    NoiseStreams,
     OdometryState,
     apply_scan_noise,
     body_frame_delta,
@@ -180,15 +182,19 @@ class RacingSimNode(Node):
 
         Dead reckoning starts at the true pose, so `odom` coincides with
         `map` at t=0 and a perfect pose source's `map -> odom` is identity.
-        Two independent streams, so the beam count cannot shift the
-        odometry draws.
+        Three independent streams (scan, odometry, IMU), so the beam count
+        cannot shift the odometry draws nor the IMU the other two. The
+        previous speed is cleared too: the first step after a reset has no
+        acceleration to difference.
         """
-        scan_seed, odometry_seed = np.random.SeedSequence(seed).spawn(2)
-        self._scan_rng = np.random.default_rng(scan_seed)
-        self._odometry_rng = np.random.default_rng(odometry_seed)
-        self._odometry_calibration = (
-            self._scenario.odometry_noise.draw_calibration(self._odometry_rng)
+        streams = NoiseStreams.from_seed(
+            seed, self._scenario.odometry_noise, self._scenario.imu_noise
         )
+        self._noise_streams = streams
+        self._scan_rng = streams.scan_rng
+        self._odometry_rng = streams.odometry_rng
+        self._odometry_calibration = streams.odometry_calibration
+        self._previous_speed: float | None = None
         self._true_pose = OdometryState(snapshot.x, snapshot.y, snapshot.yaw)
         self._odometry_pose = self._true_pose
 
@@ -364,7 +370,20 @@ class RacingSimNode(Node):
         imu.header.stamp = stamp
         imu.header.frame_id = "base_link"
         imu.orientation = ground_truth.pose.pose.orientation
-        imu.angular_velocity.z = snapshot.yaw_rate
+        acceleration = body_acceleration(
+            self._previous_speed,
+            snapshot.speed,
+            snapshot.yaw_rate,
+            self._scenario.control_period,
+        )
+        self._previous_speed = snapshot.speed
+        gyro_z, acceleration = self._noise_streams.apply_imu(
+            snapshot.yaw_rate, acceleration
+        )
+        imu.angular_velocity.z = gyro_z
+        imu.linear_acceleration.x = acceleration[0]
+        imu.linear_acceleration.y = acceleration[1]
+        imu.linear_acceleration.z = acceleration[2]
         self._imu_publisher.publish(imu)
 
         relative = TrackRelativeState()
