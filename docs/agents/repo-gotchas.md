@@ -86,7 +86,7 @@ Traps any task in this repository can hit. Each one cost real time at least once
     delivery). The working explanation, which the owner ruled on and nobody measured, is that a
     best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
     STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
-    latch (Step 1) and 1 of 48 lag runs (Step A).
+    latch (Step 1) and 1 of 48 lag runs (Step A). Every runner that launches the bringup takes this t=0: ACC-4020's injector ran free until F2 and latched in 1 of 5 runs on main 52ec38d, and CHECK-2250 fails a runner that does not.
 
 10. **A stale ROS graph outlives the launch that started it.** `pkill -f 'ros2 launch'` kills the
     launcher and leaves every node running; they keep publishing on the same `ROS_DOMAIN_ID` and
