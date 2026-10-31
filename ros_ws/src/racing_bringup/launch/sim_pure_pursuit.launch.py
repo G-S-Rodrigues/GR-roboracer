@@ -42,8 +42,8 @@ SIMULATOR_CAPABILITIES = {
 }
 # What `simulator:=autodrive` runs: the only vehicle and the only track the
 # AutoDRIVE build has active, the server's values and the world_to_map it
-# publishes under (config/autodrive/porto_frame.yaml: derived, not measured,
-# until part 10's lap measures it; plan D3). Paths are repository-relative,
+# publishes under (config/autodrive/porto_frame.yaml: measured in part 10;
+# plan D3). Paths are repository-relative,
 # like the rest of this file.
 AUTODRIVE_VEHICLE = "autodrive_roboracer"
 AUTODRIVE_SCENARIO = "porto"
@@ -193,6 +193,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     )
     scenario = LaunchConfiguration("scenario")
     seed = LaunchConfiguration("seed")
+    laps = LaunchConfiguration("laps")
     recording_path = LaunchConfiguration("recording_path")
     use_rviz = LaunchConfiguration("use_rviz")
     time_scale = LaunchConfiguration("time_scale")
@@ -382,7 +383,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         parameters=[
             vehicle,
             tracks["racing_metrics"],
-            {"seed": seed, "use_sim_time": use_sim_time},
+            {"seed": seed, "laps": laps, "use_sim_time": use_sim_time},
         ],
     )
     # Scores estimate_topic against ground truth, live. With the default
@@ -513,6 +514,11 @@ def generate_launch_description() -> LaunchDescription:
         "autodrive_port", default_value=AUTODRIVE_PORT
     )
     seed_arg = DeclareLaunchArgument("seed", default_value="0")
+    laps_arg = DeclareLaunchArgument(
+        "laps",
+        default_value="1",
+        description="Laps that complete the run (racing_metrics `laps`).",
+    )
     rec_arg = DeclareLaunchArgument("recording_path", default_value=REC_DEFAULT)
     use_rviz_arg = DeclareLaunchArgument("use_rviz", default_value="true")
     time_scale_arg = DeclareLaunchArgument("time_scale", default_value="1.0")
@@ -549,6 +555,7 @@ def generate_launch_description() -> LaunchDescription:
             autodrive_port_arg,
             autodrive_devkit_domain_arg,
             seed_arg,
+            laps_arg,
             rec_arg,
             use_rviz_arg,
             time_scale_arg,

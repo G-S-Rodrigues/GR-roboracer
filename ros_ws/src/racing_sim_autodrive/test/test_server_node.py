@@ -1,6 +1,6 @@
 """Tier 2: the Socket.IO server node against the replayed recording.
 
-SIMAD-2010..2040. The server listens on an ephemeral port (never 4567) and
+SIMAD-2010..2040, 2270. The server listens on an ephemeral port (never 4567) and
 `racing_sim_autodrive.replay` stands in for the sim. Needs the pip closure
 (plan D2) and ROS_DOMAIN_ID set by the caller.
 """
@@ -18,6 +18,7 @@ import pytest
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
+from racing_interfaces.msg import SimCounters
 from racing_interfaces.srv import Reset
 from rclpy.qos import (
     DurabilityPolicy,
@@ -36,6 +37,7 @@ SCAN = launch_support.topic("/scan")
 DRIVE = launch_support.topic("/drive")
 ODOM = launch_support.topic("/odom")
 TRUTH = launch_support.topic("/ground_truth/odom")
+COUNTERS = f"{launch_support.PREFIX}/racing_sim/autodrive_counters"
 RESET = f"{launch_support.PREFIX}/racing_sim/reset"
 FRAMES = 300
 SENSOR = QoSProfile(
@@ -334,3 +336,33 @@ class TestServerNode(unittest.TestCase):
             re.compile(r"entered=(\d+) exited=\1 emitted=\1"), timeout=5
         )
         proc_output.assertWaitFor("Current thread", timeout=5)
+
+    def test_simad_2270_the_sims_counters_are_published_per_frame(self):
+        """SIMAD-2270: `<node>/autodrive_counters` carries the sim's own lap and
+        collision counters, one message per frame, in order. The fixture's
+        collisions read 0, then 1 at frame 82, 2 at 131, and 0 after the
+        reset at 451; its lap count is 0 throughout (it never completes a
+        lap). A debug and cross-check topic only (league rules restrict the
+        counters at race time): no stack node subscribes to it."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, got = self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                "460",
+                collect=[(SimCounters, COUNTERS, STATE)],
+            )
+        counters = got[COUNTERS]
+        self.assertEqual(len(counters), 460)
+        collisions = [m.collisions for m in counters]
+        self.assertEqual(collisions[0], 0)
+        self.assertEqual(collisions[81:83], [0, 1])
+        self.assertEqual(collisions[130:132], [1, 2])
+        self.assertEqual(collisions[450:452], [2, 0])
+        self.assertEqual({m.lap_count for m in counters}, {0})
+        self.assertEqual(counters[0].last_lap_time, float("inf"))
+        self.assertAlmostEqual(counters[82].lap_time, 5.6838, places=3)
+        self.assertTrue(
+            all(m.header.stamp.sec or m.header.stamp.nanosec for m in counters)
+        )

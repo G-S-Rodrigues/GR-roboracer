@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/LocalizationError.msg"
   "msg/ScenarioMetrics.msg"
   "msg/SafetyStatus.msg"
+  "msg/SimCounters.msg"
   "msg/TrackBoundaries.msg"
   "msg/TrackRelativeState.msg"
   "msg/Trajectory.msg"

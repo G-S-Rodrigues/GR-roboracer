@@ -60,6 +60,8 @@ an unrelated one: each implementation is verified once, in the reference stack (
   (repo-gotchas #23), and unlike the first it fails closed.
 - A change to the simulator, `racing_evaluation` or bringup's composition code selects nearly every
   tier-3/4 test. The saving is on alternative and newly added implementations.
+- Live AutoDRIVE tests sit in `tests/autodrive/`, outside every gate: they need the simulator container, are run by
+  `scripts/autodrive_qualify.sh` or by hand, and fail rather than skip.
 - `--ready` on a branch that touches `check.sh` or `config/` still pays a whole-tree tier 0-2.
 
 ## What it gives up

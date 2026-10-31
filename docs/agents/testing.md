@@ -122,7 +122,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **323 tier-1, 49 tier-2, 14 tier-3, 5 tier-4, 7 tier-5**, plus 2 local tests in `tests/autodrive` (not counted by any gate).
+Current counts: **336 tier-1, 51 tier-2, 14 tier-3, 5 tier-4, 7 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -160,6 +160,8 @@ The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHEC
 The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
 
 The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
+
+The AutoDRIVE part-10 work added tier 1 `SIMAD-1350/1360`, `METRICS-1060..1080`, `BRINGUP-1910`, `EVAL-1610..1650` and `CHECK-2140/2150`, tier 2 `SIMAD-2270` and `METRICS-2010`, and the local `tests/autodrive` `SIM-3730` (run by `scripts/autodrive_qualify.sh`).
 
 The frame-rename work (autodrive R1) added tier 1 `CHECK-2010/2020`.
 
