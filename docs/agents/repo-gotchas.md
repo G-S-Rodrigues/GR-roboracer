@@ -326,7 +326,26 @@ Traps any task in this repository can hit. Each one cost real time at least once
     lockstep-wait at `time_scale` 5.0. No endpoint exists for a probe to see; fixing it is a
     production-node change.
 
-40. **A reference CSV's rounding changes IPOPT's iteration path, and nothing errors.** The same
+40. **The devkit's `/tf` claims `lidar`.** The official bridge publishes `world -> roboracer_1 -> lidar` on the
+    global `/tf` of its domain. A stack on that domain gets a second parent for `lidar`, and
+    `base_link -> lidar` breaks with no error. Symptom: a scan that jumps in RViz, or a TF lookup that
+    flips between parents. Remedy: the devkit runs on its own domain and front end B reads it through a
+    second context; the launch refuses `autodrive_devkit_domain` equal to the stack's (BRINGUP-1690;
+    SIMAD-2250 guards the isolation).
+
+41. **The devkit latches every command, so a dead consumer leaves the car driving or resetting.** Its
+    steering, throttle and reset topics hold their last value and are replied on every frame. If B dies
+    after publishing a throttle or a reset True, the car keeps that command. B zeroes the latch on
+    shutdown (SIMAD-2230, own SIGINT handling); a SIGKILL cannot (by design: it is uncatchable), so
+    after one, publish zero yourself on the devkit domain D, for each of the three topics:
+    `ros2 topic pub --once /autodrive/roboracer_1/throttle_command std_msgs/msg/Float32 '{data: 0.0}'`,
+    the same with `steering_command`, and `ros2 topic pub --once /autodrive/reset_command std_msgs/msg/Bool
+    '{data: false}'`, each under `ROS_DOMAIN_ID=D`.
+
+42. **The official bridge's commands lag one frame.** A command published for frame n reaches the car at
+    frame n+1 (measured 1 frame in SIM-3710; accepted up to 3). Recorded and measured, not compensated.
+
+43. **A reference CSV's rounding changes IPOPT's iteration path, and nothing errors.** The same
     minimum-time optimum took 817 iterations from the in-memory reference and 1715 from the one read
     back from a CSV (1e-9 rounding), then 1518 with the 0.01 m width extra (which also moves the line:
     objective 32.5316 to 32.5664). Why the counts differ is still open (topic

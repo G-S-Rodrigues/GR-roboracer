@@ -7,6 +7,7 @@ and the nodes it starts both use (``config/vehicles/...``, the launch
 arguments below) resolve the same way ``scripts/check.sh`` resolves them.
 """
 
+import os
 from pathlib import Path
 
 import yaml
@@ -96,6 +97,36 @@ def _world_to_map() -> dict:
     }
 
 
+def _devkit_domain(context) -> int:
+    """`autodrive_devkit_domain` as an int 0-101 that differs from this
+    launch's own ROS domain, or a RuntimeError naming the argument.
+
+    The devkit publishes a global /tf (world -> roboracer_1 -> lidar); on the
+    stack's domain it would join the stack's TF tree and break base_link ->
+    lidar, so front end B bridges across two domains instead.
+    """
+    text = LaunchConfiguration("autodrive_devkit_domain").perform(context)
+    try:
+        domain = int(text)
+    except ValueError:
+        domain = None
+    if domain is None or not 0 <= domain <= 101:
+        raise RuntimeError(
+            "autodrive_bridge:=official needs autodrive_devkit_domain, the "
+            f"ROS domain the devkit runs on, as an integer 0-101 (got {text!r};"
+            " it defaults to $AUTODRIVE_ROS_DOMAIN_ID)"
+        )
+    own = int(os.environ.get("ROS_DOMAIN_ID", "0") or "0")
+    if domain == own:
+        raise RuntimeError(
+            f"autodrive_devkit_domain {domain} is this launch's own ROS "
+            "domain: the devkit's global /tf (world -> roboracer_1 -> lidar)"
+            " would join the stack's TF tree. Run the devkit on its own "
+            "domain."
+        )
+    return domain
+
+
 def _check_autodrive(context, vehicle: str, bridge: str) -> None:
     """Refuse what the AutoDRIVE backend cannot do, naming the argument.
 
@@ -104,10 +135,7 @@ def _check_autodrive(context, vehicle: str, bridge: str) -> None:
     The build has one car and one active track, so no other is offered.
     """
     if bridge == "official":
-        raise RuntimeError(
-            "autodrive_bridge:=official (the devkit's own bridge) lands in "
-            "autodrive part 9; use autodrive_bridge:=ours"
-        )
+        _devkit_domain(context)
     if Path(vehicle).stem != AUTODRIVE_VEHICLE:
         raise RuntimeError(
             f"simulator:=autodrive runs vehicle {AUTODRIVE_VEHICLE} only, "
@@ -259,7 +287,27 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
     # the sim exists and never owns /clock (free-running, ADR 0006). The values
     # file is the server's, not the vehicle file (BRINGUP-1670).
     autodrive_node = None
-    if use_autodrive:
+    if use_autodrive and autodrive_bridge == "official":
+        # Front end B: the official devkit bridge. The devkit runs its own
+        # bridge process on its own ROS domain; this node reads it there. No
+        # port: the sim connects to the devkit, not to us.
+        autodrive_node = Node(
+            package="racing_sim_autodrive",
+            executable="racing_sim_autodrive_devkit",
+            name="racing_sim",
+            parameters=[
+                AUTODRIVE_SERVER_CONFIG,
+                {
+                    **_world_to_map(),
+                    "track_path": tracks["racing_safety_supervisor"][
+                        "track_path"
+                    ],
+                    "scenario_id": AUTODRIVE_SCENARIO,
+                    "devkit_domain_id": _devkit_domain(context),
+                },
+            ],
+        )
+    elif use_autodrive:
         autodrive_node = Node(
             package="racing_sim_autodrive",
             executable="racing_sim_autodrive_server",
@@ -453,6 +501,14 @@ def generate_launch_description() -> LaunchDescription:
         default_value="ours",
         choices=list(AUTODRIVE_BRIDGES),
     )
+    autodrive_devkit_domain_arg = DeclareLaunchArgument(
+        "autodrive_devkit_domain",
+        default_value=os.environ.get("AUTODRIVE_ROS_DOMAIN_ID", ""),
+        description=(
+            "autodrive_bridge:=official: the ROS domain the AutoDRIVE devkit "
+            "runs on; must differ from this launch's ROS_DOMAIN_ID"
+        ),
+    )
     autodrive_port_arg = DeclareLaunchArgument(
         "autodrive_port", default_value=AUTODRIVE_PORT
     )
@@ -491,6 +547,7 @@ def generate_launch_description() -> LaunchDescription:
             simulator_arg,
             autodrive_bridge_arg,
             autodrive_port_arg,
+            autodrive_devkit_domain_arg,
             seed_arg,
             rec_arg,
             use_rviz_arg,

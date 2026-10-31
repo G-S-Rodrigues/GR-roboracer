@@ -1,4 +1,4 @@
-"""Tier 1: the ROS-free bridge session (SIMAD-1160 to 1230, 1260).
+"""Tier 1: the ROS-free bridge session (SIMAD-1160 to 1230, 1260, 1400).
 
 Everything the Socket.IO server node does between "a frame arrived" and "a
 reply and some states to publish", against the part-1 fixture. No socket,
@@ -458,3 +458,44 @@ def test_simad_1340_stall_watch_report_carries_counters_and_gap():
     assert "entered=4" in report and "exited=3" in report
     assert "emitted=3" in report
     assert "1.50 s" in report
+
+
+def _same_frame(a, b):
+    for field in a.__dataclass_fields__:
+        x, y = getattr(a, field), getattr(b, field)
+        if field == "ranges":
+            assert (x is None) == (y is None)
+            if x is not None:
+                np.testing.assert_array_equal(x, y)
+        else:
+            assert x == y, field
+
+
+def test_simad_1400_on_frame_is_decode_plus_on_sim_frame(raws):
+    """SIMAD-1400: over every fixture frame (a reset requested at 300, so the
+    True reply is in the run), `on_frame(raw)` and
+    `on_sim_frame(decode_frame(raw))` on twin sessions give equal Steps, and
+    the numeric `throttle`, `steering` and `reset` format to `reply`."""
+    one = _session(dt_source="receipt")
+    two = _session(dt_source="receipt")
+    fired = 0
+    for k, raw in enumerate(raws):
+        if k == 300:
+            one.request_reset()
+            two.request_reset()
+        stamp = 0.02 * k
+        a = one.on_frame(raw, DRIVE, received_at=stamp)
+        b = two.on_sim_frame(core.decode_frame(raw), DRIVE, received_at=stamp)
+        assert a.reply == b.reply, k
+        assert a.ground_truth == b.ground_truth, k
+        assert a.odometry == b.odometry, k
+        assert a.track_state == b.track_state, k
+        assert (a.speed, a.dt) == (b.speed, b.dt), k
+        _same_frame(a.frame, b.frame)
+        assert b.reply == {
+            "V1 Throttle": f"{b.throttle:.4f}",
+            "V1 Steering": f"{b.steering:.4f}",
+            "V1 Reset": "True" if b.reset else "False",
+        }, k
+        fired += b.reset
+    assert fired == 1

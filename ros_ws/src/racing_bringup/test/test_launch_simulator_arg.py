@@ -98,17 +98,19 @@ def test_bringup_1600_simulator_choices_are_the_reference_stack_ones() -> None:
     ) == str(port)
 
 
-def test_bringup_1610_autodrive_bridge_is_ours_until_part_9() -> None:
+def test_bringup_1610_autodrive_bridge_offers_ours_and_official() -> None:
     """BRINGUP-1610: `autodrive_bridge` offers `ours` (default) and
-    `official`; `official` is a refusal that names part 9, which writes it."""
+    `official`; both launch (`official` is built by BRINGUP-1690, which
+    replaces this case's old refusal of it)."""
     module, context = _launch_context(**AUTODRIVE)
     argument = _declared(module)["autodrive_bridge"]
     assert list(argument.choices) == ["ours", "official"]
     assert "".join(p.text for p in argument.default_value) == "ours"
     _nodes(module, context)
-    module, context = _launch_context(autodrive_bridge="official", **AUTODRIVE)
-    with pytest.raises(RuntimeError, match="part 9"):
-        module._launch_nodes(context, "", "")
+    module, context = _launch_context(
+        autodrive_bridge="official", autodrive_devkit_domain="7", **AUTODRIVE
+    )
+    assert "racing_sim_autodrive" in _packages(_nodes(module, context))
 
 
 def test_bringup_1620_autodrive_launches_our_server_and_no_gym() -> None:
@@ -350,3 +352,74 @@ def test_bringup_1680_trajectory_speed_is_refused_on_a_map_with_no_raceline():
         scenario="config/scenarios/spielberg.yaml",
     )
     assert module._launch_nodes(context, "", "")
+
+
+def test_bringup_1690_official_bridge_launches_the_devkit_node(
+    monkeypatch,
+) -> None:
+    """BRINGUP-1690: `autodrive_bridge:=official` starts
+    racing_sim_autodrive_devkit (node name racing_sim, no server) with the
+    server values file, the Porto frame, track and scenario id, and
+    `devkit_domain_id` = `autodrive_devkit_domain`; `autodrive_port` is
+    not read. The argument defaults to $AUTODRIVE_ROS_DOMAIN_ID, and each
+    refusal names it: missing, not an integer 0-101, or equal to the
+    launch's own `ROS_DOMAIN_ID` (unset = 0), which would put the devkit's
+    global /tf (world -> roboracer_1 -> lidar) in the stack's TF tree.
+    Replaces BRINGUP-1610's old refusal of `official`: that one guarded
+    "official never silently runs nothing"; this asserts the exact node it
+    runs, its parameters and domain, and every way it refuses.
+    """
+    monkeypatch.setenv("ROS_DOMAIN_ID", "62")
+    official = {**AUTODRIVE, "autodrive_bridge": "official"}
+    module, context = _launch_context(
+        autodrive_devkit_domain="64", autodrive_port="not-a-port", **official
+    )
+    nodes = _nodes(module, context)
+    packages = _packages(nodes)
+    assert packages.count("racing_sim_autodrive") == 1
+    assert "racing_sim_gym_jax" not in packages
+    node = next(n for n in nodes if n._Node__package == "racing_sim_autodrive")
+    assert node._Node__node_executable == "racing_sim_autodrive_devkit"
+    assert node._Node__node_name == "racing_sim"
+    parameters = _merged(context, node)
+    frame = yaml.safe_load(PORTO_START.read_text(encoding="utf-8"))
+    assert parameters["world_to_map.x"] == frame["world_to_map"]["x"]
+    assert parameters["track_path"] == str(
+        REPOSITORY_ROOT / "config" / "tracks" / "porto.yaml"
+    )
+    assert parameters["scenario_id"] == "porto"
+    assert int(parameters["devkit_domain_id"]) == 64
+    assert "port" not in parameters
+    files = [
+        "".join(part.text for part in entry.param_file)
+        for entry in node._Node__parameters
+        if not isinstance(entry, dict)
+    ]
+    assert [Path(name).name for name in files] == ["server.yaml"]
+
+    declared = _declared(module)["autodrive_devkit_domain"]
+    monkeypatch.setenv("AUTODRIVE_ROS_DOMAIN_ID", "71")
+    module, _ = _launch_context()
+    default = _declared(module)["autodrive_devkit_domain"].default_value
+    assert "".join(p.text for p in default) == "71"
+    assert declared is not None
+
+    for value, _why in (
+        ("", "missing"),
+        ("abc", "not an integer"),
+        ("102", "above 101"),
+        ("-1", "negative"),
+        ("62", "equal to the launch's ROS_DOMAIN_ID"),
+    ):
+        module, context = _launch_context(
+            autodrive_devkit_domain=value, **official
+        )
+        with pytest.raises(RuntimeError, match="autodrive_devkit_domain"):
+            module._launch_nodes(context, "", "")
+
+    # unused under `ours`: a bad domain cannot break a launch that never
+    # reads it
+    module, context = _launch_context(
+        autodrive_devkit_domain="abc", **AUTODRIVE
+    )
+    assert "racing_sim_autodrive" in _packages(_nodes(module, context))
