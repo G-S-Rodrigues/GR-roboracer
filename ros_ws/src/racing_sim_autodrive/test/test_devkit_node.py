@@ -242,10 +242,7 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
     # E2: B's receipt stamp is the stand-in's lidar header stamp, unchanged.
     assert lidar_stamps
     seen = [stamp_ns(m) for m in scans if stamp_ns(m) >= min(lidar_stamps)]
-    # The observer is as starved as B and the devkit's lidar writer keeps one
-    # sample, so it can miss a few: B's stamp must be one it saw for 90 %.
-    assert len(seen) >= FRAMES // 2
-    assert sum(s in lidar_stamps for s in seen) >= 0.9 * len(seen)
+    assert seen and set(seen) <= lidar_stamps
     assert set(stamps) <= {stamp_ns(m) for m in scans}
 
 

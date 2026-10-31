@@ -79,11 +79,14 @@ RESTRICTED = (
 ALLOWED = tuple(t for t in REQUIRED if t not in RESTRICTED)
 HEADERED = ("lidar", "imu", "left_encoder", "right_encoder", "odom")
 
-# Sanity bound on a frame's `source_timestamp` spread and header-stamp spread.
-# Step 1 measured p100 7.2 ms (lockstep, source_timestamp) and 6.36 ms
-# (headers); the ruling floor is 2 x 7.2 ms = 14.4 ms. It need not be below
-# the inter-burst gap: the sequence number separates frames.
-SKEW_S = 0.016
+# Sanity bound on a frame's `source_timestamp` spread and header-stamp spread;
+# the sequence number, not the stamps, separates frames. Measured on the
+# stand-in's bursts (2026-10-31, 3299 frames unloaded, 3298 under `taskset -c
+# 0,1` plus 4 busy loops): source spread max 13.6 ms (p99 2.9) unloaded, max
+# 36.7 ms (p99 18.8) loaded bar one 276 ms outlier; header spread max 11.9 /
+# 26.2 ms. 75 ms is 2x the loaded max (5.5x the unloaded) and below a burst
+# gap, so only a publisher stalled for a whole frame is dropped.
+SKEW_S = 0.075
 
 # An incomplete backlog this deep means a topic is gone: resync.
 _MAX_FRAMES = 64
