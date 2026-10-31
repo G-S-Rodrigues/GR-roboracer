@@ -72,21 +72,9 @@ SKIP_DIRS = {
 SKIP_SUFFIXES = {".rosbag", ".db3", ".pyc"}
 
 
-# Reviewed exceptions, keyed by (file, exact line text). These comments sit in
-# vehicle files whose whole-file sha256 the committed raceline records pin
-# (RACELINE-1395, SIM-5040), so editing them would break those records; see
-# open_topics/2026-10-28-r1-raceline-hash-comments.md. Rename them when the
-# raceline records are next regenerated. The same text anywhere else is caught.
-_STALE = "# rear_axle -> OLD: the URDF joint rear_axle_to_OLD's origin"
-ALLOWED = {
-    ("config/vehicles/f1tenth_default.yaml", "    " + _STALE),
-    (
-        "config/vehicles/f1tenth_default.yaml",
-        "    # `OLD` and every estimator places its beams through that TF.",
-    ),
-    ("config/vehicles/f1tenth_gym_limits.yaml", "    " + _STALE),
-}
-ALLOWED = {(f, t.replace("OLD", OLD)) for f, t in ALLOWED}
+# Empty since part 8's addendum regenerated the raceline records (2026-10-31);
+# an entry is a reviewed exception, keyed by (file, exact line).
+ALLOWED = frozenset()
 
 
 def _flags(line: str) -> bool:

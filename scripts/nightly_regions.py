@@ -29,7 +29,13 @@ except ImportError:  # run as `python3 scripts/nightly_regions.py`
         discover_system_tests,
     )
 
-REGIONS = ("slam", "path_planning", "control", "shared")
+REGIONS = (
+    "slam",
+    "path_planning",
+    "path_planning_mintime",
+    "control",
+    "shared",
+)
 MAP_PATH = Path("tests") / "nightly_regions.yaml"
 NIGHTLY_TEST_NAME = re.compile(r"test_sim_(\d{4})_[^/]*\.py")
 ACCEPTANCE_ID = re.compile(r"ACC-4\d{3}")

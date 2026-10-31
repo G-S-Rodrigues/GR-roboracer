@@ -54,7 +54,8 @@ from `config/reference_stack.yaml`, which is a test map, not this schema.
 ## The AutoDRIVE vehicle
 
 `config/vehicles/autodrive_roboracer.yaml` is the league car's file for the AutoDRIVE simulator
-backend, which does not exist yet; the gym cannot run it (it simulates a different car). Its geometry is
+backend (`simulator:=autodrive`, see [The AutoDRIVE simulator](#the-autodrive-simulator)); the gym
+cannot run it (it simulates a different car). Its geometry is
 read from the sim's own prefab and guide (`config/vehicles/autodrive_roboracer/source.yaml`, every
 value anchored to a pinned line) and its measurements are written only by
 `tools/autodrive_identify.py` (`identified.yaml`). Its speed, acceleration and steering-rate caps are
@@ -62,6 +63,11 @@ the default's, and its laser mount is the true 0.2733 m, which matches its own d
 `autodrive_roboracer.urdf` (the AutoDRIVE RoboRacer model, imported from AutoDRIVE's BSD-2 FBX at full
 resolution, about 47 MB). To look at it: `ros2 launch racing_vehicle_description display.launch.py vehicle:=config/vehicles/autodrive_roboracer.yaml`. The measured values (top speed not measured, braking
 depending on speed) are under [AutoDRIVE car identification](results.md#autodrive-car-identification).
+
+Its minimum-time dynamics file, `config/vehicles/autodrive_roboracer/tum_mintime.yaml`, is derived from
+the same sources and AutoDRIVE's simulator code, with each value's provenance in
+`config/vehicles/tum_mintime/reference.yaml`. The car has no tyre set, so `raceline_optimizer:=tum_mintime` cannot run on it yet, and no committed
+raceline of either kind (minimum-curvature or minimum-time) exists for it.
 
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):
@@ -114,7 +120,7 @@ lists it as in development.
 - `scenario` and `vehicle`: the track and sensor setup, and the vehicle parameter file.
 - `planner`, `raceline_optimizer` and `speed_source` (racing): which line `/trajectory` carries
   (`track_centerline` by default, or `optimized_raceline`), which optimizer's committed line
-  (`tum_mincurv_iqp`, the only one), and how the controller picks its speed (`curvature_schedule`
+  (`tum_mincurv_iqp`, the default, or `tum_mintime`), and how the controller picks its speed (`curvature_schedule`
   or `trajectory`). `speed_source` is forwarded only when given: a given argument beats the vehicle
   file's `speed_source`, which beats the controller's default `curvature_schedule`.
 
@@ -178,7 +184,7 @@ stack:
   simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer only)
   pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl, mola
   planner: track_centerline  # Available: track_centerline, optimized_raceline
-  raceline_optimizer: tum_mincurv_iqp  # Available: tum_mincurv_iqp (used by optimized_raceline)
+  raceline_optimizer: tum_mincurv_iqp  # Available: tum_mincurv_iqp (default), tum_mintime (used by optimized_raceline)
   controller: pure_pursuit  # Available: pure_pursuit
   speed_source: curvature_schedule  # Available: curvature_schedule, trajectory (unset: the vehicle file's value, else curvature_schedule)
 runtime:
@@ -201,6 +207,8 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml pose_source:=amcl drive_on_estimate:=true seed:=42
 # The minimum-curvature line at its own speed, on ground truth:
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory seed:=42
+# The minimum-time line, same stack:
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mintime speed_source:=trajectory seed:=42
 ```
 
 `contract_test.yaml` is the analytic circle. Never use it to judge localization: every point on it
@@ -218,7 +226,7 @@ looks the same to a scan matcher.
 | `stack.pose_source` | `pose_source:=` | Only `ground_truth`, `slam_toolbox`, `amcl` and `mola` are accepted; anything else is an error. |
 | `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
 | `stack.planner` | `planner:=` | `track_centerline` (default) or `optimized_raceline`; anything else is an error. |
-| `stack.raceline_optimizer` | `raceline_optimizer:=` | `tum_mincurv_iqp`; used only under `optimized_raceline`, but validated always. |
+| `stack.raceline_optimizer` | `raceline_optimizer:=` | `tum_mincurv_iqp` (default) or `tum_mintime`; used only under `optimized_raceline`, but validated always. |
 | `stack.controller` | none | One implementation today, always launched. |
 | `stack.speed_source` | `speed_source:=` | Also settable in the vehicle file's `racing_controller_baseline` block; a given argument wins. |
 | `runtime.seed` | `seed:=` | `map_track.sh` forces `42`. |

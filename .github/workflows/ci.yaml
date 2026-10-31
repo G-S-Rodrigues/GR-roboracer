@@ -64,7 +64,20 @@ jobs:
   # no seed, so they run once, on `static`/42 (owner Q-A, 2026-10-24); tiers 3-4
   # still repeat on every seed leg on purpose: that is the flake detector. The
   # short regions get 60 minutes (owner Q-B) against measured legs of at most
-  # 12 minutes; slam and path_planning keep 180. That is 17 jobs.
+  # 12 minutes; slam and path_planning keep 180. path_planning_mintime (Q8) splits the
+  # min-time lap and its conditional regeneration (SIM-3120, SIM-5060) from
+  # path_planning so neither region's tier 5 outgrows its timeout: 120
+  # minutes, against a worst case of about 63 minutes if the optimizer code
+  # changed (two solves of at most MINTIME_MAX_WALL_S = 1200 s plus the
+  # lap) on an ASSUMED 20 minute build/setup (E-5). That is 21 jobs.
+  #
+  # E-5 RECORD: the setup time of a leg (job start through the image build,
+  # i.e. to the check.sh step) is written to each leg's job summary by the
+  # "Build/setup seconds" step. check.sh's own colcon build is not in that
+  # number: the recorded figure is that summary line PLUS the build time in
+  # colcon's "Summary: N packages finished [Xs]" line in the leg's log.
+  # First measured run: <not yet measured>; record the sum here from the
+  # first workflow_dispatch and compare with the assumed 20 minutes.
   nightly:
     name: Nightly ${{ matrix.region }}, seed ${{ matrix.seed }}
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -75,7 +88,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        region: [static, slam, path_planning, control, shared]
+        region:
+          [static, slam, path_planning, path_planning_mintime, control, shared]
         # 42 and 1030 are the seeds the committed tier-3 tests pin; the others
         # exist so a controller that only survives the seeds it was tuned
         # against fails here rather than on a track.
@@ -88,9 +102,13 @@ jobs:
           - {region: static, timeout: 60}
           - {region: slam, timeout: 180}
           - {region: path_planning, timeout: 180}
+          - {region: path_planning_mintime, timeout: 120}
           - {region: control, timeout: 60}
           - {region: shared, timeout: 60}
     steps:
+      - name: Start the build/setup clock
+        run: echo "NIGHTLY_T0=$(date +%s)" >> "$GITHUB_ENV"
+
       # The submodule is read only by SIM-5050's upstream reference row, so
       # only the path_planning legs fetch it (third_party/NOTICE.md).
       - uses: actions/checkout@v4
@@ -99,7 +117,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # Only one job exports the layer cache, so seventeen concurrent jobs do not
+      # Only one job exports the layer cache, so twenty-one concurrent jobs do not
       # write it at once; every job reads it.
       - name: Build the dev image
         uses: docker/build-push-action@v6
@@ -111,6 +129,10 @@ jobs:
           load: true
           cache-from: type=gha,scope=dev
           cache-to: ${{ (matrix.region == 'static' && matrix.seed == 42) && 'type=gha,mode=max,scope=dev' || '' }}
+
+      - name: Build/setup seconds (E-5)
+        run: |
+          echo "Build/setup seconds, job start to check.sh: $(( $(date +%s) - NIGHTLY_T0 ))" >> "$GITHUB_STEP_SUMMARY"
 
       # NIGHTLY_TIER5 crosses into the container only through --env: a step
       # `env:` sets it on the runner, not inside `docker run`.
@@ -142,6 +164,16 @@ jobs:
         with:
           name: raceline-report
           path: log/raceline-report/
+          if-no-files-found: ignore
+
+      # SIM-5060's record: regenerated or not, and why (it runs only when the
+      # optimizer code changed, Q8), with the IPOPT outcome when it ran.
+      - name: Upload the min-time regeneration record
+        if: always() && matrix.region == 'path_planning_mintime' && matrix.seed == 42
+        uses: actions/upload-artifact@v4
+        with:
+          name: raceline-mintime-regeneration
+          path: log/raceline-report/regeneration-mintime.json
           if-no-files-found: ignore
 
       # SIM-5510 is tier 5, so it runs on slam/42 alone and writes there.

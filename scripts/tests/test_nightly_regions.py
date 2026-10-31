@@ -43,6 +43,8 @@ slam:
   - SIM-5010
 path_planning:
   - SIM-3110
+path_planning_mintime:
+  - SIM-3120
 control:
   - SIM-3010
   - ACC-4010
@@ -56,6 +58,7 @@ def _tree(tmp_path: Path, region_map: str = GOOD_MAP) -> Path:
         "tests/system/test_sim_3010_a.py",
         "tests/system/test_sim_3030_b.py",
         "tests/system/test_sim_3110_c.py",
+        "tests/system/test_sim_3120_e.py",
         "tests/nightly/test_sim_5010_d.py",
     ):
         path = tmp_path / relative
@@ -127,6 +130,20 @@ def test_check_1520_unknown_region_is_refused(tmp_path: Path) -> None:
     """CHECK-1520: a region name outside the four raises."""
     message = _select_error(tmp_path, GOOD_MAP + "planning:\n  - SIM-3110\n")
     assert "unknown region 'planning'" in message
+
+
+def test_check_1520_path_planning_mintime_region_is_accepted(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1520: `path_planning_mintime` (part 8, Q8) is a region of its
+    own: it selects its files and the other regions do not."""
+    root = _tree(tmp_path)
+    assert "path_planning_mintime" in REGIONS
+    chosen = select(root, "path_planning_mintime", tier5=True)
+    assert chosen.system_tests == ("tests/system/test_sim_3120_e.py",)
+    assert select(root, "path_planning", tier5=True).system_tests == (
+        "tests/system/test_sim_3110_c.py",
+    )
 
 
 def test_check_1520_empty_region_is_refused(tmp_path: Path) -> None:
@@ -282,4 +299,6 @@ def test_check_1510_ci_matrix() -> None:
         "shared": 60,
         "slam": 180,
         "path_planning": 180,
+        # Q8: min-time lap + conditional regeneration; Step 1 projection.
+        "path_planning_mintime": 120,
     }

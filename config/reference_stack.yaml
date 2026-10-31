@@ -43,6 +43,8 @@ neutral_paths:
   # so editing it stays whole tree.
   - config/vehicles/f1tenth_gym_limits*
   - config/vehicles/f1tenth_default/*
+  # the min-time parameter files and their reference: raceline/ reads them
+  - config/vehicles/tum_mintime/*
 roles:
   simulator:
     implementation: f1tenth_gym_jax
@@ -150,7 +152,7 @@ roles:
           - config/racelines/*
           - ros_ws/src/racing_bringup/*
           - ros_ws/src/racing_controller_baseline/*  # speed_source: trajectory
-        verified_by: [SIM-3110]
+        verified_by: [SIM-3110, SIM-3120]
   controller:
     implementation: pure_pursuit
     package: racing_controller_baseline

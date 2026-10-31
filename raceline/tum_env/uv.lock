@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.8.*"
 
 [manifest]
@@ -37,7 +37,7 @@ wheels = [
 [[package]]
 name = "global-racetrajectory-optimization"
 version = "0.0.1"
-source = { git = "https://github.com/ForzaETH/global_racetrajectory_optimization?rev=b1b38ecfefec7200d5bcb243f115af1d795b3766#b1b38ecfefec7200d5bcb243f115af1d795b3766" }
+source = { git = "https://github.com/G-S-Rodrigues/GR-roboracer-global_racetrajectory_optimization?rev=8bedf4ca460c37efec2af251ce1ccd17ef377db2#8bedf4ca460c37efec2af251ce1ccd17ef377db2" }
 
 [[package]]
 name = "joblib"
@@ -253,7 +253,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "casadi", specifier = "==3.5.1" },
-    { name = "global-racetrajectory-optimization", git = "https://github.com/ForzaETH/global_racetrajectory_optimization?rev=b1b38ecfefec7200d5bcb243f115af1d795b3766" },
+    { name = "global-racetrajectory-optimization", git = "https://github.com/G-S-Rodrigues/GR-roboracer-global_racetrajectory_optimization?rev=8bedf4ca460c37efec2af251ce1ccd17ef377db2" },
     { name = "matplotlib", specifier = "==3.3.1" },
     { name = "numpy", specifier = "==1.18.1" },
     { name = "scikit-learn", specifier = "==0.23.1" },

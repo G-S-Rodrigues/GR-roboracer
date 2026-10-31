@@ -345,3 +345,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
 42. **The official bridge's commands lag one frame.** A command published for frame n reaches the car at
     frame n+1 (measured 1 frame in SIM-3710; accepted up to 3). Recorded and measured, not compensated.
 
+43. **A reference CSV's rounding changes IPOPT's iteration path, and nothing errors.** The same
+    minimum-time optimum took 817 iterations from the in-memory reference and 1715 from the one read
+    back from a CSV (1e-9 rounding), then 1518 with the 0.01 m width extra (which also moves the line:
+    objective 32.5316 to 32.5664). Why the counts differ is still open (topic
+    2026-10-25-mintime-iteration-count-817-vs-1715). A test that checks only the result never notices
+    the count. Hence the chain always writes the
+    reference and seeds from the file on disk, and any iteration bound (`MINTIME_MAX_ITER`) is
+    measured in `gr-roboracer-dev`, the nightly's image, never copied from the fork's container.
