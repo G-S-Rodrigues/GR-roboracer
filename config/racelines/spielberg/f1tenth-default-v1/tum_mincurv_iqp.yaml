@@ -15,7 +15,7 @@ ground_truth_map:
   image_sha256: c3e2a362ce5faa5180317a7d5812be4c7e3ae22bb5c8b0d3f688f99fb6081cbb
 vehicle:
   path: config/vehicles/f1tenth_default.yaml
-  sha256: ffe825d083c87fcacb588c34293069684adf633baddb09c24933dd5b3278cde9
+  sha256: 1a7be711f78a22811b46ed3367983dd977b2cf86ec06a0a2f7779aa462be7eed
   ggv_sha256: 0ecbace704e9c30cfef04a08f6d43e8c99e4c85ad135ba0bd7b2497ed6d5c5c9
   ax_max_machines_sha256: 0f17ea3c0efd599026ef7bebb1fd3325da39cf81689f8f7ad3bf473449b1bbd8
 code:
@@ -25,7 +25,7 @@ code:
   raceline/optimize.py: 97f8053fa1a6caaaf2831a34d56df6716a9c0e65
   raceline/track.py: a9f334b165f2bb0d5e24b5e8f1371388b7459510
   raceline/tum.py: 605d04c92b05ddda157872287999c7a434ba79c1
-  raceline/vehicle.py: 8fa6042eb7a69ae58739315e4db561d6b3e1027c
+  raceline/vehicle.py: e02f20a99b6836d9423747051717104e558eb97b
   raceline/verify.py: 4392abaeaeab73b762eaf130a3e6ec310d7202af
   tum_env/pyproject.toml: a85e0123eb63160bad89f0d22a1dd7c739973ce7
   tum_env/run_tum.py: 8d63a410134d23d0999b8ab55024529820fe9932

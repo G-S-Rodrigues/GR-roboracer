@@ -25,7 +25,7 @@ class VehicleDynamics:
     """TUM's minimum-time vehicle model, ``<stem>/tum_mintime.yaml``.
 
     Field names are the file's keys, which are TUM's ``vehicle_params_mintime``
-    names. Documented in ``config/vehicles/tum_mintime.reference.yaml``.
+    names. Documented in ``config/vehicles/tum_mintime/reference.yaml``.
     """
 
     mass: float
