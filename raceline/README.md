@@ -117,7 +117,7 @@ extractor refuses):
 
 ```bash
 env -u PYTHONPATH uv run --project raceline --locked python -m raceline.track_from_map \
-  --map config/scenarios/maps/Porto/Porto.yaml --start-pose 0 0 0 --direction ccw \
+  --map config/scenarios/maps/Porto/Porto.yaml --start-pose 0 0 3.14159 --direction cw \
   --walls observed --name Porto --out config/tracks/porto.yaml
 ```
 

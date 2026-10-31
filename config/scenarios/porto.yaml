@@ -24,6 +24,6 @@ parameters:
 # scenario.
 metrics:
   scenario_id: porto
-  track_version: porto-v1
+  track_version: porto-v2
 track: ../tracks/porto.yaml
 map_directory: maps

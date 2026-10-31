@@ -18,8 +18,9 @@
 #      t = (-2.76, 1.22), median residual 0.084 m.
 # Uncertainty: x (along the track, weakly observable) +-0.15 m, y +-0.03 m.
 #
-# Not settled here: the sim races clockwise and porto.yaml's centerline is
-# counter-clockwise (open topic porto-race-direction); part 10 decides.
+# The sim races clockwise, and since part 10 porto.yaml's centerline runs
+# clockwise too (extracted --direction cw), so SIMAD-1350 holds the spawn on
+# the track facing along it.
 measured: derived
 world_to_map:
   x: -2.9
