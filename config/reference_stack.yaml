@@ -74,6 +74,8 @@ roles:
           - scripts/autodrive_gui.sh
           - scripts/autodrive_route.sh
           - scripts/autodrive_relay.py
+          - scripts/autodrive_qualify.sh
+          - tests/autodrive/*
           - scripts/tests/test_autodrive_*
           - scripts/windows/*
           - tools/autodrive_*
