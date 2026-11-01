@@ -392,7 +392,8 @@ def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
     reads one, defaults to today's file, and a missing file is an error.
 
     Seven nodes take the vehicle file (the seventh, follow_the_gap, only
-    when `controller:=follow_the_gap` selects it). A node left on the constant would run
+    when `controller:=follow_the_gap` selects it). A node left on the
+    constant would run
     one vehicle's caps beside another's, which reads as a plausible lap and
     nothing else.
     """

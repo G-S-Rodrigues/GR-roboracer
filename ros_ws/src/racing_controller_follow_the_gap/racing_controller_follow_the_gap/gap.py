@@ -95,7 +95,7 @@ def apply_bubble(angles, ranges, p):
 
 
 def choose_target(angles, ranges, p):
-    """Index of the deepest beam of the widest free gap; None if no beam is free.
+    """Index of the deepest beam of the widest free gap; None if none is free.
 
     Equal widths go to the gap nearer straight ahead. Among equally deep beams
     the one nearest the middle of that depth plateau is taken, so an open

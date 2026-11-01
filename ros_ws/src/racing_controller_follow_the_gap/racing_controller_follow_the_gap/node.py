@@ -60,7 +60,8 @@ class FollowTheGapNode(Node):
                 self._released_at = None
             elif parameter.name != "use_sim_time":
                 return SetParametersResult(
-                    successful=False, reason="only `hold` is settable at runtime"
+                    successful=False,
+                    reason="only `hold` is settable at runtime",
                 )
         return SetParametersResult(successful=True)
 
@@ -77,9 +78,7 @@ class FollowTheGapNode(Node):
                 scan.range_min,
                 self._gap,
             )
-            speed = gap.limit_speed(
-                speed, stamp - self._released_at, self._gap
-            )
+            speed = gap.limit_speed(speed, stamp - self._released_at, self._gap)
         message = AckermannDriveStamped()
         message.header.stamp = scan.header.stamp
         message.header.frame_id = "base_link"

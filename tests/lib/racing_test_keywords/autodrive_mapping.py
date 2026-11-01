@@ -34,7 +34,9 @@ def quiet_for(times, now, window_s, max_gap_s) -> bool:
         return False
     if recent[0] - (now - window_s) > max_gap_s or now - recent[-1] > max_gap_s:
         return False
-    return all(b - a <= max_gap_s for a, b in zip(recent, recent[1:]))
+    return all(
+        b - a <= max_gap_s for a, b in zip(recent, recent[1:], strict=False)
+    )
 
 
 def _travel(poses) -> np.ndarray:

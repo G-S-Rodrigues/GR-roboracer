@@ -592,7 +592,9 @@ def _mapper_use_sim_time(**overrides: str):
         else:
             produced.append(entity)
     mappers = [
-        e for e in produced if getattr(e, "_Node__package", "") == "slam_toolbox"
+        e
+        for e in produced
+        if getattr(e, "_Node__package", "") == "slam_toolbox"
     ]
     assert len(mappers) == 1, produced
     return _merged(context, mappers[0])["use_sim_time"], context, module

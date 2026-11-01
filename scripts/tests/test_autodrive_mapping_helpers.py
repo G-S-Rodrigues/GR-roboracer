@@ -82,11 +82,19 @@ def _lap(shift=(0.0, 0.0), yaw_bias=0.0, per_lap=120, n=160):
     poses, scans = [], []
     for k in range(n):
         phase = 2 * math.pi * k / per_lap
-        truth = (1.5 * math.cos(phase), 1.5 * math.sin(phase), phase + math.pi / 2)
+        truth = (
+            1.5 * math.cos(phase),
+            1.5 * math.sin(phase),
+            phase + math.pi / 2,
+        )
         ranges, a0, da = _scan_from(truth, grid)
         w = k / (n - 1)
         poses.append(
-            (truth[0] + shift[0] * w, truth[1] + shift[1] * w, truth[2] + yaw_bias * w)
+            (
+                truth[0] + shift[0] * w,
+                truth[1] + shift[1] * w,
+                truth[2] + yaw_bias * w,
+            )
         )
         scans.append(ranges)
     return grid, np.array(poses), np.array(scans), a0, da
@@ -103,7 +111,9 @@ def test_check_2290_loop_closure_is_zero_without_drift_and_sees_drift() -> None:
     assert abs(closed.dyaw) < 0.05, closed
 
     grid, poses, scans, a0, da = _lap(shift=(0.4, 0.0))
-    drifted = mapping.loop_closure(poses, scans, a0, da, 0.0, 30.0, travel_m=3.0)
+    drifted = mapping.loop_closure(
+        poses, scans, a0, da, 0.0, 30.0, travel_m=3.0
+    )
     assert math.hypot(drifted.dx, drifted.dy) > 0.25, drifted
 
 

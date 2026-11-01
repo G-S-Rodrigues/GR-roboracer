@@ -102,7 +102,8 @@ class TestFollowTheGapNode(unittest.TestCase):
     def _wait_connected(self) -> None:
         end = time.monotonic() + 10.0
         while time.monotonic() < end and not (
-            self.scans.get_subscription_count() and self.params.service_is_ready()
+            self.scans.get_subscription_count()
+            and self.params.service_is_ready()
         ):
             rclpy.spin_once(self.node, timeout_sec=0.05)
         self.assertTrue(self.scans.get_subscription_count(), "node not found")

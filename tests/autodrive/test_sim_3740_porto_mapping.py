@@ -172,14 +172,16 @@ def _provenance(result: dict) -> str:
         "Porto's occupancy grid, mapped by this stack on AutoDRIVE's Porto",
         "(part 11a): follow_the_gap (scan-only driver) lapped once while",
         "slam_toolbox's survey mapper (config/localization/slam_toolbox_survey",
-        ".yaml, scan matching off) laid /scan at the sim's dead-reckoned /odom.",
+        ".yaml, scan matching off) laid /scan at the sim's dead-reckoned",
+        "/odom.",
         "That odometry is a PERFECT-GYRO odometry (its yaw rate is the sim's",
         "exact one, known problem 25): never read this as a map built with",
         "no ground truth under a real gyro's drift.",
         "",
         f"Regenerate: {HOST_COMMAND} (sim: config/autodrive/simulator.yaml,"
         f" edition {simulator.get('edition', '?')})",
-        f"start_pose (first /odom pose after the reset): {result['start_pose']}",
+        "start_pose (first /odom pose after the reset): "
+        f"{result['start_pose']}",
         f"git: {result['git_sha']}; host load: {result['host_load']}",
         f"lap time (sim): {result['lap_time_sim']}",
         "controller defaults: " + json.dumps(result["controller_defaults"]),
@@ -306,7 +308,9 @@ def test_sim_3740_porto_mapping(tmp_path):
         # Frames in flight when the reset answers still show the old pose
         # (SIM-3730), so the anchor is the frame nearest the spawn among the
         # next SPAWN_WINDOW; the mapper's inputs begin there (D10).
-        _spin_until(node, 30.0, lambda: len(odoms) >= first_after + SPAWN_WINDOW)
+        _spin_until(
+            node, 30.0, lambda: len(odoms) >= first_after + SPAWN_WINDOW
+        )
         window = odoms[first_after : first_after + SPAWN_WINDOW]
         assert window, "no /odom after the reset"
         nearest = min(
@@ -489,8 +493,11 @@ def test_sim_3740_porto_mapping(tmp_path):
             "median": shape.median,
             "p95": shape.p95,
             "residual": shape.residual,
-            "fit": [shape.correction.dx, shape.correction.dy,
-                    shape.correction.dyaw],
+            "fit": [
+                shape.correction.dx,
+                shape.correction.dy,
+                shape.correction.dyaw,
+            ],
             "raw_median": shape.raw.median,
             "raw_p95": shape.raw.p95,
             "raw_signed_median": shape.raw.signed_median,

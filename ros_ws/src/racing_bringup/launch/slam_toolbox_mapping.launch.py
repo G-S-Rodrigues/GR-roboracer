@@ -20,8 +20,8 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, OpaqueFunction
-from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from racing_bringup.estimators import slam_toolbox
 from racing_sim_autodrive.capabilities import CAPABILITIES as AUTODRIVE_CAPS
 from racing_sim_gym_jax.capabilities import CAPABILITIES as GYM_CAPS

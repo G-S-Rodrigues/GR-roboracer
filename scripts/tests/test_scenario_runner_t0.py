@@ -10,6 +10,7 @@ moves (repo-gotchas #19). Nothing but the supervisor can say it has heard
 from __future__ import annotations
 
 import ast
+import contextlib
 import sys
 import threading
 import time
@@ -511,12 +512,11 @@ def test_check_2270_the_t0_wait_names_the_selected_controller():
     try:
         for key, value in patches.items():
             setattr(scenario_runner, key, value)
-        try:
+        # past the node waits it needs a real graph
+        with contextlib.suppress(Exception):
             scenario_runner._reset_at_deterministic_t0(
                 object(), 42, 5.0, controller="follow_the_gap"
             )
-        except Exception:
-            pass  # past the node waits it needs a real graph
     finally:
         for key, value in originals.items():
             setattr(scenario_runner, key, value)
