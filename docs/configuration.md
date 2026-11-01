@@ -66,8 +66,9 @@ depending on speed) are under [AutoDRIVE car identification](results.md#autodriv
 
 Its minimum-time dynamics file, `config/vehicles/autodrive_roboracer/tum_mintime.yaml`, is derived from
 the same sources and AutoDRIVE's simulator code, with each value's provenance in
-`config/vehicles/tum_mintime/reference.yaml`. The car has no tyre set, so `raceline_optimizer:=tum_mintime` cannot run on it yet, and no committed
-raceline of either kind (minimum-curvature or minimum-time) exists for it.
+`config/vehicles/tum_mintime/reference.yaml`. Its tyre set is a stand-in copy of the F1TENTH gym fit (provenance in `reference.yaml`), so the
+offline optimizer can build a minimum-time line for it, but no committed raceline of either kind
+(minimum-curvature or minimum-time) exists for it, so `planner:=optimized_raceline` has none to load on it yet.
 
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):

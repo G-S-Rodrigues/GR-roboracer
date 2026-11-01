@@ -2,7 +2,8 @@
 #   <vehicle>/tum_mintime.yaml                    the "dynamics" keys below
 #   <vehicle>/tum_mintime_tyres_<set>.yaml        the "tyres" keys below
 # This file documents them and carries no values; the loader never reads it,
-# and RACELINE-1410 asserts its key sets equal every runtime file's, both ways.
+# and RACELINE-1410 asserts its key sets equal every vehicle's tum_mintime.yaml
+# and the F1TENTH tyre files', both ways.
 # The runtime files carry no comments, so the numbers are read as data.
 # Names are TUM's (racecar_f110.ini [vehicle_params_mintime] and
 # [tire_params_mintime]). Derived quantities (mue, f_drive_max, f_brake_max,
@@ -91,3 +92,30 @@ tyres:
 #     aerodynamic force (AutomobileController, the one with downForce, is not
 #     attached).
 #   liftcoeff_rear 0.0: as liftcoeff_front.
+# autodrive_roboracer/tum_mintime_tyres_gym_fit.yaml (part AT, 2026-11-01):
+#   a STAND-IN, byte-identical to f1tenth_default's gym_fit set (every value
+#   and source as in "tyres:" above). NOT identified from AutoDRIVE: the
+#   owner tunes it (ruling N1). The name stays gym_fit because the set is
+#   chosen globally (raceline.optimize.MINTIME_TYRE_SET) and a new name is a
+#   code change. f_z0 8.6 is the ForzaETH f110 ini's nominal load (as in
+#   "tyres:" above), not either car's; AutoDRIVE's static wheel load is
+#   3.47 x 9.81 / 4 = 8.51 N (SRC sprung_mass_kg, = tum_mintime.yaml mass).
+#   Tuning inputs AutoDRIVE exposes, NOT converted to Pacejka (the Unity
+#   WheelCollider -> Pacejka mapping is undocumented and needs a fit to
+#   cornering data; Porto has no room for a skidpad):
+#   friction_forward: extremum (slip 0.15, value 0.9), asymptote (0.25,
+#     0.58), stiffness 0.8. SRC friction_forward (prefab :31433, read from
+#     the build).
+#   friction_sideways: extremum (0.01, 1.0), asymptote (0.1, 0.5),
+#     stiffness 1.0. SRC friction_sideways (prefab :31439, read from build).
+#   WheelCollider force = curve value x stiffness x load, so mu_lateral 1.0
+#     (SRC mu_lateral) is the ggv's ay bound (ggv.csv: ay 9.81, a modelling
+#     bound, never measured).
+#   The floor's PhysicMaterial does not act on WheelColliders (Unity docs):
+#     the curves are the whole tyre-road model.
+#   Drive: SRC motor_torque_nm 428 (scene; not read from the build), brake
+#     torque = motor torque (VC :172 "BrakeTorque = MotorTorque", at
+#     AutoDRIVE@75b7df5; not in SRC), wheel_radius_m 0.059. Measured: ID
+#     burst_acceleration 5.20 m/s^2 (first 0.25 s), braking_deceleration
+#     6.34 m/s^2 (depends on speed; 5.7-8.6 by initial speed). The ggv's ax
+#     is the supervisor cap 2.0, not the machine.
