@@ -1,8 +1,7 @@
 """SIMAD-1480: the devkit domain rule of the part-9 test harness."""
 
-import pytest
-
 import _devkit_launch as dl
+import pytest
 
 
 @pytest.mark.parametrize(
