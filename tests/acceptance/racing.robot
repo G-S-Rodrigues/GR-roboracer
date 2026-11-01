@@ -77,9 +77,9 @@ Vehicle Completes A Lap Driving On Its Own Estimate
 Vehicle Laps The Raceline Driving On Its Own Estimate
     [Documentation]    ACC-4040. The same claim as the case above on the
     ...    min-curvature raceline (planner:=optimized_raceline,
-    ...    tum_mincurv_iqp, speed_source:=trajectory), the lap that
-    ...    docs/demonstrations.md shows driven on amcl's estimate. Nothing
-    ...    else runs an estimator off the centerline. Its only tag is the
+    ...    tum_mincurv_iqp, speed_source:=trajectory), driven on amcl's
+    ...    estimate (a demonstration video of it follows separately).
+    ...    Nothing else runs an estimator off the centerline. Its only tag is the
     ...    planner's: tags may not overlap between cases of one ID (ADR
     ...    0005), and the amcl, controller and safety tags are the case
     ...    above's. It asserts only a completed lap, 0 collisions and
