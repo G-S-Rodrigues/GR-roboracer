@@ -91,6 +91,13 @@ timeout "$lap_wait" ros2 topic echo --once \
     >log/mola_mapping_metrics.txt &
 echo_pid=$!
 sleep 5
+# Release t=0 only once the supervisor has heard /clock (its latched
+# ~/clock_received, F1): a best-effort /clock writer matched after t=0 leaves
+# its clock at 0 and latches STALE (gotcha #19). A timeout fails the script.
+timeout 60 ros2 topic echo --once \
+    --qos-durability transient_local --qos-reliability reliable \
+    /racing_safety_supervisor/clock_received rosgraph_msgs/msg/Clock \
+    >log/mola_mapping_clock_received.txt
 ros2 service call /racing_sim/reset racing_interfaces/srv/Reset \
     "{seed: $seed, scenario_id: \"\"}" >log/mola_mapping_reset.log
 wait "$echo_pid"

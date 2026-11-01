@@ -5,6 +5,7 @@
 **Supersedes:** none
 **Amended:** 2026-10-13 — §4, by issue #12 part 1 (a ROS-free `raceline/` uv project may run in `dev`).
 **Amended:** 2026-10-25 — §4, by issue #47 part 3 (a `gpu` stage).
+**Amended:** 2026-10-28 — §4, by part V0 (video tooling in `dev`).
 
 ## Context
 
@@ -55,6 +56,13 @@ volumes (§3, gotcha 21) and its own `ROS_DOMAIN_ID`, because it shares the comp
 The costs: `gpu` carries everything in `dev`, including its uv and the CPU gym, and adds CUDA; a CUDA
 bug in a GPU node is caught by the owner's hand run (GPU-3010), not by CI; and a `dev` rebuild
 invalidates `gpu`.
+
+**Amendment 2026-10-28 (§4, part V0).** `dev` also carries `ffmpeg` and `fonts-dejavu-core`, by owner
+ruling, so a docs recording (`record.sh`, `encode.sh`) needs no hand install. `gpu` inherits them
+(it is `FROM dev`); `fast-sim` and `runtime` do not get them. They are unpinned, like the rest of
+the `dev` apt layer. The cost is the apt layer's size growth (measured in the PR body) and one cold
+`dev` cache. It reverses the 2026-10-21 docs-run ruling (D1) that kept ffmpeg out of the image,
+which was procedural: this ADR never forbade it.
 
 ## Consequences
 
@@ -115,3 +123,10 @@ These are the corrections the plan did not anticipate; each is also recorded as 
   `jax[cuda12]>=0.6.1,<0.7`, unsatisfiable against the gym's `jax>=0.7.2,<0.8`; upstream resolves it
   with a pyproject override that only takes effect when uv operates *on that project*. Installing the
   gym as a dependency requires reproducing that override explicitly.
+- **2026-10-28 (autodrive-sim part 7): the dev image carries the Socket.IO closure.** Our AutoDRIVE
+  server and its replay client import python-socketio 4.2.0, python-engineio 3.13.0, gevent 26.9.0 and
+  gevent-websocket 0.10.1 (the sim speaks Engine.IO v3; repo-gotchas #30); with their dependencies the
+  closure is 8 pins (adding greenlet, zope-event, zope-interface, websocket-client), in
+  `docker/dev-tools-requirements.txt` beside the dev tools and guarded by SIMAD-1150. The rebuild of
+  the shared image follows the part's merge; until then its gate runs with the closure in a worktree
+  `PYTHONPATH`.

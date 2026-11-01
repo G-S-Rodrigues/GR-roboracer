@@ -92,8 +92,9 @@ clock of its own to hand the graph. AutoDRIVE is that: no timestamp, no step cou
 20 Hz. A real car is free-running too. For `free_running` the stack runs with `use_sim_time:=false` and
 takes time from its source's stamps.
 
-The launch wiring for that arrives with `simulator:=` (autodrive-sim part 8). Until then every node
-still runs with `use_sim_time: true` and only `owns_clock` backends can be launched.
+The launch wiring is `simulator:=` (autodrive-sim part 8): every node's `use_sim_time` is the chosen
+simulator's `capability.clock == owns_clock`, so `simulator:=autodrive` runs the whole graph on
+wall time and the gym on `/clock`.
 
 What does not change: `time_scale` and its default 1.0 for a clock-owning backend, the deterministic
 t=0 defined by `~/reset`, and "every node takes time from its ROS clock".
@@ -104,4 +105,11 @@ Consequences for a `free_running` backend:
   stated envelope), not golden.
 - `time_scale` and `start_held` do not exist there; the conformance tests that need them are
   reported not applicable by name, never skipped.
-- Gotcha #19's deterministic t=0 becomes "the first frame after a reset" (part 8 defines it).
+- Gotcha #19's deterministic t=0 becomes "the first frame after a reset". The launch adds no sequencing
+  for it: the server listens before the sim exists, and the runner waits for every participant and then
+  calls `/racing_sim/reset` (part 8 defines it; `run_scenario` learns it in part 10).
+- **2026-10-28 (autodrive-sim part 7): a `free_running` AutoDRIVE backend stamps with the node clock at
+  frame receipt, as the official devkit does.** Its `dt` for the throttle loop and dead reckoning is
+  `V1 Lap Time` deltas under our own server (development only; `dt_source=lap_time`, the default), or
+  consecutive receipt stamps on the node clock (`dt_source=receipt`, the race-time path, since
+  `lap_time` is a restricted topic). Both fall back to feedforward when `dt` is missing.

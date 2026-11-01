@@ -1,19 +1,18 @@
 """Tier-2 conformance tests shared by every simulator backend."""
 
 import math
+import statistics
 import sys
 import time
 import unittest
 from pathlib import Path
 
 import launch
-import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 import pytest
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
-from f1tenth_gym_jax.envs.utils import Param
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset, SetStepMode
 from rcl_interfaces.srv import SetParameters
@@ -32,18 +31,22 @@ from tf2_msgs.msg import TFMessage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import conformance  # noqa: E402,F401  (the capability vocabulary)
+import conformance  # noqa: E402  (the capability vocabulary)
 
-ADAPTER_NODE = "racing_sim"
-SCAN_TOPIC = "/scan"
-ODOMETRY_TOPIC = "/odom"
-GROUND_TRUTH_SCAN_TOPIC = "/ground_truth/scan"
-GROUND_TRUTH_ODOMETRY_TOPIC = "/ground_truth/odom"
-DRIVE_TOPIC = "/drive"
-IMU_TOPIC = "/imu"
-CLOCK_TOPIC = "/clock"
-RESET_SERVICE = f"/{ADAPTER_NODE}/reset"
-STEP_MODE_SERVICE = f"/{ADAPTER_NODE}/step_mode"
+# EVAL-2030's probe (racing_evaluation's file, imported by path, never copied).
+sys.path.insert(0, str(conformance.REPO / "ros_ws/src/racing_evaluation/test"))
+import graph_isolation  # noqa: E402
+
+ADAPTER_NODE = conformance.ADAPTER_NAME
+SCAN_TOPIC = conformance.topic("/scan")
+ODOMETRY_TOPIC = conformance.topic("/odom")
+GROUND_TRUTH_SCAN_TOPIC = conformance.topic("/ground_truth/scan")
+GROUND_TRUTH_ODOMETRY_TOPIC = conformance.topic("/ground_truth/odom")
+DRIVE_TOPIC = conformance.topic("/drive")
+IMU_TOPIC = conformance.topic("/imu")
+CLOCK_TOPIC = conformance.topic("/clock")
+RESET_SERVICE = conformance.service("reset")
+STEP_MODE_SERVICE = conformance.service("step_mode")
 EXPECTED_RATE_HZ = 100.0
 RATE_TOLERANCE = 0.20
 
@@ -72,13 +75,11 @@ CLOCK_QOS = QoSProfile(
 
 @pytest.mark.launch_test
 def generate_test_description():
-    backend = launch_ros.actions.Node(
-        package="racing_sim_gym_jax",
-        executable="racing_sim_gym_jax_node",
-        output="screen",
-    )
     return launch.LaunchDescription(
-        [backend, launch_testing.actions.ReadyToTest()]
+        [
+            *conformance.backend().actions(),
+            launch_testing.actions.ReadyToTest(),
+        ]
     )
 
 
@@ -108,13 +109,12 @@ class TestAdapterContract(unittest.TestCase):
             topics = {
                 name for name, _types in self.node.get_topic_names_and_types()
             }
-            if (
-                ADAPTER_NODE in self.node.get_node_names()
-                and required_topics.issubset(topics)
-            ):
+            if conformance.adapter_present(
+                self.node
+            ) and required_topics.issubset(topics):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.05)
-        self.fail(f"node not found: {ADAPTER_NODE}")
+        self.fail(f"node not found: {conformance.node_fqn()}")
 
     def _collect(self, message_type, topic, qos, count, timeout=3.0):
         messages = []
@@ -166,7 +166,7 @@ class TestAdapterContract(unittest.TestCase):
         scan = self._collect(LaserScan, SCAN_TOPIC, SENSOR_QOS, 1)[0]
         odometry = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         imu = self._collect(Imu, IMU_TOPIC, SENSOR_QOS, 1)[0]
-        self.assertEqual(scan.header.frame_id, "laser")
+        self.assertEqual(scan.header.frame_id, conformance.SCAN_FRAME)
         self.assertEqual(odometry.header.frame_id, "odom")
         self.assertEqual(odometry.child_frame_id, "base_link")
         self.assertEqual(imu.header.frame_id, "base_link")
@@ -175,19 +175,22 @@ class TestAdapterContract(unittest.TestCase):
         """ADAPT-2130: base_link is the centre of gravity, at height h.
 
         `/odom`, `/ground_truth/odom` and TF odom -> base_link all carry
-        z = the gym's `Param.h`. The car is planar, so z is that constant;
+        z = the backend's h (the gym's `Param.h`; the h the autodrive launch
+        passes). The car is planar, so z is that constant;
         without it RViz draws the URDF's base_link on the ground and the
         wheels sink 0.074 m into the map plane.
         """
         self._require_adapter()
-        height = Param().h
+        height = conformance.backend().expected_h()
         odometry = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 1)[0]
         truth = self._collect(
             Odometry, GROUND_TRUTH_ODOMETRY_TOPIC, STATE_QOS, 1
         )[0]
         transforms = [
             transform
-            for message in self._collect(TFMessage, "/tf", STATE_QOS, 1)
+            for message in self._collect(
+                TFMessage, conformance.topic("/tf"), STATE_QOS, 1
+            )
             for transform in message.transforms
             if transform.header.frame_id == "odom"
             and transform.child_frame_id == "base_link"
@@ -263,9 +266,25 @@ class TestAdapterContract(unittest.TestCase):
         self.assertGreater(drift, 1e-4, "odometry equals ground truth")
 
     def test_adapt_2030_publish_rate_is_within_tolerance(self):
-        """ADAPT-2030: the backend publishes at its configured 100 Hz rate."""
+        """ADAPT-2030: the backend publishes /odom at its expected rate.
+
+        The gym keeps the literal check: mean rate over 25 stamps within
+        20 % of 100 Hz. A backend whose row sets odom_max_median_period_s
+        (autodrive: 50 ms, the spec's nominal 20 Hz) is held to a median
+        stamp period at most that: one-sided, and on replay it measures the
+        replay's pacing, one publish per frame.
+        """
         self._require_adapter()
         messages = self._collect(Odometry, ODOMETRY_TOPIC, STATE_QOS, 25)
+        limit = conformance.backend().odom_max_median_period_s
+        if limit is not None:
+            stamps = [
+                m.header.stamp.sec + m.header.stamp.nanosec / 1e9
+                for m in messages
+            ]
+            periods = [b - a for a, b in zip(stamps, stamps[1:], strict=False)]
+            self.assertLessEqual(statistics.median(periods), limit)
+            return
         first = messages[0].header.stamp
         last = messages[-1].header.stamp
         elapsed = (last.sec - first.sec) + (last.nanosec - first.nanosec) / 1e9
@@ -380,8 +399,15 @@ class TestAdapterContract(unittest.TestCase):
             return
         self._collect(Clock, CLOCK_TOPIC, CLOCK_QOS, 5)
 
+        # The row remaps /clock under its prefix; so does the consumer's
+        # TimeSource (Step 0: rclpy follows a node-local /clock remap).
         consumer = rclpy.create_node(
             "adapt_2075_use_sim_time_consumer",
+            cli_args=[
+                "--ros-args",
+                "-r",
+                f"{conformance.CLOCK_TOPIC}:={CLOCK_TOPIC}",
+            ],
             parameter_overrides=[
                 Parameter("use_sim_time", Parameter.Type.BOOL, True)
             ],
@@ -448,7 +474,7 @@ class TestAdapterContract(unittest.TestCase):
             self.assertIsInstance(declared[name], bool, name)
 
         client = self.node.create_client(
-            SetParameters, f"{ADAPTER_NODE}/set_parameters"
+            SetParameters, conformance.service("set_parameters")
         )
         try:
             self.assertTrue(client.wait_for_service(timeout_sec=20.0))
@@ -477,8 +503,9 @@ class TestAdapterContract(unittest.TestCase):
 
     def test_adapt_2150_not_applicable_set_is_the_expected_one(self):
         """ADAPT-2150: the tests the running backend's declaration makes not
-        applicable are exactly conformance.BACKEND_EXPECTED_NOT_APPLICABLE
-        (empty for the gym, which has every capability), and each is named.
+        applicable are exactly the running backend row's
+        expected_not_applicable (empty for the gym, which has every
+        capability), and each is named.
         A gym test that silently stopped applying would fail here."""
         self._require_adapter()
         declared = conformance.declared_capabilities(self.node)
@@ -486,7 +513,7 @@ class TestAdapterContract(unittest.TestCase):
         for test_id, reason in sorted(missing.items()):
             print(f"NOT APPLICABLE {test_id}: {reason}")
         self.assertEqual(
-            set(missing), set(conformance.BACKEND_EXPECTED_NOT_APPLICABLE)
+            set(missing), set(conformance.backend().expected_not_applicable)
         )
 
     def _set_step_mode(self, mode: int) -> None:
@@ -499,6 +526,27 @@ class TestAdapterContract(unittest.TestCase):
         self.assertTrue(future.done(), "step_mode timed out")
         self.assertTrue(future.result().success, future.result().message)
         self.node.destroy_client(client)
+
+    def test_adapt_2170_backend_topics_stay_under_the_row_prefix(self):
+        """ADAPT-2170: the conformance-launched backend has no data topic
+        outside its row's namespace (colcon runs other packages' tier-2 tests
+        on this domain; gotcha #39). EVAL-2030's shape, on the backend."""
+        self._require_adapter()
+        ns = conformance.backend().namespace
+        found = graph_isolation.data_topics(
+            self.node, conformance.ADAPTER_NAME, ns
+        )
+        expected = {
+            conformance.topic(n) for n in conformance.backend().remapped
+        }
+        self.assertEqual(
+            {"outside": graph_isolation.outside(found, ns), "root": ns == "/"},
+            {"outside": [], "root": False},
+            f"backend topics: {sorted(found)}",
+        )
+        self.assertLessEqual(
+            expected, found, "contract topics missing (discovery incomplete?)"
+        )
 
     def test_adapt_2160_stepped_mode_holds_the_clock(self):
         """ADAPT-2160: in STEPPED mode the backend does not advance on its

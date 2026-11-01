@@ -158,6 +158,39 @@ def _load_raceline(raceline_path: Path) -> list[TrajectoryPoint]:
     return points
 
 
+def _centerline_trajectory(
+    centerline: list[tuple[float, float, float, float]],
+) -> list[TrajectoryPoint]:
+    """The track's own centerline as a trajectory, for a track with no
+    raceline file: s the arc length from the first point, psi along the
+    tangent, kappa the heading change per metre, v 0 (a centerline carries no
+    speed; the controller's schedule sets it)."""
+    count = len(centerline)
+    points: list[TrajectoryPoint] = []
+    s = 0.0
+    for index, (x, y, _, _) in enumerate(centerline):
+        if index:
+            s += math.hypot(
+                x - centerline[index - 1][0], y - centerline[index - 1][1]
+            )
+        next_x, next_y, _, _ = centerline[(index + 1) % count]
+        point = TrajectoryPoint()
+        point.s = s
+        point.x = x
+        point.y = y
+        point.psi = math.atan2(next_y - y, next_x - x)
+        points.append(point)
+    for index, point in enumerate(points):
+        ahead = points[(index + 1) % count]
+        behind = points[index - 1]
+        span = math.hypot(ahead.x - behind.x, ahead.y - behind.y)
+        turn = math.remainder(ahead.psi - behind.psi, math.tau)
+        point.kappa = turn / span if span else 0.0
+        point.v = 0.0
+        point.a = 0.0
+    return points
+
+
 def _boundary_marker(
     marker_id: int, name: str, points: list[Point32], frame_id: str
 ) -> Marker:
@@ -347,11 +380,21 @@ class SupportNode(Node):
         )
         self._track_marker_publisher.publish(track_markers)
 
-        raceline = _load_raceline(raceline_path)
+        # No raceline file: drive the centerline (BRINGUP-2030).
+        no_raceline = raceline_path == Path("")
+        raceline = (
+            _centerline_trajectory(centerline)
+            if no_raceline
+            else _load_raceline(raceline_path)
+        )
         trajectory = Trajectory()
         trajectory.header.stamp = stamp
         trajectory.header.frame_id = self._map_frame
-        trajectory.source = raceline_path.stem
+        trajectory.source = (
+            f"{track_path.stem}_centerline"
+            if no_raceline
+            else raceline_path.stem
+        )
         trajectory.valid_until = stamp
         trajectory.points = raceline
         self._trajectory_publisher.publish(trajectory)

@@ -11,7 +11,7 @@ container, because the default vehicle path is relative.
 - `contract_test.yaml`: the analytic circle, and the default. Never use it to judge localization.
 - `spielberg.yaml`: the league track, with sensor noise.
 - `spielberg_survey.yaml`: Spielberg with exact sensors, for [mapping](mapping.md) only.
-- `porto.yaml`: AutoDRIVE's Porto practice track (32.71 m lap). No simulator runs it until `simulator:=autodrive` exists; the gym has no Porto map.
+- `porto.yaml`: AutoDRIVE's Porto practice track (32.71 m lap). Only `simulator:=autodrive` runs it (see [Configuration](../configuration.md#the-autodrive-simulator)); the gym has no Porto map.
 
 Shared arguments: `seed:=`, `time_scale:=` (scales the wall rate, never the physics),
 `use_rviz:=false` for a headless run, and `vehicle:=`. For headless metrics runs see

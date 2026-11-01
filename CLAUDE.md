@@ -75,6 +75,7 @@ nodes run in `gpu` (`dev` + CUDA), on the owner's machine only.
 | touching message stamps, timers, `use_sim_time`, or anything that reads the clock | `docs/adr/0006-simulated-time-is-the-time-base.md` |
 | changing `check.sh --ready`'s selection, or a `paths` / `verified_by` in `config/reference_stack.yaml` | `docs/adr/0007-ready-is-a-scoped-local-run.md` |
 | changing anything a user can see or run (a launch argument, an implementation, a command, a capability status, a result) | the `gr-roboracer-docs` skill (`.claude/skills/gr-roboracer-docs/`) |
+| launching, connecting or recording the AutoDRIVE simulator | `docs/agents/autodrive.md` |
 | regenerating `tests/golden/baseline.json` | `docs/agents/repo-gotchas.md` #14 — it is a reviewed diff, never a way to green a run |
 
 ## Git

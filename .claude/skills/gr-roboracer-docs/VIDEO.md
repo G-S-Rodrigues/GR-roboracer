@@ -9,11 +9,13 @@ Recording runs a full lap at `time_scale` 1.0 with RViz on screen, so it needs a
 every other session using this repo before you start and when you end, and wait for theirs to
 finish a `--ready` or a long CPU run. Record in your own container — its own compose project,
 image tag, build/install volumes and `ROS_DOMAIN_ID` — never in `gr-roboracer-dev`. RViz display
-setup on the WSL2 host is in `docs/agents/running-wsl.md`. ffmpeg is not in the image: install it
-in that container only (`apt-get install -y ffmpeg`), never in the Dockerfile.
+setup on the WSL2 host is in `docs/agents/running-wsl.md`. `ffmpeg` and the label font are in the
+`dev` image (ADR 0002 amendment 2026-10-28): build your recording image from `main`'s `dev` target
+under its own tag. If `ffmpeg -version` fails in it, the image predates that change: rebuild it
+under your own tag, never `gr-roboracer:dev`; do not install by hand.
 
-**Done when** the other sessions have acknowledged and `ps` in your container shows no
-`install/racing_`, `ros2 launch`, `rviz2` or `ffmpeg` process.
+**Done when** `ffmpeg -version` succeeds in your container, the other sessions have acknowledged
+and `ps` in your container shows no `install/racing_`, `ros2 launch`, `rviz2` or `ffmpeg` process.
 
 ## 1. Record
 

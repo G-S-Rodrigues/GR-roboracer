@@ -20,9 +20,9 @@ GROUND_TRUTH_SPACING_TOLERANCE_M = 0.15
 def test_simjax_1080_laser_pose_is_the_vehicle_pose_moved_by_the_mount():
     """SIMJAX-1080: /scan is cast from the laser, not from base_link.
 
-    The mount is base_link -> laser, so it is rotated by the vehicle's yaw
+    The mount is base_link -> lidar, so it is rotated by the vehicle's yaw
     before it is added: 0.275 m ahead is +y for a car facing +y. Casting from
-    base_link while stamping frame `laser` puts every beam 0.275 m ahead of
+    base_link while stamping frame `lidar` puts every beam 0.275 m ahead of
     where the sim cast it, once TF places it - a bias every estimator reads
     as a localization error.
     """
@@ -65,7 +65,7 @@ SPIELBERG = (
     / "scenarios"
     / "spielberg.yaml"
 )
-# base_link -> laser, as config/vehicles/f1tenth_default.yaml states it.
+# base_link -> lidar, as config/vehicles/f1tenth_default.yaml states it.
 MOUNT = LaserMount(x=0.275)
 
 

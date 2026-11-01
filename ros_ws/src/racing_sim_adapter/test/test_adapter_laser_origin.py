@@ -13,13 +13,11 @@ import unittest
 from pathlib import Path
 
 import launch
-import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 import pytest
 import rclpy
 import yaml
-from f1tenth_gym_jax.envs.utils import Param
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -49,21 +47,29 @@ SENSOR_QOS = QoSProfile(
 )
 
 
-def _mount_x() -> float:
+def _vehicle_parameters() -> dict:
+    """The file's ``racing_sim.ros__parameters`` as a dict. A params *path*
+    keyed ``racing_sim:`` matches ``/racing_sim`` only, not the row's
+    ``/<prefix>/racing_sim``, so the node would fall back to laser_x = 0
+    (measured, Step 0); a dict is written to a ``/**`` file and matches
+    under any namespace."""
     document = yaml.safe_load(VEHICLE_CONFIG.read_text(encoding="utf-8"))
-    return float(document[ADAPTER_NODE]["ros__parameters"]["laser_x"])
+    return dict(document[ADAPTER_NODE]["ros__parameters"])
+
+
+def _mount_x() -> float:
+    return float(_vehicle_parameters()["laser_x"])
 
 
 @pytest.mark.launch_test
 def generate_test_description():
-    backend = launch_ros.actions.Node(
-        package="racing_sim_gym_jax",
-        executable="racing_sim_gym_jax_node",
-        parameters=[str(VEHICLE_CONFIG), {"start_held": True}],
-        output="screen",
-    )
     return launch.LaunchDescription(
-        [backend, launch_testing.actions.ReadyToTest()]
+        [
+            *conformance.backend().actions(
+                [{**_vehicle_parameters(), "start_held": True}]
+            ),
+            launch_testing.actions.ReadyToTest(),
+        ]
     )
 
 
@@ -94,7 +100,9 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         # requests only afterwards; wait for it before the first ROS call.
         deadline = time.monotonic() + 20.0
         while time.monotonic() < deadline:
-            if self.node.get_publishers_info_by_topic("/scan"):
+            if self.node.get_publishers_info_by_topic(
+                conformance.topic("/scan")
+            ):
                 return
             rclpy.spin_once(self.node, timeout_sec=0.1)
         self.fail("no /scan publisher")
@@ -124,7 +132,7 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         ahead of it, so the laser lies `laser_x - lr` (0.10355 m) ahead of
         base_link. Held, the vehicle sits at one pose and both rays hit the
         same wall point, so the ranges differ by exactly that. A scan cast
-        from base_link but stamped `laser` would read the same range as
+        from base_link but stamped `lidar` would read the same range as
         ground truth, and one cast `laser_x` from the CoG would differ by
         0.275: TF would then place every point lr off. /ground_truth/scan
         stays cast from base_link: racing_metrics' clearance and collisions
@@ -139,11 +147,13 @@ class TestAdapterLaserOrigin(unittest.TestCase):
         self._require_adapter()
         if not self._applicable("ADAPT-2120"):
             return
-        truth = self._collect("/ground_truth/scan")
-        noisy = self._collect("/scan")
-        self.assertEqual(noisy[0].header.frame_id, "laser")
+        truth = self._collect(conformance.topic("/ground_truth/scan"))
+        noisy = self._collect(conformance.topic("/scan"))
+        self.assertEqual(noisy[0].header.frame_id, conformance.SCAN_FRAME)
         # Labelled where it was cast from, so the label is honest.
         self.assertEqual(truth[0].header.frame_id, "base_link")
+
+        from f1tenth_gym_jax.envs.utils import Param  # the gym row only
 
         truth_range = statistics.median(_forward_range(m) for m in truth)
         laser_range = statistics.median(_forward_range(m) for m in noisy)

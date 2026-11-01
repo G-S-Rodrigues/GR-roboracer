@@ -16,14 +16,55 @@ source /ws/setup.sh
 ros2 launch racing_bringup sim_pure_pursuit.launch.py seed:=42
 ```
 
+The AutoDRIVE simulator's Porto track (in development: the launch is tested against a recorded stream,
+not yet against the live simulator). The server listens first and the simulator connects to it once;
+see [Configuration](configuration.md#the-autodrive-simulator) for the arguments and refusals:
+
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py simulator:=autodrive \
+  vehicle:=config/vehicles/autodrive_roboracer.yaml scenario:=config/scenarios/porto.yaml \
+  use_rviz:=false
+```
+
+The simulator's compose service (`autodrive-sim`, profile `autodrive`) connects to
+`AUTODRIVE_BRIDGE_HOST`, which defaults to the official devkit container; pointing it at this server
+is not yet a tested step. Never start the profile with a bare `up`, which also starts `dev`, `fast-sim`
+and the devkit, and the devkit holds the same port 4567.
+
+With the official devkit bridge instead of our server (`autodrive_bridge:=official`), start the devkit
+container on its own ROS domain first, then the launch on another:
+
+```bash
+AUTODRIVE_ROS_DOMAIN_ID=64 docker compose -f docker/docker-compose.yaml --profile autodrive \
+  up -d --no-deps autodrive-devkit
+ROS_DOMAIN_ID=62 ros2 launch racing_bringup sim_pure_pursuit.launch.py simulator:=autodrive \
+  autodrive_bridge:=official autodrive_devkit_domain:=64 \
+  vehicle:=config/vehicles/autodrive_roboracer.yaml scenario:=config/scenarios/porto.yaml use_rviz:=false
+```
+
+The simulator then connects to the devkit container's port 4567, not to the launch. Stop the container with
+`docker compose ... stop autodrive-devkit`, never `down`.
+
+The headless qualification run (12 clockwise Porto laps on the real simulator, about 3 minutes) is one command on the
+host, with `dev` up and a free ROS domain in 60-69:
+
+```bash
+scripts/autodrive_qualify.sh --domain 64
+```
+
+It recreates the simulator container (each container serves one run), runs the stack in `dev`, prints the stack's and the
+simulator's lap times, collisions and the qualification score (ten middle laps plus 10 s per collision), and stops the
+container. Artifacts (`qualification.json`, `porto_run.npz`, `launch.log`) land in `.scratch-out/autodrive_qualify/`.
+`--workdir` selects a checkout inside `dev` and `--dry-run` prints the three commands without running them.
+
 The minimum-curvature line from `config/racelines/`, raced at its own speed:
 
 ```bash
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory
 ```
 
-In RViz, `base_link` is the car's centre of gravity at height h (0.074 m); `rear_axle` is its TF child,
-0.17145 m behind, and the drawing hangs off it.
+In RViz, `base_link` is the car's centre of gravity at height h; `rear_axle` is its TF child, lr behind,
+and the drawing hangs off it (the gym car: h 0.074 m, lr 0.17145 m; the AutoDRIVE car: h 0.07354 m, lr 0.15532 m).
 
 Headless, printing the run's metrics — this is what the nightly sweep drives:
 

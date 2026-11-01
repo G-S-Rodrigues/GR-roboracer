@@ -1,0 +1,22 @@
+# The vehicle values racing_sim_autodrive_server needs, as its ROS parameter
+# file (#44 part 8, plan D7). Not part of autodrive_roboracer.yaml: BRINGUP-1100
+# requires every config/vehicles/*.yaml to carry exactly the default's
+# sections, and the server's keys are none of them. BRINGUP-1670 pins lr,
+# wheel_radius and throttle_gain to source.yaml / identified.yaml.
+racing_sim:
+  ros__parameters:
+    # source.yaml values.com_x_lr_m: the CoG, in the rear-axle frame (gotcha 26).
+    lr: 0.15532
+    # Height of the CoG above the ground: rest height of roboracer_1 plus
+    # source.yaml values.com_z_above_rear_axle_m (part 4; the prefab's rest
+    # height is not a single key, so this is the anchored part-4 number).
+    h: 0.07354
+    # source.yaml values.wheel_radius_m.
+    wheel_radius: 0.059
+    # identified.yaml measurements.throttle_gain (m/s per unit throttle).
+    throttle_gain: 24.859772
+    # The prefab's steering limit, 0.523633 rad (the guide rounds it to 0.5236).
+    max_steering_angle: 0.523633
+    # UNTUNED: no gains exist yet; tuning is part 10.
+    kp: 0.02
+    ki: 0.05

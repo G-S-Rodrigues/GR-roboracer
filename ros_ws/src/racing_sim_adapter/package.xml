@@ -16,6 +16,7 @@
   <test_depend>python3-yaml</test_depend>
   <test_depend>racing_interfaces</test_depend>
   <test_depend>racing_sim_gym_jax</test_depend>
+  <test_depend>racing_sim_autodrive</test_depend>
   <test_depend>rclpy</test_depend>
   <test_depend>rosgraph_msgs</test_depend>
   <test_depend>sensor_msgs</test_depend>

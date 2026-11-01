@@ -13,7 +13,7 @@ wall faces: raw cell-centre distance, so a perfect 5 cm map scores 2.5 cm, not 0
 Language: Python, a thin node over the ROS-free `racing_evaluation.localization`; Frenet via
 `racing_common`'s binding, never a reimplementation. ament_cmake so tests carry tier labels.
 
-Test: `colcon test --packages-select racing_evaluation` (EVAL-1010..1060, 1500..1540 tier 1, EVAL-2010..2020 tier 2).
+Test: `colcon test --packages-select racing_evaluation` (EVAL-1010..1060, 1500..1540 tier 1, EVAL-2010..2030 tier 2).
 
 Trap: a stalled estimator has no error samples, and an error over none is zero. Every measure is
 taken over truth samples and carries availability; never report an error without it (EVAL-1030).

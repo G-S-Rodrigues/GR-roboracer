@@ -32,6 +32,7 @@ from .backend import DriveCommand, GymBackend, Snapshot
 from .capabilities import CAPABILITIES
 from .clock import simulated_clock_message, step_due, wall_timer_period
 from .laser import (
+    SCAN_FRAME,
     LaserMount,
     declared_angle_increment,
     gym_angle_increment,
@@ -98,7 +99,7 @@ class RacingSimNode(Node):
         # consumer to be discovered and then define t=0 without rewinding a
         # clock they already followed.
         self.declare_parameter("start_held", False)
-        # rear_axle -> laser, planar: /scan is ray-marched from there (the
+        # rear_axle -> lidar, planar: /scan is ray-marched from there (the
         # sim converts to the CoG by the gym's lr). The vehicle file states
         # it from the URDF (BRINGUP-1050); the default casts from the rear
         # axle.
@@ -315,7 +316,7 @@ class RacingSimNode(Node):
         self._scan_publisher.publish(
             self._scan_message(
                 stamp,
-                "laser",
+                SCAN_FRAME,
                 apply_scan_noise(
                     snapshot.laser_scan,
                     self._scan_rng,

@@ -41,3 +41,69 @@ Commands wrap as `wsl.exe -d Ubuntu-24.04 -e bash -lc '...'`. One trap:
 
 - Do not put `$PATH` inside the inner string. WSL interop injects the Windows `PATH`, which contains
   `Program Files (x86)`; the unquoted parentheses are a bash syntax error. Use absolute paths.
+
+## AutoDRIVE GUI
+
+Agents launching or connecting the sim: `docs/agents/autodrive.md` first.
+
+The competition simulator's window runs on **Windows**, not in WSL, and talks to the devkit bridge in
+Docker. Measured 2026-10-30 (WSL2 NAT networking, Docker Desktop); the owner drove it by hand.
+
+**The route that works (W1).** `AUTODRIVE_ROS_DOMAIN_ID=66 scripts/autodrive_gui.sh` starts only
+`autodrive-devkit`, published on `127.0.0.1:4567`, and prints the Windows commands. Windows reaches
+Docker Desktop's published port on `127.0.0.1` (`Test-NetConnection` True). In PowerShell:
+
+1. Save the culture (`(Get-Culture).Name`), `Set-Culture en-US`, open a new PowerShell (gotcha 38).
+2. Download `autodrive_simulator_practice_windows.zip` from the `2026-iros` release of
+   AutoDRIVE-RoboRacer-Sim-Racing, check its sha256 (`2D3E5CC7073009D8F28F41B2266C129DD64210688C70228A6811B844EE48A751`)
+   and `Expand-Archive` it. The owner used `C:\dev\Autodrive`; the script prints a placeholder.
+3. Start the bridge (the script), then run `AutoDRIVE Simulator.exe -ip 127.0.0.1 -port 4567`. The
+   flags only fill the address; the window does not connect by itself. Connecting, the Trackcam view
+   and how to confirm are in `docs/agents/autodrive.md`, with the `scripts/windows/autodrive.ps1`
+   helper that does the clicks.
+4. Manual mode drives the car from the window. Autonomous mode does not move until something sends
+   commands; `ros2 run autodrive_roboracer teleop_keyboard` in the devkit container does.
+5. Restore the saved culture afterwards.
+
+The script has not itself been run against a live sim; the sitting used the same `docker compose ...
+run` by hand (`p2-devkit-gui`). Its readiness probe runs inside the container because Docker
+Desktop's published port accepts TCP whether or not the bridge listens (gotcha 30: the sim connects
+once).
+
+**Measured through the GUI build, domain 66, while the owner held the sim connected:** `/autodrive/roboracer_1/lidar` 48 Hz
+(gaps 12-49 ms), `imu` 34 Hz (max gap 70 ms), no `KeyError` in the devkit log. The official bridge
+stalls only headless (gotcha 29); with the GUI build it keeps publishing. Render rate on the owner's screen
+was 96 Hz.
+
+**GUI build against headless (offline, 2026-10-30).** The W1a recording (652 messages) against part 1's
+headless fixture (`porto_stream.jsonl.gz`, 617):
+- Same 18 keys. The GUI build's first message already carries the lidar (1081 ranges); the headless
+  first message has none, so a client must not assume either.
+- 1081 beams in both; over the whole stream 1.80 % (GUI) / 1.87 % (headless) of ranges are `inf`, no `NaN` (gotcha 31).
+- The camera is real and changing in the GUI build (626 distinct frames, ~6.7 kB) and one constant
+  placeholder headless.
+- Period: median 24.5 ms (40.8 Hz), 10-90 % 18.0-30.3 ms, max 43.5 ms, against headless 18.2 ms,
+  11.2-54.5 ms, max 144.5 ms. Neither is 20 Hz; the GUI stream has no gap near the 100 ms stale
+  timeout.
+- Throttle-to-speed gain on the 0.04 straight: 25.02 m/s per unit in both, so the physics agree.
+
+**Traps.**
+- **The sim writes and parses numbers in the Windows culture** (gotcha 38).
+- **Windows cannot reach a listener on the WSL host through `127.0.0.1`.** Only the WSL IP
+  (`ip -4 addr show eth0`, it changes on every WSL restart) works for our stand-in recorder
+  (`tools/autodrive_record.py`), which is why that route used `172.24.67.156` and the devkit route
+  uses the published port. The recorder run (W1a) recorded 652 messages, median 40.8 Hz, 1081
+  ranges per frame.
+- The sim connects once (gotcha 30): start the bridge first.
+- One listener on 4567 at a time; the script refuses when a container already publishes it.
+
+**Not attempted.** The Linux binary under Mesa's dzn (W2) and a native-Linux window (W3): W1
+worked, so the spec's "stop at the first that works" applies (it supersedes the plan's D1, which
+would have run W3 anyway). Why W2 would have been hard: the build ships only Vulkan, WSL gives
+containers no NVIDIA Vulkan, and dzn is absent from the image and from host Mesa 25.2.
+
+**Linux window, unverified.** `docs/running.md` has no section for it until W3 runs (open topic
+part2-w3-unverified). The facts so far: the pinned `autodrive-sim` image runs the binary headless
+(`-batchmode -nographics`); a window needs a display, an NVIDIA GPU with Vulkan, host networking so
+the sim reaches `127.0.0.1:4567`, and the bridge started first with
+`AUTODRIVE_ROS_DOMAIN_ID=<not 42> scripts/autodrive_gui.sh`.

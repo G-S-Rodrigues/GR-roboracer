@@ -2,9 +2,9 @@
 
 The gym ray-marches its scan from the vehicle reference point (base_link, the
 centre of gravity), but a real car's lidar sits on a mount ahead of the rear
-axle, and /scan is stamped in frame `laser`. Every estimator places each beam
-through TF base_link -> rear_axle -> laser, so a scan cast from base_link but
-labelled `laser` lands the whole scan one mount offset away from where it was
+axle, and /scan is stamped in frame `lidar`. Every estimator places each beam
+through TF base_link -> rear_axle -> lidar, so a scan cast from base_link but
+labelled `lidar` lands the whole scan one mount offset away from where it was
 cast. The mount is given from the rear axle (as every source measures it) and
 the backend converts it to the CoG by lr; this module casts from the pose it
 is handed.
@@ -17,11 +17,15 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
+# The frame /scan is stamped in. Mirrors contract.hpp kLaserFrame and is the
+# AutoDRIVE devkit's name for it; CHECK-2020 guards the copies.
+SCAN_FRAME = "lidar"
+
 
 @dataclass(frozen=True)
 class LaserMount:
-    """The planar rear_axle -> laser transform: the URDF joint
-    `rear_axle_to_laser`, as the vehicle file states it (BRINGUP-1050).
+    """The planar rear_axle -> lidar transform: the URDF joint
+    `rear_axle_to_lidar`, as the vehicle file states it (BRINGUP-1050).
     The backend converts it to a base_link (CoG) offset by lr."""
 
     x: float = 0.0

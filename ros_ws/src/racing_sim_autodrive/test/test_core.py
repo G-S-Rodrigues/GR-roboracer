@@ -129,6 +129,21 @@ def test_simad_1040_missing_key_raises_camera_and_euler_optional():
     assert core.decode_frame(raw).ranges is not None
 
 
+def test_simad_1270_comma_decimal_number_fails_loudly_naming_the_locale():
+    """SIMAD-1270: a Windows sim under a comma-decimal locale (pt-PT) sends
+    'V1 Throttle': '0,0000'. That is a FrameError (the node logs it at ERROR
+    and sends the stopped fallback) whose text names the cause and the fix
+    (en-US culture), not a bare float() message."""
+    _, sim, _ = _fixture()
+    raw = dict(sim[1])
+    raw["V1 Throttle"] = "0,0000"
+    with pytest.raises(core.FrameError) as caught:
+        core.decode_frame(raw)
+    text = str(caught.value)
+    assert "V1 Throttle" in text
+    assert "comma" in text and "locale" in text and "en-US" in text
+
+
 def test_simad_1060_quaternion_yaw_matches_euler_yaw():
     """SIMAD-1060: quaternion yaw equals the Euler yaw on every frame."""
     _, sim, _ = _fixture()
@@ -409,3 +424,28 @@ def test_simad_1140_devkit_path_equals_socketio_path():
         assert got.lap_time == pytest.approx(want.lap_time, abs=DEVKIT_TOL)
         assert got.last_lap_time == want.last_lap_time
         assert got.best_lap_time == want.best_lap_time
+
+
+def test_simad_1360_counters_carry_the_five_sim_fields():
+    """SIMAD-1360: `core.counters(frame)` is the lap and collision block of a
+    frame and nothing else; `Infinity` (no lap yet) stays `math.inf`.
+
+    The fixture's frame 82 is the first collision (5.68 s into the run) and
+    frame 0 is the spawn, so both ends of the recording are read from it."""
+    _, sim, _ = _fixture()
+    spawn = core.counters(core.decode_frame(sim[0]))
+    assert (spawn.lap_count, spawn.collisions) == (0, 0)
+    assert spawn.lap_time == pytest.approx(0.02)
+    assert math.isinf(spawn.last_lap_time)
+    assert math.isinf(spawn.best_lap_time)
+    hit = core.counters(core.decode_frame(sim[82]))
+    assert hit.collisions == 1
+    assert hit.lap_time == pytest.approx(5.6838)
+    made = core.decode_frame(sim[82])
+    assert core.counters(made) == core.Counters(
+        lap_count=made.lap_count,
+        lap_time=made.lap_time,
+        last_lap_time=made.last_lap_time,
+        best_lap_time=made.best_lap_time,
+        collisions=made.collisions,
+    )
