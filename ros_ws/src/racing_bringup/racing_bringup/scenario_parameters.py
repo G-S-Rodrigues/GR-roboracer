@@ -23,7 +23,7 @@ PLANNERS = ("track_centerline", "optimized_raceline")
 # The controllers the launch can start (config/reference_stack.yaml's
 # `controller` role: BRINGUP-1920). Pure Pursuit stays the default.
 CONTROLLERS = ("pure_pursuit", "follow_the_gap")
-RACELINE_OPTIMIZERS = ("tum_mincurv_iqp",)
+RACELINE_OPTIMIZERS = ("tum_mincurv_iqp", "tum_mintime")
 # The simulators the launch can start (config/reference_stack.yaml's
 # `simulator` role: BRINGUP-1600), and which front end drives AutoDRIVE's.
 SIMULATORS = ("f1tenth_gym_jax", "autodrive")

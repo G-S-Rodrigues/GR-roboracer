@@ -56,6 +56,7 @@ def _run(monkeypatch, **call) -> dict:
     def fake_run_scenario(**kwargs):
         path = Path(kwargs["launch_arguments"]["recording_path"])
         seen["run_path"] = path
+        seen["launch_arguments"] = dict(kwargs["launch_arguments"])
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}\n")
         return {"lap_completed": True}
@@ -72,21 +73,43 @@ def _run(monkeypatch, **call) -> dict:
     return seen
 
 
+RACELINE = {
+    "planner": "optimized_raceline",
+    "raceline_optimizer": "tum_mincurv_iqp",
+    "speed_source": "trajectory",
+}
+
+
 @pytest.mark.parametrize(
-    "drive, name",
-    [("false", "amcl-open-loop.jsonl"), ("true", "amcl-closed-loop.jsonl")],
+    "call, name",
+    [
+        ({"drive_on_estimate": "false"}, "amcl-open-loop.jsonl"),
+        ({"drive_on_estimate": "true"}, "amcl-closed-loop.jsonl"),
+        (
+            {"drive_on_estimate": "true", **RACELINE},
+            "amcl-closed-loop-optimized_raceline.jsonl",
+        ),
+    ],
 )
 def test_check_1400_recording_is_kept_under_robot_output_dir(
-    monkeypatch, tmp_path, drive, name
+    monkeypatch, tmp_path, call, name
 ) -> None:
     """CHECK-1400: the recording lands under Robot's `${OUTPUT DIR}`, is the
-    path both the launch and the scorer use, and survives the call."""
+    path both the launch and the scorer use, and survives the call. A
+    planner is named in the file (two ACC-4040 cases must not overwrite one
+    recording) and reaches the launch; one not given is absent from it, not
+    the string "None"."""
     monkeypatch.setattr(keywords, "BuiltIn", _RobotOutputDir(tmp_path))
-    seen = _run(monkeypatch, drive_on_estimate=drive)
+    seen = _run(monkeypatch, **call)
     expected = tmp_path / "localization" / name
     assert seen["run_path"] == expected
     assert seen["score_path"] == expected
     assert expected.exists()
+    passed = {k: v for k, v in call.items() if k in RACELINE}
+    assert seen["launch_arguments"] == {
+        "recording_path": str(expected),
+        **passed,
+    }
 
 
 def test_check_1400_recording_falls_back_outside_robot(

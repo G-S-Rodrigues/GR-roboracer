@@ -78,6 +78,9 @@ class RacingTestKeywords:
         drive_on_estimate: str = "false",
         scenario: str = LOCALIZATION_SCENARIO,
         time_scale: str = str(LOCALIZATION_TIME_SCALE),
+        planner: str | None = None,
+        raceline_optimizer: str | None = None,
+        speed_source: str | None = None,
     ) -> None:
         """Run one Spielberg lap with `pose_source` owning map -> odom.
 
@@ -87,6 +90,10 @@ class RacingTestKeywords:
         at all. `drive_on_estimate=true` closes the loop. `scenario` and
         `time_scale` default to the amcl/slam_toolbox lap; MOLA runs the
         1080-beam scenario at 1x (its scan matching is wall-clock work).
+        `planner`, `raceline_optimizer` and `speed_source` are passed to the
+        launch only when given; a planner is also named in the recording
+        (`<source>-<kind>-loop-<planner>.jsonl`) so two cases on one pose
+        source keep separate evidence.
         """
         scale = float(time_scale)
         closed_loop = str(drive_on_estimate).strip().lower() in (
@@ -99,12 +106,23 @@ class RacingTestKeywords:
         # lost about 2.27 s of sim time beyond the 0.5 s window, i.e. one
         # ~2.8 s hole or several, and the evidence with it).
         kind = "closed" if closed_loop else "open"
+        suffix = f"-{planner}" if planner else ""
         recording = (
-            _output_root() / "localization" / f"{pose_source}-{kind}-loop.jsonl"
+            _output_root()
+            / "localization"
+            / f"{pose_source}-{kind}-loop{suffix}.jsonl"
         )
         recording.parent.mkdir(parents=True, exist_ok=True)
         recording.unlink(missing_ok=True)
         self._recording = recording
+        launch_arguments = {"recording_path": str(recording)}
+        for key, value in (
+            ("planner", planner),
+            ("raceline_optimizer", raceline_optimizer),
+            ("speed_source", speed_source),
+        ):
+            if value is not None:
+                launch_arguments[key] = value
         self._metrics = run_scenario(
             seed=int(seed),
             scenario=scenario,
@@ -112,7 +130,7 @@ class RacingTestKeywords:
             timeout=LOCALIZATION_TIMEOUT_SECONDS * max(1.0, 5.0 / scale),
             pose_source=pose_source,
             drive_on_estimate=closed_loop,
-            launch_arguments={"recording_path": str(recording)},
+            launch_arguments=launch_arguments,
         )
         self._localization = score_localization(recording)
 
