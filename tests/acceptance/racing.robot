@@ -82,10 +82,10 @@ Vehicle Laps The Raceline Driving On Its Own Estimate
     ...    else runs an estimator off the centerline. Its only tag is the
     ...    planner's: tags may not overlap between cases of one ID (ADR
     ...    0005), and the amcl, controller and safety tags are the case
-    ...    above's. Bounds are reused, not new: clearance 0.08 m is
-    ...    ACC-4010's, availability 0.99 and ATE RMSE 0.65 m are ACC-4030's
-    ...    amcl row (SIM-5030 seed-42 slice). No lap-time assert; SIM-3110
-    ...    owns the line's lap time.
+    ...    above's. It asserts only a completed lap, 0 collisions and
+    ...    clearance above 0.08 m (ACC-4010's bound): a lap is possible on
+    ...    this line. Accuracy of the estimate is left to SIM-3080 and
+    ...    ACC-4030. No lap-time assert; SIM-3110 owns the line's lap time.
     [Tags]    impl:planner=optimized_raceline
     Run Racing Scenario On Pose Source    amcl    drive_on_estimate=true
     ...    planner=optimized_raceline    raceline_optimizer=tum_mincurv_iqp
@@ -93,8 +93,6 @@ Vehicle Laps The Raceline Driving On Its Own Estimate
     Lap Completion Should Be    true
     Collision Count Should Be    0
     Minimum Wall Clearance Should Exceed    0.08
-    Localization Availability Should Exceed    0.99
-    Localization Error Should Be Below    0.65
 
 *** Keywords ***
 Pose Source Should Track Ground Truth

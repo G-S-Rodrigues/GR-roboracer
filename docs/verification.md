@@ -54,6 +54,7 @@ Black-box cases on the composed stack, one per behaviour a user can name:
 - `Localization Estimate Tracks Ground Truth: slam_toolbox` and `Localization Estimate Tracks Ground Truth: amcl` (ACC-4030)
 - `Localization Estimate Tracks Ground Truth: mola` (ACC-4510), the same case as ACC-4030 on MOLA's own map at 2.5 m RMSE
 - `Vehicle Completes A Lap Driving On Its Own Estimate` (ACC-4040)
+- `Vehicle Laps The Raceline Driving On Its Own Estimate` (ACC-4040), the min-curvature line on amcl's estimate: a completed lap, 0 collisions and clearance above 0.08 m; estimate accuracy is left to SIM-3080 and ACC-4030
 
 ## 5. Nightly coverage
 

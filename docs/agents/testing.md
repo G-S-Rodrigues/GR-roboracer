@@ -129,7 +129,7 @@ The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `sc
 The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
 `BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;
 tier 3 `SIM-3070` (slam_toolbox) and `SIM-3080` (amcl); tier 4 `ACC-4030` (one case per pose source)
-and `ACC-4040` (two cases: the centerline, and the min-curvature line on the amcl estimate); tier 5 `SIM-5010/5020/5030`.
+and `ACC-4040` (two cases: the centerline, and the min-curvature line on the amcl estimate, which asserts lap, collisions and clearance only); tier 5 `SIM-5010/5020/5030`.
 
 The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
 The nightly-flake work added tier 1 `EVAL-1060`.
