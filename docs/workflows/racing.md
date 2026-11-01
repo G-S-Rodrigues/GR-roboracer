@@ -140,7 +140,11 @@ plots where it is bound by a wall, the tyres or the speed cap (see the
 
 ## Control
 
-Available: `pure_pursuit`. By default (`speed_source=curvature_schedule`) it sets speed from path
+Available: `pure_pursuit` (the default) and `follow_the_gap`. `controller:=follow_the_gap` drives
+on `/scan` alone, with no trajectory and no pose: it clears the nearest returns, aims at the deepest beam of
+the widest free gap and slows with steering and forward clearance. It exists to drive a track nobody has
+mapped (the [AutoDRIVE mapping run](mapping.md#mapping-autodrives-porto)); on a known track `pure_pursuit`
+remains the controller to use. The rest of this section is `pure_pursuit`. By default (`speed_source=curvature_schedule`) it sets speed from path
 curvature, not from trajectory speed, and the independent safety supervisor clamps its commands.
 The opt-in `speed_source=trajectory` follows the trajectory's speed instead, which in the published
 `<map>_raceline.csv` (the centerline) is a constant 1.0 m/s and on a committed raceline is the
@@ -150,7 +154,7 @@ passed with `vehicle:=`. A given argument beats the vehicle file, which beats th
 `curvature_schedule`. `lookahead_gain` sets lookahead = max(`lookahead_distance`, gain x measured
 speed); it defaults to 0, so it is off, and it is a node parameter only: set it in the vehicle
 file. The node reads its parameters only at start-up, so `ros2 param set` has no effect.
-It is the only controller, so it has no launch argument.
+Select with `controller:=pure_pursuit` (default) or `controller:=follow_the_gap`.
 
 Exploratory: tracking and dynamic MPC, and MPCC. None has an identifier yet.
 

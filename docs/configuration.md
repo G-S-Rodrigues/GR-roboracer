@@ -32,11 +32,11 @@ These are always launched and have no field. Nothing selects them.
 
 | Role | Available (racing) | Available (mapping) | Planned | Reference default |
 |---|---|---|---|---|
-| `simulator` | `f1tenth_gym_jax`, `autodrive` (in development: see [AutoDRIVE](#the-autodrive-simulator)) | `f1tenth_gym_jax` | none | `f1tenth_gym_jax` |
+| `simulator` | `f1tenth_gym_jax`, `autodrive` (in development: see [AutoDRIVE](#the-autodrive-simulator)) | `f1tenth_gym_jax`, `autodrive` | none | `f1tenth_gym_jax` |
 | `pose_source` | `ground_truth`, `slam_toolbox`, `amcl`, `mola` | `ground_truth` | none | `ground_truth` |
 | `mapper` | none (racing has no mapper) | `slam_toolbox` | none | n/a |
 | `planner` | `track_centerline`, `optimized_raceline` | `track_centerline` | none | `track_centerline` |
-| `controller` | `pure_pursuit` | `pure_pursuit` | none | `pure_pursuit` |
+| `controller` | `pure_pursuit`, `follow_the_gap` | `pure_pursuit`, `follow_the_gap` | none | `pure_pursuit` |
 
 `track_centerline` publishes the scenario's `<map>_raceline.csv`, which holds the track centerline
 at constant speed. It was called `track_raceline` before part 6 of issue #12 renamed it for what it
@@ -166,7 +166,7 @@ stack:
   pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
   mapper: slam_toolbox  # Available: slam_toolbox (survey mapper, never owns map -> odom)
   planner: track_centerline  # Available: track_centerline
-  controller: pure_pursuit  # Available: pure_pursuit
+  controller: pure_pursuit  # Available: pure_pursuit, follow_the_gap (scan-only; needs no centerline)
 runtime:
   seed: 42  # Available: any non-negative integer
   time_scale: 1.0  # Available: any positive number
@@ -204,7 +204,7 @@ stack:
   pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl, mola
   planner: track_centerline  # Available: track_centerline, optimized_raceline
   raceline_optimizer: tum_mincurv_iqp  # Available: tum_mincurv_iqp (default), tum_mintime (used by optimized_raceline)
-  controller: pure_pursuit  # Available: pure_pursuit
+  controller: pure_pursuit  # Available: pure_pursuit, follow_the_gap (scan-only; needs no centerline)
   speed_source: curvature_schedule  # Available: curvature_schedule, trajectory (unset: the vehicle file's value, else curvature_schedule)
 runtime:
   seed: 42  # Available: any non-negative integer
@@ -246,7 +246,7 @@ looks the same to a scan matcher.
 | `stack.mapper` | choose `slam_toolbox_mapping.launch.py` or `map_track.sh` | Instead of `sim_pure_pursuit.launch.py`. The mapping launch takes every racing argument. |
 | `stack.planner` | `planner:=` | `track_centerline` (default) or `optimized_raceline`; anything else is an error. |
 | `stack.raceline_optimizer` | `raceline_optimizer:=` | `tum_mincurv_iqp` (default) or `tum_mintime`; used only under `optimized_raceline`, but validated always. |
-| `stack.controller` | none | One implementation today, always launched. |
+| `stack.controller` | `controller:=` | `pure_pursuit` (default) or `follow_the_gap`; anything else is an error. `follow_the_gap` reads `/scan` only. `controller_hold:=true` (only with `follow_the_gap`, default `false`) starts it publishing zero commands until its `hold` parameter is set to `false`; the mapping test uses it to release the car after the simulator's reset. |
 | `stack.speed_source` | `speed_source:=` | Also settable in the vehicle file's `racing_controller_baseline` block; a given argument wins. |
 | `runtime.seed` | `seed:=` | `map_track.sh` forces `42`. |
 | `runtime.time_scale` | `time_scale:=` | `map_track.sh` passes none, so it runs at the default `1.0`. |
