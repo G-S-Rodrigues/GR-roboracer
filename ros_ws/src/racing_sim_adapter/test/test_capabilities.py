@@ -229,6 +229,11 @@ BACKEND_CAPABILITIES = {
     / "racing_sim_autodrive"
     / "racing_sim_autodrive"
     / "capabilities.py",
+    # front end B shares front end A's capability module
+    conformance.AUTODRIVE_OFFICIAL: SOURCES
+    / "racing_sim_autodrive"
+    / "racing_sim_autodrive"
+    / "capabilities.py",
 }
 
 
@@ -306,18 +311,20 @@ def _launch_registrations(text: str) -> dict[str, list[str]]:
 
 def test_adapt_1050_every_launch_registration_runs_the_backend_it_names():
     """ADAPT-1050: each add_launch_test carries exactly one
-    RACING_SIM_BACKEND, `autodrive` for a target ending `_autodrive` and
+    RACING_SIM_BACKEND, `autodrive_official` for a target ending
+    `_autodrive_official`, `autodrive` for one ending `_autodrive` and
     `f1tenth_gym_jax` for the others. add_launch_test has no ENV argument, so
     a lost property would silently rerun the gym under an `_autodrive` name
     and pass (seen before the property route)."""
     found = _launch_registrations(CMAKE.read_text())
-    assert len(found) == 8
+    assert len(found) == 12
     for name, values in found.items():
-        want = (
-            conformance.AUTODRIVE
-            if name.endswith("_autodrive")
-            else conformance.GYM
-        )
+        if name.endswith("_autodrive_official"):
+            want = conformance.AUTODRIVE_OFFICIAL
+        elif name.endswith("_autodrive"):
+            want = conformance.AUTODRIVE
+        else:
+            want = conformance.GYM
         assert values == [want], name
 
 

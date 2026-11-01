@@ -59,13 +59,20 @@ std::string escape_json(std::string_view value) {
 
 }  // namespace
 
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 MetricsAccumulator::MetricsAccumulator(RunProvenance provenance,
-                                       double track_length)
-    : provenance_(std::move(provenance)), track_length_(track_length) {
+                                       double track_length, std::uint32_t laps)
+    : provenance_(std::move(provenance)),
+      track_length_(track_length),
+      laps_(laps) {
+    if (laps_ < 1U) {
+        throw std::invalid_argument("laps must be at least 1");
+    }
     if (!std::isfinite(track_length_) || track_length_ <= 0.0) {
         throw std::invalid_argument("track_length must be finite and positive");
     }
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 void MetricsAccumulator::observe(const MetricsSample &sample) {
     if (lap_completed_) {
@@ -112,7 +119,16 @@ void MetricsAccumulator::observe(const MetricsSample &sample) {
     }
 
     lap_time_ = sample.elapsed_time - start_time_;
-    if (!lap_completed_ && distance_travelled_ >= track_length_) {
+    // Each multiple of the track length is one lap; the run is complete at
+    // the last of them. A backward jump of s has already given its distance
+    // back above, so a lap that replays a stretch takes longer.
+    while (lap_times_.size() < laps_ &&
+           distance_travelled_ >=
+               track_length_ * static_cast<double>(lap_times_.size() + 1U)) {
+        lap_times_.push_back(sample.elapsed_time - start_time_ - last_lap_end_);
+        last_lap_end_ = sample.elapsed_time - start_time_;
+    }
+    if (lap_times_.size() == laps_) {
         lap_completed_ = true;
     }
     if (sample.colliding && !was_colliding_) {
@@ -133,7 +149,9 @@ ScenarioMetricsData MetricsAccumulator::summary() const {
     result.seed = provenance_.seed;
     result.timestep_ratio = provenance_.timestep_ratio;
     result.lap_completed = lap_completed_;
-    result.lap_time = lap_completed_ ? lap_time_ : 0.0;
+    result.lap_time = lap_completed_ ? lap_times_.front() : 0.0;
+    result.laps_completed = static_cast<std::uint32_t>(lap_times_.size());
+    result.lap_times = lap_times_;
     result.collision_count = collision_count_;
     result.minimum_wall_clearance = started_ ? minimum_wall_clearance_ : 0.0;
     result.maximum_tracking_error =

@@ -10,12 +10,18 @@ the clock rule (ADR 0006: AutoDRIVE is free-running, so no node reads
 /clock); it cannot see the image or the real sim's rate, which parts 9 and 10
 own (plan D1/D2).
 
-The window is bounded on purpose: frames 132..448 of the fixture (about
-5.7 s). The recording's own reset is at frame 449 and the replay can never
-show one, so a window past it would only wait out `RESET_WAIT_FRAMES` with
-an ERROR (SIMAD-1190); and there is no `--loop`, whose wrap would teleport
-the car. Frame 132 starts the driving segment (the fixture respawns at
-frames 83 and 131 and drives to about 337; it stands from about 360).
+The window is bounded on purpose: frames 132..324 of the fixture (about 3.8 s).
+The recorded car drives into a wall at frame 340; with the PP controller now
+aligned to the track (part 10's CW porto.yaml) the supervisor latches
+COMMAND_LIMIT about 6 frames before the replay's frame 337 (measured: frame 337
+fails; 328, 324, 320 and 300 pass), which would fail the mid-stream check for a
+reason that is the recording's, not the launch wiring's, so the window ends
+before it, with a margin. The recording's own reset is at frame 449 and the
+replay can never show one, so a window past it would only wait out
+`RESET_WAIT_FRAMES` with an ERROR (SIMAD-1190); and there is no `--loop`, whose
+wrap would teleport the car. Frame 132 starts the driving segment (the fixture
+respawns at frames 83 and 131 and drives to about 337; it stands from about
+360).
 
 No `/racing_sim/reset` is called: t=0 here is the first replayed frame.
 """
@@ -33,6 +39,7 @@ from pathlib import Path
 import rclpy
 import yaml
 from nav_msgs.msg import Odometry
+from racing_test_keywords.autodrive_live import judge_stale_input
 from racing_test_keywords.ros_helpers import (
     ensure_rclpy_initialized,
     reset_rclpy,
@@ -42,7 +49,6 @@ from racing_test_keywords.ros_helpers import (
 from racing_test_keywords.scenario_runner import (
     PARTICIPANT_NODES,
     _HangObserver,
-    read_host_load,
 )
 from rclpy.qos import qos_profile_sensor_data
 
@@ -57,7 +63,7 @@ FIXTURE = (
     / "ros_ws/src/racing_sim_autodrive/test/fixtures/porto_stream.jsonl.gz"
 )
 START_FRAME = PORTO_DRIVING_LOOP[0]  # the fixture drives 132..337 (7.1)
-LAST_FRAME = 448  # the recorded reset is frame 449
+LAST_FRAME = 324  # COMMAND_LIMIT latches ~frame 331 on the recorded crash
 FRAMES = LAST_FRAME + 1 - START_FRAME
 STARTUP_SECONDS = 120.0
 VEHICLE = "config/vehicles/autodrive_roboracer.yaml"
@@ -88,44 +94,6 @@ def _stale_input_timeout_seconds() -> float:
     params = yaml.safe_load((REPOSITORY_ROOT / VEHICLE).read_text())
     supervisor = params["racing_safety_supervisor"]["ros__parameters"]
     return supervisor["stale_input_timeout_ms"] / 1000.0
-
-
-def _judge_stale_input(latch, odom_stamps, timeout_s, stale_count, trace):
-    """None when the only STALE_INPUT is the end-of-stream latch, else why not.
-
-    The window is anchored to the data, not to the replay process: the last
-    /ground_truth/odom stamp is the last input the stack received. A latch
-    stamped at or before it happened mid-stream. One stamped after it is the
-    supervisor noticing that the input stopped (the commands stop with it).
-    """
-    if latch is None or stale_count == 0:
-        return (
-            f"no end-of-stream STALE_INPUT within {END_LATCH_WAIT_SECONDS} s "
-            f"of the replay's exit (first non-NONE status {latch}): the "
-            "supervisor is not judging the stream on wall time"
-        )
-    odom = sorted(odom_stamps)
-    last = odom[-1]
-    stamp = latch.header.stamp.sec + latch.header.stamp.nanosec * 1e-9
-    if stamp > last:
-        return None
-    later = [i for i, t in enumerate(odom) if t > stamp]
-    if later and later[0] > 0:
-        index = later[0]
-        gap = odom[index] - odom[index - 1]
-        if gap >= timeout_s:
-            return (
-                f"stand-in stall, not a stack latch: the replay/server "
-                f"delivered no /ground_truth/odom for {gap * 1000:.1f} ms "
-                f"at index {index} (timeout {timeout_s * 1000:.0f} ms, host "
-                f"load {read_host_load()['load1']}), and "
-                f"STALE_INPUT x{stale_count} "
-                f"latched at {stamp:.3f} inside it"
-            )
-    return (
-        f"STALE_INPUT x{stale_count} mid-stream, {last - stamp:.3f} s before "
-        f"the last /ground_truth/odom; first latch {latch}{trace}"
-    )
 
 
 def _use_sim_time(node_name: str) -> str:
@@ -255,12 +223,13 @@ def test_sim_3610_autodrive_launch_replay_runs_on_wall_time_without_a_latch(
     throttles = [float(r["V1 Throttle"]) for r in replies]
     assert max(throttles) > 0.0, "the controller's speed never reached a reply"
     assert odom_stamps, "no /ground_truth/odom reached the driver"
-    verdict = _judge_stale_input(
+    verdict = judge_stale_input(
         latch,
         odom_stamps,
         _stale_input_timeout_seconds(),
         stale,
         trace,
+        END_LATCH_WAIT_SECONDS,
     )
     assert verdict is None, verdict
     # The disconnect at the end of the replay is logged as an ERROR by design

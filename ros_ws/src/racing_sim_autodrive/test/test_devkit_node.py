@@ -1,0 +1,562 @@
+"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2260).
+
+B (`racing_sim_autodrive.devkit_node`) and the devkit stand-in run as
+processes: B's stack side on the domain S, its devkit side and the stand-in on
+`_devkit_launch.devkit_domain()` = S+1. Names: stack side under
+`/test_simad_devkit`, devkit side under `/test_simad_devkit_dk<S>`. Needs
+ROS_DOMAIN_ID set by the caller. Plain pytest: each test starts its own B and
+stand-in, which a launch_test file cannot restart per test.
+"""
+
+import math
+import re
+import sys
+import time
+from pathlib import Path
+
+import pytest
+import rclpy
+from ackermann_msgs.msg import AckermannDriveStamped
+from nav_msgs.msg import Odometry
+from racing_interfaces.srv import Reset
+from rclpy.context import Context
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import _devkit_launch as dl  # noqa: E402
+
+SENSOR = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=2000,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
+STATE = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=2000,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
+FRAMES = 120
+BRIDGE_UP = "devkit bridge on"
+
+
+class Observers:
+    """A node on the stack domain and one on the devkit domain."""
+
+    def __init__(self):
+        dl.check_not_live_devkit()
+        self.stack_context = Context()
+        rclpy.init(context=self.stack_context)
+        self.stack = rclpy.create_node(
+            "simad_devkit_observer", context=self.stack_context
+        )
+        self.devkit_context = Context()
+        rclpy.init(context=self.devkit_context, domain_id=dl.devkit_domain())
+        self.devkit = rclpy.create_node(
+            "simad_devkit_observer_dk", context=self.devkit_context
+        )
+        self._executors = []
+        for node, context in (
+            (self.stack, self.stack_context),
+            (self.devkit, self.devkit_context),
+        ):
+            executor = SingleThreadedExecutor(context=context)
+            executor.add_node(node)
+            self._executors.append(executor)
+
+    def spin_once(self, timeout_sec=0.01):
+        for executor in self._executors:
+            executor.spin_once(timeout_sec=timeout_sec)
+
+    def close(self):
+        for executor in self._executors:
+            executor.shutdown()
+        self.stack.destroy_node()
+        self.devkit.destroy_node()
+        self.stack_context.shutdown()
+        self.devkit_context.shutdown()
+
+
+@pytest.fixture(scope="module")
+def observer():
+    observers = Observers()
+    yield observers
+    observers.close()
+
+
+def _tail(log, needle):
+    lines = [
+        x for x in log.read_text(errors="replace").splitlines() if needle in x
+    ]
+    return lines[-1] if lines else f"(no {needle!r} line)"
+
+
+def stamp_ns(message):
+    return message.header.stamp.sec * 10**9 + message.header.stamp.nanosec
+
+
+def spin(observers, seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        observers.spin_once()
+
+
+def spin_until(observers, done, timeout_s, what):
+    end = time.monotonic() + timeout_s
+    while time.monotonic() < end:
+        observers.spin_once()
+        if done():
+            return
+    raise AssertionError(f"timed out: {what}")
+
+
+@pytest.fixture
+def run(tmp_path, observer):
+    """Start B; the test starts the stand-in. Everything is stopped after."""
+    started = []
+
+    def go(
+        *standin, bridge_parameters=None, replies="replies.jsonl", ready=None
+    ):
+        bridge, blog = dl.start_bridge(tmp_path, **(bridge_parameters or {}))
+        started.append(bridge)
+        dl.wait_for_log(bridge, blog, BRIDGE_UP)
+        spin(observer, 1.0)  # discovery
+        if ready is not None:  # the observer's readers have matched B's
+            spin_until(observer, ready, 60.0, "observer matched to B")
+        standin, out, slog = dl.start_standin(
+            tmp_path, *standin, replies=replies
+        )
+        started.append(standin)
+        return bridge, blog, standin, out, slog
+
+    yield go
+    for process in reversed(started):
+        dl.stop(process, timeout_s=10.0)
+
+
+def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
+    """SIMAD-2200: B against the stand-in on 120 frames of the stationary
+    opening publishes `/scan` (frame `lidar`, 1081 beams), `/ground_truth/scan`,
+    `/ground_truth/odom` at the centre of gravity (z = h, the rear axle moved
+    lr along the heading), `/odom` and `/imu`; the `/scan` count is at least
+    98 % of frames - 1 (SIMAD-2020's bound; the first burst teaches the
+    assembler its offsets and is not published)."""
+    scans, truth = [], []
+    stack = observer.stack
+    mine = [
+        stack.create_subscription(
+            LaserScan, dl.topic("/scan"), scans.append, SENSOR
+        ),
+        stack.create_subscription(
+            Odometry, dl.topic("/ground_truth/odom"), truth.append, STATE
+        ),
+    ]
+    imus, odoms = [], []
+    lidar_stamps = set()
+    from sensor_msgs.msg import Imu
+
+    mine.append(
+        stack.create_subscription(Imu, dl.topic("/imu"), imus.append, SENSOR)
+    )
+    mine.append(
+        stack.create_subscription(
+            Odometry, dl.topic("/odom"), odoms.append, STATE
+        )
+    )
+    spin(observer, 0.5)
+    # The stand-in must not start before the observer's readers have matched
+    # B's writers: a starved runner otherwise misses the first ~20 frames
+    # on the observer side with B having published them all.
+    bridge, blog, standin, _, slog = run(
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--count",
+        str(FRAMES),
+        ready=lambda: all(m.get_publisher_count() >= 1 for m in mine),
+    )
+    # The observer's own lidar subscription would satisfy the stand-in's
+    # "every topic has a subscriber" wait before B's lidar reader matched
+    # (B then starts 20 frames late on a starved runner), so it joins only
+    # once B is publishing and checks the scans from then on.
+    spin_until(observer, lambda: len(scans) >= 1, 30.0, "B's first scan")
+    lidar_sub = observer.devkit.create_subscription(
+        LaserScan,
+        f"{dl.NAMESPACE}/lidar",
+        lambda m: lidar_stamps.add(stamp_ns(m)),
+        STATE,
+    )
+    spin_until(
+        observer, lambda: standin.poll() is not None, 60.0, "stand-in done"
+    )
+    spin(observer, 1.0)
+    observer.devkit.destroy_subscription(lidar_sub)
+    if len(scans) < int(0.98 * (FRAMES - 1)):
+        dl.stop(bridge, timeout_s=10.0)  # B logs its counters on shutdown
+        pytest.fail(
+            f"{len(scans)} /scan of {FRAMES - 1} (need"
+            f" {int(0.98 * (FRAMES - 1))}); truth {len(truth)}, imu"
+            f" {len(imus)}, odom {len(odoms)}; stand-in:"
+            f" {_tail(slog, 'frames published')};"
+            f" B: {_tail(blog, 'assembler:')};"
+            f" B resync: {_tail(blog, 'resyncing')}"
+        )
+    assert len(scans) >= int(0.98 * (FRAMES - 1)), len(scans)
+    assert len(scans) <= FRAMES - 1
+    assert len(scans[0].ranges) == 1081
+    assert scans[0].header.frame_id == "lidar"
+    assert len(truth) >= int(0.98 * (FRAMES - 1)) and len(odoms) > 0
+    assert len(imus) > 0
+    from racing_sim_autodrive import core, devkit_standin, replay
+
+    cog, rear = [], []
+    for _, raw in replay.load_frames(dl.FIXTURE)[1:41]:
+        frame = core.frame_from_devkit(
+            devkit_standin.devkit_sample(devkit_standin.devkit_values(raw))
+        )
+        pose = core.frame_pose(frame)
+        moved = core.rear_axle_to_cog(pose, dl.VEHICLE["lr"])
+        cog.append((moved.x, moved.y))
+        rear.append((pose.x, pose.y))
+    last = truth[-1].pose.pose.position
+    assert last.z == pytest.approx(dl.VEHICLE["h"], abs=1e-6)
+    near_cog = min(math.hypot(last.x - x, last.y - y) for x, y in cog)
+    near_rear = min(math.hypot(last.x - x, last.y - y) for x, y in rear)
+    assert near_cog < 2e-3, near_cog  # one of the loop's frames, at the CoG
+    assert near_rear > 0.1, near_rear  # and not the rear axle (lr = 0.155)
+    stamps = [
+        m.header.stamp.sec * 10**9 + m.header.stamp.nanosec for m in truth
+    ]
+    assert all(b > a for a, b in zip(stamps, stamps[1:], strict=False))
+    # E2: B's receipt stamp is the stand-in's lidar header stamp, unchanged.
+    assert lidar_stamps
+    seen = [stamp_ns(m) for m in scans if stamp_ns(m) >= min(lidar_stamps)]
+    assert seen and set(seen) <= lidar_stamps
+    assert set(stamps) <= {stamp_ns(m) for m in scans}
+
+
+def test_simad_2200_b_started_after_the_stream_gets_whole_frames(
+    tmp_path, observer
+):
+    """SIMAD-2200: a regression smoke for "B emits after joining a running
+    stream", not a guard against mixed frames (SIMAD-1420/1430 hold that).
+    B joins a stand-in that is already publishing (no `--wait-subscribers`,
+    as docs/running.md starts the devkit first). B still emits, every
+    `/scan` stamp is a devkit lidar stamp, and each `/ground_truth/odom`
+    shares its stamp with a `/scan`. The observer is matched to the lidar
+    topic before B starts, so every B stamp is one it saw."""
+    scans, truth, lidar_stamps = [], [], set()
+    observer.stack.create_subscription(
+        LaserScan, dl.topic("/scan"), scans.append, SENSOR
+    )
+    observer.stack.create_subscription(
+        Odometry, dl.topic("/ground_truth/odom"), truth.append, STATE
+    )
+    lidar_sub = observer.devkit.create_subscription(
+        LaserScan,
+        f"{dl.NAMESPACE}/lidar",
+        lambda m: lidar_stamps.add(stamp_ns(m)),
+        STATE,
+    )
+    standin, _, _ = dl.start_standin(
+        tmp_path,
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--wait-subscribers",
+        "0",
+    )
+    bridge = None
+    try:
+        spin_until(
+            observer, lambda: len(lidar_stamps) >= 3, 30.0, "observer lidar"
+        )
+        bridge, blog = dl.start_bridge(tmp_path)
+        dl.wait_for_log(bridge, blog, BRIDGE_UP)
+        spin_until(observer, lambda: len(scans) >= 40, 30.0, "40 scans")
+        spin(observer, 0.3)
+    finally:
+        for process in (bridge, standin):
+            if process is not None:
+                dl.stop(process, timeout_s=10.0)
+        observer.devkit.destroy_subscription(lidar_sub)
+    assert len(scans) >= 40
+    assert {stamp_ns(m) for m in scans} <= lidar_stamps
+    assert {stamp_ns(m) for m in truth} <= {stamp_ns(m) for m in scans}
+    assert "resyncing" not in blog.read_text(errors="replace")
+
+
+def test_simad_2210_drive_reaches_the_devkit_latch(run, observer):
+    """SIMAD-2210: `/drive` 2.0 m/s, 0.1 rad reaches the stand-in's latched
+    reply (throttle > 0, steering = 0.1 / max steering angle), and B's
+    endpoints toward the devkit are RELIABLE and VOLATILE."""
+    publisher = observer.stack.create_publisher(
+        AckermannDriveStamped, dl.topic("/drive"), STATE
+    )
+    message = AckermannDriveStamped()
+    message.drive.speed = 2.0
+    message.drive.steering_angle = 0.1
+    _, _, standin, out, _ = run(
+        *dl.STATIONARY, "--pace", "recorded", "--count", "150"
+    )
+    end = time.monotonic() + 4.0
+    while time.monotonic() < end:
+        publisher.publish(message)
+        spin(observer, 0.05)
+    got = dl.replies(out)
+    assert got, "the stand-in wrote no reply"
+    maximum = dl.VEHICLE["max_steering_angle"]
+    assert float(got[-1]["V1 Throttle"]) > 0.0
+    assert float(got[-1]["V1 Steering"]) == pytest.approx(
+        0.1 / maximum, abs=2e-3
+    )
+    for name in ("throttle_command", "steering_command"):
+        infos = observer.devkit.get_publishers_info_by_topic(
+            f"{dl.NAMESPACE}/{name}"
+        )
+        assert infos, name
+        for info in infos:
+            assert info.qos_profile.reliability == ReliabilityPolicy.RELIABLE
+            assert info.qos_profile.durability == DurabilityPolicy.VOLATILE
+    for name in ("lidar", "lap_time"):
+        infos = observer.devkit.get_subscriptions_info_by_topic(
+            f"{dl.NAMESPACE}/{name}"
+        )
+        assert infos, name
+        for info in infos:
+            assert info.qos_profile.reliability == ReliabilityPolicy.RELIABLE
+            assert info.qos_profile.durability == DurabilityPolicy.VOLATILE
+
+
+def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
+    """SIMAD-2220: `~/reset` makes B publish `reset_command` True in one
+    contiguous run and then False (ruling E7 b: True is held until the
+    session sees the reset's effect), and the stand-in's reply stream, the
+    only place a True overwritten by a later False would show, carries
+    `Reset True` in one contiguous run (at least one reply) and then False."""
+    seen = []
+    observer.devkit.create_subscription(
+        Bool,
+        dl.RESET_TOPIC,
+        lambda m: seen.append(bool(m.data)),
+        QoSProfile(
+            history=HistoryPolicy.KEEP_ALL,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        ),
+    )
+    _, _, standin, out, _ = run(
+        *dl.STATIONARY, "--pace", "recorded", "--count", "400"
+    )
+    client = observer.stack.create_client(
+        Reset, f"{dl.PREFIX}/racing_sim/reset"
+    )
+    assert client.wait_for_service(timeout_sec=10.0)
+    spin(observer, 1.5)
+    future = client.call_async(Reset.Request(seed=0, scenario_id=""))
+    spin_until(observer, future.done, 5.0, "reset response")
+    assert future.result().success
+    spin_until(
+        observer, lambda: standin.poll() is not None, 60.0, "stand-in done"
+    )
+    spin(observer, 0.5)
+    assert seen[:1] == [True], seen
+    assert seen.count(True) == 1 and seen[-1] is False, seen
+    flags = [r["V1 Reset"] for r in dl.replies(out)]
+    assert "True" in flags, "the devkit never replied Reset True"
+    first = flags.index("True")
+    last = len(flags) - 1 - flags[::-1].index("True")
+    assert set(flags[first : last + 1]) == {"True"}, "True run not contiguous"
+    assert flags[last + 1 :] and set(flags[last + 1 :]) == {"False"}
+
+
+def test_simad_2240_every_name_is_under_a_test_prefix(run, observer):
+    """SIMAD-2240: B and the stand-in publish, subscribe and serve only
+    names under `/test_simad_devkit/` (stack side) and
+    `/test_simad_devkit_dk<S>/` (devkit side), matched with the trailing `/`
+    (gotcha 39); `/rosout` and `/parameter_events` are on every node."""
+    _, _, standin, _, _ = run(
+        *dl.STATIONARY, "--pace", "recorded", "--count", "200"
+    )
+    allowed = {"/rosout", "/parameter_events"}
+    # (node, namespace, the observer on its domain, the prefix it may use):
+    # B's stack node names only the stack prefix, its devkit link and the
+    # stand-in only the devkit prefix.
+    nodes = [
+        ("racing_sim", dl.PREFIX, observer.stack, f"{dl.PREFIX}/"),
+        (
+            "racing_sim_devkit_link",
+            dl.PREFIX,
+            observer.devkit,
+            f"{dl.DEVKIT_PREFIX}/",
+        ),
+        ("autodrive_bridge", "/", observer.devkit, f"{dl.DEVKIT_PREFIX}/"),
+    ]
+    outside = set()
+    found = set()
+    end = time.monotonic() + 15.0
+    while time.monotonic() < end and len(found) < len(nodes):
+        spin(observer, 0.2)
+        for name, namespace, seen_from, prefix in nodes:
+            try:
+                names = [
+                    n
+                    for getter in (
+                        seen_from.get_publisher_names_and_types_by_node,
+                        seen_from.get_subscriber_names_and_types_by_node,
+                    )
+                    for n, _ in getter(name, namespace)
+                ]
+            except Exception:
+                continue
+            found.add(name)
+            outside |= {
+                n
+                for n in names
+                if n not in allowed and not n.startswith(prefix)
+            }
+    assert found == {n for n, *_ in nodes}, found
+    assert not outside, sorted(outside)
+
+
+def test_simad_2260_a_withheld_topic_is_named_in_one_stall(run, observer):
+    """SIMAD-2260: the stand-in withholds `collision_count`: no frame ever
+    completes, and B logs one stall warning that names that topic and no
+    other."""
+    _, blog, standin, _, _ = run(
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--count",
+        "150",
+        "--withhold",
+        "collision_count",
+    )
+    spin_until(
+        observer, lambda: standin.poll() is not None, 60.0, "stand-in done"
+    )
+    spin(observer, 1.5)
+    stalls = re.findall(
+        r"stall: .*silent devkit topics: ([^\n]*)",
+        blog.read_text(errors="replace"),
+    )
+    assert len(stalls) == 1, blog.read_text(errors="replace")[-800:]
+    assert stalls[0].strip() == "collision_count", stalls
+
+
+class Listener:
+    """What a node on the stack domain hears of the devkit."""
+
+    TF_TOPICS = ("/tf", f"{dl.PREFIX}/tf", dl.DEVKIT_TF)
+
+    def __init__(self, context):
+        from tf2_msgs.msg import TFMessage
+
+        self.context = context
+        self.node = rclpy.create_node("simad_2250_listener", context=context)
+        self.frames = set()
+        for name in self.TF_TOPICS:
+            self.node.create_subscription(
+                TFMessage,
+                name,
+                lambda m: self.frames.update(
+                    {t.child_frame_id for t in m.transforms}
+                    | {t.header.frame_id for t in m.transforms}
+                ),
+                QoSProfile(
+                    history=HistoryPolicy.KEEP_LAST,
+                    depth=100,
+                    reliability=ReliabilityPolicy.RELIABLE,
+                    durability=DurabilityPolicy.VOLATILE,
+                ),
+            )
+        self.executor = SingleThreadedExecutor(context=context)
+        self.executor.add_node(self.node)
+
+    def spin(self, seconds):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.executor.spin_once(timeout_sec=0.02)
+
+    def leaked_topics(self):
+        return sorted(
+            name
+            for name, _ in self.node.get_topic_names_and_types()
+            if ("/autodrive/" in name or f"_dk{dl.STACK_DOMAIN}/" in name)
+            and self.node.count_publishers(name) > 0  # not our own listening
+        )
+
+    def close(self):
+        self.executor.shutdown()
+        self.node.destroy_node()
+
+
+def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
+    tmp_path, run, observer
+):
+    """SIMAD-2250: the stand-in publishes the devkit's `/tf` (world ->
+    roboracer_1 -> ... -> lidar) on the devkit domain S+1 (S-1 if S+1 > 101;
+    here `_devkit_launch.devkit_domain()`), B bridges it to the stack
+    domain S, and within 5 s of contract data flowing nothing named
+    `roboracer_1` and no `/autodrive/` or `_dk<S>/` topic exists on S, while
+    `/scan` does flow. Names carry S, so a neighbour on S+1 running this
+    test cannot hear this one's stand-in. Positive control first, in the same
+    test: with the stand-in on the stack domain the same listener sees
+    `roboracer_1` and the `_dk<S>/` topics within 5 s, so "never appears"
+    cannot pass on a listener that hears nothing. B refuses a devkit domain
+    equal to its own, naming the TF collision."""
+    listener = Listener(observer.stack_context)
+    try:
+        control, _, _ = dl.start_standin(
+            tmp_path,
+            *dl.STATIONARY,
+            "--pace",
+            "recorded",
+            "--count",
+            "200",
+            "--wait-subscribers",
+            "0",  # nothing subscribes the control's topics
+            domain=dl.STACK_DOMAIN,
+            replies="control.jsonl",
+        )
+        try:
+            listener.spin(5.0)
+            assert "roboracer_1" in listener.frames, listener.frames
+            assert listener.leaked_topics(), "the control left no topic"
+        finally:
+            dl.stop(control, timeout_s=10.0)
+        listener.spin(1.0)
+        listener.frames.clear()
+        scans = []
+        observer.stack.create_subscription(
+            LaserScan, dl.topic("/scan"), scans.append, SENSOR
+        )
+        run(*dl.STATIONARY, "--pace", "recorded", "--count", "400")
+        spin_until(
+            observer, lambda: len(scans) > 20, 30.0, "contract data flowing"
+        )
+        end = time.monotonic() + 5.0
+        while time.monotonic() < end:
+            listener.spin(0.1)
+            observer.spin_once()
+        assert not any("roboracer_1" in f for f in listener.frames), (
+            listener.frames
+        )
+        assert listener.leaked_topics() == []
+    finally:
+        listener.close()
+    clash, log = dl.start_bridge(tmp_path, devkit_domain_id=dl.STACK_DOMAIN)
+    code = clash.wait(timeout=60.0)
+    text = log.read_text(errors="replace")
+    assert code != 0 and "TF" in text and str(dl.STACK_DOMAIN) in text, text

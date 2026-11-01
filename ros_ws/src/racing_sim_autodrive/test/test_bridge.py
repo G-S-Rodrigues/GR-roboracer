@@ -1,4 +1,4 @@
-"""Tier 1: the ROS-free bridge session (SIMAD-1160 to 1230, 1260).
+"""Tier 1: the ROS-free bridge session (SIMAD-1160 to 1230, 1260, 1350, 1400).
 
 Everything the Socket.IO server node does between "a frame arrived" and "a
 reply and some states to publish", against the part-1 fixture. No socket,
@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 from racing_common import CartesianPose as Pose2D
 from racing_common import Track
 from racing_sim_autodrive import bridge, control, core, replay
@@ -118,6 +119,31 @@ def test_simad_1170_ground_truth_is_the_cog_in_the_map_frame(raws):
     assert truth.z == VEHICLE.h
     assert (truth.vx, truth.vy) == frame.linear_velocity[:2]
     assert truth.wz == frame.angular_velocity[2]
+
+
+def test_simad_1350_the_spawn_lies_on_porto_running_along_the_heading(raws):
+    """SIMAD-1350: the fixture's spawn, through the committed
+    porto_frame.yaml, lies on porto.yaml's centerline and the track runs the
+    way the car faces (the sim races clockwise, #44 part 10).
+
+    The spawn CoG is the first frame's V1 Position moved lr (AutoDRIVE's
+    0.15532) along heading, then through world_to_map: (-5.90, 2.00) facing
+    +x. A counter-clockwise porto.yaml has its tangent at 178.3 deg there, so
+    heading_error is about pi and Pure Pursuit's lookahead lies behind the
+    car; racing_metrics counts only positive-s travel, so no lap would ever
+    complete."""
+    frame_file = yaml.safe_load(
+        (REPO / "config" / "autodrive" / "porto_frame.yaml").read_text()
+    )["world_to_map"]
+    session = _session(
+        world_to_map=Pose2D(frame_file["x"], frame_file["y"], frame_file["yaw"])
+    )
+    truth = session.on_frame(raws[0], DRIVE).ground_truth
+    frenet = Track.from_yaml(str(PORTO)).to_frenet(
+        Pose2D(truth.x, truth.y, truth.yaw)
+    )
+    assert abs(frenet.d) <= 0.3
+    assert abs(frenet.heading_error) <= 0.3
 
 
 def _manual_throttle(raws, first, last, speed_cmd, dts):
@@ -458,3 +484,44 @@ def test_simad_1340_stall_watch_report_carries_counters_and_gap():
     assert "entered=4" in report and "exited=3" in report
     assert "emitted=3" in report
     assert "1.50 s" in report
+
+
+def _same_frame(a, b):
+    for field in a.__dataclass_fields__:
+        x, y = getattr(a, field), getattr(b, field)
+        if field == "ranges":
+            assert (x is None) == (y is None)
+            if x is not None:
+                np.testing.assert_array_equal(x, y)
+        else:
+            assert x == y, field
+
+
+def test_simad_1400_on_frame_is_decode_plus_on_sim_frame(raws):
+    """SIMAD-1400: over every fixture frame (a reset requested at 300, so the
+    True reply is in the run), `on_frame(raw)` and
+    `on_sim_frame(decode_frame(raw))` on twin sessions give equal Steps, and
+    the numeric `throttle`, `steering` and `reset` format to `reply`."""
+    one = _session(dt_source="receipt")
+    two = _session(dt_source="receipt")
+    fired = 0
+    for k, raw in enumerate(raws):
+        if k == 300:
+            one.request_reset()
+            two.request_reset()
+        stamp = 0.02 * k
+        a = one.on_frame(raw, DRIVE, received_at=stamp)
+        b = two.on_sim_frame(core.decode_frame(raw), DRIVE, received_at=stamp)
+        assert a.reply == b.reply, k
+        assert a.ground_truth == b.ground_truth, k
+        assert a.odometry == b.odometry, k
+        assert a.track_state == b.track_state, k
+        assert (a.speed, a.dt) == (b.speed, b.dt), k
+        _same_frame(a.frame, b.frame)
+        assert b.reply == {
+            "V1 Throttle": f"{b.throttle:.4f}",
+            "V1 Steering": f"{b.steering:.4f}",
+            "V1 Reset": "True" if b.reset else "False",
+        }, k
+        fired += b.reset
+    assert fired == 1

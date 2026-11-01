@@ -5,7 +5,9 @@
 # `edition`, both tags and both digests together (CHECK-1620), then re-record
 # ros_ws/src/racing_sim_autodrive/test/fixtures/porto_stream.jsonl.gz with
 # tools/autodrive_record.py, and re-run tools/autodrive_identify.py (it rewrites
-# config/vehicles/autodrive_roboracer/identified.yaml; CHECK-1780).
+# config/vehicles/autodrive_roboracer/identified.yaml; CHECK-1780). Then run
+# `tests/autodrive` (SIM-3710/3720) against the new devkit container: see its
+# conftest.py for the command.
 #
 # Measured for this edition (2026-10-25, headless `-batchmode -nographics`):
 #   - the sim is a Socket.IO *client* (Unity) and connects once, never again.
