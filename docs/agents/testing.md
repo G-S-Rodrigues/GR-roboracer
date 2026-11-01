@@ -49,6 +49,10 @@ bound are in the test).
 ./scripts/check.sh --nightly-region <static|slam|path_planning|path_planning_mintime|control|shared>  # one nightly job (NIGHTLY_TIER5=1 adds its tier 5)
 ```
 
+Heavy runs (a ready gate, a live qualification, a recording) take one lock so they do not overlap and
+starve each other: `scripts/heavy_lane.sh -- ./scripts/check.sh --ready` (host or any container; it waits
+for the lane, then for load under 8, `--max-load`). See gotcha #29.
+
 `--fast` diffs the branch against `main` (plus index, worktree and untracked files) and lints and tests
 only what that touches: `clang-format` and `clang-tidy` run only when a C/C++ file changed, and then
 only over the changed packages; `ruff` runs over the changed Python files; `colcon test` runs
@@ -239,3 +243,4 @@ The AutoDRIVE part-9 work (official devkit bridge) added tier 1 `SIMAD-1400` to 
 with `BRINGUP-1690`, which replaces `BRINGUP-1610`'s refusal, nine IDs, counted by ID), tier 2 `SIMAD-2200` to `SIMAD-2260`, tier 3
 `SIM-3620`, and the local `tests/autodrive` `SIM-3710/3720`.
 
+The heavy-lane work added tier 1 `CHECK-2400` to `CHECK-2430` (`scripts/tests/test_heavy_lane.py`).
