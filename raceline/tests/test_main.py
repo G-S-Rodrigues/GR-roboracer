@@ -344,7 +344,7 @@ def test_raceline_1470_no_plots_writes_none(monkeypatch, tmp_path, _no_plots):
     assert _no_plots == []
 
 
-# -- the min-time optimizer through the CLI (RACELINE-1445) -------------
+# -- the min-time optimizer through the CLI (RACELINE-1445) ------------------
 
 SOLVER = {"status": "Solve_Succeeded", "iterations": 7, "wall_time_s": 1.5}
 
