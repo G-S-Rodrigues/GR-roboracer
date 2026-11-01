@@ -95,8 +95,14 @@ class MetricsNode : public rclcpp::Node {
             throw std::invalid_argument(
                 "collision_threshold must be finite and nonnegative");
         }
+        // How many laps complete the run (default 1: today's behaviour).
+        const auto laps = declare_parameter<std::int64_t>("laps", 1);
+        if (laps < 1) {
+            throw std::invalid_argument("laps must be at least 1");
+        }
         accumulator_ = std::make_unique<MetricsAccumulator>(
-            std::move(provenance), track_length);
+            std::move(provenance), track_length,
+            static_cast<std::uint32_t>(laps));
 
         metrics_publisher_ =
             create_publisher<racing_interfaces::msg::ScenarioMetrics>(
@@ -192,6 +198,8 @@ class MetricsNode : public rclcpp::Node {
         message.container_image_digest = metrics.container_image_digest;
         message.track_version = metrics.track_version;
         message.vehicle_parameter_version = metrics.vehicle_parameter_version;
+        message.laps_completed = metrics.laps_completed;
+        message.lap_times = metrics.lap_times;
         return message;
     }
 

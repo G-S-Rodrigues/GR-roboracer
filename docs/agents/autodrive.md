@@ -75,7 +75,7 @@ route needs the Windows sim running against it, not an offline replay.
 
 `simulator:=autodrive` on `sim_pure_pursuit.launch.py` starts our server (`autodrive_bridge:=ours`);
 the argument table and refusals are in `docs/configuration.md`. `config/autodrive/porto_frame.yaml`
-is `measured: derived` (two offline fits, tx +-0.15 m); part 10's lap measures it. SIM-3610 drives the
+is `measured: measured` (part 10: a fit of 29902 lidar endpoints of a live 12-lap run to the map image's walls, residual 0.062 m, +0.06 m in x against the derived value; `tools/autodrive_frame_measure.py` redoes it). SIM-3610 drives the
 whole launch from the recorded stream on an ephemeral port and judges STALE_INPUT against the data,
 not the replay process: any latch stamped at or before the last `/ground_truth/odom` fails, and the
 end-of-stream latch (commands stop, the supervisor latches 100 ms later) must arrive. A mid-stream
@@ -104,3 +104,16 @@ Three places hold its tests, by what each needs:
   then `ROS_DOMAIN_ID=62 AUTODRIVE_ROS_DOMAIN_ID=64 python3 -m pytest tests/autodrive -s`. Run them on every
   edition bump.
 - Live, with the simulator: a manual slot after the PR.
+
+## First drive (part 10)
+
+- Porto runs **clockwise** (the sim's lap counter increments 12 times with the regenerated `config/tracks/porto.yaml`).
+  The spawn lands within 0.05 m of the mapped start. Measured live, three runs: lap 13.73 s, stack and sim lap times within
+  0.05 s, 0 collisions, qualification score 137.3 s, `/ground_truth/odom` max gap 54-80 ms (median 6 ms), no STALE_INPUT.
+- `tests/autodrive/test_sim_3730_porto_qualification.py` is the live check, run by `scripts/autodrive_qualify.sh`. It is in
+  no gate (no gate has a sim), fails rather than skips, and the simulator container serves one run.
+- `/racing_sim/autodrive_counters` is debug-only (league rules restrict the counters at race time).
+- Known problems: `racing_metrics`' collision threshold (0.01 m) is below the AutoDRIVE lidar's 0.06 m `range_min`, so its count
+  cannot see a contact and the sim's counter is the collision truth here; stack lap 1 is longer than the sim's (the stack
+  times from the reset, the sim from the line) and is not compared; lap times are wall-clock in the stack and Unity time in the
+  sim; SIM-3730 is not in CI; the official-bridge (front end B) run of this was not rehearsed.

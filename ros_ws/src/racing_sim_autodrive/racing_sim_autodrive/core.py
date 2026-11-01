@@ -20,8 +20,10 @@ from racing_sim_autodrive.lidar import decode_lidar
 __all__ = [
     "FrameError",
     "Pose2D",
+    "Counters",
     "DevkitSample",
     "SimFrame",
+    "counters",
     "decode_frame",
     "encoder_speed",
     "frame_from_devkit",
@@ -59,6 +61,31 @@ class SimFrame:
     last_lap_time: float  # inf before a lap
     best_lap_time: float
     collisions: int
+
+
+@dataclass(frozen=True)
+class Counters:
+    """The sim's own lap and collision block (debug and cross-check only)."""
+
+    lap_count: int
+    lap_time: float
+    last_lap_time: float  # inf before a lap
+    best_lap_time: float
+    collisions: int
+
+
+def counters(frame: SimFrame) -> Counters:
+    """The lap and collision counters of one frame, as the sim reports them.
+
+    Published on a debug topic for cross-checks; the league restricts these
+    at race time, so nothing in the stack may consume them."""
+    return Counters(
+        lap_count=frame.lap_count,
+        lap_time=frame.lap_time,
+        last_lap_time=frame.last_lap_time,
+        best_lap_time=frame.best_lap_time,
+        collisions=frame.collisions,
+    )
 
 
 def _wrap(angle: float) -> float:

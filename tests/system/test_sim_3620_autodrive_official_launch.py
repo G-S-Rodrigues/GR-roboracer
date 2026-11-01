@@ -7,8 +7,12 @@ so `racing_sim_autodrive.devkit_standin` stands in for the devkit: it
 publishes the recorded frames on the devkit's 13 topics and applies the
 latched commands to its replies, on the devkit's own ROS domain (S+1, S-1 if
 S+1 > 101). The launch is the real one; `autodrive_devkit_domain` names that
-domain. The window is SIM-3610's: frames 132..448 (the recording's reset is
-at 449, which the stand-in cannot show).
+domain. The window is SIM-3610's: frames 132..324. The recorded car drives
+into a wall at frame 340; with the PP controller aligned to the track (the CW
+porto.yaml) the supervisor latches COMMAND_LIMIT about frame 331, which would
+fail the mid-stream check for a reason that is the recording's, not the
+launch wiring's, so the window ends before it. (The recording's reset at 449
+is one the stand-in cannot show.)
 
 The stand-in runs `--no-tf` and under the production topic names. On the
 devkit domain those names are global, and so is the devkit's `/tf`, which
@@ -55,7 +59,7 @@ FIXTURE = (
     / "ros_ws/src/racing_sim_autodrive/test/fixtures/porto_stream.jsonl.gz"
 )
 START_FRAME = PORTO_DRIVING_LOOP[0]  # the fixture drives 132..337 (7.1)
-LAST_FRAME = 448  # the recorded reset is frame 449
+LAST_FRAME = 324  # COMMAND_LIMIT latches ~frame 331 on the recorded crash
 FRAMES = LAST_FRAME + 1 - START_FRAME
 STARTUP_SECONDS = 120.0
 VEHICLE = "config/vehicles/autodrive_roboracer.yaml"

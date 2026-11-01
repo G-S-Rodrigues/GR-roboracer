@@ -20,7 +20,7 @@ from ackermann_msgs.msg import AckermannDriveStamped
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from racing_common import CartesianPose, Track
-from racing_interfaces.msg import TrackRelativeState
+from racing_interfaces.msg import SimCounters, TrackRelativeState
 from racing_interfaces.srv import Reset, SetStepMode
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
@@ -34,7 +34,7 @@ from rclpy.qos import (
 from sensor_msgs.msg import Imu, JointState, LaserScan
 from tf2_ros import TransformBroadcaster
 
-from racing_sim_autodrive import bridge
+from racing_sim_autodrive import bridge, core
 from racing_sim_autodrive.capabilities import CAPABILITIES
 
 SENSOR_QOS = QoSProfile(
@@ -128,6 +128,11 @@ class ContractNode(Node):
         )
         self._encoder_publisher = self.create_publisher(
             JointState, "~/wheel_encoders", SENSOR_QOS
+        )
+        # Debug and cross-check only: the league restricts these counters at
+        # race time, so no stack node subscribes (#44 part 10, plan D11).
+        self._counters_publisher = self.create_publisher(
+            SimCounters, "~/autodrive_counters", STATE_QOS
         )
         self._tf_broadcaster = TransformBroadcaster(self)
         self.create_subscription(
@@ -227,6 +232,17 @@ class ContractNode(Node):
         encoders.name = ["left_rear_wheel", "right_rear_wheel"]
         encoders.position = list(step.frame.encoder_angles)
         self._encoder_publisher.publish(encoders)
+
+        sim = core.counters(step.frame)
+        counters = SimCounters()
+        counters.header.stamp = stamp
+        counters.header.frame_id = "map"
+        counters.lap_count = sim.lap_count
+        counters.lap_time = sim.lap_time
+        counters.last_lap_time = sim.last_lap_time
+        counters.best_lap_time = sim.best_lap_time
+        counters.collisions = sim.collisions
+        self._counters_publisher.publish(counters)
 
         if step.track_state is not None:
             state = TrackRelativeState()

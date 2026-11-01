@@ -87,6 +87,10 @@ Traps any task in this repository can hit. Each one cost real time at least once
     best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
     STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
     latch (Step 1) and 1 of 48 lag runs (Step A).
+    Every gym runner in `tests/lib/racing_test_keywords/scenario_runner.py` takes this t=0 (SIM-3610/3620
+    on AutoDRIVE launch free-running by design, ADR 0006). ACC-4020's injector ran free until F2 and
+    latched in 4 of 15 runs on main, against 0 of 15 on the fix; CHECK-2250 fails a gym runner that
+    does not.
 
 10. **A stale ROS graph outlives the launch that started it.** `pkill -f 'ros2 launch'` kills the
     launcher and leaves every node running; they keep publishing on the same `ROS_DOMAIN_ID` and

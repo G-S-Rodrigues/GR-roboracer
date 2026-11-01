@@ -38,6 +38,7 @@ from rclpy.context import Context
 REPO = Path(__file__).resolve().parents[2]
 TEST_DIR = REPO / "ros_ws/src/racing_sim_autodrive/test"
 sys.path.insert(0, str(TEST_DIR))
+sys.path.insert(0, str(REPO / "tests/lib"))
 
 import _server_launch as server_launch  # noqa: E402
 

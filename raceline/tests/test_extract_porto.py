@@ -2,8 +2,9 @@
 
 The map is AutoDRIVE-RoboRacer-Racetracks' ``Legacy Tracks/Porto Track``
 at a pinned commit; ``config/tracks/porto.yaml`` is extracted from it by
-``python -m raceline.track_from_map``. The start (0, 0, 0) and the ``ccw``
-direction are an assumption that part 10 checks against the simulator.
+``python -m raceline.track_from_map``. The sim races clockwise (#44 part 10:
+the 21 checkpoints, the spawn heading and the recorded drive), so the track is
+extracted ``cw`` from the start (0, 0, pi), s = 0 near the map origin.
 """
 
 import hashlib
@@ -31,8 +32,8 @@ SHA256 = {
         "928db06fa55c94014ac8cc807b7d4ac884ca96ca2977f0f8dc49d7e551f158bb"
     ),
 }
-START = (0.0, 0.0, 0.0)  # assumed AutoDRIVE spawn: map origin, heading +x
-DIRECTION = "ccw"
+START = (0.0, 0.0, 3.14159)  # s = 0 near the map origin, facing -x (cw)
+DIRECTION = "cw"
 # Measured at part 3 step 1 (dev, 2026-10-25): 327 points, 32.7105 m.
 LENGTH_M = 32.71
 # Measured: the centerline's smallest clearance to an occupied cell is
@@ -59,7 +60,7 @@ def test_raceline_1180_official_map_is_byte_identical_to_upstream():
     assert UPSTREAM_SHA.encode() in notice
 
 
-def _cli_args(out, start=("0", "0", "0")):
+def _cli_args(out, start=("0", "0", "3.14159")):
     return [
         "--map", str(MAP_YAML),
         "--start-pose", *start,
@@ -73,7 +74,7 @@ def _cli_args(out, start=("0", "0", "0")):
 def test_raceline_1185_cli_writes_what_the_extractor_extracts(tmp_path, capsys):
     """RACELINE-1185: the CLI is write_track(extract_track(...)), nothing more.
 
-    The header names the command, the upstream commit and the assumed start.
+    The header names the command, the upstream commit and the start.
     A refusal exits 3 with the extractor's message on stderr.
     """
     from raceline.extract import Pose2D, extract_track, load_map
@@ -82,14 +83,15 @@ def test_raceline_1185_cli_writes_what_the_extractor_extracts(tmp_path, capsys):
     from raceline import track_from_map
 
     out = tmp_path / "porto.yaml"
-    note = "start (0, 0, 0) ccw assumed; checked in #44 part 10"
+    note = "start (0, 0, pi) cw; the sim races clockwise (#44 part 10)"
     argv = _cli_args(out) + ["--source-note", note]
     assert track_from_map.main(argv) == 0
     text = out.read_text()
     header = [ln for ln in text.splitlines() if ln.startswith("#")]
     joined = "\n".join(header)
     assert "raceline.track_from_map" in joined
-    assert "--start-pose 0.0 0.0 0.0" in joined and "--direction ccw" in joined
+    assert "--start-pose 0.0 0.0 3.14159" in joined
+    assert "--direction cw" in joined
     assert note in joined
     # The recorded command replays: repo-relative map (the test passed an
     # absolute one) and the --source-note it was given.
@@ -184,7 +186,7 @@ def test_raceline_1195_porto_track_is_a_closed_lap_of_known_length():
 
     Lap distance comes from the track, so this file is Porto's lap length:
     within 1% of the measured 32.71 m, closed, starting within
-    ``MAX_START_OFFSET`` of the assumed spawn.
+    ``MAX_START_OFFSET`` of the start.
     """
     from raceline.extract import MAX_START_OFFSET, STEP_M
     from raceline.track import load_track
@@ -255,7 +257,7 @@ def test_raceline_1207_porto_scenario_points_at_the_porto_files():
     assert doc["scenario_id"] == "porto"
     assert doc["metrics"] == {
         "scenario_id": "porto",
-        "track_version": "porto-v1",
+        "track_version": "porto-v2",
     }
     track = (SCENARIO.parent / doc["track"]).resolve()
     assert track == TRACK
