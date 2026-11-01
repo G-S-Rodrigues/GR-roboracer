@@ -19,5 +19,5 @@ relative to the working directory). Arguments: `docs/configuration.md`. Tests: `
 
 Trap: the planner resolver fails closed (BRINGUP-1160); it never falls back to the centerline,
 except `track_centerline` on a map with no `<map>_raceline.csv` (Porto), whose speed is 0, so
-`speed_source:=trajectory` there is refused (BRINGUP-1680). `simulator`, `autodrive_bridge` and
-`autodrive_port` pick the simulator (`docs/configuration.md`).
+`speed_source:=trajectory` there is refused (BRINGUP-1680). `simulator`, `autodrive_*` pick the
+simulator; `raceline_optimizer` (`tum_mincurv_iqp` default | `tum_mintime`) the solver (docs/configuration.md).

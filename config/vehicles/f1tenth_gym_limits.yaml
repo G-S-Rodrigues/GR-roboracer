@@ -35,7 +35,7 @@
 
 racing_sim:
   ros__parameters:
-    # rear_axle -> laser: the URDF joint rear_axle_to_laser's origin
+    # rear_axle -> lidar: the URDF joint rear_axle_to_lidar's origin
     # (racing_vehicle_description/urdf/f1tenth.urdf), planar part only,
     # measured from the rear axle (the sim casts at laser_x - lr from the CoG).
     # BRINGUP-1050 fails if these and the URDF disagree.
