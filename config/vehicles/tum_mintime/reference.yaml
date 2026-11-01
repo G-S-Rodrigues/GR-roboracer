@@ -55,9 +55,11 @@ tyres:
 #     and body extent: 0.04712 x (3.47/3.74) x
 #     ((0.50^2+0.27^2)/(0.58^2+0.31^2)). Not modelled: Rigidbody angular drag
 #     0.1 (SRC angular_drag, prefab :31649).
-#   wheelbase_front 0.17468: VEH racing_controller_baseline.wheelbase 0.33 (=
-#     SRC wheelbase_m) minus lr 0.15532; check_dynamics holds lf + lr to VEH's
-#     wheelbase within 1 mm.
+#   wheelbase_front 0.16868: VEH racing_controller_baseline.wheelbase 0.324
+#     (= SRC wheelbase_table_m, guide :180, = prefab Ackermann field 324 mm
+#     :31695; owner 2026-11-01) minus lr 0.15532; check_dynamics holds lf + lr
+#     to VEH's wheelbase within 1 mm, CHECK-1795 exactly. The TF/collider
+#     front-wheel x is 0.33 (SRC wheelbase_m); not used here.
 #   wheelbase_rear 0.15532: SRC com_x_lr_m; VEH header "lr = 0.15532".
 #   cog_z 0.07354: ID measurements.rest_height.value (n 12242); VEH header "h =
 #     0.0735".

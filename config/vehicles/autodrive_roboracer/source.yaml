@@ -48,9 +48,10 @@ values:
   # wheel radius above the ground). lr = x; com_z feeds h = z at rest + com_z.
   com_x_lr_m: {value: 0.15532, source: guide, line: 189, read_from_build: false}
   com_z_above_rear_axle_m: {value: 0.01434, source: guide, line: 189, read_from_build: false}
-  # Wheelbase: the collider geometry (front wheel x in the guide's TF, which
-  # also makes 0.09 + 0.33 + 0.08 the 0.50 m body) against the table value and
-  # the prefab's Ackermann field, which the Ackermann formula alone uses.
+  # Wheelbase: wheelbase_table_m (= the prefab's Ackermann field) is the
+  # stack's wheelbase (owner 2026-11-01; read by the vehicle file and TUM,
+  # CHECK-1795). wheelbase_m is the front-wheel x of the guide's TF and the
+  # colliders (the drawing; 0.09 + 0.33 + 0.08 is the 0.50 m body, DESC-1060/1070).
   wheelbase_m: {value: 0.33, source: guide, line: 154, read_from_build: false}
   wheelbase_table_m: {value: 0.324, source: guide, line: 180, read_from_build: false}
   wheelbase_prefab_field_mm: {value: 324, source: prefab, line: 31695, read_from_build: false}
