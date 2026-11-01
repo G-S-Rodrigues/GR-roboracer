@@ -160,6 +160,15 @@ roles:
       - ros_ws/src/racing_controller_baseline/*
     verified_by:
       [SIM-3030, SIM-3040, SIM-3050, SIM-3090, ACC-4010, ACC-4020, ACC-4040]
+    # Selected by `controller:=follow_the_gap` on sim_pure_pursuit.launch.py;
+    # listed, not ranked (ADR 0005). Scan-only: it needs no centerline, so it
+    # drives a track nobody has mapped (#44 part 11a).
+    alternatives:
+      - implementation: follow_the_gap
+        package: racing_controller_follow_the_gap
+        paths:
+          - ros_ws/src/racing_controller_follow_the_gap/*
+        verified_by: [SIM-3170]
   safety:
     implementation: safety_supervisor
     package: racing_safety_supervisor

@@ -17,6 +17,7 @@ from test_bringup_contract import (
     REPOSITORY_ROOT,
     _launch_context,
     _merged,
+    _node_parameters,
 )
 
 AUTODRIVE_VEHICLE = "config/vehicles/autodrive_roboracer.yaml"
@@ -447,3 +448,169 @@ def test_bringup_1910_laps_reaches_the_metrics_node() -> None:
     assert carrying == ["racing_metrics"]
     metrics = [n for n in nodes if n._Node__package == "racing_metrics"]
     assert int(_merged(context, metrics[0])["laps"]) == 12
+
+
+def _controller_roles() -> list[str]:
+    controller = _roles()["controller"]
+    return [
+        controller["implementation"],
+        *(a["implementation"] for a in controller.get("alternatives", [])),
+    ]
+
+
+def _remappings(node) -> list:
+    return [
+        tuple("".join(part.text for part in side) for side in pair)
+        for pair in (node._Node__remappings or [])
+    ]
+
+
+def test_bringup_1920_controller_choices_are_the_reference_stack_ones() -> None:
+    """BRINGUP-1920 (#44 part 11a): `controller` is a launch argument whose
+    choices are exactly the implementations `reference_stack.yaml` names for
+    the role and `CONTROLLERS`, the default being Pure Pursuit (ADR 0005:
+    added, never replaced); every alternative's package is a literal
+    `Node(package=...)` in the launch, as BRINGUP-1600 asks for the
+    simulator's (BRINGUP-1030 checks only the default's)."""
+    from racing_bringup import scenario_parameters
+
+    module, _ = _launch_context()
+    argument = _declared(module)["controller"]
+    named = _controller_roles()
+    assert sorted(argument.choices) == sorted(named)
+    assert sorted(scenario_parameters.CONTROLLERS) == sorted(named)
+    default = "".join(part.text for part in argument.default_value)
+    assert default == _roles()["controller"]["implementation"]
+    assert default == "pure_pursuit"
+    tree = ast.parse(LAUNCH_FILE.read_text(encoding="utf-8"))
+    literal_packages = {
+        keyword.value.value
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call) and getattr(call.func, "id", "") == "Node"
+        for keyword in call.keywords
+        if keyword.arg == "package" and isinstance(keyword.value, ast.Constant)
+    }
+    for alternative in _roles()["controller"].get("alternatives", []):
+        assert alternative["package"] in literal_packages, alternative
+
+
+def test_bringup_1930_controller_selects_the_node_that_launches() -> None:
+    """BRINGUP-1930: `controller:=follow_the_gap` launches
+    racing_controller_follow_the_gap (with the vehicle file and the
+    capability's `use_sim_time`, no pose remap: it reads no pose) and no
+    racing_controller_baseline; the default launches Pure Pursuit with the
+    parameters and remappings it had before the argument existed; an unknown
+    value raises RuntimeError. An undeclared launch argument is silently
+    ignored by ROS 2, which is what the first half of this case catches."""
+    module, context = _launch_context()
+    nodes = _nodes(module, context)
+    packages = _packages(nodes)
+    assert "racing_controller_baseline" in packages
+    assert "racing_controller_follow_the_gap" not in packages
+    baseline = nodes[packages.index("racing_controller_baseline")]
+    assert ("/odom", "/ground_truth/odom") in _remappings(baseline)
+    assert all(r[0] != "/controller/drive" for r in _remappings(baseline))
+    module, context = _launch_context(controller="follow_the_gap", **AUTODRIVE)
+    nodes = _nodes(module, context)
+    packages = _packages(nodes)
+    assert "racing_controller_baseline" not in packages
+    assert packages.count("racing_controller_follow_the_gap") == 1
+    node = nodes[packages.index("racing_controller_follow_the_gap")]
+    assert _remappings(node) == []
+    params = _merged(context, node)
+    assert params["use_sim_time"] is False  # AutoDRIVE: free-running clock
+    from launch.utilities import perform_substitutions
+
+    files = [
+        perform_substitutions(context, list(e.param_file))
+        for e in _node_parameters(context, node)
+        if hasattr(e, "param_file")
+    ]
+    assert any(f.endswith(AUTODRIVE_VEHICLE) for f in files), files
+
+    module, context = _launch_context(controller="follow_the_gap")
+    node = next(
+        n
+        for n in _nodes(module, context)
+        if n._Node__package == "racing_controller_follow_the_gap"
+    )
+    assert _merged(context, node)["use_sim_time"] is True  # the gym
+
+    module, context = _launch_context(controller="wall_follow")
+    with pytest.raises(RuntimeError, match="controller"):
+        _nodes(module, context)
+
+
+def test_bringup_1950_controller_hold_reaches_follow_the_gap_only() -> None:
+    """BRINGUP-1950: `controller_hold:=true` (default false) starts
+    follow_the_gap with `hold: true`, so it publishes zero commands until a
+    test releases it after a simulator reset; Pure Pursuit has no hold, so
+    the flag with `controller:=pure_pursuit` is refused rather than ignored."""
+    module, context = _launch_context(controller="follow_the_gap")
+    assert "controller_hold" in _declared(module)
+    node = next(
+        n
+        for n in _nodes(module, context)
+        if n._Node__package == "racing_controller_follow_the_gap"
+    )
+    assert _merged(context, node)["hold"] is False
+    module, context = _launch_context(
+        controller="follow_the_gap", controller_hold="true", **AUTODRIVE
+    )
+    node = next(
+        n
+        for n in _nodes(module, context)
+        if n._Node__package == "racing_controller_follow_the_gap"
+    )
+    assert _merged(context, node)["hold"] is True
+    module, context = _launch_context(controller_hold="true")
+    with pytest.raises(RuntimeError, match="controller_hold"):
+        _nodes(module, context)
+
+
+def _mapper_use_sim_time(**overrides: str):
+    """The `use_sim_time` the survey launch gives slam_toolbox: the launch
+    file's OpaqueFunction evaluated in a context holding `overrides`."""
+    import importlib.util
+
+    from launch import LaunchContext
+    from launch.actions import OpaqueFunction
+
+    path = REPOSITORY_ROOT / (
+        "ros_ws/src/racing_bringup/launch/slam_toolbox_mapping.launch.py"
+    )
+    spec = importlib.util.spec_from_file_location("mapping_launch", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    context = LaunchContext()
+    context.launch_configurations.update(overrides)
+    produced = []
+    for entity in module.generate_launch_description().entities:
+        if isinstance(entity, OpaqueFunction):
+            produced.extend(entity.execute(context) or [])
+        else:
+            produced.append(entity)
+    mappers = [
+        e for e in produced if getattr(e, "_Node__package", "") == "slam_toolbox"
+    ]
+    assert len(mappers) == 1, produced
+    return _merged(context, mappers[0])["use_sim_time"], context, module
+
+
+def test_bringup_1940_the_mapper_reads_the_clock_the_simulator_owns() -> None:
+    """BRINGUP-1940: under `simulator:=autodrive` (no /clock, ADR 0006) the
+    survey mapper runs on wall time; under the gym it stays on sim time.
+
+    The mapper used to take estimators.py's default (True) whatever the
+    simulator: it then waited for a /clock AutoDRIVE never publishes and
+    built no map. The gym case is the non-regression half (SIM-5010 reruns
+    the gym survey nightly). An unknown simulator is an error."""
+    use_sim_time, _, _ = _mapper_use_sim_time(simulator="autodrive")
+    assert use_sim_time is False
+    use_sim_time, _, _ = _mapper_use_sim_time(simulator="f1tenth_gym_jax")
+    assert use_sim_time is True
+    use_sim_time, _, _ = _mapper_use_sim_time()  # the argument's default
+    assert use_sim_time is True
+    with pytest.raises(RuntimeError, match="simulator"):
+        _mapper_use_sim_time(simulator="no_such_sim")

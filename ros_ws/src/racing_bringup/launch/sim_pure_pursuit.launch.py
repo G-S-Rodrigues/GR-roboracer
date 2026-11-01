@@ -21,6 +21,7 @@ from launch_ros.actions import Node
 from racing_bringup.estimators import amcl, mola, slam_toolbox
 from racing_bringup.scenario_parameters import (
     AUTODRIVE_BRIDGES,
+    CONTROLLERS,
     GYM_INCOMPATIBLE_VEHICLES,
     PLANNERS,
     RACELINE_OPTIMIZERS,
@@ -368,6 +369,28 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         if not driving_on_estimate
         else [("/odom", ESTIMATED_POSE)],
     )
+    # `controller:=follow_the_gap` replaces the Pure Pursuit node above with a
+    # scan-only one (#44 part 11a); the Pure Pursuit Node text is untouched.
+    controller = LaunchConfiguration("controller").perform(context)
+    if controller not in CONTROLLERS:
+        raise RuntimeError(f"unknown controller: {controller}")
+    controller_hold = LaunchConfiguration("controller_hold").perform(
+        context
+    ).lower() in ("true", "1")
+    if controller_hold and controller != "follow_the_gap":
+        raise RuntimeError(
+            "controller_hold:=true needs controller:=follow_the_gap: Pure "
+            "Pursuit has no hold"
+        )
+    if controller == "follow_the_gap":
+        controller_node = Node(
+            package="racing_controller_follow_the_gap",
+            executable="racing_controller_follow_the_gap_node",
+            parameters=[
+                vehicle,
+                {"use_sim_time": use_sim_time, "hold": controller_hold},
+            ],
+        )
     supervisor_node = Node(
         package="racing_safety_supervisor",
         executable="racing_safety_supervisor_node",
@@ -532,6 +555,12 @@ def generate_launch_description() -> LaunchDescription:
     drive_on_estimate_arg = DeclareLaunchArgument(
         "drive_on_estimate", default_value="true"
     )
+    controller_arg = DeclareLaunchArgument(
+        "controller", default_value="pure_pursuit", choices=list(CONTROLLERS)
+    )
+    controller_hold_arg = DeclareLaunchArgument(
+        "controller_hold", default_value="false"
+    )
     planner_arg = DeclareLaunchArgument(
         "planner", default_value="track_centerline", choices=list(PLANNERS)
     )
@@ -563,6 +592,8 @@ def generate_launch_description() -> LaunchDescription:
             estimate_topic_arg,
             pose_source_arg,
             drive_on_estimate_arg,
+            controller_arg,
+            controller_hold_arg,
             planner_arg,
             raceline_optimizer_arg,
             speed_source_arg,

@@ -25,6 +25,7 @@ control:
   - SIM-3010
   - SIM-3020
   - SIM-3090
+  - SIM-3170
   - ACC-4010
   - ACC-4020
 shared:

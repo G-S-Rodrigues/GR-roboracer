@@ -391,7 +391,8 @@ def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
     """BRINGUP-1090: `vehicle:=` selects the vehicle file for every node that
     reads one, defaults to today's file, and a missing file is an error.
 
-    Six nodes take the vehicle file. A node left on the constant would run
+    Seven nodes take the vehicle file (the seventh, follow_the_gap, only
+    when `controller:=follow_the_gap` selects it). A node left on the constant would run
     one vehicle's caps beside another's, which reads as a plausible lap and
     nothing else.
     """
@@ -443,6 +444,7 @@ def test_bringup_1090_the_vehicle_is_a_launch_argument(monkeypatch) -> None:
         "racing_sim_gym_jax",
         "racing_bringup",
         "racing_controller_baseline",
+        "racing_controller_follow_the_gap",
         "racing_safety_supervisor",
         "racing_metrics",
         "racing_recording",

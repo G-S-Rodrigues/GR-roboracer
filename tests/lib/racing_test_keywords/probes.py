@@ -244,3 +244,18 @@ class LastMapProbe(_Probe):
             info.resolution,
             (info.origin.position.x, info.origin.position.y),
         )
+
+
+class NodeNamesProbe(_Probe):
+    """The node names on the graph the instant t=0 starts (SIM-3170 reads
+    which controller ran). It subscribes to nothing."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.names: frozenset[str] = frozenset()
+
+    def attach(self, node) -> None:
+        self._node = node
+
+    def started(self) -> None:
+        self.names = frozenset(self._node.get_node_names())
