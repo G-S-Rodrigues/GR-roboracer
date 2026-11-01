@@ -87,6 +87,10 @@ Traps any task in this repository can hit. Each one cost real time at least once
     best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
     STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
     latch (Step 1) and 1 of 48 lag runs (Step A).
+    Every gym runner in `tests/lib/racing_test_keywords/scenario_runner.py` takes this t=0 (SIM-3610/3620
+    on AutoDRIVE launch free-running by design, ADR 0006). ACC-4020's injector ran free until F2 and
+    latched in 4 of 15 runs on main, against 0 of 15 on the fix; CHECK-2250 fails a gym runner that
+    does not.
 
 10. **A stale ROS graph outlives the launch that started it.** `pkill -f 'ros2 launch'` kills the
     launcher and leaves every node running; they keep publishing on the same `ROS_DOMAIN_ID` and
@@ -325,3 +329,23 @@ Traps any task in this repository can hit. Each one cost real time at least once
     prefix it counts the global `/drive`, and another package's `/drive` publisher can make it
     lockstep-wait at `time_scale` 5.0. No endpoint exists for a probe to see; fixing it is a
     production-node change.
+
+40. **The devkit's `/tf` claims `lidar`.** The official bridge publishes `world -> roboracer_1 -> lidar` on the
+    global `/tf` of its domain. A stack on that domain gets a second parent for `lidar`, and
+    `base_link -> lidar` breaks with no error. Symptom: a scan that jumps in RViz, or a TF lookup that
+    flips between parents. Remedy: the devkit runs on its own domain and front end B reads it through a
+    second context; the launch refuses `autodrive_devkit_domain` equal to the stack's (BRINGUP-1690;
+    SIMAD-2250 guards the isolation).
+
+41. **The devkit latches every command, so a dead consumer leaves the car driving or resetting.** Its
+    steering, throttle and reset topics hold their last value and are replied on every frame. If B dies
+    after publishing a throttle or a reset True, the car keeps that command. B zeroes the latch on
+    shutdown (SIMAD-2230, own SIGINT handling); a SIGKILL cannot (by design: it is uncatchable), so
+    after one, publish zero yourself on the devkit domain D, for each of the three topics:
+    `ros2 topic pub --once /autodrive/roboracer_1/throttle_command std_msgs/msg/Float32 '{data: 0.0}'`,
+    the same with `steering_command`, and `ros2 topic pub --once /autodrive/reset_command std_msgs/msg/Bool
+    '{data: false}'`, each under `ROS_DOMAIN_ID=D`.
+
+42. **The official bridge's commands lag one frame.** A command published for frame n reaches the car at
+    frame n+1 (measured 1 frame in SIM-3710; accepted up to 3). Recorded and measured, not compensated.
+

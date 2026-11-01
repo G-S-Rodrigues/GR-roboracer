@@ -14,3 +14,5 @@ string code_revision
 string container_image_digest
 string track_version
 string vehicle_parameter_version
+uint32 laps_completed
+float64[] lap_times

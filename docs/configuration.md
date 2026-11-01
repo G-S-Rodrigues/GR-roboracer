@@ -81,21 +81,34 @@ env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
 gym. It listens on a Socket.IO port that the AutoDRIVE simulator connects to once, so start the
 launch first. Its arguments:
 
-- `autodrive_bridge:=ours` (default) or `official`; `official` (the devkit's own bridge) is not
-  built yet and is refused.
+- `autodrive_bridge:=ours` (default) or `official`. `official` runs `racing_sim_autodrive_devkit`,
+  which talks to the devkit's own bridge (a ROS 2 Humble container) over DDS instead of listening for the
+  simulator itself, so `autodrive_port` does not apply to it. The devkit must run on its own ROS domain,
+  `autodrive_devkit_domain:=<n>` (an integer 0-101, required with `official`, and different from the
+  launch's `ROS_DOMAIN_ID`): the devkit publishes a global `/tf` with a `lidar` frame that would break
+  `base_link -> lidar` on the stack's domain, so the launch refuses a shared domain. The contract topics
+  are the same as `ours`; the commands reach the car one frame later (the devkit latches each command and
+  applies it on the next frame).
 - `autodrive_port:=` the port the server listens on (default `4567`, `bridge_port` in
   `config/autodrive/simulator.yaml`).
 
 The server's vehicle values are in `config/vehicles/autodrive_roboracer/server.yaml`, one comment per
 value, and where AutoDRIVE's world sits in the Porto map is in `config/autodrive/porto_frame.yaml`
-(rotation 90 degrees, translation (-2.9, 1.2) m, derived from two fits and not yet measured from a
-lap). The simulator has no time scaling and no held start, so `time_scale` other than 1 and
+(rotation 90 degrees, translation (-2.84, 1.17) m, measured from a live 12-lap run's lidar). The simulator has no time scaling and no held start, so `time_scale` other than 1 and
 `start_held:=true` are errors; so are any vehicle but `autodrive_roboracer` and any scenario but
 `porto`, the only track the build has active. Every node then runs on wall time (`use_sim_time`
 false), because AutoDRIVE publishes no clock. `seed` is accepted; a reset returns to the start pose.
 
-Status: the launch is tested against a recorded AutoDRIVE stream, not yet against the live
-simulator, so the capability table still lists it as in development.
+- `laps:=<n>` (default `1`, every simulator) is how many laps end the run; `/scenario/metrics` then carries
+  `laps_completed` and one `lap_times` entry per lap.
+- `/racing_sim/autodrive_counters` (`racing_interfaces/SimCounters`) carries the simulator's own lap and collision
+  counters. It is for debugging and cross-checks only (the league restricts these counters at race time), and no
+  stack node reads it.
+
+Status: the launch is tested against a recorded AutoDRIVE stream, through either bridge (with a
+stand-in for the devkit under `official`), and live through `ours` on Porto by `scripts/autodrive_qualify.sh`
+(see [running](running.md)). The capability table still lists it as in development: the unseen-map workflow is
+not built.
 
 ## Runtime controls
 

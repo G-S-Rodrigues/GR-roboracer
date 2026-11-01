@@ -75,10 +75,45 @@ route needs the Windows sim running against it, not an offline replay.
 
 `simulator:=autodrive` on `sim_pure_pursuit.launch.py` starts our server (`autodrive_bridge:=ours`);
 the argument table and refusals are in `docs/configuration.md`. `config/autodrive/porto_frame.yaml`
-is `measured: derived` (two offline fits, tx +-0.15 m); part 10's lap measures it. SIM-3610 drives the
+is `measured: measured` (part 10: a fit of 29902 lidar endpoints of a live 12-lap run to the map image's walls, residual 0.062 m, +0.06 m in x against the derived value; `tools/autodrive_frame_measure.py` redoes it). SIM-3610 drives the
 whole launch from the recorded stream on an ephemeral port and judges STALE_INPUT against the data,
 not the replay process: any latch stamped at or before the last `/ground_truth/odom` fails, and the
 end-of-stream latch (commands stop, the supervisor latches 100 ms later) must arrive. A mid-stream
 latch after an odom gap of 100 ms or more is reported as a stand-in stall. The
 sim races the track clockwise while `porto.yaml`'s centerline is counter-clockwise (open topic
 porto-race-direction); Pure Pursuit on that centerline is part 10's to settle.
+
+## Front end B, the official devkit bridge (part 9)
+
+`autodrive_bridge:=official` runs `racing_sim_autodrive_devkit` (node `racing_sim`) in place of the server.
+The devkit container bridges the simulator's Socket.IO to 13 ROS topics on its own domain `D`; B holds two
+rclpy contexts, the stack's and `D`, and feeds the same `BridgeSession` as A through `on_sim_frame`. Frames are
+assembled by DDS `publication_sequence_number` (a gap is a lost frame, dropped and counted, never paired
+across). A frame whose stamps spread beyond `SKEW_S` = 75 ms (a publisher stalled mid-burst; measured 2026-10-31 over ~3300 stand-in frames per condition, source_timestamp spread max 13.6 ms and p99 2.9 ms unloaded, max 36.7 ms and p99 18.8 ms under `taskset -c 0,1` plus 4 busy loops, bar one 276 ms outlier; 75 ms is 2x the loaded max) is dropped alone and
+counted as `stamp_dropped`, with no resync; ips != odom, a sequence regression or a backlog still resyncs. The stamp and `dt` come from the devkit's `lidar` header stamp. Commands are latched on the devkit:
+steering and throttle are published once per assembled frame (not as `/drive` arrives), and reset is held True until the session sees the reset take
+effect, then False.
+
+Three places hold its tests, by what each needs:
+- CI-able: tier 1 `SIMAD-14xx`, tier 2 `SIMAD-22xx`, the conformance row `autodrive_official`, and tier 3
+  `SIM-3620` (the whole launch against `racing_sim_autodrive.devkit_standin`).
+- Local, with the devkit container and no simulator: `tests/autodrive/` holds `SIM-3710` (B equals A on the
+  contract, command lag at most 3 frames) and `SIM-3720` (the stand-in equals the real devkit). They fail,
+  never skip, while the container is down. Never move them under `tests/system/`. Run, from `dev`:
+  `AUTODRIVE_ROS_DOMAIN_ID=64 docker compose -f docker/docker-compose.yaml --profile autodrive up -d --no-deps autodrive-devkit`,
+  then `ROS_DOMAIN_ID=62 AUTODRIVE_ROS_DOMAIN_ID=64 python3 -m pytest tests/autodrive -s`. Run them on every
+  edition bump.
+- Live, with the simulator: a manual slot after the PR.
+
+## First drive (part 10)
+
+- Porto runs **clockwise** (the sim's lap counter increments 12 times with the regenerated `config/tracks/porto.yaml`).
+  The spawn lands within 0.05 m of the mapped start. Measured live, three runs: lap 13.73 s, stack and sim lap times within
+  0.05 s, 0 collisions, qualification score 137.3 s, `/ground_truth/odom` max gap 54-80 ms (median 6 ms), no STALE_INPUT.
+- `tests/autodrive/test_sim_3730_porto_qualification.py` is the live check, run by `scripts/autodrive_qualify.sh`. It is in
+  no gate (no gate has a sim), fails rather than skips, and the simulator container serves one run.
+- `/racing_sim/autodrive_counters` is debug-only (league rules restrict the counters at race time).
+- Known problems: `racing_metrics`' collision threshold (0.01 m) is below the AutoDRIVE lidar's 0.06 m `range_min`, so its count
+  cannot see a contact and the sim's counter is the collision truth here; stack lap 1 is longer than the sim's (the stack
+  times from the reset, the sim from the line) and is not compared; lap times are wall-clock in the stack and Unity time in the
+  sim; SIM-3730 is not in CI; the official-bridge (front end B) run of this was not rehearsed.
