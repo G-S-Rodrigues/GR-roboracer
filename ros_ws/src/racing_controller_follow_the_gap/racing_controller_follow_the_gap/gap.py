@@ -28,7 +28,7 @@ class Parameters:
     bubble_radius: float = 0.3
     # Ranges are clipped here, m: a far wall is not a better target than a
     # near free one, and `inf` (no return) must not win by being infinite.
-    max_range: float = 4.0
+    max_range: float = 2.0
     # Beams outside +-fov/2 are ignored, rad (200 degrees).
     fov: float = 3.49
     # A beam is free when its range exceeds this, m.
@@ -37,7 +37,7 @@ class Parameters:
     steering_gain: float = 1.0
     minimum_speed: float = 0.8
     maximum_speed: float = 2.0
-    clearance_for_full_speed: float = 3.0
+    clearance_for_full_speed: float = 2.0
     # A standing start spins the wheels (part 11a measured 0.9 m of phantom
     # odometry from a full-throttle launch), so the speed is capped at
     # minimum_speed + launch_acceleration * t after release.
