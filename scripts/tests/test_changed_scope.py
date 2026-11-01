@@ -402,7 +402,7 @@ def test_check_1150_the_real_map_loads_with_its_shape() -> None:
     assert set(amcl.verified_by) == {"SIM-3080", "ACC-4030", "ACC-4040"}
     assert set(stack.system_tests) == {
         f"SIM-{n}" for n in range(3010, 3121, 10)
-    } | {"SIM-3510", "SIM-3610", "SIM-3620"}
+    } | {"SIM-3510", "SIM-3530", "SIM-3610", "SIM-3620"}
     assert set(stack.acceptance_tags) == {
         "ACC-4010",
         "ACC-4020",
@@ -922,8 +922,8 @@ def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
 ):
     """CHECK-1420: the planner's default is `track_centerline`, the committed
     racelines belong to the `optimized_raceline` alternative that SIM-3110
-    verifies, and a change to one selects that test rather than the whole
-    tree."""
+    verifies, and a change to one selects that test and ACC-4040's raceline
+    case (the lap driving on amcl's estimate) rather than the whole tree."""
     stack = load_stack(REPO_ROOT)
     deps = reverse_dependents(read_manifests(REPO_ROOT))
 
@@ -939,6 +939,7 @@ def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
     assert alternatives["optimized_raceline"]["verified_by"] == [
         "SIM-3110",
         "SIM-3120",
+        "ACC-4040",
     ]
 
     scope = select_ready(
@@ -948,7 +949,12 @@ def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
     )
 
     assert scope.whole_tree is False
-    assert set(scope.tests) == {"SIM-3020", "SIM-3110", "SIM-3120"}
+    assert set(scope.tests) == {
+        "SIM-3020",
+        "SIM-3110",
+        "SIM-3120",
+        "ACC-4040",
+    }
 
 
 def test_check_1170_real_map_instrument_couplings() -> None:

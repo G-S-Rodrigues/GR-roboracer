@@ -17,6 +17,9 @@ The metric does no alignment. A method whose map frame is not the world frame
 must transform its grid first. Percentiles use numpy's linear interpolation.
 """
 
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -218,3 +221,53 @@ def map_to_wall(produced: Grid, truth: Grid) -> MapAccuracy:
         signed_median=float(np.median(signed)),
         signed_mean=float(signed.mean()),
     )
+
+
+def scenario_truth_grid(scenario_path: Path) -> Grid:
+    """The scenario's gym map image, what the simulated lidar hits.
+
+    `scenario_path` is a config/scenarios/<name>.yaml; it names the map
+    (`environment.map`) under `map_directory`, beside the file.
+    """
+    scenario_path = Path(scenario_path)
+    document = yaml.safe_load(scenario_path.read_text(encoding="utf-8"))
+    name = document["environment"]["map"]
+    base = scenario_path.parent / document["map_directory"] / name
+    return load_grid(base / f"{name}.yaml")
+
+
+def mm_layer_points(mm: Path, layer: str, work: Path) -> np.ndarray:
+    """The (x, y) of `layer`'s points in the metric map `mm`, from mm2txt.
+
+    Shells out to `mm2txt` (mp2p_icp: ROS must be sourced), which writes
+    `<mm stem>_<layer>.txt` into `work`, its working directory; the map stays
+    ROS-free. Works for a voxel layer's occupied voxel centres.
+    """
+    work = Path(work)
+    work.mkdir(parents=True, exist_ok=True)
+    tool = shutil.which("mm2txt")
+    if not tool:
+        raise FileNotFoundError(
+            "mm2txt is not on PATH: source /opt/ros/jazzy/setup.bash"
+        )
+    subprocess.run(
+        [tool, str(Path(mm).resolve())],
+        cwd=work,
+        check=True,
+        capture_output=True,
+        env=os.environ,
+    )
+    return np.loadtxt(work / f"{Path(mm).stem}_{layer}.txt")[:, :2]
+
+
+def nearest_p95(points: np.ndarray, reference: np.ndarray) -> float:
+    """The 95th percentile of each of `points`' distance to the nearest
+    point of `reference` (numpy's linear interpolation).
+
+    scipy comes through pip, as a dependency of jax and f1tenth_gym_jax in
+    the dev image, not through apt; it is imported here so that importers of
+    this module that never call this function need no scipy.
+    """
+    from scipy.spatial import cKDTree
+
+    return float(np.percentile(cKDTree(reference).query(points)[0], 95))

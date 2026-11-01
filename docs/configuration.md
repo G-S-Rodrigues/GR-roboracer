@@ -64,10 +64,12 @@ the default's, and its laser mount is the true 0.2733 m, which matches its own d
 resolution, about 47 MB). To look at it: `ros2 launch racing_vehicle_description display.launch.py vehicle:=config/vehicles/autodrive_roboracer.yaml`. The measured values (top speed not measured, braking
 depending on speed) are under [AutoDRIVE car identification](results.md#autodrive-car-identification).
 
-Its minimum-time dynamics file, `config/vehicles/autodrive_roboracer/tum_mintime.yaml`, is derived from
-the same sources and AutoDRIVE's simulator code, with each value's provenance in
-`config/vehicles/tum_mintime/reference.yaml`. The car has no tyre set, so `raceline_optimizer:=tum_mintime` cannot run on it yet, and no committed
-raceline of either kind (minimum-curvature or minimum-time) exists for it.
+Its minimum-time dynamics file, `config/vehicles/autodrive_roboracer/tum_mintime.yaml`, is derived
+from the same sources and AutoDRIVE's simulator code, with each value's provenance in
+`config/vehicles/tum_mintime/reference.yaml`. Its tyre set is a stand-in copy of the F1TENTH gym fit
+(provenance in `reference.yaml`), so the offline optimizer can build a minimum-time line for it, but
+no committed raceline of either kind (minimum-curvature or minimum-time) exists for it, so
+`planner:=optimized_raceline` has none to load on it yet.
 
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):
@@ -137,6 +139,17 @@ scored, and its default already follows the pose source. Both stay today-only ad
 ## Visualization
 
 `visualization.rviz` opens RViz (`use_rviz:=`). The supported mapping script always turns it off.
+
+## MOLA mapping launch
+
+`mola_mapping.launch.py` runs MOLA-LO's mapping lap and nothing else; `scripts/mola_map_track.sh`
+starts it beside the held stack and is the supported entry point
+([the MOLA map](workflows/mapping.md#the-mola-map)).
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `simplemap_output` | required | Where MOLA writes the lap's `.simplemap` when it is stopped. |
+| `configuration` | `config/localization/mola_lidar2d_mapping.yaml` | MOLA-LO's launch arguments, as a yaml. |
 
 ## Mapping example
 
