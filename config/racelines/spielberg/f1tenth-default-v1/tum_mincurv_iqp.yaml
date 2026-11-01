@@ -15,20 +15,24 @@ ground_truth_map:
   image_sha256: c3e2a362ce5faa5180317a7d5812be4c7e3ae22bb5c8b0d3f688f99fb6081cbb
 vehicle:
   path: config/vehicles/f1tenth_default.yaml
-  sha256: ffe825d083c87fcacb588c34293069684adf633baddb09c24933dd5b3278cde9
+  sha256: 1a7be711f78a22811b46ed3367983dd977b2cf86ec06a0a2f7779aa462be7eed
   ggv_sha256: 0ecbace704e9c30cfef04a08f6d43e8c99e4c85ad135ba0bd7b2497ed6d5c5c9
   ax_max_machines_sha256: 0f17ea3c0efd599026ef7bebb1fd3325da39cf81689f8f7ad3bf473449b1bbd8
 code:
+  raceline/__main__.py: b76b3eeae7aa274feaba2fe2744e4bd2523c3bc0
   raceline/extract.py: 9ba6b219cd34d0a72d6253b0267d47529c30b4c0
   raceline/geometry.py: 4c585f7c0f19531314025a69f0401c4ccc41e6b1
-  raceline/optimize.py: 1e250b2cbc302098f55eb836675a69b81bc344b0
+  raceline/optimize.py: 97f8053fa1a6caaaf2831a34d56df6716a9c0e65
   raceline/track.py: a9f334b165f2bb0d5e24b5e8f1371388b7459510
-  raceline/tum.py: cc271072780e34cf9f9297afad595639cf65e0ea
-  raceline/vehicle.py: bd92ebb5715e9322ba5bd9baa157566a14066adf
-  raceline/verify.py: ec17163cd385810705df7a786d3afb3758345832
+  raceline/tum.py: 605d04c92b05ddda157872287999c7a434ba79c1
+  raceline/vehicle.py: e02f20a99b6836d9423747051717104e558eb97b
+  raceline/verify.py: 4392abaeaeab73b762eaf130a3e6ec310d7202af
+  tum_env/pyproject.toml: a85e0123eb63160bad89f0d22a1dd7c739973ce7
   tum_env/run_tum.py: 8d63a410134d23d0999b8ab55024529820fe9932
+  tum_env/run_tum_mintime.py: b1d41cc5530b38195eedfa69fb3bd95a12119ecb
+  tum_env/uv.lock: 3d5f178c30769350699cf0f2d7e1640e336e9260
 tum:
-  global-racetrajectory-optimization: global-racetrajectory-optimization @ git+https://github.com/ForzaETH/global_racetrajectory_optimization@b1b38ecfefec7200d5bcb243f115af1d795b3766
+  global-racetrajectory-optimization: global-racetrajectory-optimization @ git+https://github.com/G-S-Rodrigues/GR-roboracer-global_racetrajectory_optimization@8bedf4ca460c37efec2af251ce1ccd17ef377db2
   trajectory-planning-helpers: trajectory-planning-helpers==0.78
 parameters:
   margin: 0.3

@@ -14,6 +14,7 @@ import pytest
 
 from scripts.raceline_report import (
     compare_lines,
+    mintime_code_changed,
     normalise_command,
     provenance_diff,
     raceline_geometry,
@@ -492,6 +493,56 @@ def test_check_1490_normalise_round_trip() -> None:
         command + " --out-dir /tmp/x"
     )
     assert normalise_command(command) == command
+
+
+# CHECK-1560 / CHECK-1570 -----------------------------------------------
+
+
+def test_check_1560_reference_is_dropped_like_out_dir() -> None:
+    base = "python -m raceline --map a.yaml --optimizer tum_mintime"
+    with_reference = base + " --reference config/x/reference/tum_mintime.csv"
+    assert normalise_command(with_reference) == normalise_command(base)
+    assert normalise_command(base + " --out-dir /t --reference r.csv") == (
+        normalise_command(base)
+    )
+    # The `=` spelling is dropped the same way.
+    assert normalise_command(
+        base + " --out-dir=/t --reference=r.csv"
+    ) == normalise_command(base)
+    # A neighbouring option is kept, and so is a value that merely looks alike.
+    other = base + " --timeout 1800 --name reference"
+    assert normalise_command(other) == other
+
+
+def _doc() -> dict:
+    return {
+        "tum": {"global-racetrajectory": "pin-a", "trajectory-planning": "x"},
+        "code": {"a.py": "1", "b.py": "2", "other.py": "9"},
+    }
+
+
+def test_check_1570_unchanged_code_reports_nothing() -> None:
+    now = {"tum": _doc()["tum"], "code": {"a.py": "1", "b.py": "2"}}
+    assert mintime_code_changed(_doc(), now) == []
+
+
+def test_check_1570_names_each_changed_pin_and_blob() -> None:
+    now = {
+        "tum": {"global-racetrajectory": "pin-b", "trajectory-planning": "x"},
+        "code": {"a.py": "1", "b.py": "changed"},
+    }
+    assert mintime_code_changed(_doc(), now) == [
+        "tum:global-racetrajectory",
+        "code:b.py",
+    ]
+
+
+def test_check_1570_a_file_new_to_the_set_and_a_dropped_pin_count() -> None:
+    now = {"tum": {"global-racetrajectory": "pin-a"}, "code": {"new.py": "1"}}
+    assert mintime_code_changed(_doc(), now) == [
+        "tum:trajectory-planning",
+        "code:new.py",
+    ]
 
 
 # CHECK-1500 -------------------------------------------------------------

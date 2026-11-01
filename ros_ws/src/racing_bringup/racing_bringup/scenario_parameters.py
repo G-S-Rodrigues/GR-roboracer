@@ -20,7 +20,7 @@ REPORTING_KEYS = ("scenario_id", "track_version")
 
 
 PLANNERS = ("track_centerline", "optimized_raceline")
-RACELINE_OPTIMIZERS = ("tum_mincurv_iqp",)
+RACELINE_OPTIMIZERS = ("tum_mincurv_iqp", "tum_mintime")
 # The simulators the launch can start (config/reference_stack.yaml's
 # `simulator` role: BRINGUP-1600), and which front end drives AutoDRIVE's.
 SIMULATORS = ("f1tenth_gym_jax", "autodrive")
