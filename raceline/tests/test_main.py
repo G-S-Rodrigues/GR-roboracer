@@ -138,19 +138,6 @@ def test_raceline_1385_a_track_run_writes_the_csv_and_provenance(
     assert doc["verdict"]["ok"] is True
 
 
-def test_raceline_1500_provenance_records_the_runner_itself(
-    monkeypatch, tmp_path
-):
-    """N5: __main__.py builds the command and the parameters, so a change to
-    it must show up as code drift in the provenance."""
-    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
-    oval = _oval_yaml(tmp_path)
-    assert runner.main(_argv(tmp_path, "--track", str(oval))) == 0
-    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
-    doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
-    assert doc["code"]["raceline/__main__.py"] == _blob(Path(runner.__file__))
-
-
 def _ring_args(tmp_path):
     grid = test_extract._ring()
     start = test_extract._ring_start()
@@ -357,7 +344,7 @@ def test_raceline_1470_no_plots_writes_none(monkeypatch, tmp_path, _no_plots):
     assert _no_plots == []
 
 
-# -- the min-time optimizer through the CLI (RACELINE-1445, 1450) -------------
+# -- the min-time optimizer through the CLI (RACELINE-1445) -------------
 
 SOLVER = {"status": "Solve_Succeeded", "iterations": 7, "wall_time_s": 1.5}
 
@@ -528,24 +515,3 @@ def test_raceline_1445_mintime_is_one_solve(monkeypatch, tmp_path):
                 tmp_path, tmp_path / "o", "--track", str(oval), "--passes", "2"
             )
         )
-
-
-def test_raceline_1450_the_code_files_cover_the_min_time_optimizer(
-    monkeypatch, tmp_path
-):
-    for name in (
-        "tum_env/run_tum_mintime.py",
-        "tum_env/pyproject.toml",
-        "tum_env/uv.lock",
-        "tum_env/run_tum.py",
-        "raceline/tum.py",
-        "raceline/optimize.py",
-    ):
-        assert name in runner.CODE_FILES
-        assert name in runner.MINTIME_CODE_FILES
-        assert (runner.PACKAGE / name).is_file(), name
-    # E-3: every file that shapes the min-time inputs counts
-    assert tuple(runner.MINTIME_CODE_FILES) == tuple(runner.CODE_FILES)
-    _, doc, _, _ = _run_mintime(monkeypatch, tmp_path, tmp_path / "out")
-    for name in runner.MINTIME_CODE_FILES:
-        assert doc["code"][name] == _blob(runner.PACKAGE / name), name

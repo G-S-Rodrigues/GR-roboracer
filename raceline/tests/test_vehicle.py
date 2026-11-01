@@ -275,12 +275,12 @@ def test_raceline_1240_loader_raises_on_a_missing_vehicle_file(tmp_path):
 REFERENCE = VEHICLES / "tum_mintime/reference.yaml"
 STEMS = ("f1tenth_default", "f1tenth_gym_limits")
 # Every committed vehicle needs a dynamics file (load_vehicle requires it); the
-# F1TENTH value pins and the tyre sets stay on STEMS.
+# tyre sets stay on STEMS.
 DYNAMICS_STEMS = sorted(p.stem for p in VEHICLES.glob("*.yaml"))
 TYRE_SETS = ("forzaeth_f110", "gym_fit")
-# Values both F1TENTH files hold (not every committed file), from the gym's
-# Param @1b4eb3f (the reference file's sources) and the 8F gym ini
-# (tire_params_mintime).
+# Only sizes the reference-key check below (len(DYNAMICS) + 9): the value pin
+# was removed by owner ruling 2026-11-01. The values come from the gym's
+# Param @1b4eb3f (the reference file's sources).
 DYNAMICS = {
     "mass": 3.74,
     "I_z": 0.04712,
@@ -299,10 +299,6 @@ DYNAMICS = {
     "c_roll": 0.0,
     "liftcoeff_front": 0.0,
     "liftcoeff_rear": 0.0,
-}
-TYRE_B = {
-    "forzaeth_f110": (7.4, 7.4),
-    "gym_fit": (4.718 / 1.2, 5.4562 / 1.2),
 }
 
 
@@ -347,32 +343,6 @@ def _assert_exists(stem, runtime):
         f"{stem} has no {runtime.relative_to(VEHICLES)}: "
         "every committed vehicle needs one"
     )
-
-
-@pytest.mark.parametrize("stem", STEMS)
-def test_raceline_1410_committed_dynamics_and_tyres_load(stem):
-    from raceline.vehicle import TYRE_SETS as KNOWN
-    from raceline.vehicle import load_tyres, load_vehicle
-
-    limits = load_vehicle(VEHICLES / f"{stem}.yaml")
-
-    for key, value in DYNAMICS.items():
-        assert getattr(limits.dynamics, key) == pytest.approx(value, abs=1e-12)
-    assert limits.dynamics_path == VEHICLES / stem / "tum_mintime.yaml"
-    assert tuple(KNOWN) == TYRE_SETS
-    for name, (b_front, b_rear) in TYRE_B.items():
-        tyres = load_tyres(limits, name)
-        assert tyres.name == name
-        assert tyres.path == VEHICLES / stem / f"tum_mintime_tyres_{name}.yaml"
-        assert tyres.f_z0 == 8.6
-        assert tyres.B_front == pytest.approx(b_front, abs=1e-12)
-        assert tyres.B_rear == pytest.approx(b_rear, abs=1e-12)
-        assert (tyres.C_front, tyres.eps_front, tyres.E_front) == (
-            1.2,
-            -0.1,
-            0.85,
-        )
-        assert (tyres.C_rear, tyres.eps_rear, tyres.E_rear) == (1.2, -0.1, 0.85)
 
 
 @pytest.mark.parametrize(

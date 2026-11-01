@@ -198,6 +198,8 @@ The AutoDRIVE isolation work (part 7.3b) added tier 1 `ADAPT-1060` (no `test_ada
 
 The min-time work (part 8) added tier 1 `RACELINE-1410/1415/1420/1425/1430/1435/1440/1445/1450/1465/1470` (`raceline/tests`; 1435 is the real chain on the oval, a few seconds), `CHECK-1560/1570`, `BRINGUP-1180` and an extension of `CHECK-1510/1520` for the `path_planning_mintime` region; tier 3 `SIM-3120`; tier 5 `SIM-5060`, which runs a solve only on a night the optimizer code changed (it records that it did not otherwise).
 
+The test-audit work (TA, owner ruling 2026-11-01) removed tier 1 `RACELINE-1500` and `RACELINE-1450`, and one test each from `RACELINE-1410` (`committed_dynamics_and_tyres_load`: the F1TENTH dynamics and tyre values), `RACELINE-1465` (`the_default_out_is_never_under_config_racelines`) and `CHECK-1520` (`path_planning_mintime_region_is_accepted`). They were one-off checks of hand-set constants (the 2026-10-28 test audit). The surviving 1410 tests still cover every vehicle's `tum_mintime.yaml`. Counts by ID: 350 - 2 = 348 tier-1.
+
 ## The tests that matter most
 
 - **COMMON-1060** — the gym_jax action mapping. It fails silently; this is the only thing that
