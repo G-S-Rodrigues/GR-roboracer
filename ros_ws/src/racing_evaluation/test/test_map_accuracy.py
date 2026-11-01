@@ -7,6 +7,11 @@ is on the truth's occupied side. The raw centre distance is kept (owner
 ruling O2): a perfect map scores res/2 (2.5 cm at 5 cm), not 0.
 """
 
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -15,8 +20,14 @@ from racing_evaluation.map_accuracy import (
     grid_from_occupancy,
     load_grid,
     map_to_wall,
+    mm_layer_points,
+    nearest_p95,
+    scenario_truth_grid,
     wall_edges,
 )
+
+REPOSITORY_ROOT = Path(__file__).parents[4]
+SPIELBERG_1080 = REPOSITORY_ROOT / "config/scenarios/spielberg_1080.yaml"
 
 RES = 0.05
 ORIGIN = (-3.0, 2.0)
@@ -150,3 +161,52 @@ def test_eval_1540_wall_edges_are_the_free_occupied_faces() -> None:
     assert edges.shape == (20, 2, 2)  # 10 rows x 2 faces
     lengths = np.linalg.norm(edges[:, 1] - edges[:, 0], axis=1)
     assert lengths == pytest.approx(RES)
+
+
+def test_eval_1550_the_scenarios_truth_grid_is_its_gym_map() -> None:
+    """EVAL-1550: `scenario_truth_grid(scenario.yaml)` loads the gym map image
+    the scenario names (`environment.map` under `map_directory`), the grid
+    the sim lidar hits."""
+    expected = load_grid(
+        REPOSITORY_ROOT / "config/scenarios/maps/Spielberg/Spielberg.yaml"
+    )
+    truth = scenario_truth_grid(SPIELBERG_1080)
+    assert np.array_equal(truth.occupied, expected.occupied)
+    assert np.array_equal(truth.free, expected.free)
+    assert truth.resolution == expected.resolution
+    assert truth.origin == expected.origin
+
+
+def test_eval_1560_nearest_p95_is_the_95th_percentile_of_the_distance() -> None:
+    """EVAL-1560: identical point sets are 0 apart; a set shifted by
+    (0.3, 0.4) is 0.5 from its original, in either direction."""
+    rng = np.random.default_rng(0)
+    points = rng.uniform(0, 10, size=(200, 2))
+    assert nearest_p95(points, points) == 0.0
+    shifted = points + np.array([0.3, 0.4])
+    assert nearest_p95(shifted, points) < 0.5 + 1e-9
+    one = np.array([[0.0, 0.0]])
+    assert nearest_p95(one + np.array([0.3, 0.4]), one) == pytest.approx(0.5)
+
+
+def test_eval_1560_mm_layer_points_reads_the_layers_text_export(
+    tmp_path,
+) -> None:
+    """EVAL-1560: `mm_layer_points(mm, layer, work)` is the (x, y) columns of
+    what `mm2txt` writes for the layer, read from `<stem>_<layer>.txt`. The
+    reference is a direct mm2txt run in a second directory (no count pinned:
+    the committed map is regenerated)."""
+    mm = REPOSITORY_ROOT / "config/scenarios/maps/Spielberg/mola/Spielberg.mm"
+    points = mm_layer_points(mm, "localmap", tmp_path / "a")
+    assert points.ndim == 2 and points.shape[1] == 2 and len(points) > 0
+    other = tmp_path / "b"
+    other.mkdir()
+    subprocess.run(
+        [shutil.which("mm2txt"), str(mm)],
+        cwd=other,
+        check=True,
+        capture_output=True,
+        env=os.environ,
+    )
+    expected = np.loadtxt(other / "Spielberg_localmap.txt")[:, :2]
+    assert np.array_equal(points, expected)
