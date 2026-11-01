@@ -98,8 +98,10 @@ tyres:
 #   owner tunes it (ruling N1). The name stays gym_fit because the set is
 #   chosen globally (raceline.optimize.MINTIME_TYRE_SET) and a new name is a
 #   code change. f_z0 8.6 is the ForzaETH f110 ini's nominal load (as in
-#   "tyres:" above), not either car's; AutoDRIVE's static wheel load is
-#   3.47 x 9.81 / 4 = 8.51 N (SRC sprung_mass_kg, = tum_mintime.yaml mass).
+#   "tyres:" above), not either car's; AutoDRIVE's MEAN static wheel load
+#   is 3.47 x 9.81 / 4 = 8.51 N (the CoG is not centred, so front and rear
+#   wheels differ). It uses the sprung mass 3.47 kg (SRC sprung_mass_kg, =
+#   tum_mintime.yaml mass), not source.yaml's total_mass_kg 3.906 (9.58 N).
 #   Tuning inputs AutoDRIVE exposes, NOT converted to Pacejka (the Unity
 #   WheelCollider -> Pacejka mapping is undocumented and needs a fit to
 #   cornering data; Porto has no room for a skidpad):
