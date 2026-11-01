@@ -62,7 +62,7 @@ CODE_FILES = (
 )
 # The "optimizer code" a committed min-time line was proven with (Q8, owner
 # ruling E-3): all of it, since extract, track, geometry, vehicle and the
-# runner shape the min-time inputs as much as the wrapper does (RACELINE-1450).
+# runner shape the min-time inputs as much as the wrapper does.
 MINTIME_CODE_FILES = CODE_FILES
 DEFAULT_PLOTS = PACKAGE.parent / "log" / "raceline"
 

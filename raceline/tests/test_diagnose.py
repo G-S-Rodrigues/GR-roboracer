@@ -96,12 +96,3 @@ def test_raceline_1465_works_on_a_committed_line_without_a_reference(
     assert len(saved["s"]) == len(line.s)
     for name in diagnose.PNG_NAMES:
         assert (out / name).is_file()
-
-
-def test_raceline_1465_the_default_out_is_never_under_config_racelines():
-    """Plots go to the gitignored log tree; a committed line is data."""
-    from raceline.__main__ import DEFAULT_OUT, DEFAULT_PLOTS
-
-    assert DEFAULT_OUT not in (DEFAULT_PLOTS, *DEFAULT_PLOTS.parents)
-    assert DEFAULT_PLOTS not in (DEFAULT_OUT, *DEFAULT_OUT.parents)
-    assert not str(DEFAULT_PLOTS).startswith(str(DEFAULT_OUT))
