@@ -401,7 +401,7 @@ def test_check_1150_the_real_map_loads_with_its_shape() -> None:
     assert amcl.default is False
     assert set(amcl.verified_by) == {"SIM-3080", "ACC-4030", "ACC-4040"}
     assert set(stack.system_tests) == {
-        f"SIM-{n}" for n in range(3010, 3111, 10)
+        f"SIM-{n}" for n in range(3010, 3121, 10)
     } | {"SIM-3510", "SIM-3610", "SIM-3620"}
     assert set(stack.acceptance_tags) == {
         "ACC-4010",
@@ -938,6 +938,7 @@ def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
     alternatives = {a["implementation"]: a for a in planner["alternatives"]}
     assert alternatives["optimized_raceline"]["verified_by"] == [
         "SIM-3110",
+        "SIM-3120",
         "ACC-4040",
     ]
 
@@ -948,7 +949,12 @@ def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
     )
 
     assert scope.whole_tree is False
-    assert set(scope.tests) == {"SIM-3020", "SIM-3110", "ACC-4040"}
+    assert set(scope.tests) == {
+        "SIM-3020",
+        "SIM-3110",
+        "SIM-3120",
+        "ACC-4040",
+    }
 
 
 def test_check_1170_real_map_instrument_couplings() -> None:
