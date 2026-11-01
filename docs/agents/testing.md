@@ -83,7 +83,7 @@ tree when the branch touches `config/`, scoped otherwise):
 | Change | Selected | Wall time |
 |---|---|---|
 | comment in `config/localization/amcl.yaml` | amcl: SIM-3020, SIM-3080, ACC-4030 (amcl case), ACC-4040 (centerline case) | 426 s (before V3) |
-| comment in `racing_controller_baseline/src/node.cpp` | controller, planner, ground_truth: 6 tier-3 tests, 4 Robot cases (ACC-4040 raceline case added by V3) | 342 s (before V3) |
+| comment in `racing_controller_baseline/src/node.cpp` | controller, planner, ground_truth: 7 tier-3 tests, 4 Robot cases (ACC-4040 raceline case added by V3) | 342 s (before V3) |
 | `racing_common` `.cpp` | whole tree (unmapped), the same as `--full`, ~13 min | not timed |
 
 `--full` was "everything" while tiers 0–4 were everything. ADR 0007 makes `--ready` the definition of
