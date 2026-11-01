@@ -43,10 +43,11 @@ def topic(name: str) -> str:
     return f"{PREFIX}{name}"
 
 
-def devkit_domain() -> int:
+def devkit_domain(stack: int | None = None) -> int:
     """The domain the stand-in and B's devkit side run on: S+1, or S-1 if
-    S+1 is past the last valid domain (101)."""
-    return STACK_DOMAIN + 1 if STACK_DOMAIN + 1 <= 101 else STACK_DOMAIN - 1
+    S+1 is past the last valid domain (101). S defaults to the run's."""
+    s = STACK_DOMAIN if stack is None else stack
+    return s + 1 if s + 1 <= 101 else s - 1
 
 
 DEVKIT_URL = os.environ.get(
