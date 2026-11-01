@@ -1,4 +1,4 @@
-"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2260).
+"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2280).
 
 B (`racing_sim_autodrive.devkit_node`) and the devkit stand-in run as
 processes: B's stack side on the domain S, its devkit side and the stand-in on
@@ -533,10 +533,13 @@ class Listener:
         fail at the deadline, naming what is left."""
         timeout_s = CONTROL_GONE_S if timeout_s is None else timeout_s
         end = time.monotonic() + timeout_s
-        while self.leaked_topics():
+        while True:
+            leaked = self.leaked_topics()
+            if not leaked:
+                return
             if time.monotonic() >= end:
                 raise AssertionError(
-                    f"the positive control's topics {self.leaked_topics()}"
+                    f"the positive control's topics {leaked}"
                     f" were still on stack domain {dl.STACK_DOMAIN} after"
                     f" {timeout_s} s (Fast DDS lease 20 s). The candidates"
                     " are a stand-in that did not exit, another run on this"
@@ -601,7 +604,7 @@ def test_simad_2280_a_control_that_never_leaves_fails_naming_it(
         ):
             listener.wait_until_gone(timeout_s=2.0)
     finally:
-        dl.stop(control, signal.SIGKILL, timeout_s=10.0)
+        dl.stop(control, timeout_s=10.0)
         listener.close()
 
 
