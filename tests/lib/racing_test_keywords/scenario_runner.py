@@ -128,6 +128,23 @@ PARTICIPANT_NODES = (
     "racing_recording",
     "robot_state_publisher",
 )
+# The node the `controller` launch argument starts in the default's place
+# (BRINGUP-1930); `PARTICIPANT_NODES` above is the Pure Pursuit set.
+CONTROLLER_NODES = {
+    "pure_pursuit": "racing_controller_baseline",
+    "follow_the_gap": "racing_controller_follow_the_gap",
+}
+
+
+def participant_nodes(controller: str = "pure_pursuit") -> tuple:
+    """The always-started nodes with the selected controller's name in."""
+    selected = CONTROLLER_NODES[controller]
+    return tuple(
+        selected if name == CONTROLLER_NODES["pure_pursuit"] else name
+        for name in PARTICIPANT_NODES
+    )
+
+
 # The node each non-default `pose_source` adds, and the topic it has to
 # have subscribed to before t=0 is released. An estimator that starts
 # publishing after the drive stream does is repo-gotcha #19's latch, and
@@ -448,7 +465,11 @@ class _HangObserver:
 
 
 def _reset_at_deterministic_t0(
-    node, seed: int, timeout: float, pose_source: str = "ground_truth"
+    node,
+    seed: int,
+    timeout: float,
+    pose_source: str = "ground_truth",
+    controller: str = "pure_pursuit",
 ) -> None:
     """Wait for every participant, then release the held sim with a reset.
 
@@ -482,7 +503,7 @@ def _reset_at_deterministic_t0(
     def _remaining() -> float:
         return max(deadline - time.monotonic(), 0.0)
 
-    for participant in PARTICIPANT_NODES:
+    for participant in participant_nodes(controller):
         wait_for_node(
             node, participant, METRICS_ACCUMULATION_TOPICS, _remaining()
         )
@@ -704,7 +725,13 @@ def run_scenario(
         try:
             for probe in probes:
                 probe.attach(node)
-            _reset_at_deterministic_t0(node, seed, timeout, pose_source)
+            _reset_at_deterministic_t0(
+                node,
+                seed,
+                timeout,
+                pose_source,
+                (launch_arguments or {}).get("controller", "pure_pursuit"),
+            )
             for probe in probes:
                 probe.started()
             if stop_on_frozen_pose is None:

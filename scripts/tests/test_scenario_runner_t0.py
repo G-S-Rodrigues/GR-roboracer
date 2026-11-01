@@ -477,3 +477,48 @@ def test_check_2250_every_runner_launches_held_and_resets():
         f"launch the bringup without start_held=true and the t=0 reset: "
         f"{missing}"
     )
+
+
+def test_check_2270_the_t0_wait_names_the_selected_controller():
+    """CHECK-2270 (#44 part 11a): the t=0 reset waits for the controller the
+    launch starts. `participant_nodes()` is `PARTICIPANT_NODES` (Pure Pursuit,
+    the default); `follow_the_gap` swaps the controller's name and nothing
+    else, so a run of the alternative never waits for a node that is not
+    there, and an unknown controller raises."""
+    default = scenario_runner.participant_nodes()
+    assert default == scenario_runner.PARTICIPANT_NODES
+    follow = scenario_runner.participant_nodes("follow_the_gap")
+    assert "racing_controller_follow_the_gap" in follow
+    assert "racing_controller_baseline" not in follow
+    assert sorted(set(follow) ^ set(default)) == [
+        "racing_controller_baseline",
+        "racing_controller_follow_the_gap",
+    ]
+    with pytest.raises(KeyError):
+        scenario_runner.participant_nodes("wall_follow")
+
+    waited: list[str] = []
+
+    def record(node, name, topics, timeout):
+        waited.append(name)
+
+    patches = {
+        "wait_for_node": record,
+        "wait_for_endpoints": lambda *a, **k: None,
+        "wait_for_message": lambda *a, **k: None,
+    }
+    originals = {k: getattr(scenario_runner, k) for k in patches}
+    try:
+        for key, value in patches.items():
+            setattr(scenario_runner, key, value)
+        try:
+            scenario_runner._reset_at_deterministic_t0(
+                object(), 42, 5.0, controller="follow_the_gap"
+            )
+        except Exception:
+            pass  # past the node waits it needs a real graph
+    finally:
+        for key, value in originals.items():
+            setattr(scenario_runner, key, value)
+    assert "racing_controller_follow_the_gap" in waited
+    assert "racing_controller_baseline" not in waited
