@@ -95,3 +95,61 @@ def test_check_2150_bad_domain_and_missing_dev_are_refused(tmp_path) -> None:
     )
     assert done.returncode == 4, done.stderr
     assert not any("compose" in c for c in calls), calls
+
+
+def test_check_2260_the_case_picks_the_test_and_the_reference_map(
+    tmp_path,
+) -> None:
+    """CHECK-2260 (#44 part 11a): `--case mapping` runs SIM-3740 into
+    `.scratch-out/autodrive_mapping`; the default and `--case qualification`
+    print what they always did; any other or missing case value exits 2.
+    `--reference-map P` puts `AUTODRIVE_REFERENCE_MAP=P` into the line that
+    `docker exec ... bash -lc` runs (the host environment does not reach it)
+    and is refused under the qualification case."""
+    base = ("--domain", "64", "--workdir", "/ws/x", "--dry-run")
+    default, _ = _run(tmp_path, "default", *base)
+    explicit, _ = _run(tmp_path, "q", *base, "--case", "qualification")
+    assert default.returncode == explicit.returncode == 0
+    assert default.stdout == explicit.stdout
+    assert "test_sim_3730_porto_qualification.py" in default.stdout
+    assert ".scratch-out/autodrive_qualify " in default.stdout
+    assert "AUTODRIVE_REFERENCE_MAP" not in default.stdout
+
+    mapping, calls = _run(tmp_path, "m", *base, "--case", "mapping")
+    assert mapping.returncode == 0, mapping.stderr
+    assert "tests/autodrive/test_sim_3740_porto_mapping.py" in mapping.stdout
+    assert "AUTODRIVE_OUT=/ws/x/.scratch-out/autodrive_mapping " in (
+        mapping.stdout
+    )
+    assert "test_sim_3730" not in mapping.stdout
+    assert "AUTODRIVE_REFERENCE_MAP" not in mapping.stdout
+    assert all(c.startswith("docker ps") for c in calls), calls
+
+    given, _ = _run(
+        tmp_path,
+        "ref",
+        *base,
+        "--case",
+        "mapping",
+        "--reference-map",
+        "/ws/x/.scratch-out/autodrive_mapping_A/Porto.yaml",
+    )
+    assert given.returncode == 0, given.stderr
+    line = next(
+        row for row in given.stdout.splitlines() if "docker exec" in row
+    )
+    assert (
+        "AUTODRIVE_REFERENCE_MAP=/ws/x/.scratch-out/autodrive_mapping_A/"
+        "Porto.yaml" in line
+    )
+
+    for args in (
+        ("--case", "wall_follow"),
+        ("--case",),
+        ("--reference-map", "/ws/x/A.yaml"),
+        ("--case", "qualification", "--reference-map", "/ws/x/A.yaml"),
+        ("--case", "mapping", "--reference-map"),
+    ):
+        done, calls = _run(tmp_path, "bad", *base, *args)
+        assert done.returncode == 2, (args, done.stderr)
+        assert not any("compose" in c for c in calls), calls
