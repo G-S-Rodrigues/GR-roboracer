@@ -1,0 +1,32 @@
+# Pipeline for sm2mm: build the stack-format occupancy grid (a 5 cm
+# COccupancyGridMap2D layer named `grid`) from MOLA's simplemap keyframes,
+# which scripts/mola_map_track.sh first moves into the world `map` frame
+# with `sm-cli tf`. mm2grid exports only a grid layer, so this is a second
+# map beside the localization one (mola_sm2mm.yaml, a CVoxelMap in
+# mola_map): keeping them apart leaves the localization map, and with it
+# SIM-3510, untouched. Free cells come from the ray-traced 2D scans
+# (considerInvalidRangesAsFreeSpace); the grid extends itself as rays land
+# outside the initial box.
+generators:
+  - class_name: mp2p_icp_filters::Generator
+    params:
+      target_layer: "grid"
+      throw_on_unhandled_observation_class: false
+      process_class_names_regex: ".*"
+      process_sensor_labels_regex: ".*"
+      metric_map_definition:
+        class: mrpt::maps::COccupancyGridMap2D
+        creationOpts:
+          resolution: 0.05
+          min_x: -20
+          max_x: 80
+          min_y: -20
+          max_y: 80
+        insertionOpts:
+          mapAltitude: 0.0
+          useMapAltitude: false
+          maxDistanceInsertion: 30
+          maxOccupancyUpdateCertainty: 0.65
+          considerInvalidRangesAsFreeSpace: true
+          decimation: 1
+          horizontalTolerance: 0.0
