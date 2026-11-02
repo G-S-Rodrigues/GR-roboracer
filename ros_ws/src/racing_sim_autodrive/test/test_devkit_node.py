@@ -506,6 +506,9 @@ class Listener:
         self.node = rclpy.create_node("simad_2250_listener", context=context)
         self.frames = set()
         self.heard = {}  # counted frame -> the topics it arrived on
+        self.since_ns = 0  # everything counts until the first mark()
+        self.before_mark = {}  # set-aside frame -> the topics it arrived on
+        self.before_mark_stamps = []  # their source_timestamps, ns
         for name in self.TF_TOPICS:
             self.node.create_subscription(
                 TFMessage,
@@ -525,14 +528,30 @@ class Listener:
         frames = {t.child_frame_id for t in msg.transforms} | {
             t.header.frame_id for t in msg.transforms
         }
-        self.frames.update(frames)
-        for frame in frames:
-            self.heard.setdefault(frame, set()).add(topic)
+        # A sample written before the mark was written by a process that
+        # `dl.stop` had already reaped (SIMAD-2250) or by a neighbour before
+        # the window. Fast DDS keeps it takeable after the writer leaves
+        # (part 9.2 Step 0), and `wait_until_gone` returns without spinning,
+        # so nothing else drains it. DDS source_timestamp and time.time_ns()
+        # are both wall clock in one container; neither is a message stamp
+        # or sim time (ADR 0006 is not touched).
+        if info["source_timestamp"] >= self.since_ns:
+            self.frames.update(frames)
+            for frame in frames:
+                self.heard.setdefault(frame, set()).add(topic)
+        else:
+            self.before_mark_stamps.append(info["source_timestamp"])
+            for frame in frames:
+                self.before_mark.setdefault(frame, set()).add(topic)
 
     def mark(self):
-        """Start counting from here."""
+        """Count only samples written from here on; set earlier ones aside
+        in `before_mark`."""
+        self.since_ns = time.time_ns()
         self.frames.clear()
         self.heard.clear()
+        self.before_mark.clear()
+        self.before_mark_stamps.clear()
 
     def describe(self):
         """The counted frames, each with the topics it arrived on, and the
@@ -548,6 +567,11 @@ class Listener:
                 for p in self.node.get_publishers_info_by_topic(topic)
             ]
             lines.append(f"publishers on {topic}: {pubs}")
+        aside = sorted({t for ts in self.before_mark.values() for t in ts})
+        lines.append(
+            f"set aside before the mark: {len(self.before_mark)} frames"
+            f" on {aside}"
+        )
         return "\n".join(lines)
 
     def spin(self, seconds):
@@ -645,6 +669,7 @@ def test_simad_2290_a_queued_control_sample_is_not_counted_after_the_mark(
     listener = Listener(observer.stack_context)
     control = None
     try:
+        start_ns = time.time_ns()
         control = start_control(tmp_path)
         end = time.monotonic() + 10.0
         while time.monotonic() < end and "roboracer_1" not in listener.frames:
@@ -656,6 +681,7 @@ def test_simad_2290_a_queued_control_sample_is_not_counted_after_the_mark(
         # listener's queue fills while nothing takes from it.
         time.sleep(1.0)
         dl.stop(control, timeout_s=10.0)
+        stopped_ns = time.time_ns()
         # A graph wait that does not spin, which would drain the queue.
         end = time.monotonic() + CONTROL_GONE_S
         while listener.leaked_topics() and time.monotonic() < end:
@@ -665,6 +691,17 @@ def test_simad_2290_a_queued_control_sample_is_not_counted_after_the_mark(
         listener.spin(1.0)
         assert not any("roboracer_1" in f for f in listener.frames), (
             listener.describe()
+        )
+        assert any("roboracer_1" in f for f in listener.before_mark), (
+            "no control sample was queued past the stop, so this test no"
+            " longer exercises the mark"
+        )
+        stamps = listener.before_mark_stamps
+        assert all(start_ns < t < stopped_ns for t in stamps), (
+            "source_timestamp is not on time.time_ns()'s clock, or a writer"
+            " other than the stopped control was set aside: stamps"
+            f" {min(stamps)}..{max(stamps)}, start {start_ns},"
+            f" stopped {stopped_ns}"
         )
     finally:
         if control is not None:
