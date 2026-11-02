@@ -82,7 +82,15 @@ REPO = Path(__file__).resolve().parents[2]
 TRACK = REPO / "config" / "tracks" / "spielberg.yaml"
 REPORT_DIR = REPO / "log" / "pose-source-report"
 SURVEY = (
-    REPO / "config/scenarios/maps/Spielberg/slam/Spielberg.yaml"
+    REPO
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "maps"
+    / "Spielberg"
+    / "slam"
+    / "Spielberg.yaml"
 )  # amcl's prior
 # Owner ruling O4: four seeds, as SIM-5050.
 SEEDS = (42, 1030, 7, 2026)

@@ -168,7 +168,9 @@ def test_eval_1550_the_scenarios_truth_grid_is_its_gym_map() -> None:
     the scenario names (`environment.map` under `map_directory`), the grid
     the sim lidar hits."""
     expected = load_grid(
-        REPOSITORY_ROOT / "config/scenarios/maps/Spielberg/Spielberg.yaml"
+        REPOSITORY_ROOT
+        / "third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg"
+        / "Spielberg.yaml"
     )
     truth = scenario_truth_grid(SPIELBERG_1080)
     assert np.array_equal(truth.occupied, expected.occupied)
@@ -196,7 +198,11 @@ def test_eval_1560_mm_layer_points_reads_the_layers_text_export(
     what `mm2txt` writes for the layer, read from `<stem>_<layer>.txt`. The
     reference is a direct mm2txt run in a second directory (no count pinned:
     the committed map is regenerated)."""
-    mm = REPOSITORY_ROOT / "config/scenarios/maps/Spielberg/mola/Spielberg.mm"
+    mm = (
+        REPOSITORY_ROOT
+        / "third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg"
+        / "mola/Spielberg.mm"
+    )
     points = mm_layer_points(mm, "localmap", tmp_path / "a")
     assert points.ndim == 2 and points.shape[1] == 2 and len(points) > 0
     other = tmp_path / "b"

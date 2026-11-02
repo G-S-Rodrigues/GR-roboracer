@@ -554,11 +554,12 @@ def test_raceline_1367h_a_point_past_the_polygon_gets_no_relief():
 # ---- the committed racelines (RACELINE-1395) --------------------------------
 
 REPO = Path(__file__).resolve().parents[2]
+TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
 COMMITTED_RACELINES = {
-    "spielberg/f1tenth-default-v1/tum_mincurv_iqp",
-    "spielberg/f1tenth-gym-limits-v1/tum_mincurv_iqp",
-    "spielberg/f1tenth-default-v1/tum_mintime",
-    "spielberg/f1tenth-gym-limits-v1/tum_mintime",
+    "Spielberg/racelines/f1tenth-default-v1/tum_mincurv_iqp",
+    "Spielberg/racelines/f1tenth-gym-limits-v1/tum_mincurv_iqp",
+    "Spielberg/racelines/f1tenth-default-v1/tum_mintime",
+    "Spielberg/racelines/f1tenth-gym-limits-v1/tum_mintime",
 }
 RECORDED_TOL = 1e-6
 
@@ -594,10 +595,10 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
     from raceline.optimize import load_raceline_csv
     from raceline.track import load_track
 
-    root = REPO / "config" / "racelines"
+    root = TRACKS
     found = {
         p.relative_to(root).with_suffix("").as_posix()
-        for p in root.glob("*/*/*.csv")
+        for p in root.glob("*/racelines/*/*.csv")
     }
     assert found == COMMITTED_RACELINES
 
@@ -605,7 +606,10 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     for rel in sorted(found):
-        name = rel.split("/")[0]
+        map_folder = rel.split("/")[0]
+        # The record's `track` is the lower-case track-file stem; only the
+        # folder is keyed by the map's name.
+        name = map_folder.lower()
         doc = yaml.safe_load((root / f"{rel}.yaml").read_text())
         assert doc["track"] == name
         src = doc["source"]
@@ -616,7 +620,7 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         veh = doc["vehicle"]
         assert sha(REPO / veh["path"]) == veh["sha256"]
         vehicle = load_vehicle(REPO / veh["path"])
-        assert vehicle.version == doc["vehicle_version"] == rel.split("/")[1]
+        assert vehicle.version == doc["vehicle_version"] == rel.split("/")[2]
         assert sha(vehicle.ggv_path) == veh["ggv_sha256"]
         assert (
             sha(vehicle.ax_max_machines_path) == veh["ax_max_machines_sha256"]
@@ -629,7 +633,8 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
             assert sha(REPO / ref["path"]) == ref["sha256"]
             folder = rel.rsplit("/", 1)[0]
             assert ref["path"] == (
-                f"config/racelines/{folder}/reference/tum_mintime.csv"
+                f"third_party/GR-roboracer-data/tracks/{folder}/reference/"
+                "tum_mintime.csv"
             )
         gt = doc["ground_truth"]
         assert gt["path"] == f"config/tracks/{name}.yaml"
@@ -637,13 +642,9 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         ground_truth = load_track(REPO / gt["path"])
 
         gm = doc["ground_truth_map"]
-        gym_dirs = [
-            d
-            for d in (REPO / "config" / "scenarios" / "maps").iterdir()
-            if d.name.lower() == name
-        ]
-        assert len(gym_dirs) == 1
-        gym_yaml = gym_dirs[0] / f"{gym_dirs[0].name}.yaml"
+        gym_yaml = (
+            TRACKS / map_folder / "maps" / map_folder / (f"{map_folder}.yaml")
+        )
         assert gm["path"] == gym_yaml.relative_to(REPO).as_posix()
         assert sha(gym_yaml) == gm["sha256"]
         gym_image = yaml.safe_load(gym_yaml.read_text())["image"]

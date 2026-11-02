@@ -1,7 +1,7 @@
 """SIM-3120: one seeded Spielberg lap on the minimum-time raceline completes
 through the real launch, collision-free, at its own measured lap time.
 
-The default vehicle follows `config/racelines/spielberg/f1tenth-default-v1/
+The default vehicle follows `tracks/Spielberg/racelines/f1tenth-default-v1/
 tum_mintime.csv` with `speed_source: trajectory`, so the line's own speed is
 the command. Ground-truth pose only. The 20 m/s gym-limits vehicle is the
 nightly's (SIM-5050), not this gate's (owner 2026-10-11).

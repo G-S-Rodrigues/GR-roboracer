@@ -1,11 +1,12 @@
 """SIM-5520: the committed MOLA map regenerates from its recorded command.
 
-`config/scenarios/maps/Spielberg/mola/Spielberg.{mm,yaml}` is a committed
-artifact produced by `scripts/mola_map_track.sh` (a lap plus MOLA-LO's
-shutdown save and `sm2mm`). MOLA is multi-threaded and which scans it keeps
-is not deterministic, so two runs are close and never byte-identical: what
-is asserted is that the inputs are exact, T is the same, and the voxels land
-in the same places (nearest-neighbour p95, both directions).
+`tracks/Spielberg/maps/Spielberg/mola/Spielberg.{mm,yaml}` (data repo)
+is a committed artifact produced by `scripts/mola_map_track.sh` (a lap plus
+MOLA-LO's shutdown save and `sm2mm`). MOLA is multi-threaded and which
+scans it keeps is not deterministic, so two runs are close and never
+byte-identical: what is asserted is that the inputs are exact, T is the
+same, and the voxels land in the same places (nearest-neighbour p95, both
+directions).
 
 Tier 5 because it is a lap, and because what it catches is slow: a pipeline
 parameter, a scan geometry or a package bump that changes what the map means.
@@ -30,7 +31,15 @@ from racing_evaluation.map_accuracy import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 COMMITTED = (
-    REPOSITORY_ROOT / "config/scenarios/maps/Spielberg/mola/Spielberg.yaml"
+    REPOSITORY_ROOT
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "maps"
+    / "Spielberg"
+    / "mola"
+    / "Spielberg.yaml"
 )
 # A mapping lap at 1x, MOLA's save and sm2mm.
 TIMEOUT_SECONDS = 900.0

@@ -54,7 +54,7 @@ Localization Estimate Tracks Ground Truth: amcl
 Localization Estimate Tracks Ground Truth: mola
     [Documentation]    ACC-4510. The MOLA-LO implementation's case; see the
     ...    slam_toolbox case above. It localizes on the map MOLA built itself
-    ...    (config/scenarios/maps/Spielberg/mola/), so its error includes
+    ...    (the data repo's Spielberg mola/ map), so its error includes
     ...    that map's own error, and runs the 1080-beam scenario at 1x.
     [Tags]    impl:pose_source=mola
     [Template]    Pose Source Should Track Ground Truth

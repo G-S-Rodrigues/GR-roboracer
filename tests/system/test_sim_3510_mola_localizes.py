@@ -4,7 +4,8 @@ the stack stays available and bounded, scored live by racing_evaluation and
 again offline by `scripts/compare_localization.py`.
 
 This measures localization **on MOLA's own map** (owner ruling 2026-10-25):
-`config/scenarios/maps/Spielberg/mola/`, from one seed-7 mapping lap with no
+the data repo's
+`tracks/Spielberg/maps/Spielberg/mola/`, from one seed-7 mapping lap with no
 loop closure (`scripts/mola_map_track.sh`). The error therefore includes
 MOLA's own map error (drift where the lap closes, wall offsets) and the
 alignment T from the map frame to the world frame (its residual is in the

@@ -21,7 +21,9 @@ from racing_evaluation.frame_fit import (
 from racing_evaluation.map_accuracy import load_grid
 
 REPO = Path(__file__).resolve().parents[4]
-PORTO_MAP = REPO / "config/scenarios/maps/Porto/Porto.yaml"
+PORTO_MAP = (
+    REPO / "third_party/GR-roboracer-data/tracks/Porto/maps/Porto/Porto.yaml"
+)
 PORTO_TRACK = REPO / "config/tracks/porto.yaml"
 ANGLE_MIN = -2.356
 BEAMS = 1081

@@ -51,7 +51,8 @@ REPO = Path(__file__).resolve().parents[2]
 SCENARIO = str(REPO / "config" / "scenarios" / "spielberg.yaml")
 TRACK = REPO / "config" / "tracks" / "spielberg.yaml"
 REPORT_DIR = REPO / "log" / "raceline-report"
-RACELINES = REPO / "config" / "racelines" / "spielberg"
+TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
+RACELINES = TRACKS / "Spielberg" / "racelines"
 UPSTREAM = REPO / "third_party" / "f1tenth_racetracks"
 
 # vehicle name -> (vehicle file, vehicle_parameter_version)
@@ -195,7 +196,14 @@ def test_sim_5050_raceline_comparison(tmp_path: Path) -> None:
         for vehicle, (_, version) in VEHICLES.items():
             for line in lines_of(version):
                 fields = static_fields(version, line)
-                key = f"spielberg/{version}/{line}.yaml"
+                # The key is SIM-5040's: the record's path under the tracks
+                # root. A literal here silently drops solve_seconds when
+                # SIM-5040's keys change.
+                key = (
+                    (RACELINES / version / f"{line}.yaml")
+                    .relative_to(TRACKS)
+                    .as_posix()
+                )
                 if key in regeneration:
                     fields["solve_seconds"] = regeneration[key]["solve_seconds"]
                 statics[(vehicle, line)] = fields
@@ -217,6 +225,13 @@ def test_sim_5050_raceline_comparison(tmp_path: Path) -> None:
                 default=str,
             ),
             encoding="utf-8",
+        )
+
+    # A regeneration record whose keys match no row means this test and
+    # SIM-5040 disagree on the key; `solve_seconds` would silently vanish.
+    if regeneration:
+        assert any("solve_seconds" in fields for fields in statics.values()), (
+            f"SIM-5050 keys do not match SIM-5040's: {sorted(regeneration)}"
         )
 
     failures = structural_failures(runs, expected)

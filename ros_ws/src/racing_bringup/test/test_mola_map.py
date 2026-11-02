@@ -10,7 +10,16 @@ import yaml
 PACKAGE_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = PACKAGE_ROOT.parents[2]
 SCENARIOS = REPOSITORY_ROOT / "config" / "scenarios"
-MOLA_DIR = SCENARIOS / "maps" / "Spielberg" / "mola"
+MOLA_DIR = (
+    REPOSITORY_ROOT
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "maps"
+    / "Spielberg"
+    / "mola"
+)
 MOLA_PREF = REPOSITORY_ROOT / "docker" / "apt-preferences" / "mola.pref"
 # SIM-3510 localizes at this seed; the map must not share its noise draw.
 LOCALIZATION_SEED = 42
