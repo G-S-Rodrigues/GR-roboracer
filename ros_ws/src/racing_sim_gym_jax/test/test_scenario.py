@@ -114,3 +114,26 @@ def test_simjax_1500_the_1080_scenario_differs_only_in_the_lidar():
     }
     assert wide["parameters.num_beams"] == 1080
     assert wide["parameters.fov"] == pytest.approx(4.712389)
+
+
+def test_simjax_1600_a_scenario_whose_map_is_missing_fails_closed(tmp_path):
+    """SIMJAX-1600: a `map_directory` without `<map>/<map>.yaml` raises at
+    load, naming the file and the submodule init command. Without it the
+    gym would run Spielberg on its bundled map, or try to download one."""
+    root = Path(__file__).resolve().parents[4] / "config" / "scenarios"
+    document = yaml.safe_load(
+        (root / "contract_test.yaml").read_text(encoding="utf-8")
+    )
+    document["track"] = str(root / document["track"])
+    document["map_directory"] = str(tmp_path / "maps")
+    (tmp_path / "maps").mkdir()
+    missing = tmp_path / "missing.yaml"
+    missing.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+    expected = tmp_path / "maps" / "analytic_circle" / "analytic_circle.yaml"
+    with pytest.raises(FileNotFoundError) as error:
+        load_scenario(missing)
+    assert str(expected) in str(error.value)
+    assert "git submodule update --init third_party/GR-roboracer-data" in str(
+        error.value
+    )

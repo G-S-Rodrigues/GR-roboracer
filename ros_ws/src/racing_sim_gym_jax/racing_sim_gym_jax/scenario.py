@@ -167,9 +167,19 @@ def load_scenario(path: Path) -> Scenario:
     map_directory = (
         path.parent / str(_required(document, "map_directory"))
     ).resolve()
+    map_name = str(_required(environment, "map"))
+    # Fail closed: a missing map would otherwise fall back to the gym's
+    # bundled Spielberg, or try to download one (SIMJAX-1600, ADR 0008).
+    map_file = map_directory / map_name / f"{map_name}.yaml"
+    if not map_file.is_file():
+        raise FileNotFoundError(
+            f"scenario map not found: {map_file} (the track data is the "
+            "GR-roboracer-data submodule; run `git submodule update --init "
+            "third_party/GR-roboracer-data` on the host)"
+        )
     return Scenario(
         scenario_id=str(_required(document, "scenario_id")),
-        map_name=str(_required(environment, "map")),
+        map_name=map_name,
         num_agents=num_agents,
         scans=bool(_required(environment, "scans")),
         collisions=bool(_required(environment, "collisions")),
