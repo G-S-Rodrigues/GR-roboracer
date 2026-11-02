@@ -113,6 +113,8 @@ centerline lap on the curvature schedule. The minimum-time line is selected with
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mintime speed_source:=trajectory seed:=42
 ```
 
+A recording of this lap is on [the demonstrations page](../demonstrations.md).
+
 The gym-limits vehicle's lines resolve, but no gate lap drives them.
 
 Available, offline: map centerline extraction and the TUM minimum-curvature and minimum-time
