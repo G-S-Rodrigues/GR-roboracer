@@ -508,7 +508,7 @@ class Listener:
         self.heard = {}  # counted frame -> the topics it arrived on
         self.since_ns = 0  # everything counts until the first mark()
         self.before_mark = {}  # set-aside frame -> the topics it arrived on
-        self.before_mark_stamps = []  # their source_timestamps, ns
+        self.before_mark_stamps = []  # DEVKIT_TF ones' source_timestamps, ns
         for name in self.TF_TOPICS:
             self.node.create_subscription(
                 TFMessage,
@@ -531,16 +531,17 @@ class Listener:
         # A sample written before the mark was written by a process that
         # `dl.stop` had already reaped (SIMAD-2250) or by a neighbour before
         # the window. Fast DDS keeps it takeable after the writer leaves
-        # (part 9.2 Step 0), and `wait_until_gone` returns without spinning,
-        # so nothing else drains it. DDS source_timestamp and time.time_ns()
-        # are both wall clock in one container; neither is a message stamp
-        # or sim time (ADR 0006 is not touched).
+        # (part 9.2 Step 0), and `wait_until_gone` usually returns without
+        # spinning, so nothing else drains it. DDS source_timestamp and
+        # time.time_ns() are both wall clock in one container; neither is a
+        # message stamp or sim time (ADR 0006 is not touched).
         if info["source_timestamp"] >= self.since_ns:
             self.frames.update(frames)
             for frame in frames:
                 self.heard.setdefault(frame, set()).add(topic)
         else:
-            self.before_mark_stamps.append(info["source_timestamp"])
+            if topic == dl.DEVKIT_TF:
+                self.before_mark_stamps.append(info["source_timestamp"])
             for frame in frames:
                 self.before_mark.setdefault(frame, set()).add(topic)
 
