@@ -201,6 +201,9 @@ The min-time work (part 8) added tier 1 `RACELINE-1410/1415/1420/1425/1430/1435/
 
 The MOLA mapping work (SLAM part 2) added tier 1 `BRINGUP-1700/1710/1720/1730/1740/1750/1760/1770/1780` (`test_mola_map.py`; 1560 now pins three differing values, including the localization `icp_prior_weight` 5), `EVAL-1550`, `EVAL-1560` (`racing_evaluation`) and `RACELINE-1510`; tier 3 `SIM-3530`; nightly `SIM-5520` gained the grid comparison and `test_sim_5520_rotated_grid_is_named`.
 
+SLAM part 2-fix added two `SIM-3530` cases (`tests/system/test_sim_3530_mola_maps.py`): no map_server process outlives its test, and a timed-out mapping script leaves neither `setsid` group alive. Counts by ID are unchanged.
+
+
 The test-audit work (TA, owner ruling 2026-11-01) removed tier 1 `RACELINE-1500` and `RACELINE-1450`, and one test each from `RACELINE-1410` (`committed_dynamics_and_tyres_load`: the F1TENTH dynamics and tyre values), `RACELINE-1465` (`the_default_out_is_never_under_config_racelines`) and `CHECK-1520` (`path_planning_mintime_region_is_accepted`). They were one-off checks (the 2026-10-28 test audit). The surviving 1410 tests still cover every vehicle's `tum_mintime.yaml`. Counts by ID: 362 - 2 = 360 tier-1.
 
 ## The tests that matter most
