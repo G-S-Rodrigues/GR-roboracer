@@ -122,7 +122,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **362 tier-1, 53 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
+Current counts: **371 tier-1, 53 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -244,3 +244,4 @@ The AutoDRIVE part-9.1 fix added tier 2 `SIMAD-2280` (a positive control killed 
 
 The AutoDRIVE part-9.2 fix added tier 2 `SIMAD-2290` (TF the positive control wrote before it stopped, still queued in the listener after the graph emptied, is set aside by `Listener.mark()` on its DDS `source_timestamp` and never counted in SIMAD-2250's window; 9.1's `wait_until_gone` had removed the 1 s spin that used to drain it). Counts by ID: +1 tier-2.
 
+The D1 data-repo migration added tier 1 `CHECK-2320`, `CHECK-2330`, `CHECK-2340`, `CHECK-2350`, `CHECK-2360`, `SIMJAX-1600`, `BRINGUP-1960`, `BRINGUP-1970` and `RACELINE-1530` (nine IDs, counted by ID, on the counts above; the counting topic is still open). `CHECK-1420` keeps its ID and loses its `--ready` scope half to `CHECK-2320` (owner ruling E6). The track data is read from the `third_party/GR-roboracer-data` submodule, so every tier needs it initialised (repo-gotchas #44).
