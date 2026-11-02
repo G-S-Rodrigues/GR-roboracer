@@ -287,7 +287,7 @@ dependencies add ~116 MB of wheels to a cold `uv sync` (331 MB installed).
 ## Racelines (part 4)
 
 `python -m raceline` optimizes a line, verifies it and writes
-`third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle_version>/<optimizer>.{csv,yaml}`. `--out-dir` names the tracks root (default `third_party/GR-roboracer-data/tracks`); a record goes to `<out-dir>/<Map>/racelines/<vehicle_version>/`, `<Map>` being the `--map` file's stem with its case kept. Spielberg,
+`third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle_version>/<optimizer>.{csv,yaml}`. `--out-dir` names the tracks root (default `third_party/GR-roboracer-data/tracks`); a record goes to `<out-dir>/<Map>/racelines/<vehicle_version>/`, `<Map>` being the `--map` file's stem with its case kept. `--track` writes `tracks/<stem>/` with the lower-case track-file stem, which the launch's lookup (it reads the map name) never finds, so generate a line for the launch with `--map`. Spielberg,
 both vehicles (run from the repo root in `dev`, TUM one process at a time; each
 run is ~13 min, two TUM passes):
 

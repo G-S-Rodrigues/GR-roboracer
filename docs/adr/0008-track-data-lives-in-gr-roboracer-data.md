@@ -22,6 +22,8 @@ racelines live there too, pinned by SHA as a `third_party/` submodule.
   record's `track:` field stays the lower-case track-file stem; only the folder is keyed by the map.
 - **`raceline --out-dir` is the tracks root.** The default is `third_party/GR-roboracer-data/tracks`; a
   record goes to `<out-dir>/<Map>/racelines/<vv>/`, `<Map>` being the `--map` file's stem, case kept.
+  `--track` writes `tracks/<stem>/` (the lower-case track-file stem) while the lookup reads the map name,
+  so generate a line for the launch to find with `--map` (open topic 2026-11-02-d1-track-flag-lookup).
 - **Pin by SHA, no tags (E2).** Data lands by PR into the data repo's `main` before GR-roboracer pins it
   (E4), so CI can always fetch the pinned commit.
 - **analytic_circle and `config/tracks/` stay in-tree (E3).** Tier 1, metrics and the supervisor read
