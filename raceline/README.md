@@ -117,7 +117,11 @@ official Porto map (`third_party/GR-roboracer-data/tracks/Porto/maps/Porto/NOTIC
 from pathlib import Path
 from raceline.extract import Pose2D, extract_track, load_map
 
-grid = load_map(Path("third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/Spielberg.yaml"))
+grid = load_map(
+    Path(
+        "third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/Spielberg.yaml"
+    )
+)
 track = extract_track(
     grid, grid.resolution, grid.origin, Pose2D(0.0, 0.0, -2.879), "cw"
 )
