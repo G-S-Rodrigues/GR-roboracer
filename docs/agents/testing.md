@@ -122,7 +122,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **361 tier-1, 51 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
+Current counts: **362 tier-1, 52 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -239,4 +239,6 @@ The AutoDRIVE part-8b work (launch switch) added tier 1 `BRINGUP-1580` (a track 
 The AutoDRIVE part-9 work (official devkit bridge) added tier 1 `SIMAD-1400` to `SIMAD-1470` (eight IDs;
 with `BRINGUP-1690`, which replaces `BRINGUP-1610`'s refusal, nine IDs, counted by ID), tier 2 `SIMAD-2200` to `SIMAD-2260`, tier 3
 `SIM-3620`, and the local `tests/autodrive` `SIM-3710/3720`.
+
+The AutoDRIVE part-9.1 fix added tier 2 `SIMAD-2280` (a positive control killed without a goodbye is waited out within one DDS lease, `Listener.wait_until_gone`, or the wait fails naming its topics; two cases, one ID) and tier 1 `SIMAD-1480` (the devkit domain is S+1, or S-1 past 101). Counts by ID: +1 tier-1, +1 tier-2 on the counts above. `SIMAD-2220` now waits for the observer's reset reader to match B's writer first (the `ready=` hook `SIMAD-2200` uses): harness hardening, no new ID and no red (the flake is load-dependent).
 
