@@ -123,7 +123,7 @@ def test_raceline_1385_a_track_run_writes_the_csv_and_provenance(
     oval = _oval_yaml(tmp_path)
     code = runner.main(_argv(tmp_path, "--track", str(oval)))
     assert code == 0
-    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
     with (folder / "tum_mincurv_iqp.csv").open() as f:
         rows = list(csv.reader(f, delimiter=";"))
     assert len(rows) == len(test_smoke._oval())
@@ -173,6 +173,7 @@ def test_raceline_1387_walls_reach_the_extractor_and_the_yaml(
             tmp_path
             / "out"
             / "ring"
+            / "racelines"
             / "f1tenth-default-v1"
             / "tum_mincurv_iqp.yaml"
         ).read_text()
@@ -259,7 +260,7 @@ def test_raceline_1388_the_ground_truth_map_gives_cells_to_that_set_only(
     cells = by_name["ground_truth"].cells
     assert cells.resolution == grid.resolution
     assert len(cells.centres) == int((grid.data == 100).sum())
-    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
     doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
     gt_map = doc["ground_truth_map"]
     assert gt_map["path"] == str(ring)
@@ -302,7 +303,7 @@ def test_raceline_1470_a_written_line_is_plotted_to_the_plot_dir(
     argv = _argv(tmp_path, "--track", str(oval), "--plots", str(plots))
     assert runner.main(argv) == 0
     assert _plotted(plots)
-    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
     assert sorted(p.name for p in folder.iterdir()) == [
         "tum_mincurv_iqp.csv",
         "tum_mincurv_iqp.yaml",
@@ -384,7 +385,7 @@ def _run_mintime(monkeypatch, tmp_path, out, *extra):
         _mintime_argv(tmp_path, out, "--track", str(oval), *extra)
     )
     assert code == 0
-    folder = out / "oval" / "f1tenth-default-v1"
+    folder = out / "oval" / "racelines" / "f1tenth-default-v1"
     doc = yaml.safe_load((folder / "tum_mintime.yaml").read_text())
     return folder, doc, mincurv_calls, mintime_calls
 
@@ -457,7 +458,8 @@ def test_raceline_1445_the_repo_relative_reference_path(monkeypatch, tmp_path):
     try:
         folder, doc, _, _ = _run_mintime(monkeypatch, tmp_path, out)
         assert doc["parameters"]["reference"]["path"] == (
-            "log/pytest-1445/out/oval/f1tenth-default-v1/reference/"
+            "log/pytest-1445/out/oval/racelines/f1tenth-default-v1/"
+            "reference/"
             "tum_mintime.csv"
         )
     finally:
@@ -482,7 +484,7 @@ def test_raceline_1445_a_mincurv_yaml_is_unchanged_by_the_new_optimizer(
         str(oval),
     ]
     assert runner.main(argv) == 0
-    folder = tmp_path / "out" / "oval" / "f1tenth-default-v1"
+    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
     doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
     assert set(doc) == D9_KEYS | {"ground_truth_map"}
     assert doc["parameters"]["margin"] == 0.30  # no --margin: today's default
@@ -515,3 +517,47 @@ def test_raceline_1445_mintime_is_one_solve(monkeypatch, tmp_path):
                 tmp_path, tmp_path / "o", "--track", str(oval), "--passes", "2"
             )
         )
+
+
+def test_raceline_1530_the_default_out_dir_is_where_the_launch_looks():
+    """RACELINE-1530: `DEFAULT_OUT` is the data repo's tracks root, so a
+    record lands in `<DEFAULT_OUT>/<Map>/racelines/<vehicle version>/`. That
+    is the folder the launch searches: for every committed scenario whose
+    `map_directory` resolves under `DEFAULT_OUT`, `DEFAULT_OUT / <map> /
+    racelines` equals `<map_directory>/../../<map>/racelines`. At least one
+    scenario qualifies, so the check is never vacuous."""
+    scenarios = REPO_ROOT / "config" / "scenarios"
+    checked = []
+    for path in sorted(scenarios.glob("*.yaml")):
+        doc = yaml.safe_load(path.read_text())
+        maps = (path.parent / doc["map_directory"]).resolve()
+        if runner.DEFAULT_OUT not in maps.parents:
+            continue
+        name = doc["environment"]["map"]
+        assert runner.DEFAULT_OUT / name / "racelines" == (
+            maps.parent.parent / name / "racelines"
+        ), path.name
+        checked.append(path.name)
+    assert "spielberg.yaml" in checked
+
+
+def test_raceline_1530_the_folder_is_keyed_by_the_map_files_cased_stem(
+    monkeypatch, tmp_path
+):
+    """RACELINE-1530: a `--map Ring.yaml` record goes to
+    `<out-dir>/Ring/racelines/<vv>/` (the case kept, the folder the launch
+    derives from the scenario's map name), while its `track` field stays the
+    lower-case stem."""
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    _, pose = _ring_args(tmp_path)
+    ring = _write_map(test_extract._ring(), tmp_path, stem="Ring")
+    assert runner.main(_argv(tmp_path, "--map", str(ring), *pose)) == 0
+    sidecar = (
+        tmp_path
+        / "out"
+        / "Ring"
+        / "racelines"
+        / "f1tenth-default-v1"
+        / "tum_mincurv_iqp.yaml"
+    )
+    assert yaml.safe_load(sidecar.read_text())["track"] == "ring"
