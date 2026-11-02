@@ -449,7 +449,7 @@ def test_check_1790_vehicle_file_states_the_autodrive_car() -> None:
     )
     controller = _node(VEHICLE_YAML, "racing_controller_baseline")
     supervisor = _node(VEHICLE_YAML, "racing_safety_supervisor")
-    assert controller["wheelbase"] == read("wheelbase_m")
+    assert controller["wheelbase"] == read("wheelbase_table_m")
     assert supervisor["vehicle_half_width"] == read("half_width_m")
     assert supervisor["maximum_steering_angle"] == read("steering_limit_rad")
     default_controller = _node(DEFAULT_YAML, "racing_controller_baseline")
@@ -464,7 +464,7 @@ def test_check_1790_vehicle_file_states_the_autodrive_car() -> None:
     assert supervisor["stale_input_timeout_ms"] == 100
     for node in ("racing_metrics", "racing_recording"):
         version = _node(VEHICLE_YAML, node)["vehicle_parameter_version"]
-        assert version == "autodrive-roboracer-v1", node
+        assert version == "autodrive-roboracer-v2", node
 
     # The tables: ax is the cap (the measured machine, 5.2 m/s^2 over the
     # first 0.25 s, is above it); ay is mu * g with mu from the prefab.
@@ -494,3 +494,28 @@ def test_check_1790_vehicle_file_states_the_autodrive_car() -> None:
 
     text = re.sub(r"\s*#\s*", " ", VEHICLE_YAML.read_text())
     assert "not measured" in text and "depends on speed" in text
+
+
+def test_check_1795_autodrive_wheelbase_is_the_specification() -> None:
+    """CHECK-1795: the AutoDRIVE car's wheelbase is the specification's
+    (guide table :180 = the prefab's Ackermann field, 324 mm, :31695; owner
+    2026-11-01), not the TF/collider front-wheel x (`wheelbase_m`). The TUM
+    split takes lr from the image's CoG (`com_x_lr_m`) and lf as the rest."""
+    import pytest
+    import yaml
+
+    values = yaml.safe_load(SOURCE.read_text())["values"]
+
+    def read(name: str) -> float:
+        return float(values[name]["value"])
+
+    spec = read("wheelbase_table_m")
+    prefab = read("wheelbase_prefab_field_mm") / 1000
+    assert spec == pytest.approx(prefab, abs=1e-12)
+    controller = _node(VEHICLE_YAML, "racing_controller_baseline")
+    assert controller["wheelbase"] == spec
+    dynamics = yaml.safe_load((VEHICLE_DIR / "tum_mintime.yaml").read_text())
+    assert dynamics["wheelbase_rear"] == read("com_x_lr_m")
+    assert dynamics["wheelbase_front"] + dynamics["wheelbase_rear"] == (
+        pytest.approx(spec, abs=1e-9)
+    )
