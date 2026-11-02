@@ -505,14 +505,12 @@ class Listener:
         self.context = context
         self.node = rclpy.create_node("simad_2250_listener", context=context)
         self.frames = set()
+        self.heard = {}  # counted frame -> the topics it arrived on
         for name in self.TF_TOPICS:
             self.node.create_subscription(
                 TFMessage,
                 name,
-                lambda m: self.frames.update(
-                    {t.child_frame_id for t in m.transforms}
-                    | {t.header.frame_id for t in m.transforms}
-                ),
+                lambda m, info, name=name: self._heard(name, m, info),
                 QoSProfile(
                     history=HistoryPolicy.KEEP_LAST,
                     depth=100,
@@ -522,6 +520,35 @@ class Listener:
             )
         self.executor = SingleThreadedExecutor(context=context)
         self.executor.add_node(self.node)
+
+    def _heard(self, topic, msg, info):
+        frames = {t.child_frame_id for t in msg.transforms} | {
+            t.header.frame_id for t in msg.transforms
+        }
+        self.frames.update(frames)
+        for frame in frames:
+            self.heard.setdefault(frame, set()).add(topic)
+
+    def mark(self):
+        """Start counting from here."""
+        self.frames.clear()
+        self.heard.clear()
+
+    def describe(self):
+        """The counted frames, each with the topics it arrived on, and the
+        publishers now on those topics."""
+        lines = [
+            f"{frame} <- {', '.join(sorted(self.heard.get(frame, ())))}"
+            for frame in sorted(self.frames)
+        ]
+        topics = sorted({t for ts in self.heard.values() for t in ts})
+        for topic in topics:
+            pubs = [
+                f"{p.node_namespace.rstrip('/')}/{p.node_name}"
+                for p in self.node.get_publishers_info_by_topic(topic)
+            ]
+            lines.append(f"publishers on {topic}: {pubs}")
+        return "\n".join(lines)
 
     def spin(self, seconds):
         end = time.monotonic() + seconds
@@ -627,12 +654,12 @@ def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
         control = start_control(tmp_path)
         try:
             listener.spin(5.0)
-            assert "roboracer_1" in listener.frames, listener.frames
+            assert "roboracer_1" in listener.frames, listener.describe()
             assert listener.leaked_topics(), "the control left no topic"
         finally:
             dl.stop(control, timeout_s=10.0)
         listener.wait_until_gone()
-        listener.frames.clear()
+        listener.mark()
         scans = []
         observer.stack.create_subscription(
             LaserScan, dl.topic("/scan"), scans.append, SENSOR
@@ -646,7 +673,7 @@ def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
             listener.spin(0.1)
             observer.spin_once()
         assert not any("roboracer_1" in f for f in listener.frames), (
-            listener.frames
+            listener.describe()
         )
         assert listener.leaked_topics() == []
     finally:
