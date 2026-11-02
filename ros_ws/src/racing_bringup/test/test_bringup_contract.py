@@ -7,6 +7,8 @@ import pytest
 
 PACKAGE_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = PACKAGE_ROOT.parents[2]
+DATA = REPOSITORY_ROOT / "third_party" / "GR-roboracer-data"
+TRACKS = DATA / "tracks"
 LAUNCH_FILE = PACKAGE_ROOT / "launch" / "sim_pure_pursuit.launch.py"
 VEHICLE_CONFIG = (
     REPOSITORY_ROOT / "config" / "vehicles" / "f1tenth_default.yaml"
@@ -133,12 +135,7 @@ def test_bringup_1010_the_scenario_selects_every_nodes_track() -> None:
     )
     track = str(REPOSITORY_ROOT / "config" / "tracks" / "spielberg.yaml")
     raceline = str(
-        REPOSITORY_ROOT
-        / "config"
-        / "scenarios"
-        / "maps"
-        / "Spielberg"
-        / "Spielberg_raceline.csv"
+        TRACKS / "Spielberg" / "maps" / "Spielberg" / "Spielberg_raceline.csv"
     )
     assert spielberg["racing_safety_supervisor"]["track_path"] == track
     assert spielberg["racing_metrics"]["track_path"] == track
@@ -520,13 +517,7 @@ def test_bringup_1060_the_scenario_selects_the_occupancy_grid() -> None:
         REPOSITORY_ROOT / "config" / "scenarios" / "spielberg.yaml"
     )
     grid = (
-        REPOSITORY_ROOT
-        / "config"
-        / "scenarios"
-        / "maps"
-        / "Spielberg"
-        / "slam"
-        / "Spielberg.yaml"
+        TRACKS / "Spielberg" / "maps" / "Spielberg" / "slam" / "Spielberg.yaml"
     )
     assert spielberg["map_server"]["yaml_filename"] == str(grid)
     assert grid.is_file(), "the committed occupancy grid is missing"
@@ -552,19 +543,14 @@ def test_bringup_1150_the_planner_selects_the_committed_raceline(
     vehicle: Path, version: str
 ) -> None:
     """BRINGUP-1150: `planner=optimized_raceline` loads
-    `config/racelines/<track>/<vehicle version>/<optimizer>.csv`, whichever
+    `<data>/tracks/<Map>/racelines/<vehicle version>/<optimizer>.csv`, whichever
     vehicle is named; the default planner still loads the scenario's own
     `<map>_raceline.csv`, byte for byte as before.
     """
     from racing_bringup.scenario_parameters import track_parameters
 
     expected = (
-        REPOSITORY_ROOT
-        / "config"
-        / "racelines"
-        / "spielberg"
-        / version
-        / "tum_mincurv_iqp.csv"
+        TRACKS / "Spielberg" / "racelines" / version / "tum_mincurv_iqp.csv"
     )
     optimized = track_parameters(
         SPIELBERG_SCENARIO,
@@ -583,7 +569,9 @@ def test_bringup_1150_the_planner_selects_the_committed_raceline(
 
 def _raceline_world(tmp_path: Path) -> tuple[Path, Path]:
     """A copy of the Spielberg config tree small enough to corrupt one field
-    of: scenario, track, vehicle and the default vehicle's raceline."""
+    of: scenario, track, vehicle and the default vehicle's raceline. It
+    mirrors the repository: the scenario's relative `map_directory` reaches
+    `<tmp>/third_party/GR-roboracer-data/tracks/Spielberg/maps`."""
     import shutil
 
     config = tmp_path / "config"
@@ -595,15 +583,11 @@ def _raceline_world(tmp_path: Path) -> tuple[Path, Path]:
         config / "tracks",
     )
     shutil.copy(DEFAULT_VEHICLE, config / "vehicles")
-    target = config / "racelines" / "spielberg" / "f1tenth-default-v1"
+    tracks = tmp_path / "third_party" / "GR-roboracer-data" / "tracks"
+    (tracks / "Spielberg" / "maps" / "Spielberg").mkdir(parents=True)
+    target = tracks / "Spielberg" / "racelines" / "f1tenth-default-v1"
     target.mkdir(parents=True)
-    source = (
-        REPOSITORY_ROOT
-        / "config"
-        / "racelines"
-        / "spielberg"
-        / "f1tenth-default-v1"
-    )
+    source = TRACKS / "Spielberg" / "racelines" / "f1tenth-default-v1"
     for suffix in (".csv", ".yaml"):
         shutil.copy(source / f"tum_mincurv_iqp{suffix}", target)
     return config / "scenarios" / "spielberg.yaml", config / "vehicles" / (
@@ -631,10 +615,14 @@ def test_bringup_1160_the_resolver_fails_closed(tmp_path: Path) -> None:
 
     scenario, vehicle = _raceline_world(tmp_path)
     sidecar = (
-        scenario.parents[1]
+        scenario.parents[2]
+        / "third_party"
+        / "GR-roboracer-data"
+        / "tracks"
+        / "Spielberg"
         / "racelines"
-        / "spielberg"
-        / ("f1tenth-default-v1/tum_mincurv_iqp.yaml")
+        / "f1tenth-default-v1"
+        / "tum_mincurv_iqp.yaml"
     )
     # The unmodified copy resolves, so every raise below is the one change.
     assert _resolve(scenario, vehicle)
@@ -691,6 +679,64 @@ def test_bringup_1160_the_resolver_fails_closed(tmp_path: Path) -> None:
     contract = REPOSITORY_ROOT / "config" / "scenarios" / "contract_test.yaml"
     with pytest.raises(FileNotFoundError, match="analytic_circle"):
         _resolve(contract, DEFAULT_VEHICLE)
+
+
+def test_bringup_1960_the_raceline_is_found_by_the_scenarios_map_name(
+    tmp_path: Path,
+) -> None:
+    """BRINGUP-1960: the committed raceline is
+    `tracks/<Map>/racelines/<vehicle version>/<optimizer>.csv`, the folder
+    named by the scenario's `environment.map` (case kept) and found from its
+    `map_directory`. A line under the lower-case track-file stem is not it."""
+    import shutil
+
+    scenario, vehicle = _raceline_world(tmp_path)
+    tracks = tmp_path / "third_party" / "GR-roboracer-data" / "tracks"
+    folder = tracks / "Spielberg" / "racelines" / "f1tenth-default-v1"
+    # A decoy under the track stem, so only the map name can pick the line.
+    decoy = tracks / "spielberg" / "racelines" / "f1tenth-default-v1"
+    shutil.copytree(folder, decoy)
+
+    resolved = _resolve(scenario, vehicle)
+    assert resolved["racing_bringup_support"]["raceline_path"] == str(
+        folder / "tum_mincurv_iqp.csv"
+    )
+
+    (folder / "tum_mincurv_iqp.csv").unlink()
+    with pytest.raises(FileNotFoundError, match="no committed raceline"):
+        _resolve(scenario, vehicle)
+
+
+def test_bringup_1970_the_init_hint_names_the_submodule_only_if_it_is_absent(
+    tmp_path: Path,
+) -> None:
+    """BRINGUP-1970: a missing raceline names `git submodule update --init
+    third_party/GR-roboracer-data` only when the scenario's map directory is
+    absent (an uninitialised submodule). A present map with no line, and a
+    scenario with no committed raceline at all (contract_test), do not."""
+    import shutil
+
+    hint = "git submodule update --init"
+    scenario, vehicle = _raceline_world(tmp_path)
+    tracks = tmp_path / "third_party" / "GR-roboracer-data" / "tracks"
+
+    (tracks / "Spielberg" / "racelines" / "f1tenth-default-v1").joinpath(
+        "tum_mincurv_iqp.csv"
+    ).unlink()
+    with pytest.raises(FileNotFoundError) as present:
+        _resolve(scenario, vehicle)
+    assert hint not in str(present.value)
+
+    shutil.rmtree(tracks / "Spielberg" / "maps")
+    with pytest.raises(FileNotFoundError) as absent:
+        _resolve(scenario, vehicle)
+    assert hint in str(absent.value)
+    assert "third_party/GR-roboracer-data" in str(absent.value)
+
+    contract = REPOSITORY_ROOT / "config" / "scenarios" / "contract_test.yaml"
+    with pytest.raises(FileNotFoundError) as circle:
+        _resolve(contract, DEFAULT_VEHICLE)
+    assert hint not in str(circle.value)
 
 
 def _node_parameters(context, node) -> list:
@@ -802,10 +848,9 @@ def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
     support = _launched(context, module, "racing_bringup")
     controller = _launched(context, module, "racing_controller_baseline")
     assert support["raceline_path"] == str(
-        REPOSITORY_ROOT
-        / "config"
+        TRACKS
+        / "Spielberg"
         / "racelines"
-        / "spielberg"
         / "f1tenth-default-v1"
         / "tum_mincurv_iqp.csv"
     )
@@ -828,13 +873,14 @@ def test_bringup_1180_every_raceline_optimizer_resolves_per_vehicle(
 ) -> None:
     """BRINGUP-1180: `raceline_optimizer:=` offers exactly the optimizers
     whose lines are committed (the stems of
-    `config/racelines/spielberg/*/*.csv`), and each value resolves to its
-    own existing line for both vehicles. A committed line the tuple omits,
-    or a value with no line, fails here rather than at launch time.
+    `tracks/Spielberg/racelines/*/*.csv` in the data repo), and each value
+    resolves to its own existing line for both vehicles. A committed line
+    the tuple omits, or a value with no line, fails here rather than at
+    launch time.
     """
     from racing_bringup.scenario_parameters import RACELINE_OPTIMIZERS
 
-    committed = REPOSITORY_ROOT / "config" / "racelines" / "spielberg"
+    committed = TRACKS / "Spielberg" / "racelines"
     assert set(RACELINE_OPTIMIZERS) == {
         line.stem for line in committed.glob("*/*.csv")
     }

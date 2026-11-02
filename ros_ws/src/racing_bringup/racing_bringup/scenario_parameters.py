@@ -53,20 +53,33 @@ def _vehicle_version(vehicle_path: Path) -> str:
 
 
 def _optimized_raceline(
-    track_file: Path, optimizer: str, vehicle_path: Path | None
+    track_file: Path,
+    maps: Path,
+    map_name: str,
+    optimizer: str,
+    vehicle_path: Path | None,
 ) -> str:
     if vehicle_path is None:
         raise ValueError("planner optimized_raceline needs a vehicle_path")
     version = _vehicle_version(vehicle_path)
+    # `maps` is `<data>/tracks/<Map>/maps`, so its grandparent is `tracks`
+    # and the folder is chosen by the scenario's map name, not the track stem.
     csv = (
-        track_file.parent.parent
+        maps.parent.parent
+        / map_name
         / "racelines"
-        / track_file.stem
         / version
         / f"{optimizer}.csv"
     )
     if not csv.is_file():
-        raise FileNotFoundError(f"no committed raceline at {csv}")
+        hint = ""
+        if not maps.is_dir():
+            hint = (
+                "; the track data is the GR-roboracer-data submodule, run "
+                "`git submodule update --init third_party/GR-roboracer-data` "
+                "on the host"
+            )
+        raise FileNotFoundError(f"no committed raceline at {csv}{hint}")
     sidecar_path = csv.with_suffix(".yaml")
     if not sidecar_path.is_file():
         raise FileNotFoundError(f"no raceline sidecar at {sidecar_path}")
@@ -97,7 +110,8 @@ def track_parameters(
 
     `planner="optimized_raceline"` swaps the scenario's own
     `<map>_raceline.csv` for the committed
-    `config/racelines/<track>/<vehicle version>/<optimizer>.csv`. It fails
+    `<data>/tracks/<Map>/racelines/<vehicle version>/<optimizer>.csv`, found
+    from the scenario's `map_directory` and `environment.map`. It fails
     closed: an unknown name, a missing file or a sidecar that disagrees raises,
     and the centerline is never a fallback. Under the default
     `track_centerline`, a map with no `<map>_raceline.csv` gets an empty
@@ -116,17 +130,11 @@ def track_parameters(
     track_file = (base / document["track"]).resolve()
     track = str(track_file)
     map_name = str(document["environment"]["map"])
-    raceline = str(
-        (
-            base
-            / document["map_directory"]
-            / map_name
-            / f"{map_name}_raceline.csv"
-        ).resolve()
-    )
+    maps = (base / document["map_directory"]).resolve()
+    raceline = str((maps / map_name / f"{map_name}_raceline.csv").resolve())
     if planner == "optimized_raceline":
         raceline = _optimized_raceline(
-            track_file, raceline_optimizer, vehicle_path
+            track_file, maps, map_name, raceline_optimizer, vehicle_path
         )
     elif not Path(raceline).is_file():
         # A map with no raceline of its own (Porto's is part 11's): the
@@ -138,13 +146,7 @@ def track_parameters(
     # second copy of which world this is, and localizing against another
     # track's walls is silent, not an error.
     occupancy_grid = str(
-        (
-            base
-            / document["map_directory"]
-            / map_name
-            / "slam"
-            / f"{map_name}.yaml"
-        ).resolve()
+        (maps / map_name / "slam" / f"{map_name}.yaml").resolve()
     )
     reported = document.get("metrics") or {}
     reporting = {
