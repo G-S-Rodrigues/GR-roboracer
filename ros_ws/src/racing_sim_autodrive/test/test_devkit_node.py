@@ -635,6 +635,43 @@ def test_simad_2280_a_control_that_never_leaves_fails_naming_it(
         listener.close()
 
 
+def test_simad_2290_a_queued_control_sample_is_not_counted_after_the_mark(
+    tmp_path, observer
+):
+    """SIMAD-2290: TF the positive control published before it stopped can
+    still sit in the listener's queue after the control has left the graph;
+    `Listener.mark()` sets it aside, so none of it is counted in SIMAD-2250's
+    window."""
+    listener = Listener(observer.stack_context)
+    control = None
+    try:
+        control = start_control(tmp_path)
+        end = time.monotonic() + 10.0
+        while time.monotonic() < end and "roboracer_1" not in listener.frames:
+            listener.spin(0.1)
+        assert "roboracer_1" in listener.frames, (
+            "the control's TF never arrived"
+        )
+        # Not spinning on purpose: the control keeps publishing, so the
+        # listener's queue fills while nothing takes from it.
+        time.sleep(1.0)
+        dl.stop(control, timeout_s=10.0)
+        # A graph wait that does not spin, which would drain the queue.
+        end = time.monotonic() + CONTROL_GONE_S
+        while listener.leaked_topics() and time.monotonic() < end:
+            time.sleep(0.1)
+        assert listener.leaked_topics() == [], listener.leaked_topics()
+        listener.mark()
+        listener.spin(1.0)
+        assert not any("roboracer_1" in f for f in listener.frames), (
+            listener.describe()
+        )
+    finally:
+        if control is not None:
+            dl.stop(control, signal.SIGKILL, timeout_s=10.0)
+        listener.close()
+
+
 def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
     tmp_path, run, observer
 ):
