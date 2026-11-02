@@ -64,8 +64,8 @@ Stop the launch with Ctrl+C afterwards. Save after the lap: the last `/map` cove
 
 It fixes the seed at 42, runs at 1x, and gives up if no lap completes within 240 s (the
 `LAP_WAIT` environment variable changes that). Give it
-`config/scenarios/maps/Spielberg/slam/Spielberg` as the stem only to replace the committed grid,
-which is a reviewed change.
+`third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg` as the stem only to replace the committed grid,
+which is a reviewed change: a new or re-surveyed map is a data-repo PR plus a gitlink bump here (ADR 0008).
 
 ## Saved artifacts
 
@@ -76,10 +76,10 @@ The stem you give produces two files:
 
 No pose graph is saved. The files belong to the container user, and two runs differ slightly
 because the asynchronous mapper picks its own scans. The committed survey grid is
-`config/scenarios/maps/Spielberg/slam/Spielberg`, and it is what amcl localizes on in
+`third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg`, and it is what amcl localizes on in
 [Racing](racing.md#amcl-closed-loop). Denser 0.025 m and 0.02 m surveys (minimum travel 2 cm over two
 laps at 1.5 m/s; the mapper dropped scans throughout, so fewer were integrated) sit beside it in
-`config/scenarios/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers say how they were made.
+`third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers say how they were made.
 `./scripts/map_track.sh` does not produce them (non-default slam_toolbox settings and a longer
 scenario), and no launch selects them: amcl reads `slam/`.
 
@@ -95,7 +95,7 @@ scans, owns `map -> odom`, saves no map, and its estimate is scored against grou
 MOLA-LO builds its own map with one mapping lap. From `/ws`, after a `colcon build`:
 
 ```bash
-./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml config/scenarios/maps/Spielberg/mola/Spielberg 7
+./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/mola/Spielberg 7
 ```
 
 The car drives one lap at 1x on ground truth while `mola_mapping.launch.py` runs MOLA-LO's lidar

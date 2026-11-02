@@ -1,7 +1,7 @@
 # raceline
 
 Offline raceline generation for GR-roboracer: a ROS-free uv project. Nothing in
-`ros_ws/` imports it; its output is files (committed under `config/racelines/`). It runs with `uv` in the `dev` container (ADR 0002 as
+`ros_ws/` imports it; its output is files (committed under `third_party/GR-roboracer-data/tracks/<Map>/racelines/`). It runs with `uv` in the `dev` container (ADR 0002 as
 amended 2026-10-13, ADR 0003): `colcon build --base-paths ros_ws/src` never
 scans it, and it needs no CUDA.
 
@@ -111,13 +111,13 @@ spec, part 4's runner takes its input from `extract_track` on the map (with
 `walls="observed"`); the
 committed `config/tracks/` file stays the gym's world, except where a map has no
 upstream centerline: `config/tracks/porto.yaml` is extracted from AutoDRIVE's
-official Porto map (`config/scenarios/maps/Porto/NOTICE.md`) and committed unedited.
+official Porto map (`third_party/GR-roboracer-data/tracks/Porto/maps/Porto/NOTICE.md`) and committed unedited.
 
 ```python
 from pathlib import Path
 from raceline.extract import Pose2D, extract_track, load_map
 
-grid = load_map(Path("config/scenarios/maps/Spielberg/Spielberg.yaml"))
+grid = load_map(Path("third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/Spielberg.yaml"))
 track = extract_track(
     grid, grid.resolution, grid.origin, Pose2D(0.0, 0.0, -2.879), "cw"
 )
@@ -128,7 +128,7 @@ extractor refuses):
 
 ```bash
 env -u PYTHONPATH uv run --project raceline --locked python -m raceline.track_from_map \
-  --map config/scenarios/maps/Porto/Porto.yaml --start-pose 0 0 3.14159 --direction cw \
+  --map third_party/GR-roboracer-data/tracks/Porto/maps/Porto/Porto.yaml --start-pose 0 0 3.14159 --direction cw \
   --walls observed --name Porto --out config/tracks/porto.yaml
 ```
 
@@ -283,17 +283,17 @@ dependencies add ~116 MB of wheels to a cold `uv sync` (331 MB installed).
 ## Racelines (part 4)
 
 `python -m raceline` optimizes a line, verifies it and writes
-`config/racelines/<track>/<vehicle_version>/<optimizer>.{csv,yaml}`. Spielberg,
+`third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle_version>/<optimizer>.{csv,yaml}`. `--out-dir` names the tracks root (default `third_party/GR-roboracer-data/tracks`); a record goes to `<out-dir>/<Map>/racelines/<vehicle_version>/`, `<Map>` being the `--map` file's stem with its case kept. Spielberg,
 both vehicles (run from the repo root in `dev`, TUM one process at a time; each
 run is ~13 min, two TUM passes):
 
 ```bash
 for v in f1tenth_default f1tenth_gym_limits; do
   env -u PYTHONPATH uv run --project raceline --locked python -m raceline \
-    --map config/scenarios/maps/Spielberg/slam/Spielberg.yaml --walls observed \
+    --map third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg.yaml --walls observed \
     --start-pose 0 0 -2.879 --direction cw \
     --ground-truth-track config/tracks/spielberg.yaml \
-    --ground-truth-map config/scenarios/maps/Spielberg/Spielberg.yaml \
+    --ground-truth-map third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/Spielberg.yaml \
     --vehicle config/vehicles/$v.yaml --optimizer tum_mincurv_iqp --timeout 1800 || exit 1
 done
 ```
@@ -379,7 +379,7 @@ done
   clearance and speed, and what binds each node: wall bound, tyre or speed
   cap) on success and when the verifier rejects, to `log/raceline/<track>/
   <vehicle>/<optimizer>/` (`--plots DIR`, `--no-plots`), never under
-  `config/racelines/`. `python -m raceline.diagnose LINE.csv --vehicle
+  `third_party/GR-roboracer-data/tracks/<Map>/racelines/`. `python -m raceline.diagnose LINE.csv --vehicle
   config/vehicles/<v>.yaml (--track T.yaml | --map M.yaml ...)` plots a
   committed line.
 - *Regeneration.* RACELINE-1395 turns red when the survey, the gym PNG, the

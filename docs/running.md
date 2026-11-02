@@ -57,7 +57,7 @@ simulator's lap times, collisions and the qualification score (ten middle laps p
 container. Artifacts (`qualification.json`, `porto_run.npz`, `launch.log`) land in `.scratch-out/autodrive_qualify/`.
 `--workdir` selects a checkout inside `dev` and `--dry-run` prints the three commands without running them.
 
-The minimum-curvature line from `config/racelines/`, raced at its own speed:
+The minimum-curvature line from `third_party/GR-roboracer-data/tracks/<Map>/racelines/`, raced at its own speed:
 
 ```bash
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory
@@ -95,12 +95,14 @@ docker compose -f docker/docker-compose.yaml run --rm -T fast-sim python -m sim.
   --output tests/golden/baseline.json
 
 # tests/golden/spielberg_baseline.json (SIM-3090): the same flags with
-#   --track config/tracks/spielberg.yaml --scenario spielberg --max-steps 30000
+#   --track config/tracks/spielberg.yaml --scenario spielberg --max-steps 30000 \
+#   --maps-root third_party/GR-roboracer-data/tracks/Spielberg/maps
+# (otherwise it writes an untracked config/scenarios/maps/Spielberg/)
 ```
 
 The controller flags are `config/vehicles/f1tenth_default.yaml`'s values; `python sim/rollout.py`
 fails with `ModuleNotFoundError: sim`, so run it as a module. It regenerates the gym map assets
-under `config/scenarios/maps` from the canonical track, byte-identically. The live scenario must
+under its `--maps-root` (`config/scenarios/maps` for analytic_circle, the track's `maps` folder in the data repo for a real track) from the canonical track, byte-identically. The live scenario must
 not set physics parameters the rollout does not (SIMJAX-1060).
 
 ## When a run misbehaves
