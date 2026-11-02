@@ -1,4 +1,4 @@
-"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2260).
+"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2280).
 
 B (`racing_sim_autodrive.devkit_node`) and the devkit stand-in run as
 processes: B's stack side on the domain S, its devkit side and the stand-in on
@@ -10,6 +10,7 @@ stand-in, which a launch_test file cannot restart per test.
 
 import math
 import re
+import signal
 import sys
 import time
 from pathlib import Path
@@ -346,7 +347,7 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
     only place a True overwritten by a later False would show, carries
     `Reset True` in one contiguous run (at least one reply) and then False."""
     seen = []
-    observer.devkit.create_subscription(
+    reset_sub = observer.devkit.create_subscription(
         Bool,
         dl.RESET_TOPIC,
         lambda m: seen.append(bool(m.data)),
@@ -356,8 +357,15 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
             durability=DurabilityPolicy.VOLATILE,
         ),
     )
-    _, _, standin, out, _ = run(
-        *dl.STATIONARY, "--pace", "recorded", "--count", "400"
+    # B's True goes out once on a VOLATILE writer: the observer's reader must
+    # have matched it first, or the True is lost (as SIMAD-2200 does).
+    _, blog, standin, out, slog = run(
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--count",
+        "400",
+        ready=lambda: reset_sub.get_publisher_count() >= 1,
     )
     client = observer.stack.create_client(
         Reset, f"{dl.PREFIX}/racing_sim/reset"
@@ -371,9 +379,13 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
         observer, lambda: standin.poll() is not None, 60.0, "stand-in done"
     )
     spin(observer, 0.5)
-    assert seen[:1] == [True], seen
-    assert seen.count(True) == 1 and seen[-1] is False, seen
     flags = [r["V1 Reset"] for r in dl.replies(out)]
+    context = (
+        f"{seen}; stand-in reply flags {flags}; stand-in:"
+        f" {_tail(slog, 'frames published')}; B: {_tail(blog, 'reset')}"
+    )
+    assert seen[:1] == [True], context
+    assert seen.count(True) == 1 and seen[-1] is False, context
     assert "True" in flags, "the devkit never replied Reset True"
     first = flags.index("True")
     last = len(flags) - 1 - flags[::-1].index("True")
@@ -455,6 +467,33 @@ def test_simad_2260_a_withheld_topic_is_named_in_one_stall(run, observer):
     assert stalls[0].strip() == "collision_count", stalls
 
 
+# Fast DDS's default participant lease (RTPSParticipantAttributes.h,
+# leaseDuration 20 s, announcement 3 s; compose keeps the Jazzy default
+# RMW and sets no profile XML): a participant that died without a goodbye
+# leaves a peer's graph within one lease of the last message heard from it.
+# 25 = 20 (lease) + 3 (one announcement period of slack) + 2 (the lease
+# check's cadence and this 0.1 s poll). Not measured on any host; never
+# widen it to green a run (repo-gotchas #14).
+CONTROL_GONE_S = 25.0
+
+
+def start_control(tmp_path):
+    """The positive control: the stand-in on the stack domain itself."""
+    control, _, _ = dl.start_standin(
+        tmp_path,
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--count",
+        "200",
+        "--wait-subscribers",
+        "0",  # nothing subscribes the control's topics
+        domain=dl.STACK_DOMAIN,
+        replies="control.jsonl",
+    )
+    return control
+
+
 class Listener:
     """What a node on the stack domain hears of the devkit."""
 
@@ -489,6 +528,25 @@ class Listener:
         while time.monotonic() < end:
             self.executor.spin_once(timeout_sec=0.02)
 
+    def wait_until_gone(self, timeout_s=None):
+        """Spin until no `/autodrive/` or `_dk<S>/` topic has a publisher;
+        fail at the deadline, naming what is left."""
+        timeout_s = CONTROL_GONE_S if timeout_s is None else timeout_s
+        end = time.monotonic() + timeout_s
+        while True:
+            leaked = self.leaked_topics()
+            if not leaked:
+                return
+            if time.monotonic() >= end:
+                raise AssertionError(
+                    f"the positive control's topics {leaked}"
+                    f" were still on stack domain {dl.STACK_DOMAIN} after"
+                    f" {timeout_s} s (Fast DDS lease 20 s). The candidates"
+                    " are a stand-in that did not exit, another run on this"
+                    " domain, or a stale graph (repo-gotchas #10)."
+                )
+            self.spin(0.1)
+
     def leaked_topics(self):
         return sorted(
             name
@@ -500,6 +558,54 @@ class Listener:
     def close(self):
         self.executor.shutdown()
         self.node.destroy_node()
+
+
+def spin_until_leaked(listener, seconds=10.0):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end and not listener.leaked_topics():
+        listener.spin(0.1)
+    assert listener.leaked_topics(), "the control left no topic"
+
+
+def test_simad_2280_a_lingering_control_is_waited_out(tmp_path, observer):
+    """SIMAD-2280: a positive control that dies without a goodbye (SIGKILL)
+    stays discoverable on the stack domain until its DDS lease runs out, and
+    `Listener.wait_until_gone` waits that out: afterwards no `/autodrive/` or
+    `_dk<S>/` topic is left, so SIMAD-2250's real run starts on a clean
+    graph."""
+    listener = Listener(observer.stack_context)
+    control = start_control(tmp_path)
+    try:
+        spin_until_leaked(listener)
+        dl.stop(control, signal.SIGKILL, timeout_s=10.0)
+        assert listener.leaked_topics(), (
+            "the killed control left the graph at once, so this test no "
+            "longer exercises the wait"
+        )
+        listener.wait_until_gone()
+        assert listener.leaked_topics() == []
+    finally:
+        dl.stop(control, signal.SIGKILL, timeout_s=10.0)
+        listener.close()
+
+
+def test_simad_2280_a_control_that_never_leaves_fails_naming_it(
+    tmp_path, observer
+):
+    """SIMAD-2280: a control still publishing when the wait runs out fails
+    `wait_until_gone`, naming its topics and the stack domain."""
+    listener = Listener(observer.stack_context)
+    control = start_control(tmp_path)
+    try:
+        spin_until_leaked(listener)
+        with pytest.raises(
+            AssertionError,
+            match=rf"_dk{dl.STACK_DOMAIN}/autodrive.*domain {dl.STACK_DOMAIN}",
+        ):
+            listener.wait_until_gone(timeout_s=2.0)
+    finally:
+        dl.stop(control, timeout_s=10.0)
+        listener.close()
 
 
 def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
@@ -518,25 +624,14 @@ def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
     equal to its own, naming the TF collision."""
     listener = Listener(observer.stack_context)
     try:
-        control, _, _ = dl.start_standin(
-            tmp_path,
-            *dl.STATIONARY,
-            "--pace",
-            "recorded",
-            "--count",
-            "200",
-            "--wait-subscribers",
-            "0",  # nothing subscribes the control's topics
-            domain=dl.STACK_DOMAIN,
-            replies="control.jsonl",
-        )
+        control = start_control(tmp_path)
         try:
             listener.spin(5.0)
             assert "roboracer_1" in listener.frames, listener.frames
             assert listener.leaked_topics(), "the control left no topic"
         finally:
             dl.stop(control, timeout_s=10.0)
-        listener.spin(1.0)
+        listener.wait_until_gone()
         listener.frames.clear()
         scans = []
         observer.stack.create_subscription(
