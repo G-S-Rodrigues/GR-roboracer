@@ -920,13 +920,11 @@ def test_check_1310_gym_limits_vehicle_and_ggv_paths_are_neutral() -> None:
 def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
     None
 ):
-    """CHECK-1420: the planner's default is `track_centerline`, the committed
-    racelines belong to the `optimized_raceline` alternative that SIM-3110
-    verifies, and a change to one selects that test and ACC-4040's raceline
-    case (the lap driving on amcl's estimate) rather than the whole tree."""
-    stack = load_stack(REPO_ROOT)
-    deps = reverse_dependents(read_manifests(REPO_ROOT))
-
+    """CHECK-1420: the planner's default is `track_centerline` and the
+    committed racelines belong to the `optimized_raceline` alternative that
+    SIM-3110 verifies. The scope half (a change to a raceline file selecting
+    only that alternative's tests) went with the racelines into the data
+    submodule; CHECK-2320 is its successor (owner ruling E6, D1)."""
     import yaml
 
     planner = yaml.safe_load(
@@ -942,19 +940,29 @@ def test_check_1420_the_planner_alternative_owns_the_committed_racelines() -> (
         "ACC-4040",
     ]
 
-    scope = select_ready(
-        ["config/racelines/spielberg/f1tenth-default-v1/tum_mincurv_iqp.csv"],
-        stack,
-        deps,
-    )
 
-    assert scope.whole_tree is False
-    assert set(scope.tests) == {
-        "SIM-3020",
-        "SIM-3110",
-        "SIM-3120",
-        "ACC-4040",
-    }
+@pytest.mark.parametrize(
+    "path", ["third_party/GR-roboracer-data", ".gitmodules"]
+)
+def test_check_2350_a_data_bump_is_a_whole_tree_trigger_for_fast(
+    path: str,
+) -> None:
+    """CHECK-2350 / CHECK-2360: the data submodule's gitlink and
+    `.gitmodules` make `--fast` whole tree. A bump is one path whose contents
+    the diff does not show (ADR 0007, ADR 0008)."""
+    scope = scope_for([path])
+
+    assert scope.whole_tree is True
+
+
+def test_check_2320_a_data_bump_is_whole_tree_for_ready() -> None:
+    """CHECK-2320: the gitlink change makes `--ready` whole tree, naming it.
+    This replaces CHECK-1420's scope half (owner ruling E6)."""
+    scope = _select(["third_party/GR-roboracer-data"])
+
+    assert scope.whole_tree is True
+    assert "whole-tree trigger: third_party/GR-roboracer-data" in scope.reason
+    assert scope.implementations == scope.tests == scope.why == ()
 
 
 def test_check_1170_real_map_instrument_couplings() -> None:
