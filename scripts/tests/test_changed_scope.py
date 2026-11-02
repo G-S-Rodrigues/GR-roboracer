@@ -965,6 +965,40 @@ def test_check_2320_a_data_bump_is_whole_tree_for_ready() -> None:
     assert scope.implementations == scope.tests == scope.why == ()
 
 
+def test_check_2330_every_reference_stack_glob_matches_a_file() -> None:
+    """CHECK-2330: every `paths` and `neutral_paths` glob in
+    `config/reference_stack.yaml` matches at least one file in the tree. A
+    glob that matches nothing is stale (its files moved, as the racelines and
+    maps did into the data submodule) and only looks like coverage. The
+    matcher is `changed_scope`'s own, `fnmatchcase` on repo-relative paths.
+    The tree is walked rather than listed with git, which fails in `dev` on a
+    host worktree (repo-gotchas #23); build output, logs and the submodules
+    are not part of it."""
+    import fnmatch
+
+    stack = load_stack(REPO_ROOT)
+    skipped = {"build", "install", "log", "third_party", "node_modules"}
+    files: list[str] = []
+    for directory, names, filenames in os.walk(REPO_ROOT):
+        names[:] = [
+            n for n in names if n not in skipped and not n.startswith(".")
+        ]
+        base = Path(directory).relative_to(REPO_ROOT)
+        files.extend((base / f).as_posix() for f in filenames)
+        files.extend(
+            (base / n).as_posix() for n in names if not (base / n).is_symlink()
+        )
+    globs = {glob for impl in stack.implementations for glob in impl.paths}
+    globs |= set(stack.neutral_paths)
+    assert globs, "no globs read from the map"
+    dead = sorted(
+        glob
+        for glob in globs
+        if not any(fnmatch.fnmatchcase(f, glob) for f in files)
+    )
+    assert dead == [], f"reference_stack.yaml globs match no file: {dead}"
+
+
 def test_check_1170_real_map_instrument_couplings() -> None:
     """CHECK-1170: on the real map the sim feeds every estimator (R1) and
     racing_evaluation is their measuring instrument (R2), so each path
