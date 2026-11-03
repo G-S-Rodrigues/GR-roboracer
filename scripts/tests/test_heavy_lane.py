@@ -23,11 +23,8 @@ HOST_LANE = "/tmp/gr-roboracer-lane"
 
 @pytest.fixture
 def lane(tmp_path: Path) -> Path:
-    """A lane the wrapper uses instead of the host's. Where /lane exists (a
-    container started from the mounted compose) the wrapper prefers it, so
-    these tests skip there and run on the host and in CI."""
-    if Path("/lane").is_dir():
-        pytest.skip("/lane is mounted: the wrapper would use it, not tmp_path")
+    """A lane the wrapper uses instead of the host's (GR_LANE_DIR wins over
+    /lane, so this runs inside a mounted container too)."""
     return tmp_path
 
 
@@ -67,9 +64,11 @@ def test_check_2410_the_wrapper_runs_the_command_and_returns_its_exit(
 def test_check_2420_a_second_holder_waits_then_gives_up(lane: Path) -> None:
     """CHECK-2420: while one run holds the lane, a second with --wait 1 exits 3
     and names the holder; once the first ends, the second runs."""
+    holder_env = {**os.environ, "GR_LANE_DIR": str(lane)}
+    holder_env.pop("HEAVY_LANE_HELD", None)
     holder = subprocess.Popen(
         ["bash", str(SCRIPT), "--max-load", "1000", "--", "sleep", "20"],
-        env={**os.environ, "GR_LANE_DIR": str(lane)},
+        env=holder_env,
         start_new_session=True,
     )
     try:
@@ -97,3 +96,31 @@ def test_check_2430_a_nested_call_does_not_deadlock_on_its_parent(
     inner = f"bash {SCRIPT} --wait 2 --max-load 1000 -- echo nested"
     out = _run(lane, "--max-load", "1000", "--", "bash", "-c", inner)
     assert out.returncode == 0 and out.stdout.strip() == "nested"
+
+
+def test_check_2440_a_container_without_the_mount_exits_4_not_a_private_lock(
+    tmp_path: Path,
+) -> None:
+    """CHECK-2440: with no GR_LANE_DIR, no lane mount and the container
+    marker present, the wrapper exits 4 and does not run the command; with
+    the marker absent (the host) it does not take that exit."""
+    marker = tmp_path / "dockerenv"
+    marker.write_text("")
+    env = {
+        **os.environ,
+        "GR_LANE_MOUNT": str(tmp_path / "no-lane"),
+        "GR_CONTAINER_MARKER": str(marker),
+        "HOME": str(tmp_path),
+    }
+    env.pop("GR_LANE_DIR", None)
+    env.pop("HEAVY_LANE_HELD", None)
+    cmd = ["bash", str(SCRIPT), "--wait", "1", "--max-load", "1000", "--"]
+    out = subprocess.run(
+        [*cmd, "echo", "ran"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert out.returncode == 4
+    assert "ran" not in out.stdout and "recreate" in out.stderr

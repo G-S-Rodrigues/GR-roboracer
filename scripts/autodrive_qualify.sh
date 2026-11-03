@@ -42,7 +42,7 @@ if [ -z "$(docker ps -q --filter "name=^${dev}\$" 2>/dev/null)" ] &&
 fi
 
 compose="AUTODRIVE_BRIDGE_HOST=$dev docker compose -f $root/docker/docker-compose.yaml --profile autodrive up -d --no-deps --force-recreate autodrive-sim"
-inner="cd $workdir && source setup.sh && source install/setup.bash && flock /tmp/gr-roboracer-heavy-lane.lock env ROS_DOMAIN_ID=$domain AUTODRIVE_OUT=$workdir/.scratch-out/autodrive_qualify python3 -m pytest tests/autodrive/test_sim_3730_porto_qualification.py -s"
+inner="cd $workdir && source setup.sh && source install/setup.bash && scripts/heavy_lane.sh -- env ROS_DOMAIN_ID=$domain AUTODRIVE_OUT=$workdir/.scratch-out/autodrive_qualify python3 -m pytest tests/autodrive/test_sim_3730_porto_qualification.py -s"
 run="docker exec $dev bash -lc '$inner'"
 stop="docker stop $sim"
 

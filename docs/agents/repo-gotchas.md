@@ -145,14 +145,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     corridor. The yaml's curvature column is the *upstream raceline's* (it integrates to -394.4 deg
     per lap), so never rebuild a centerline from it.
 
-29. **A lock file in `/tmp` is not shared between the host and a container.** Each has its own `/tmp`, so
+45. **A lock file in `/tmp` is not shared between the host and a container.** Each has its own `/tmp`, so
     the host's `/tmp/x.lock` and `gr-roboracer-dev`'s `/tmp/x.lock` are two files, and three sessions each
     taking "the heavy lock" excluded nobody: a ready gate overran another's, load hit 12, the sim ran at
     1.9x instead of 5x and SIM-3080/3510 failed on a branch whose diff could not reach them. Symptom: a
     tier-3 failure with a latch or a drifting pose, and `uptime` high at the time. Remedy: every heavy run
     goes through `scripts/heavy_lane.sh -- <command>`, which takes `flock` on `/lane/heavy.lock`, the host's
-    `/tmp/gr-roboracer-lane` mounted into `dev` and `fast-sim` (CHECK-2400). A container made before the
-    mount lacks `/lane` and the script says so; recreate it.
+    `/tmp/gr-roboracer-lane` mounted into `dev` and `fast-sim` (CHECK-2400; `gpu` and the autodrive services
+    have no mount: wrap them from the host). A container made before the mount lacks `/lane` and the script
+    exits 4 there (CHECK-2440); recreate it.
 
 ## Visualization
 

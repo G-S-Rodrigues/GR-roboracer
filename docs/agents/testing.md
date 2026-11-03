@@ -50,8 +50,8 @@ bound are in the test).
 ```
 
 Heavy runs (a ready gate, a live qualification, a recording) take one lock so they do not overlap and
-starve each other: `scripts/heavy_lane.sh -- ./scripts/check.sh --ready` (host or any container; it waits
-for the lane, then for load under 8, `--max-load`). See gotcha #29.
+starve each other: `scripts/heavy_lane.sh -- ./scripts/check.sh --ready` (on the host or in `dev` / `fast-sim`, which mount `/lane`; `gpu` and the autodrive services do not, so wrap them from the host; it waits
+for the lane, then for load under 8, `--max-load`). See gotcha #45.
 
 `--fast` diffs the branch against `main` (plus index, worktree and untracked files) and lints and tests
 only what that touches: `clang-format` and `clang-tidy` run only when a C/C++ file changed, and then
@@ -126,7 +126,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **360 tier-1, 51 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
+Current counts: **376 tier-1, 53 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 

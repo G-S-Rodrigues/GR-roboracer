@@ -7,7 +7,9 @@
 #   scripts/heavy_lane.sh [--max-load N] [--wait SECONDS] -- <command> [args]
 # Takes an exclusive flock on <lane>/heavy.lock, then waits for the 1-minute
 # load average to drop below N (default 8) before running the command. The
-# lock goes when the command's process does, so a crash cannot strand it.
+# lock is an open fd 9 that the wrapper and a bash child inherit, so it goes
+# when every holder of fd 9 is gone: a shell orphan of the command keeps it,
+# a Python child (colcon, pytest, ros2 launch) does not.
 # --wait gives up after SECONDS (default: wait forever).
 # Exit: the command's own, 2 bad arguments, 3 gave up waiting, 4 no lane.
 set -euo pipefail
@@ -39,17 +41,29 @@ if [ -n "${HEAVY_LANE_HELD:-}" ]; then
     exec "$@"
 fi
 
-# In a container the lane is /lane; on the host it is the directory behind it.
-if [ -d /lane ]; then
-    lane=/lane
+# GR_LANE_DIR wins; then the /lane mount; a container without the mount stops
+# (its own /tmp would give a private lock that excludes nobody); only the host
+# uses the directory behind the mount. GR_LANE_MOUNT and GR_CONTAINER_MARKER
+# exist for the tests.
+lane_mount=${GR_LANE_MOUNT:-/lane}
+if [ -n "${GR_LANE_DIR:-}" ]; then
+    lane=$GR_LANE_DIR
+elif [ -d "$lane_mount" ]; then
+    lane=$lane_mount
+    # Compose creates a missing source root:root 0755; open it so the host user
+    # can take the lock too (effective only as root, which dev is).
+    chmod 1777 "$lane" 2>/dev/null || true
+elif [ -e "${GR_CONTAINER_MARKER:-/.dockerenv}" ]; then
+    echo "no $lane_mount in this container: it was made before compose mounted the lane; recreate it (a private lock would exclude nobody)" >&2
+    exit 4
 else
-    lane=${GR_LANE_DIR:-/tmp/gr-roboracer-lane}
+    lane=/tmp/gr-roboracer-lane
     # Created here with world-write so a root container and the host user
     # can both open it; compose would otherwise create it root-owned.
     (umask 0 && mkdir -p "$lane") && chmod 1777 "$lane" 2>/dev/null || true
 fi
 if [ ! -d "$lane" ] || [ ! -w "$lane" ]; then
-    echo "no writable lane at $lane: recreate the container so compose mounts it" >&2
+    echo "no writable lane at $lane (owner $(stat -c %U "$lane" 2>/dev/null || echo none), mode $(stat -c %a "$lane" 2>/dev/null || echo none)): if root owns it, run: docker exec gr-roboracer-dev chmod 1777 /lane (or sudo chmod 1777 $lane)" >&2
     exit 4
 fi
 
@@ -73,5 +87,6 @@ done
 
 export HEAVY_LANE_HELD=1
 # Not exec: bash must stay alive so fd 9, and with it the lock, stays open.
-# The child gets fd 9 too, which keeps the lock until the whole tree is gone.
+# A bash child inherits fd 9 and keeps the lock past the wrapper's death; a
+# Python-spawned child does not, so leftover ROS nodes hold nothing.
 "$@"
