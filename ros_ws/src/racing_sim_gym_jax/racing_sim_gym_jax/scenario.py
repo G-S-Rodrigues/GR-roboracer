@@ -8,9 +8,10 @@ from typing import Any
 
 import yaml
 
-from .noise import OdometryNoise
+from .noise import ImuNoise, OdometryNoise
 
 NO_ODOMETRY_NOISE = OdometryNoise(0.0, 0.0, 0.0, 0.0)
+NO_IMU_NOISE = ImuNoise(0.0, 0.0, 0.0, 0.0)
 
 VALID_LONGITUDINAL = frozenset({"acceleration", "velocity"})
 VALID_STEERING = frozenset({"steeringangle", "steeringvelocity"})
@@ -40,6 +41,8 @@ class Scenario:
     scan_noise_sigma_m: float = 0.0
     scan_dropout_probability: float = 0.0
     odometry_noise: OdometryNoise = field(default=NO_ODOMETRY_NOISE)
+    # Seeded /imu noise; off (exact) unless a scenario sets `noise.imu`.
+    imu_noise: ImuNoise = field(default=NO_IMU_NOISE)
 
     @property
     def timestep_ratio(self) -> int:
@@ -89,6 +92,7 @@ def _noise(document: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("noise must be a mapping")
     scan = noise.get("scan") or {}
     odometry = noise.get("odometry") or {}
+    imu = noise.get("imu") or {}
     parsed = {
         "scan_noise_sigma_m": float(scan.get("sigma_m", 0.0)),
         "scan_dropout_probability": float(scan.get("dropout_probability", 0.0)),
@@ -102,11 +106,18 @@ def _noise(document: dict[str, Any]) -> dict[str, Any]:
             ),
             yaw_noise_density=float(odometry.get("yaw_noise_density", 0.0)),
         ),
+        "imu_noise": ImuNoise(
+            gyro_sigma=float(imu.get("gyro_sigma", 0.0)),
+            accel_sigma=float(imu.get("accel_sigma", 0.0)),
+            gyro_bias=float(imu.get("gyro_bias", 0.0)),
+            accel_bias=float(imu.get("accel_bias", 0.0)),
+        ),
     }
     magnitudes = [
         parsed["scan_noise_sigma_m"],
         parsed["scan_dropout_probability"],
         *vars(parsed["odometry_noise"]).values(),
+        *vars(parsed["imu_noise"]).values(),
     ]
     if any(value < 0.0 for value in magnitudes):
         raise ValueError("noise magnitudes must be non-negative")
