@@ -5,11 +5,12 @@
 # value here changes.
 #
 # Where each number comes from (config/vehicles/autodrive_roboracer/):
-#   geometry   source.yaml, each value with a pinned line anchor: wheelbase 0.33
-#              (collider geometry; the identified effective 0.339 and the
-#              prefab's 324 mm Ackermann field sit beside it), half width 0.135
-#              (guide), steering angle 0.5236 (guide and prefab), laser mount
-#              0.2733 (guide TF).
+#   geometry   source.yaml, each value with a pinned line anchor: wheelbase
+#              0.324 (wheelbase_table_m, guide :180, = the prefab's Ackermann
+#              field 324 mm; owner 2026-11-01; the TF/collider wheel x 0.33
+#              and the identified effective 0.339 sit beside it), half width
+#              0.135 (guide), steering angle 0.5236 (guide and prefab), laser
+#              mount 0.2733 (guide TF).
 #   caps       the default's reference-stack caps (speed 3.0, acceleration 2.0,
 #              steering rate 1.5; owner-accepted D2): Porto qualification
 #              drives on this file, where speed is irrelevant and a crash costs.
@@ -34,7 +35,7 @@ racing_sim:
 
 racing_controller_baseline:
   ros__parameters:
-    wheelbase: 0.33
+    wheelbase: 0.324
     lookahead_distance: 1.0
     minimum_speed: 0.5
     maximum_speed: 3.0
@@ -63,10 +64,10 @@ racing_metrics:
     track_path: config/tracks/analytic_circle.yaml
     scenario_id: baseline
     track_version: analytic_circle-v1
-    vehicle_parameter_version: autodrive-roboracer-v1
+    vehicle_parameter_version: autodrive-roboracer-v2
 
 racing_recording:
   ros__parameters:
     scenario_id: baseline
     track_version: analytic_circle-v1
-    vehicle_parameter_version: autodrive-roboracer-v1
+    vehicle_parameter_version: autodrive-roboracer-v2

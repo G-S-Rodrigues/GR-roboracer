@@ -43,6 +43,8 @@ slam:
   - SIM-5010
 path_planning:
   - SIM-3110
+path_planning_mintime:
+  - SIM-3120
 control:
   - SIM-3010
   - ACC-4010
@@ -56,6 +58,7 @@ def _tree(tmp_path: Path, region_map: str = GOOD_MAP) -> Path:
         "tests/system/test_sim_3010_a.py",
         "tests/system/test_sim_3030_b.py",
         "tests/system/test_sim_3110_c.py",
+        "tests/system/test_sim_3120_e.py",
         "tests/nightly/test_sim_5010_d.py",
     ):
         path = tmp_path / relative
@@ -282,4 +285,6 @@ def test_check_1510_ci_matrix() -> None:
         "shared": 60,
         "slam": 180,
         "path_planning": 180,
+        # Q8: min-time lap + conditional regeneration; Step 1 projection.
+        "path_planning_mintime": 120,
     }

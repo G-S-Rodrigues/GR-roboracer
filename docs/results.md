@@ -34,9 +34,20 @@ To reproduce a record and compare it, see [Running a scenario](running.md#runnin
 There is no golden for localization. The acceptance cases bound the estimate against ground truth on
 Spielberg: `slam_toolbox` within 4.0 m RMSE and `amcl` within 0.65 m, each with availability above
 0.99 (ACC-4030). `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
-loop: ATE RMSE 1.547-1.556 m (median 1.552) and maximum 3.076-3.097 m over five laps, availability
-0.9974 or better, bounded at 2.5 m RMSE (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
+loop: ATE RMSE 0.70-2.13 m and maximum 1.41-4.15 m over five laps (the spread is wide and varies run to run; three
+runs at low load gave 0.74-0.75 m), availability 0.9975 or better, bounded at 2.5 m RMSE (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
 (ACC-4040). See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
+
+## MOLA map accuracy
+
+`./scripts/mola_map_track.sh` ([the MOLA map](workflows/mapping.md#the-mola-map)) builds a map from one
+lap with no loop closure. Scored against the track's true walls (raw cell-centre distance, so a perfect
+5 cm map scores 2.5 cm), ten laps of the current pipeline on Spielberg (seeds 7 and 42, 1x) gave a wall
+95th-percentile deviation of 0.79-1.57 m, a median of 0.20-0.41 m and a mean offset of +0.077 to +0.160 m
+(SIM-3530). The laps differ from each other because a lap without loop closure drifts differently each
+time. The 5 cm wall target applies to the known-pose survey map only; a SLAM-built map is reported
+against it, never gated, and misses it by 16 to 31 times. The committed map scores 0.82 m (95th
+percentile) and 0.21 m (median).
 
 The denser surveys beside the committed grid, measured against the track's ground-truth walls, have a
 95th-percentile wall deviation of 0.067 m at 0.05 m cells, 0.049 m at 0.025 m and 0.046 m at 0.02 m

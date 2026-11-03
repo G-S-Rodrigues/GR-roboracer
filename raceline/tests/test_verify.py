@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from raceline.optimize import Raceline
 from raceline.track import Track
-from raceline.vehicle import load_vehicle
+from raceline.vehicle import load_tyres, load_vehicle
 from test_extract import SLAM_EDGE_TOL
 
 from raceline import geometry, verify
@@ -557,6 +557,8 @@ REPO = Path(__file__).resolve().parents[2]
 COMMITTED_RACELINES = {
     "spielberg/f1tenth-default-v1/tum_mincurv_iqp",
     "spielberg/f1tenth-gym-limits-v1/tum_mincurv_iqp",
+    "spielberg/f1tenth-default-v1/tum_mintime",
+    "spielberg/f1tenth-gym-limits-v1/tum_mintime",
 }
 RECORDED_TOL = 1e-6
 
@@ -577,7 +579,7 @@ def _same(recorded, now, where):
 
 
 def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
-    """RACELINE-1395: the committed lines are exactly the expected two; each
+    """RACELINE-1395: the committed lines are exactly the expected four; each
     yaml's hashes match the files it was made from (a redrawn map, a changed
     vehicle or a new ground-truth track turns this red and forces a reviewed
     regeneration, never a hash edit), and its line passes the verifier
@@ -619,6 +621,16 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         assert (
             sha(vehicle.ax_max_machines_path) == veh["ax_max_machines_sha256"]
         )
+        if doc["optimizer"] == "tum_mintime":
+            assert sha(vehicle.dynamics_path) == veh["dynamics_sha256"]
+            tyres = load_tyres(vehicle, doc["parameters"]["tyre_set"])
+            assert sha(tyres.path) == veh["tyres_sha256"]
+            ref = doc["parameters"]["reference"]
+            assert sha(REPO / ref["path"]) == ref["sha256"]
+            folder = rel.rsplit("/", 1)[0]
+            assert ref["path"] == (
+                f"config/racelines/{folder}/reference/tum_mintime.csv"
+            )
         gt = doc["ground_truth"]
         assert gt["path"] == f"config/tracks/{name}.yaml"
         assert sha(REPO / gt["path"]) == gt["sha256"]
