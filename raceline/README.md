@@ -361,9 +361,11 @@ done
   the tables from the yaml path minus `.yaml`).
   `autodrive_roboracer` has one, derived from AutoDRIVE's source, identification
   and simulator code (each value's provenance is in
-  `config/vehicles/tum_mintime/reference.yaml`), but no tyre set yet, so
-  `--optimizer tum_mintime` on it stops with `tyre file not found:
-  .../autodrive_roboracer/tum_mintime_tyres_gym_fit.yaml`. Its min-curv ini
+  `config/vehicles/tum_mintime/reference.yaml`), and a tyre set,
+  `tum_mintime_tyres_gym_fit.yaml`: a stand-in copied from the F1TENTH gym fit,
+  not identified from AutoDRIVE (its provenance and AutoDRIVE's WheelCollider
+  friction curves are in `reference.yaml`), so `--optimizer tum_mintime` runs
+  on it; no minimum-time line is committed for it. Its min-curv ini
   records mass 3.47 and length 0.50 (inert there, as the comment above
   `tum_ini` says).
   The solver's outcome is the yaml's top-level `solver:` (status, iterations,

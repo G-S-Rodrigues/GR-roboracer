@@ -74,6 +74,12 @@ loop, with the car still on ground truth, pass `drive_on_estimate:=false`. amcl 
 particles on `/particle_cloud`; viewing them in RViz needs `nav2_rviz_plugins`, which the image does
 not install.
 
+The min-curvature line laps on the amcl estimate too, backed by ACC-4040's raceline case:
+
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory pose_source:=amcl drive_on_estimate:=true seed:=42
+```
+
 ## MOLA open loop
 
 **Drives on:** ground truth; MOLA-LO's estimate is published on `/localization/odom` and scored.
@@ -116,6 +122,8 @@ centerline lap on the curvature schedule. The minimum-time line is selected with
 ```bash
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mintime speed_source:=trajectory seed:=42
 ```
+
+A recording of this lap is on [the demonstrations page](../demonstrations.md).
 
 The gym-limits vehicle's lines resolve, but no gate lap drives them.
 

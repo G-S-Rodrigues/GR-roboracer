@@ -1,4 +1,4 @@
-"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2260).
+"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2280).
 
 B (`racing_sim_autodrive.devkit_node`) and the devkit stand-in run as
 processes: B's stack side on the domain S, its devkit side and the stand-in on
@@ -10,6 +10,7 @@ stand-in, which a launch_test file cannot restart per test.
 
 import math
 import re
+import signal
 import sys
 import time
 from pathlib import Path
@@ -346,7 +347,7 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
     only place a True overwritten by a later False would show, carries
     `Reset True` in one contiguous run (at least one reply) and then False."""
     seen = []
-    observer.devkit.create_subscription(
+    reset_sub = observer.devkit.create_subscription(
         Bool,
         dl.RESET_TOPIC,
         lambda m: seen.append(bool(m.data)),
@@ -356,8 +357,15 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
             durability=DurabilityPolicy.VOLATILE,
         ),
     )
-    _, _, standin, out, _ = run(
-        *dl.STATIONARY, "--pace", "recorded", "--count", "400"
+    # B's True goes out once on a VOLATILE writer: the observer's reader must
+    # have matched it first, or the True is lost (as SIMAD-2200 does).
+    _, blog, standin, out, slog = run(
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--count",
+        "400",
+        ready=lambda: reset_sub.get_publisher_count() >= 1,
     )
     client = observer.stack.create_client(
         Reset, f"{dl.PREFIX}/racing_sim/reset"
@@ -371,9 +379,13 @@ def test_simad_2220_reset_service_gives_one_true_run_then_false(run, observer):
         observer, lambda: standin.poll() is not None, 60.0, "stand-in done"
     )
     spin(observer, 0.5)
-    assert seen[:1] == [True], seen
-    assert seen.count(True) == 1 and seen[-1] is False, seen
     flags = [r["V1 Reset"] for r in dl.replies(out)]
+    context = (
+        f"{seen}; stand-in reply flags {flags}; stand-in:"
+        f" {_tail(slog, 'frames published')}; B: {_tail(blog, 'reset')}"
+    )
+    assert seen[:1] == [True], context
+    assert seen.count(True) == 1 and seen[-1] is False, context
     assert "True" in flags, "the devkit never replied Reset True"
     first = flags.index("True")
     last = len(flags) - 1 - flags[::-1].index("True")
@@ -455,6 +467,33 @@ def test_simad_2260_a_withheld_topic_is_named_in_one_stall(run, observer):
     assert stalls[0].strip() == "collision_count", stalls
 
 
+# Fast DDS's default participant lease (RTPSParticipantAttributes.h,
+# leaseDuration 20 s, announcement 3 s; compose keeps the Jazzy default
+# RMW and sets no profile XML): a participant that died without a goodbye
+# leaves a peer's graph within one lease of the last message heard from it.
+# 25 = 20 (lease) + 3 (one announcement period of slack) + 2 (the lease
+# check's cadence and this 0.1 s poll). Not measured on any host; never
+# widen it to green a run (repo-gotchas #14).
+CONTROL_GONE_S = 25.0
+
+
+def start_control(tmp_path):
+    """The positive control: the stand-in on the stack domain itself."""
+    control, _, _ = dl.start_standin(
+        tmp_path,
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--count",
+        "200",
+        "--wait-subscribers",
+        "0",  # nothing subscribes the control's topics
+        domain=dl.STACK_DOMAIN,
+        replies="control.jsonl",
+    )
+    return control
+
+
 class Listener:
     """What a node on the stack domain hears of the devkit."""
 
@@ -466,14 +505,15 @@ class Listener:
         self.context = context
         self.node = rclpy.create_node("simad_2250_listener", context=context)
         self.frames = set()
+        self.heard = {}  # counted frame -> the topics it arrived on
+        self.since_ns = 0  # everything counts until the first mark()
+        self.before_mark = {}  # set-aside frame -> the topics it arrived on
+        self.before_mark_stamps = []  # DEVKIT_TF ones' source_timestamps, ns
         for name in self.TF_TOPICS:
             self.node.create_subscription(
                 TFMessage,
                 name,
-                lambda m: self.frames.update(
-                    {t.child_frame_id for t in m.transforms}
-                    | {t.header.frame_id for t in m.transforms}
-                ),
+                lambda m, info, name=name: self._heard(name, m, info),
                 QoSProfile(
                     history=HistoryPolicy.KEEP_LAST,
                     depth=100,
@@ -484,10 +524,80 @@ class Listener:
         self.executor = SingleThreadedExecutor(context=context)
         self.executor.add_node(self.node)
 
+    def _heard(self, topic, msg, info):
+        frames = {t.child_frame_id for t in msg.transforms} | {
+            t.header.frame_id for t in msg.transforms
+        }
+        # A sample written before the mark was written by a process that
+        # `dl.stop` had already reaped (SIMAD-2250) or by a neighbour before
+        # the window. Fast DDS keeps it takeable after the writer leaves
+        # (part 9.2 Step 0), and `wait_until_gone` usually returns without
+        # spinning, so nothing else drains it. DDS source_timestamp and
+        # time.time_ns() are both wall clock in one container; neither is a
+        # message stamp or sim time (ADR 0006 is not touched).
+        if info["source_timestamp"] >= self.since_ns:
+            self.frames.update(frames)
+            for frame in frames:
+                self.heard.setdefault(frame, set()).add(topic)
+        else:
+            if topic == dl.DEVKIT_TF:
+                self.before_mark_stamps.append(info["source_timestamp"])
+            for frame in frames:
+                self.before_mark.setdefault(frame, set()).add(topic)
+
+    def mark(self):
+        """Count only samples written from here on; set earlier ones aside
+        in `before_mark`."""
+        self.since_ns = time.time_ns()
+        self.frames.clear()
+        self.heard.clear()
+        self.before_mark.clear()
+        self.before_mark_stamps.clear()
+
+    def describe(self):
+        """The counted frames, each with the topics it arrived on, and the
+        publishers now on those topics."""
+        lines = [
+            f"{frame} <- {', '.join(sorted(self.heard.get(frame, ())))}"
+            for frame in sorted(self.frames)
+        ]
+        topics = sorted({t for ts in self.heard.values() for t in ts})
+        for topic in topics:
+            pubs = [
+                f"{p.node_namespace.rstrip('/')}/{p.node_name}"
+                for p in self.node.get_publishers_info_by_topic(topic)
+            ]
+            lines.append(f"publishers on {topic}: {pubs}")
+        aside = sorted({t for ts in self.before_mark.values() for t in ts})
+        lines.append(
+            f"set aside before the mark: {len(self.before_mark)} frames"
+            f" on {aside}"
+        )
+        return "\n".join(lines)
+
     def spin(self, seconds):
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             self.executor.spin_once(timeout_sec=0.02)
+
+    def wait_until_gone(self, timeout_s=None):
+        """Spin until no `/autodrive/` or `_dk<S>/` topic has a publisher;
+        fail at the deadline, naming what is left."""
+        timeout_s = CONTROL_GONE_S if timeout_s is None else timeout_s
+        end = time.monotonic() + timeout_s
+        while True:
+            leaked = self.leaked_topics()
+            if not leaked:
+                return
+            if time.monotonic() >= end:
+                raise AssertionError(
+                    f"the positive control's topics {leaked}"
+                    f" were still on stack domain {dl.STACK_DOMAIN} after"
+                    f" {timeout_s} s (Fast DDS lease 20 s). The candidates"
+                    " are a stand-in that did not exit, another run on this"
+                    " domain, or a stale graph (repo-gotchas #10)."
+                )
+            self.spin(0.1)
 
     def leaked_topics(self):
         return sorted(
@@ -500,6 +610,104 @@ class Listener:
     def close(self):
         self.executor.shutdown()
         self.node.destroy_node()
+
+
+def spin_until_leaked(listener, seconds=10.0):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end and not listener.leaked_topics():
+        listener.spin(0.1)
+    assert listener.leaked_topics(), "the control left no topic"
+
+
+def test_simad_2280_a_lingering_control_is_waited_out(tmp_path, observer):
+    """SIMAD-2280: a positive control that dies without a goodbye (SIGKILL)
+    stays discoverable on the stack domain until its DDS lease runs out, and
+    `Listener.wait_until_gone` waits that out: afterwards no `/autodrive/` or
+    `_dk<S>/` topic is left, so SIMAD-2250's real run starts on a clean
+    graph."""
+    listener = Listener(observer.stack_context)
+    control = start_control(tmp_path)
+    try:
+        spin_until_leaked(listener)
+        dl.stop(control, signal.SIGKILL, timeout_s=10.0)
+        assert listener.leaked_topics(), (
+            "the killed control left the graph at once, so this test no "
+            "longer exercises the wait"
+        )
+        listener.wait_until_gone()
+        assert listener.leaked_topics() == []
+    finally:
+        dl.stop(control, signal.SIGKILL, timeout_s=10.0)
+        listener.close()
+
+
+def test_simad_2280_a_control_that_never_leaves_fails_naming_it(
+    tmp_path, observer
+):
+    """SIMAD-2280: a control still publishing when the wait runs out fails
+    `wait_until_gone`, naming its topics and the stack domain."""
+    listener = Listener(observer.stack_context)
+    control = start_control(tmp_path)
+    try:
+        spin_until_leaked(listener)
+        with pytest.raises(
+            AssertionError,
+            match=rf"_dk{dl.STACK_DOMAIN}/autodrive.*domain {dl.STACK_DOMAIN}",
+        ):
+            listener.wait_until_gone(timeout_s=2.0)
+    finally:
+        dl.stop(control, timeout_s=10.0)
+        listener.close()
+
+
+def test_simad_2290_a_queued_control_sample_is_not_counted_after_the_mark(
+    tmp_path, observer
+):
+    """SIMAD-2290: TF the positive control published before it stopped can
+    still sit in the listener's queue after the control has left the graph;
+    `Listener.mark()` sets it aside, so none of it is counted in SIMAD-2250's
+    window."""
+    listener = Listener(observer.stack_context)
+    control = None
+    try:
+        start_ns = time.time_ns()
+        control = start_control(tmp_path)
+        end = time.monotonic() + 10.0
+        while time.monotonic() < end and "roboracer_1" not in listener.frames:
+            listener.spin(0.1)
+        assert "roboracer_1" in listener.frames, (
+            "the control's TF never arrived"
+        )
+        # Not spinning on purpose: the control keeps publishing, so the
+        # listener's queue fills while nothing takes from it.
+        time.sleep(1.0)
+        dl.stop(control, timeout_s=10.0)
+        stopped_ns = time.time_ns()
+        # A graph wait that does not spin, which would drain the queue.
+        end = time.monotonic() + CONTROL_GONE_S
+        while listener.leaked_topics() and time.monotonic() < end:
+            time.sleep(0.1)
+        assert listener.leaked_topics() == [], listener.leaked_topics()
+        listener.mark()
+        listener.spin(1.0)
+        assert not any("roboracer_1" in f for f in listener.frames), (
+            listener.describe()
+        )
+        assert any("roboracer_1" in f for f in listener.before_mark), (
+            "no control sample was queued past the stop, so this test no"
+            " longer exercises the mark"
+        )
+        stamps = listener.before_mark_stamps
+        assert all(start_ns < t < stopped_ns for t in stamps), (
+            "source_timestamp is not on time.time_ns()'s clock, or a writer"
+            " other than the stopped control was set aside: stamps"
+            f" {min(stamps)}..{max(stamps)}, start {start_ns},"
+            f" stopped {stopped_ns}"
+        )
+    finally:
+        if control is not None:
+            dl.stop(control, signal.SIGKILL, timeout_s=10.0)
+        listener.close()
 
 
 def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
@@ -518,26 +726,15 @@ def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
     equal to its own, naming the TF collision."""
     listener = Listener(observer.stack_context)
     try:
-        control, _, _ = dl.start_standin(
-            tmp_path,
-            *dl.STATIONARY,
-            "--pace",
-            "recorded",
-            "--count",
-            "200",
-            "--wait-subscribers",
-            "0",  # nothing subscribes the control's topics
-            domain=dl.STACK_DOMAIN,
-            replies="control.jsonl",
-        )
+        control = start_control(tmp_path)
         try:
             listener.spin(5.0)
-            assert "roboracer_1" in listener.frames, listener.frames
+            assert "roboracer_1" in listener.frames, listener.describe()
             assert listener.leaked_topics(), "the control left no topic"
         finally:
             dl.stop(control, timeout_s=10.0)
-        listener.spin(1.0)
-        listener.frames.clear()
+        listener.wait_until_gone()
+        listener.mark()
         scans = []
         observer.stack.create_subscription(
             LaserScan, dl.topic("/scan"), scans.append, SENSOR
@@ -551,7 +748,7 @@ def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
             listener.spin(0.1)
             observer.spin_once()
         assert not any("roboracer_1" in f for f in listener.frames), (
-            listener.frames
+            listener.describe()
         )
         assert listener.leaked_topics() == []
     finally:

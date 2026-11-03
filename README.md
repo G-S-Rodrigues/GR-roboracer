@@ -11,15 +11,17 @@ tracking and wall clearance are visible in the tests.
 
 The demonstration is a Spielberg lap on the committed minimum-curvature raceline
 (`optimized_raceline`, optimizer `tum_mincurv_iqp`), at the line's own speed, with pure pursuit
-control and an independent safety supervisor. The vehicle drives on ground-truth pose; the
-acceptance test SIM-3110 verifies that this seeded lap completes with zero collisions.
+control and an independent safety supervisor. The vehicle drives on its own estimate: amcl
+localizes it on the committed survey occupancy map, which RViz shows beneath the car. The
+acceptance test ACC-4040 verifies that this seeded lap completes with zero collisions.
 
-[![A Spielberg lap on the minimum-curvature raceline, 10.0x playback](docs/assets/readme-mincurv-lap-preview.gif)](https://drive.google.com/file/d/1jyuSPOSun9hCTo3B2k7AFhTbSG5BWP-h/view)
+[![A Spielberg lap on the minimum-curvature raceline, driven on amcl's estimate, 10.0x playback](docs/assets/readme-amcl-mincurv-lap-preview.gif)](https://drive.google.com/file/d/1IJedgChhFwZTTnECqpwiOhcHvFv2167g/view)
 
-▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1jyuSPOSun9hCTo3B2k7AFhTbSG5BWP-h/view):
-the complete lap at 4.0x simulated time (the preview above plays at 10.0x). Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory seed:=42`
-on `config/scenarios/spielberg.yaml`, seed 42, at commit `abb22f2`.
-Earlier videos, including the AMCL closed-loop lap, are in [demonstrations](docs/demonstrations.md).
+▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1IJedgChhFwZTTnECqpwiOhcHvFv2167g/view):
+the complete lap at 4.0x simulated time (the preview above plays at 10.0x). Recorded with `ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory pose_source:=amcl drive_on_estimate:=true seed:=42`
+on `config/scenarios/spielberg.yaml`, seed 42, at commit `49ba99e`.
+Earlier videos, including the same raceline on ground-truth pose and the AMCL closed-loop lap on
+the centerline, are in [demonstrations](docs/demonstrations.md).
 
 ## Capabilities and roadmap
 
@@ -30,7 +32,7 @@ Roadmap entries are directions to investigate or build, with no runnable workflo
 | Group | Method | Status | Scope |
 |---|---|---|---|
 | Simulation | [`f1tenth_gym_jax`](docs/workflows/racing.md#simulation) | Available | ROS 2 simulation and headless JAX rollouts. |
-| Simulation | AutoDRIVE | In development | Our stack drives 12 clockwise laps of Porto on the real AutoDRIVE simulator with no latch, and its lap times match the simulator's own counters to 0.05 s. Mapped tracks without ground truth are not yet driven. |
+| Simulation | AutoDRIVE | In development | Our stack drives 12 clockwise laps of Porto on the real AutoDRIVE simulator with no latch, and its lap times match the simulator's own counters within 0.09 s. Mapped tracks without ground truth are not yet driven. |
 | Mapping and SLAM | [SLAM Toolbox survey mapping](docs/workflows/mapping.md#survey-mapping) | Available | Builds a map while the vehicle drives on ground truth. |
 | Mapping and SLAM | [MOLA-LO mapping](docs/workflows/mapping.md#the-mola-map) | Available | Builds a 2D lidar map from one lap on ground truth, with no ground truth in the map; wall 95th-percentile deviation 0.79-1.57 m over ten laps ([Results](docs/results.md#mola-map-accuracy)), not survey quality. |
 | Mapping and SLAM | FAR-LIO / LiDAR-inertial methods | Exploratory | Research direction; no current implementation. |

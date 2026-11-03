@@ -74,6 +74,26 @@ Vehicle Completes A Lap Driving On Its Own Estimate
     Lap Completion Should Be    true
     Collision Count Should Be    0
 
+Vehicle Laps The Raceline Driving On Its Own Estimate
+    [Documentation]    ACC-4040. The same claim as the case above on the
+    ...    min-curvature raceline (planner:=optimized_raceline,
+    ...    tum_mincurv_iqp, speed_source:=trajectory), driven on amcl's
+    ...    estimate (a demonstration video of it follows separately).
+    ...    Nothing else runs an estimator off the centerline. Its only tag is the
+    ...    planner's: tags may not overlap between cases of one ID (ADR
+    ...    0005), and the amcl, controller and safety tags are the case
+    ...    above's. It asserts only a completed lap, 0 collisions and
+    ...    clearance above 0.08 m (ACC-4010's bound): a lap is possible on
+    ...    this line. Accuracy of the estimate is left to SIM-3080 and
+    ...    ACC-4030. No lap-time assert; SIM-3110 owns the line's lap time.
+    [Tags]    impl:planner=optimized_raceline
+    Run Racing Scenario On Pose Source    amcl    drive_on_estimate=true
+    ...    planner=optimized_raceline    raceline_optimizer=tum_mincurv_iqp
+    ...    speed_source=trajectory
+    Lap Completion Should Be    true
+    Collision Count Should Be    0
+    Minimum Wall Clearance Should Exceed    0.08
+
 *** Keywords ***
 Pose Source Should Track Ground Truth
     [Arguments]    ${pose_source}    ${error_bound}    ${availability_bound}

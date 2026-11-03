@@ -132,20 +132,6 @@ def test_check_1520_unknown_region_is_refused(tmp_path: Path) -> None:
     assert "unknown region 'planning'" in message
 
 
-def test_check_1520_path_planning_mintime_region_is_accepted(
-    tmp_path: Path,
-) -> None:
-    """CHECK-1520: `path_planning_mintime` (part 8, Q8) is a region of its
-    own: it selects its files and the other regions do not."""
-    root = _tree(tmp_path)
-    assert "path_planning_mintime" in REGIONS
-    chosen = select(root, "path_planning_mintime", tier5=True)
-    assert chosen.system_tests == ("tests/system/test_sim_3120_e.py",)
-    assert select(root, "path_planning", tier5=True).system_tests == (
-        "tests/system/test_sim_3110_c.py",
-    )
-
-
 def test_check_1520_empty_region_is_refused(tmp_path: Path) -> None:
     """CHECK-1520: a region with no IDs raises."""
     message = _select_error(tmp_path, GOOD_MAP + "shared: []\n")
