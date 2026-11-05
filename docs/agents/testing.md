@@ -122,7 +122,7 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **371 tier-1, 53 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
+Current counts: **376 tier-1, 54 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
 
 The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
 
@@ -201,6 +201,9 @@ The min-time work (part 8) added tier 1 `RACELINE-1410/1415/1420/1425/1430/1435/
 
 The MOLA mapping work (SLAM part 2) added tier 1 `BRINGUP-1700/1710/1720/1730/1740/1750/1760/1770/1780` (`test_mola_map.py`; 1560 now pins three differing values, including the localization `icp_prior_weight` 5), `EVAL-1550`, `EVAL-1560` (`racing_evaluation`) and `RACELINE-1510`; tier 3 `SIM-3530`; nightly `SIM-5520` gained the grid comparison and `test_sim_5520_rotated_grid_is_named`.
 
+SLAM part 2-fix added two `SIM-3530` cases (`tests/system/test_sim_3530_mola_maps.py`): no map_server process outlives its test, and a timed-out mapping script leaves neither `setsid` group alive. Counts by ID are unchanged.
+
+
 The test-audit work (TA, owner ruling 2026-11-01) removed tier 1 `RACELINE-1500` and `RACELINE-1450`, and one test each from `RACELINE-1410` (`committed_dynamics_and_tyres_load`: the F1TENTH dynamics and tyre values), `RACELINE-1465` (`the_default_out_is_never_under_config_racelines`) and `CHECK-1520` (`path_planning_mintime_region_is_accepted`). They were one-off checks (the 2026-10-28 test audit). The surviving 1410 tests still cover every vehicle's `tum_mintime.yaml`. Counts by ID: 362 - 2 = 360 tier-1.
 
 ## The tests that matter most
@@ -235,6 +238,8 @@ The test-audit work (TA, owner ruling 2026-11-01) removed tier 1 `RACELINE-1500`
   `scripts/compare_metrics.py` carries the measurement that justifies its size.
 
 The AutoDRIVE part-8b work (launch switch) added tier 1 `BRINGUP-1580` (a track with no raceline file is driven on its centerline; `track_parameters`) and `BRINGUP-1600` to `BRINGUP-1670` and `BRINGUP-1680` (`test_launch_simulator_arg.py`: `speed_source:=trajectory` refused on a map with no raceline; the `simulator` and `autodrive_bridge` arguments, the autodrive Node, `use_sim_time` following `capability.clock` on every node and estimator, the gym's refusal of `autodrive_roboracer`, autodrive's refusals, `server.yaml` pinned to `source.yaml`/`identified.yaml`), tier 2 `BRINGUP-2030` (the support node's centerline `/trajectory`) and tier 3 `SIM-3610` (`simulator:=autodrive` against the recorded stream, no simulator: `ROS_DOMAIN_ID=<n> python3 -m pytest tests/system/test_sim_3610_autodrive_launch_replay.py`). Counts by ID: 298 + 10 = 308 tier-1, 39 + 1 = 40 tier-2, 12 + 1 = 13 tier-3. The shutdown fix then added tier 2 `SIMAD-2110` and `SIMAD-2111` (`test_server_node_signals.py`: the server exits 0 on one SIGINT, on two a gap apart, and with a client replaying; a plain pytest that starts the server itself), so 40 + 2 = 42 tier-2. `test_launch_runs_on_simulated_time` (no ID) was replaced by `BRINGUP-1630`, which launches both values instead of reading a literal `True`, and keeps its `time_scale` declaration assert; `BRINGUP-1056` now launches `autodrive_roboracer` on `simulator:=autodrive`. `reference_stack.yaml` lists autodrive as a simulator alternative (CHECK-1150: 11 implementations).
+
+The sim-`/imu` work (SLAM part 5a) added tier 1 `SIMJAX-1520/1530` (`test_imu.py`: `/imu` linear acceleration is (Δv/dt, v·ω, +g); none on the first step after a reset), `SIMJAX-1550` (`noise.imu` parses, zero default, negative rejected; no committed scenario sets it), `SIMJAX-1560/1570` (`test_noise.py`: IMU noise seeded and restarted by a reseed; scan and odometry streams bit-identical with it on) and tier 2 `SIMJAX-1540` (`test_imu_node.py`, a launch test selected by file: `colcon test --packages-select racing_sim_gym_jax --pytest-args -k test_imu_node`). Counts by ID: 308 + 5 = 313 tier-1, 42 + 1 = 43 tier-2. SIM-3510 is the proof that MOLA is unmoved (it reads `/imu`'s gyro only).
 
 The AutoDRIVE part-9 work (official devkit bridge) added tier 1 `SIMAD-1400` to `SIMAD-1470` (eight IDs;
 with `BRINGUP-1690`, which replaces `BRINGUP-1610`'s refusal, nine IDs, counted by ID), tier 2 `SIMAD-2200` to `SIMAD-2260`, tier 3

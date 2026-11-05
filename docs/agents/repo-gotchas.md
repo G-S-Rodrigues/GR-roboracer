@@ -97,6 +97,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
     contaminate the next run with a *second* supervisor and controller. Symptom: impossible message
     rates, or an emergency stop latched before your run began. Kill `install/racing_` too, `lib/mola_launcher`, `mola-cli` (measured outliving `ros2 launch` by 15 minutes, `test_mola_map.py`) and `racing_mola_map_alignment` (`pose_source:=mola`'s `map -> mola_map` static_transform_publisher lives under `/opt/ros`, so the first pattern never matched it), and note
     that `ros2 node list` shows stale discovery entries for a few seconds after.
+    The same shape in a test: `subprocess.Popen(["ros2", "run", ...]).terminate()` signals the Python
+    `ros2` CLI and orphans the node, still active on the domain, and `subprocess.run(timeout=)` SIGKILLs
+    only its direct child, so a script's EXIT trap never fires and its `setsid` stacks survive. Start it
+    with `start_new_session=True`, signal its group and its children's groups, and check the groups are
+    empty (SIM-3530; a leaked map_server fed amcl a second `/map`).
 
 ## Simulation
 
