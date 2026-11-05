@@ -49,6 +49,16 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios
 Driving on this estimate latches a `TRACK_LIMIT` stop, so keep `drive_on_estimate:=false`. Use
 Spielberg: the estimate cannot be judged on the analytic circle.
 
+On `config/scenarios/spielberg_1080.yaml` the launch selects the 1080-beam parameter file, so the same
+command with that scenario runs it (`time_scale:=5` is what SIM-3550 measures at):
+
+```bash
+ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg_1080.yaml pose_source:=slam_toolbox drive_on_estimate:=false seed:=42 time_scale:=5
+```
+
+`slam_toolbox_config:=<file>` names another parameter file; the 64-beam file stays runnable on the 1080
+scenario this way.
+
 ## AMCL closed loop
 
 **Drives on:** the amcl estimate (`/localization/odom`).

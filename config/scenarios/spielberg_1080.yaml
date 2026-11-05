@@ -1,7 +1,8 @@
 # spielberg.yaml with a Hokuyo UST-10LX-class lidar: 1080 beams over exactly
 # 270 degrees (4.712389 rad), the sensor the AutoDRIVE car carries. Only the
 # lidar differs (SIMJAX-1500); noise, track, map and timestep are identical,
-# so a pose source's 64-vs-1080 rows differ in the sensor and nothing else.
+# so a pose source's 64-vs-1080 rows differ in the sensor and nothing else,
+# except slam_toolbox, which also selects its 1080-beam parameter file here.
 # SIMJAX-1060 allowlists this file's num_beams and fov (SIMJAX-1510).
 # The league track (repo-gotchas #18): real geometry, a 2.2 m corridor and a
 # 343.3 m centerline. Every localization measurement runs here, never on
