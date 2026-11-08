@@ -16,10 +16,12 @@ from test_bringup_contract import (
     NOT_GYM_CAST,
     REPOSITORY_ROOT,
     _launch_context,
+    _launched,
     _merged,
 )
 
 AUTODRIVE_VEHICLE = "config/vehicles/autodrive_roboracer.yaml"
+FAST_VEHICLE = "config/vehicles/autodrive_roboracer_fast.yaml"
 PORTO = "config/scenarios/porto.yaml"
 AUTODRIVE = {
     "simulator": "autodrive",
@@ -288,7 +290,7 @@ def test_bringup_1660_autodrive_refuses_what_it_cannot_do(
     overrides, message
 ) -> None:
     """BRINGUP-1660: `simulator:=autodrive` refuses a vehicle other than
-    autodrive_roboracer, a scenario other than porto (the build has one
+    the AutoDRIVE car files, a scenario other than porto (the build has one
     active track), `start_held:=true` and `time_scale` other than 1, each
     naming the argument; the valid combination launches."""
     module, context = _launch_context(**{**AUTODRIVE, **overrides})
@@ -296,6 +298,43 @@ def test_bringup_1660_autodrive_refuses_what_it_cannot_do(
         module._launch_nodes(context, "", "")
     module, context = _launch_context(**AUTODRIVE)
     assert module._launch_nodes(context, "", "")
+
+
+def test_bringup_1830_autodrive_accepts_the_fast_car_and_the_gym_does_not():
+    """BRINGUP-1830: `simulator:=autodrive` launches the fast car file on
+    Porto; the gym refuses it, naming `simulator:=autodrive`."""
+    fast = {**AUTODRIVE, "vehicle": FAST_VEHICLE}
+    module, context = _launch_context(**fast)
+    assert module._launch_nodes(context, "", "")
+    module, context = _launch_context(vehicle=FAST_VEHICLE)
+    with pytest.raises(RuntimeError, match=r"simulator:=autodrive"):
+        module._launch_nodes(context, "", "")
+
+
+def test_bringup_1840_the_fast_car_has_its_own_porto_raceline():
+    """BRINGUP-1840: the min-time line is keyed on the vehicle version, so
+    the fast car resolves its committed Porto line and the base car on the
+    same arguments is refused for having none."""
+    line = {
+        "planner": "optimized_raceline",
+        "raceline_optimizer": "tum_mintime",
+        "speed_source": "trajectory",
+    }
+    module, context = _launch_context(
+        **{**AUTODRIVE, "vehicle": FAST_VEHICLE, **line}
+    )
+    support = _launched(context, module, "racing_bringup")
+    assert support["raceline_path"] == str(
+        REPOSITORY_ROOT
+        / "config"
+        / "racelines"
+        / "porto"
+        / "autodrive-roboracer-fast-v1"
+        / "tum_mintime.csv"
+    )
+    module, context = _launch_context(**{**AUTODRIVE, **line})
+    with pytest.raises(RuntimeError, match="no committed raceline"):
+        module._launch_nodes(context, "", "")
 
 
 def test_bringup_1670_server_values_are_part_4s_numbers() -> None:
