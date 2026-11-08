@@ -76,6 +76,8 @@ roles:
           - config/autodrive/*
           - config/vehicles/autodrive_roboracer.yaml
           - config/vehicles/autodrive_roboracer/*
+          - config/vehicles/autodrive_roboracer_fast.yaml
+          - config/vehicles/autodrive_roboracer_fast/*
           - config/tracks/porto.yaml
           - config/scenarios/porto.yaml
           - config/scenarios/maps/Porto/*

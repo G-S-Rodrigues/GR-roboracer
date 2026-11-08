@@ -227,6 +227,7 @@ def test_desc_1090_every_vehicle_has_a_description() -> None:
     assert mapping["f1tenth_default"] == "f1tenth.urdf"
     assert mapping["f1tenth_gym_limits"] == "f1tenth.urdf"
     assert mapping["autodrive_roboracer"] == "autodrive_roboracer.urdf"
+    assert mapping["autodrive_roboracer_fast"] == "autodrive_roboracer.urdf"
     display = _display_module()
     for stem, name in mapping.items():
         path = display.description_for(
