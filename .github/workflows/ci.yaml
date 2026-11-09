@@ -144,7 +144,18 @@ jobs:
             --env ROS_DOMAIN_ID=42 \
             --env ROS_LOG_DIR=/ws/log/ros \
             --env NIGHTLY_TIER5=${{ matrix.seed == 42 && '1' || '0' }} \
+            --env GITHUB_SHA=${{ github.sha }} \
             gr-roboracer:dev ./scripts/check.sh --nightly-region ${{ matrix.region }}
+
+      # The quality reports (ADR 0008): the nightly reports and never ranks;
+      # the trend is read from these. Every job uploads its own.
+      - name: Upload the quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.region }}-seed-${{ matrix.seed }}
+          path: log/reports/
+          if-no-files-found: ignore
 
       - name: Upload SIM-5030's sample
         if: always() && matrix.region == 'slam' && matrix.seed == 42

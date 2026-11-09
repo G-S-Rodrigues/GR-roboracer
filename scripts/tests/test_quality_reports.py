@@ -330,3 +330,94 @@ def test_check_2310_writes_its_report(path, superseded, report_id, metrics):
         ):
             return
     pytest.fail(f"{path}: no write_report('{report_id}', ...) call")
+
+
+# --- CHECK-2330: racing.robot carries no localization bound column --------
+
+ROBOT = REPOSITORY_ROOT / "tests" / "acceptance" / "racing.robot"
+
+
+def _robot_sections() -> tuple[str, str]:
+    text = ROBOT.read_text()
+    cases, _, keywords_text = text.partition("*** Keywords ***")
+    return cases, keywords_text
+
+
+def _template_block() -> str:
+    _, keywords_text = _robot_sections()
+    start = keywords_text.index("Pose Source Should Track Ground Truth")
+    return keywords_text[start:]
+
+
+def test_check_2330_template_takes_no_bound() -> None:
+    """CHECK-2330: the localization template has no bound arguments, reports
+    before it asserts, and asserts the catastrophic bounds."""
+    block = _template_block()
+    arguments = next(
+        line for line in block.splitlines() if "[Arguments]" in line
+    )
+    assert "${error_bound}" not in block
+    assert "${availability_bound}" not in block
+    assert "${test_id}" in arguments
+    report_at = block.index("Write Localization Report")
+    lap_at = block.index("Lap Completion Should Be")
+    bounds_at = block.index(
+        "Localization Should Stay Within Catastrophic Bounds"
+    )
+    assert report_at < lap_at < bounds_at
+
+
+def test_check_2330_rows_carry_no_numeric_bound() -> None:
+    """CHECK-2330: a row is an ID, a pose source and optional scenario and
+    time scale; the old 4.0 / 0.65 / 2.5 and 0.99 columns are gone."""
+    import re
+
+    cases, _ = _robot_sections()
+    rows = [
+        line.strip()
+        for line in cases.splitlines()
+        if re.match(r"\s+(ACC-\d{4}\s+)?(slam_toolbox|amcl|mola)(\s|$)", line)
+        and not line.strip().startswith(("#", "..."))
+    ]
+    assert len(rows) == 3, rows
+    for row in rows:
+        assert row.startswith("ACC-"), row
+        assert not re.search(r"\s(4\.0|0\.65|2\.5|0\.99)(\s|$)", row), row
+
+
+def test_check_2330_acc_literals_unchanged() -> None:
+    """CHECK-2330: the clearance (0.08) and p95 tracking (1.0) asserts stay
+    literals, as ADR 0008's table has them."""
+    cases, _ = _robot_sections()
+    assert cases.count("Minimum Wall Clearance Should Exceed    0.08") == 2
+    assert cases.count("P95 Tracking Error Should Be Below    1.0") == 1
+
+
+# --- CHECK-2360: the gate prints what the run reported --------------------
+
+
+def test_check_2360_print_reports_newer_than_since_sorted(tmp_path, capsys):
+    """CHECK-2360: one REPORT line per file at or after `since`, by name."""
+    import os
+
+    for name, mtime in (
+        ("SIM-3110", 1000),
+        ("SIM-3080", 2000),
+        ("ACC-4010", 3000),
+    ):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps({"id": name}))
+        os.utime(path, (mtime, mtime))
+    (tmp_path / "notes.txt").write_text("not a report")
+    report.print_reports(tmp_path, 2000)
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert [line.split(" ", 2)[:2] for line in lines] == [
+        ["REPORT", "ACC-4010"],
+        ["REPORT", "SIM-3080"],
+    ]
+    assert json.loads(lines[0].split(" ", 2)[2]) == {"id": "ACC-4010"}
+
+
+def test_check_2360_absent_directory_prints_nothing(tmp_path, capsys):
+    report.print_reports(tmp_path / "nowhere", 0)
+    assert capsys.readouterr().out == ""

@@ -11,6 +11,7 @@ This module imports no ROS, so tier 1 can test it.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -211,3 +212,38 @@ def write_report(
         flush=True,
     )
     return path
+
+
+def print_reports(directory: Path, since: float) -> None:
+    """Print one ``REPORT <id> <json>`` line per ``*.json`` in `directory`
+    modified at or after `since` (epoch seconds), sorted by name. pytest
+    captures a passing test's output, so the gate prints what the run wrote
+    once it ends. An absent directory prints nothing."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        return
+    for path in sorted(directory.glob("*.json")):
+        if path.stat().st_mtime < since:
+            continue
+        try:
+            body = json.dumps(
+                json.loads(path.read_text()),
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        except (OSError, ValueError):
+            continue
+        print(f"REPORT {path.stem} {body}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--print", dest="directory", type=Path, required=True)
+    parser.add_argument("--since", type=float, default=0.0)
+    args = parser.parse_args(argv)
+    print_reports(args.directory, args.since)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
