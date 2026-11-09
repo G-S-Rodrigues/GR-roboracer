@@ -150,3 +150,75 @@ def test_check_1410_failed_assert_names_where_coverage_was_lost(
         str(seen["run_path"]),
     ):
         assert field in text
+
+
+def _library_with(
+    monkeypatch, tmp_path, **score
+) -> keywords.RacingTestKeywords:
+    from racing_test_keywords import report
+
+    monkeypatch.setattr(report, "REPORT_ROOT", tmp_path / "reports")
+    monkeypatch.setattr(keywords, "BuiltIn", _RobotOutputDir(tmp_path))
+    seen = _run(monkeypatch)
+    seen["library"]._localization = {**SCORE, **score}
+    return seen["library"]
+
+
+@pytest.mark.parametrize(
+    "score, fails",
+    [
+        ({"ate_rmse": 0.3, "availability": 0.995}, False),
+        ({"ate_rmse": 5.01, "availability": 0.995}, True),
+        ({"ate_rmse": 0.3, "availability": 0.89}, True),
+    ],
+)
+def test_check_2320_catastrophic_keyword(
+    monkeypatch, tmp_path, score, fails
+) -> None:
+    """CHECK-2320: the tier-4 catastrophic keyword refuses a lost estimate
+    and a stalled one, and passes a working one."""
+    library = _library_with(monkeypatch, tmp_path, **score)
+    if fails:
+        with pytest.raises(AssertionError):
+            library.localization_should_stay_within_catastrophic_bounds()
+    else:
+        library.localization_should_stay_within_catastrophic_bounds()
+
+
+def test_check_2320_localization_report_keyword(monkeypatch, tmp_path) -> None:
+    """CHECK-2320: the report carries the offline score and the run."""
+    import json
+
+    library = _library_with(monkeypatch, tmp_path, ate_maximum=1.2)
+    library.write_localization_report("ACC-4030-amcl")
+    data = json.loads((tmp_path / "reports" / "ACC-4030-amcl.json").read_text())
+    for field in ("ate_rmse", "ate_maximum", "availability"):
+        assert field in data["numbers"]
+    assert data["implementation"] == "amcl"
+    assert data["seed"] == 42
+
+
+def test_check_2320_metrics_report_keyword(monkeypatch, tmp_path) -> None:
+    """CHECK-2320: the metrics report carries the three clearance and
+    tracking numbers."""
+    import json
+
+    from racing_test_keywords import report
+
+    monkeypatch.setattr(report, "REPORT_ROOT", tmp_path / "reports")
+    library = keywords.RacingTestKeywords()
+    library._metrics = {
+        "lap_completed": True,
+        "lap_time": 120.4,
+        "minimum_wall_clearance": 1.7,
+        "p95_tracking_error": 0.14,
+    }
+    library._run_info = {
+        "seed": 42,
+        "scenario": "config/scenarios/spielberg.yaml",
+        "implementation": "ground_truth",
+    }
+    library.write_metrics_report("ACC-4010")
+    data = json.loads((tmp_path / "reports" / "ACC-4010.json").read_text())
+    for field in ("lap_time", "minimum_wall_clearance", "p95_tracking_error"):
+        assert field in data["numbers"]

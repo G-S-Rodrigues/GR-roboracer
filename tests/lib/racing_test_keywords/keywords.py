@@ -15,6 +15,7 @@ from typing import Any
 from racing_interfaces.msg import SafetyStatus
 from robot.libraries.BuiltIn import BuiltIn
 
+from .report import CATASTROPHIC_BOUNDS, write_report
 from .scenario_runner import (
     REPOSITORY_ROOT,
     run_scenario,
@@ -56,12 +57,19 @@ class RacingTestKeywords:
         self._violation: dict[str, Any] | None = None
         self._localization: dict[str, Any] | None = None
         self._recording: Path | None = None
+        # Seed, scenario and implementation of the last run, for reports.
+        self._run_info: dict[str, Any] = {}
 
     def run_racing_scenario(
         self, scenario: str | None = None, seed: int = 0
     ) -> None:
         """Run the full stack headlessly for one seeded scenario."""
         self._metrics = run_scenario(seed=int(seed), scenario=scenario)
+        self._run_info = {
+            "seed": int(seed),
+            "scenario": scenario or "default",
+            "implementation": "ground_truth",
+        }
 
     def violate_track_limits_during_scenario(
         self, scenario: str | None = None, seed: int = 0
@@ -133,6 +141,11 @@ class RacingTestKeywords:
             launch_arguments=launch_arguments,
         )
         self._localization = score_localization(recording)
+        self._run_info = {
+            "seed": int(seed),
+            "scenario": scenario,
+            "implementation": pose_source,
+        }
 
     def _require_localization(self) -> dict[str, Any]:
         if self._localization is None:
@@ -172,6 +185,44 @@ class RacingTestKeywords:
                 f"expected availability > {threshold}, was {actual}"
                 + self._localization_summary()
             )
+
+    def localization_should_stay_within_catastrophic_bounds(self) -> None:
+        """The only quality assert on a localization case (ADR 0008): the
+        estimate is not lost (ATE RMSE) and not stalled (availability). The
+        strict `<` / `>` of the two keywords it calls are kept."""
+        self.localization_availability_should_exceed(
+            CATASTROPHIC_BOUNDS["availability"]["minimum"]
+        )
+        self.localization_error_should_be_below(
+            CATASTROPHIC_BOUNDS["ate_rmse"]["maximum"]
+        )
+
+    def write_localization_report(self, report_id: str) -> None:
+        """Report the offline score; called before any assert, so a red
+        case keeps its numbers."""
+        write_report(
+            str(report_id),
+            self._require_localization(),
+            baseline=None,
+            **self._report_context(),
+        )
+
+    def write_metrics_report(self, report_id: str) -> None:
+        """Report the scenario metrics (lap time, clearance, tracking)."""
+        write_report(
+            str(report_id),
+            self._require_metrics(),
+            baseline=None,
+            **self._report_context(),
+        )
+
+    def _report_context(self) -> dict[str, Any]:
+        info = self._run_info
+        return {
+            "seed": info.get("seed"),
+            "scenario": info.get("scenario", "unknown"),
+            "implementation": info.get("implementation", "unknown"),
+        }
 
     def _require_metrics(self) -> dict[str, Any]:
         if self._metrics is None:
