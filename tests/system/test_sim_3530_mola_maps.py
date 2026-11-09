@@ -19,6 +19,7 @@ means without claiming it localizes.
 """
 
 import contextlib
+import dataclasses
 import os
 import signal
 import subprocess
@@ -33,6 +34,7 @@ from racing_evaluation.map_accuracy import (
     map_to_wall,
     scenario_truth_grid,
 )
+from racing_test_keywords.report import catastrophic_violations, write_report
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCENARIO = REPOSITORY_ROOT / "config/scenarios/spielberg_1080.yaml"
@@ -42,7 +44,9 @@ COMMITTED_GRID = (
 SEED = 42
 TIMEOUT_SECONDS = 900.0
 
-# Rule (gotcha #14, the spec's testing section): each bound is the worst lap
+# The old bounds below are kept as the baseline a report is read against
+# (ADR 0008); no assert reads them. The asserts are the catastrophic bounds in
+# `racing_test_keywords.report`. How each was set: each bound is the worst lap
 # x 1.25 rounded up to 1 cm; the cell floor is the minimum x 0.8. The bounds
 # were first set on five laps of the baseline mapping pipeline (p95 0.518-
 # 0.988 m: 1.24 / 0.54 / 0.10 / 34 500). Part 2 then changed the mapping
@@ -73,12 +77,21 @@ MEASUREMENT = (
     "m, median 0.196-0.410 m, signed_mean +0.0770..+0.1604 m, 43 631-43 835 "
     "wall cells"
 )
-MIN_CELLS = 34905
-P95_BOUND = 1.96
-MEDIAN_BOUND = 0.52
-SIGNED_BOUND = 0.21
+MIN_CELLS_BASELINE = 34905
+P95_BASELINE = 1.96
+MEDIAN_BASELINE = 0.52
+SIGNED_BASELINE = 0.21
 Q3_P95_TARGET = 0.05
 Q3_MEAN_TARGET = 0.03
+BASELINE = {
+    "wall_cell_count": MIN_CELLS_BASELINE,
+    "p95": P95_BASELINE,
+    "median": MEDIAN_BASELINE,
+    "signed_mean": SIGNED_BASELINE,
+    "q3_p95_target": Q3_P95_TARGET,
+    "q3_mean_target": Q3_MEAN_TARGET,
+    "measurement": MEASUREMENT,
+}
 
 
 def _processes() -> Iterator[tuple[int, int, int, str]]:
@@ -244,10 +257,21 @@ def test_sim_3530_mapping_lap_grid_fits_the_walls(tmp_path: Path) -> None:
         f"SIM-3530 {accuracy}; measured: {MEASUREMENT}; q3 targets (reported,"
         f" not gated): p95 <= {Q3_P95_TARGET}, |mean| <= {Q3_MEAN_TARGET}"
     )
-    assert accuracy.wall_cell_count >= MIN_CELLS, accuracy
-    assert accuracy.p95 <= P95_BOUND, accuracy
-    assert accuracy.median <= MEDIAN_BOUND, accuracy
-    assert abs(accuracy.signed_mean) <= SIGNED_BOUND, accuracy
+    numbers = dataclasses.asdict(accuracy)
+    # Reported before anything is asserted, so a red run keeps its record
+    # (ADR 0008).
+    write_report(
+        "SIM-3530",
+        numbers,
+        seed=SEED,
+        scenario="config/scenarios/spielberg_1080.yaml",
+        implementation="mola",
+        baseline=BASELINE,
+    )
+    violations = catastrophic_violations(
+        numbers, {"wall_cell_count": "wall_cells", "median": "map_median"}
+    )
+    assert violations == [], (violations, accuracy)
 
 
 def test_sim_3530_map_server_loads_the_grid() -> None:
