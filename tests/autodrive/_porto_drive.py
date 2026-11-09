@@ -251,9 +251,7 @@ def drive_porto(
     if window:
         first = min(
             window,
-            key=lambda o: math.hypot(
-                o[1] - SPAWN_MAP[0], o[2] - SPAWN_MAP[1]
-            ),
+            key=lambda o: math.hypot(o[1] - SPAWN_MAP[0], o[2] - SPAWN_MAP[1]),
         )
         spawn_error = (
             math.hypot(first[1] - SPAWN_MAP[0], first[2] - SPAWN_MAP[1]),

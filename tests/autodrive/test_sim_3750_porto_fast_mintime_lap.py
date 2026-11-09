@@ -73,7 +73,7 @@ def test_sim_3750_porto_fast_mintime_lap(tmp_path):
     stamps = run.stamps[run.first_after :]
     lap2 = [
         v
-        for t, v in zip(stamps, drive)
+        for t, v in zip(stamps, drive, strict=True)
         if stack_laps and t >= stamps[-1] - stack_laps[-1]
     ]
     result = {
