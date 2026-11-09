@@ -26,6 +26,13 @@ inferred from a tier-3 test that happens to still pass. It does not see
 a wider spread or more frequent tail runs around an unchanged median;
 the bound comment below says what that costs.
 
+ADR 0008: this test tracks amcl over time and never fails on a quality
+number. The bounds below are **tracking thresholds**: `amcl_violations` still
+names the ones a sample breaks, and they go into `log/sim-5030.json` and
+`log/reports/SIM-5030.json` as `tracking_flags`. The test fails only on a gate
+(lap complete, 0 collisions). The history is read from the nightly's uploaded
+reports.
+
 Spielberg, never analytic_circle: a rotationally symmetric track leaves
 position along the centerline unobservable, and every number here would be
 measuring nothing (repo-gotchas #18).
@@ -53,6 +60,7 @@ import statistics
 import time
 from pathlib import Path
 
+from racing_test_keywords.report import write_report
 from racing_test_keywords.scenario_runner import (
     REPOSITORY_ROOT,
     host_load_delta,
@@ -155,6 +163,7 @@ RUNS_PER_SEED = 5
 # rounded up to 2.35 (was 0.65). The bound's margin over the worst run it
 # has seen is 2.35 / 1.569 = 1.50; the old 0.65 had 0.65 / 0.570 = 1.14, so
 # the looser of the two ratios was chosen. Availability stays 0.99.
+# Tracking thresholds, not gates (ADR 0008): they flag a sample in the report.
 ATE_RMSE_MAXIMUM = 2.35  # worst run 1.569 (CI 39423332965, seed 3)
 ATE_RMSE_MEDIAN_MAXIMUM = 0.45  # highest pooled median 0.3384 (CI 39423349401)
 AVAILABILITY_MINIMUM = 0.99  # sample minimum 1.0 (seed-42 history 0.99411)
@@ -248,16 +257,28 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
     evidence = sample_evidence(scores)
     evidence["wall_seconds"] = time.monotonic() - started
     evidence["host_load"] = host_load_delta(load_before, read_host_load())
-    (log_dir / "sim-5030.json").write_text(json.dumps(evidence, indent=2))
     violated = amcl_violations(rmses, availabilities)
+    evidence["tracking_flags"] = violated
+    (log_dir / "sim-5030.json").write_text(json.dumps(evidence, indent=2))
+    write_report(
+        "SIM-5030",
+        evidence,
+        seed=None,
+        scenario=SCENARIO,
+        implementation="amcl",
+        baseline={
+            "ate_rmse_maximum": ATE_RMSE_MAXIMUM,
+            "ate_rmse_median_maximum": ATE_RMSE_MEDIAN_MAXIMUM,
+            "availability_minimum": AVAILABILITY_MINIMUM,
+        },
+    )
     if violated:
         worst = scores[rmses.index(max(rmses))]
         shutil.copyfile(
             tmp_path / f"amcl-{worst['seed']}-{worst['run']}.jsonl",
             log_dir / "sim-5030-max.jsonl",
         )
-
-    assert not violated, (violated, sorted(rmses), availabilities)
+    # No assert on `violated`: the flags are reported (ADR 0008).
 
 
 # The two multi-seed CI samples the bounds were derived from (35 runs each,
