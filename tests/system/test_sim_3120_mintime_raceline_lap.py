@@ -54,7 +54,7 @@ def test_sim_3120_mintime_raceline_lap() -> None:
         "SIM-3120",
         metrics,
         seed=42,
-        scenario=SCENARIO,
+        scenario="config/scenarios/spielberg.yaml",
         implementation="optimized_raceline/tum_mintime",
         baseline={
             "lap_time": LAP_TIME_BASELINE,

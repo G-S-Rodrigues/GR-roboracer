@@ -144,7 +144,11 @@ class RacingTestKeywords:
         self._run_info = {
             "seed": int(seed),
             "scenario": scenario,
-            "implementation": pose_source,
+            # the planner too, when one is chosen: ACC-4040's raceline case
+            # exercises the planner on top of the pose source
+            "implementation": (
+                pose_source if planner is None else f"{pose_source}/{planner}"
+            ),
         }
 
     def _require_localization(self) -> dict[str, Any]:

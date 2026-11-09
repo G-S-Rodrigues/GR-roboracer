@@ -14,8 +14,8 @@ its own RNG, and two runs of the same scenario with the same simulator
 seed are the same trajectory observed by two different filters. Nothing in
 the stack makes that spread visible - every other localization test scores
 one run - so the spread is measured here, over N identical runs, and the
-tier-3 bound SIM-3080 asserts is derived from this, never from a single
-run.
+tier-3 baseline SIM-3080 reports against is derived from this, never from
+a single run.
 
 Tier 5 because that is what it costs: SEEDS x RUNS_PER_SEED laps at 5x is
 ~40 minutes at 35 laps (~68 s each on CI), which belongs in `--nightly` and
@@ -47,7 +47,7 @@ The sample, from this test's own first full execution (9 min 43 s):
     lap           120.44 s, 0 collisions, on all ten
 
 The spread is narrow - the plan's first branch - so SIM-3080 gets a real
-error bound rather than a convergence-only assertion. The tails are what
+error baseline rather than a convergence-only report. The tails are what
 the bounds here have to survive: the distribution is not symmetric, and
 two of ten runs sit ~40 % above the median. The bound is therefore on the
 median and on each run's maximum, never on max-min of ten (see the
@@ -143,7 +143,7 @@ RUNS_PER_SEED = 5
 # diff the owner accepted (D5 re-rule, 2026-10-20), because the sample now
 # holds seeds 3 and 123 (D3). The numbers above are the seed-42 history;
 # the bounds below are SIM-5030's own multi-seed bounds. SIM-3080, SIM-5020
-# and ACC-4030 keep 0.65 as a seed-42 bound (D4) and do not share these.
+# and ACC-4030 report 0.65 as a seed-42 baseline (D4) and do not share these.
 #
 # Multi-seed samples, 35 runs each (7 seeds x 5), CI, sha 9c8c73b, availability
 # 1.0 on every run, post-3.1b tree, main's alphas (CI_SAMPLE_A / _B below

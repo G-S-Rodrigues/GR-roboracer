@@ -58,7 +58,7 @@ def test_sim_3110_optimized_raceline_lap() -> None:
         "SIM-3110",
         metrics,
         seed=42,
-        scenario=SCENARIO,
+        scenario="config/scenarios/spielberg.yaml",
         implementation="optimized_raceline/tum_mincurv_iqp",
         baseline={
             "lap_time": LAP_TIME_BASELINE,
