@@ -26,7 +26,7 @@ the centerline, are in [demonstrations](docs/demonstrations.md).
 ## Capabilities and roadmap
 
 Available means a supported current workflow or tool.
-Experimental means merged and selectable, benchmarked but not yet verified in the reference stack. In development means active
+Experimental means merged and selectable, compared by the benchmark command once it lands, but not yet verified in the reference stack. In development means active
 implementation; Planned means settled future work; Exploratory means research.
 Roadmap entries are directions to investigate or build, with no runnable workflow yet.
 

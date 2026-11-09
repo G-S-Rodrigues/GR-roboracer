@@ -210,7 +210,7 @@ Where a test is not where you would look:
 - **SIM-3100** — dead reckoning must drift past a stated floor over a lap. It is the only test that
   notices noise silently disabled, which would make every localization test vacuous and green.
 - **The catastrophic bounds** (ADR 0008) — loose on purpose. A green localization test means the
-  estimate did not diverge, not that it is good; how good is in `log/reports/` and the benchmark.
+  estimate did not diverge, not that it is good; how good is in `log/reports/` and, once it lands, the benchmark.
 
 ## What stays unverified, deliberately
 

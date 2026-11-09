@@ -46,7 +46,7 @@ A row's status is a claim about `main`, backed as follows:
   with the exact command. An offline tool counts when it has a command.
 - **Experimental** — merged code a user can select, `status: experimental` in
   `config/reference_stack.yaml`, documented on its workflow page with the command; numbers come from the
-  benchmark. It becomes Available when its verification merges.
+  benchmark command once it lands. It becomes Available when its verification merges.
 - **In development** — work in flight on an open issue or branch.
 - **Planned** — a written spec exists; nothing merged.
 - **Exploratory** — the owner chose to investigate it; no spec. A brainstormed idea enters the

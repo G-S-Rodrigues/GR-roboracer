@@ -32,7 +32,7 @@ To reproduce a record and compare it, see [Running a scenario](running.md#runnin
 ## Localization evidence
 
 There is no golden for localization. The acceptance cases gate on the catastrophic bounds (ATE RMSE 5 m, availability 0.90); the error
-is reported, not a pass condition (ADR 0008). On Spielberg `slam_toolbox` and `amcl` are measured
+is reported, not a pass condition ([Verification](verification.md)). On Spielberg `slam_toolbox` and `amcl` are measured
 against ground truth (ACC-4030): `amcl` seed-42 runs 0.14-0.44 m, `slam_toolbox` three runs 2.43-2.88 m. `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
 loop: ATE RMSE 0.70-2.13 m and maximum 1.41-4.15 m over five laps (the spread is wide and varies run to run; three
 runs at low load gave 0.74-0.75 m), availability 0.9975 or better, reported (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
