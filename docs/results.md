@@ -80,17 +80,17 @@ throttle. The file is data about the simulator's car, not a result of the stack.
 
 ## AutoDRIVE fast minimum-time lap
 
-The fast AutoDRIVE car (`autodrive_roboracer_fast`) drove the committed minimum-time Porto line twice from a standing
+The fast AutoDRIVE car (`autodrive_roboracer_fast`) drove the committed minimum-time Porto line for two laps from one standing
 start on the real simulator, headless, with `scripts/autodrive_qualify.sh --domain 64 --case fast_lap` (2026-11-09, host
-load1 3.4). Lap 1 includes the standing start. This is reported, not a bound.
+load1 3.0, a rerun after the speed figures were trimmed to the drive; the first run gave stack laps 7.85 s and 7.40 s, simulator laps 7.61 s and 7.39 s). Lap 1 includes the standing start. This is reported, not a bound.
 
 | | lap 1 | lap 2 |
 |---|---|---|
-| stack lap time | 7.85 s | 7.40 s |
-| simulator lap time | 7.61 s | 7.39 s |
+| stack lap time | 7.82 s | 7.40 s |
+| simulator lap time | 7.60 s | 7.38 s |
 
-Peak speed 4.44 m/s (cap 4.5), mean 3.84 m/s, 0 collisions on the stack and the simulator, no latch (every safety status
-message `REASON_NONE`). The solver's estimate for the line is 7.306 s.
+Peak speed 4.44 m/s (cap 4.5), mean over lap 2 3.97 m/s (stack lap time window of `/ground_truth/odom` speed), 0 collisions on the stack and the simulator, no latch (every safety status
+message `REASON_NONE`). TUM's own estimate for the line is 7.303 s and the re-profiled line's is 7.306 s.
 
 ## Mapping demonstration
 
