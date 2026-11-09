@@ -155,3 +155,178 @@ def test_check_2290_working_values_pass_and_message_names_things():
     )
     assert "position_rmse" in message and "7.0" in message
     assert "ate_rmse" in message and "5.0" in message
+
+
+# --- CHECK-2300 / CHECK-2310: the inventory of tests that report ----------
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+_LOCALIZATION_NAMES = (
+    "POSITION_RMSE_MAXIMUM",
+    "POSITION_MAXIMUM",
+    "AVAILABILITY_MINIMUM",
+    "OFFLINE_BOUNDS",
+)
+_LAP_NAMES = ("LAP_TIME", "LAP_TIME_TOLERANCE")
+
+# (path, superseded names, report ID prefix, catastrophic metrics it checks)
+INVENTORY = [
+    (
+        "tests/system/test_sim_3070_slam_toolbox_localizes.py",
+        _LOCALIZATION_NAMES,
+        "SIM-3070",
+        ("ate_rmse", "availability"),
+    ),
+    (
+        "tests/system/test_sim_3080_amcl_localizes.py",
+        _LOCALIZATION_NAMES,
+        "SIM-3080",
+        ("ate_rmse", "availability"),
+    ),
+    (
+        "tests/system/test_sim_3510_mola_localizes.py",
+        _LOCALIZATION_NAMES,
+        "SIM-3510",
+        ("ate_rmse", "availability"),
+    ),
+    (
+        "tests/system/test_sim_3550_slam_toolbox_1080_localizes.py",
+        (*_LOCALIZATION_NAMES, "MAP_MEDIAN_MAXIMUM", "MAP_P95_MAXIMUM"),
+        "SIM-3550",
+        ("ate_rmse", "availability", "map_median"),
+    ),
+    (
+        "tests/system/test_sim_3530_mola_maps.py",
+        ("MIN_CELLS", "P95_BOUND", "MEDIAN_BOUND", "SIGNED_BOUND"),
+        "SIM-3530",
+        ("wall_cells", "map_median"),
+    ),
+    (
+        "tests/system/test_sim_3110_optimized_raceline_lap.py",
+        _LAP_NAMES,
+        "SIM-3110",
+        (),
+    ),
+    (
+        "tests/system/test_sim_3120_mintime_raceline_lap.py",
+        _LAP_NAMES,
+        "SIM-3120",
+        (),
+    ),
+    (
+        "tests/nightly/test_sim_5020_cross_product.py",
+        ("BOUNDS",),
+        "SIM-5020",
+        ("ate_rmse", "availability"),
+    ),
+    (
+        "tests/nightly/test_sim_5030_amcl_spread.py",
+        ("violated",),
+        "SIM-5030",
+        (),
+    ),
+]
+_INVENTORY_IDS = [row[2] for row in INVENTORY]
+
+
+def _tree(path: str):
+    import ast
+
+    source = (REPOSITORY_ROOT / path).read_text()
+    return ast.parse(source, filename=path)
+
+
+def _call_name(node) -> str:
+    import ast
+
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _names_in(node) -> list[tuple[str, int]]:
+    import ast
+
+    return [
+        (inner.id, inner.lineno)
+        for inner in ast.walk(node)
+        if isinstance(inner, ast.Name)
+    ]
+
+
+def _strings_in(node) -> set[str]:
+    import ast
+
+    return {
+        inner.value
+        for inner in ast.walk(node)
+        if isinstance(inner, ast.Constant) and isinstance(inner.value, str)
+    }
+
+
+@pytest.mark.parametrize(
+    "path,superseded,report_id,metrics", INVENTORY, ids=_INVENTORY_IDS
+)
+def test_check_2300_no_superseded_bound_and_catastrophic_kept(
+    path, superseded, report_id, metrics
+):
+    """CHECK-2300: no assert (nor a compare_localization argument) reads a
+    superseded bound or a `*_BASELINE` name, and the file still checks each
+    of its catastrophic metrics through the catastrophic helpers."""
+    import ast
+
+    tree = _tree(path)
+    found = []
+    for node in ast.walk(tree):
+        scanned = []
+        if isinstance(node, ast.Assert):
+            scanned.append(node)
+        elif isinstance(node, ast.Call) and (
+            _call_name(node) == "compare_localization"
+        ):
+            scanned.extend([*node.args, *(k.value for k in node.keywords)])
+        for part in scanned:
+            for name, line in _names_in(part):
+                if name in superseded or name.endswith("_BASELINE"):
+                    found.append(f"{name} :{line}")
+    assert not found, f"{path} still gates on: {sorted(set(found))}"
+
+    checked: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _call_name(node) in (
+            "catastrophic",
+            "catastrophic_violations",
+        ):
+            for part in [*node.args, *(k.value for k in node.keywords)]:
+                checked |= _strings_in(part)
+    missing = [metric for metric in metrics if metric not in checked]
+    assert not missing, f"{path} no longer checks catastrophic {missing}"
+
+
+@pytest.mark.parametrize(
+    "path,superseded,report_id,metrics", INVENTORY, ids=_INVENTORY_IDS
+)
+def test_check_2310_writes_its_report(path, superseded, report_id, metrics):
+    """CHECK-2310: the file calls write_report with its own ID first."""
+    import ast
+
+    tree = _tree(path)
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call) and _call_name(node) == "write_report"
+        ):
+            continue
+        if not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.JoinedStr) and first.values:
+            first = first.values[0]
+        if (
+            isinstance(first, ast.Constant)
+            and isinstance(first.value, str)
+            and first.value.startswith(report_id)
+        ):
+            return
+    pytest.fail(f"{path}: no write_report('{report_id}', ...) call")
