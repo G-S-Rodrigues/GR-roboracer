@@ -1,21 +1,22 @@
 """SIM-3120: one seeded Spielberg lap on the minimum-time raceline completes
-through the real launch, collision-free, at its own measured lap time.
+through the real launch, collision-free, inside the run's timeout. Its lap
+time is reported (`log/reports/SIM-3120.json`), not asserted (ADR 0008).
 
 The default vehicle follows `config/racelines/spielberg/f1tenth-default-v1/
 tum_mintime.csv` with `speed_source: trajectory`, so the line's own speed is
 the command. Ground-truth pose only. The 20 m/s gym-limits vehicle is the
 nightly's (SIM-5050), not this gate's (owner 2026-10-11).
 
-The lap time pins *this* line's own measurement; it is not a comparison with
-the minimum-curvature line (ADR 0005 leaves ranking peers to tier 5). It is
-also what makes the test discriminate: a launch that silently loads the
-minimum-curvature line laps in ~113.08 s and the centerline in ~120.41 s,
-both far over this tolerance away.
+The reported lap time is *this* line's own measurement, read against the
+baseline below; it is not a comparison with the minimum-curvature line (ADR
+0005 leaves ranking peers to tier 5). A launch that silently loads that line
+laps in ~113.08 s and the centerline in ~120.41 s: the report shows it, no
+assert does.
 """
 
 from pathlib import Path
 
-import pytest
+from racing_test_keywords.report import write_report
 from racing_test_keywords.scenario_runner import run_scenario
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -30,9 +31,10 @@ TIME_SCALE = 5.0
 LAP_WALL_SECONDS = 65.0  # SIM-3110's; the measured wall time is lower
 # 3x the measured wall time, as SIM-3090 and SIM-3110.
 TIMEOUT_SECONDS = 3.0 * LAP_WALL_SECONDS
+# Kept as the baseline the report is read against; no assert reads them.
 # Seed 42's lap, 112.12 s in 3 of 3 runs; the window is SIM-3090's.
-LAP_TIME = 112.12
-LAP_TIME_TOLERANCE = 0.05
+LAP_TIME_BASELINE = 112.12
+LAP_TIME_TOLERANCE_BASELINE = 0.05
 
 
 def test_sim_3120_mintime_raceline_lap() -> None:
@@ -48,10 +50,18 @@ def test_sim_3120_mintime_raceline_lap() -> None:
         },
     )
 
+    write_report(
+        "SIM-3120",
+        metrics,
+        seed=42,
+        scenario="config/scenarios/spielberg.yaml",
+        implementation="optimized_raceline/tum_mintime",
+        baseline={
+            "lap_time": LAP_TIME_BASELINE,
+            "lap_time_tolerance": LAP_TIME_TOLERANCE_BASELINE,
+        },
+    )
     assert metrics["lap_completed"] is True
     assert metrics["collision_count"] == 0
     assert metrics["control_saturation_events"] == 0
     assert metrics["vehicle_parameter_version"] == "f1tenth-default-v1"
-    assert metrics["lap_time"] == pytest.approx(
-        LAP_TIME, abs=LAP_TIME_TOLERANCE
-    )

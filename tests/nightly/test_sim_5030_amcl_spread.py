@@ -14,8 +14,8 @@ its own RNG, and two runs of the same scenario with the same simulator
 seed are the same trajectory observed by two different filters. Nothing in
 the stack makes that spread visible - every other localization test scores
 one run - so the spread is measured here, over N identical runs, and the
-tier-3 bound SIM-3080 asserts is derived from this, never from a single
-run.
+tier-3 baseline SIM-3080 reports against is derived from this, never from
+a single run.
 
 Tier 5 because that is what it costs: SEEDS x RUNS_PER_SEED laps at 5x is
 ~40 minutes at 35 laps (~68 s each on CI), which belongs in `--nightly` and
@@ -25,6 +25,13 @@ of the runs) or a single-run blow-up (the maximum) is visible rather than
 inferred from a tier-3 test that happens to still pass. It does not see
 a wider spread or more frequent tail runs around an unchanged median;
 the bound comment below says what that costs.
+
+ADR 0008: this test tracks amcl over time and never fails on a quality
+number. The bounds below are **tracking thresholds**: `amcl_violations` still
+names the ones a sample breaks, and they go into `log/sim-5030.json` and
+`log/reports/SIM-5030.json` as `tracking_flags`. The test fails only on a gate
+(lap complete, 0 collisions). The history is read from the nightly's uploaded
+reports.
 
 Spielberg, never analytic_circle: a rotationally symmetric track leaves
 position along the centerline unobservable, and every number here would be
@@ -40,7 +47,7 @@ The sample, from this test's own first full execution (9 min 43 s):
     lap           120.44 s, 0 collisions, on all ten
 
 The spread is narrow - the plan's first branch - so SIM-3080 gets a real
-error bound rather than a convergence-only assertion. The tails are what
+error baseline rather than a convergence-only report. The tails are what
 the bounds here have to survive: the distribution is not symmetric, and
 two of ten runs sit ~40 % above the median. The bound is therefore on the
 median and on each run's maximum, never on max-min of ten (see the
@@ -53,6 +60,7 @@ import statistics
 import time
 from pathlib import Path
 
+from racing_test_keywords.report import write_report
 from racing_test_keywords.scenario_runner import (
     REPOSITORY_ROOT,
     host_load_delta,
@@ -135,7 +143,7 @@ RUNS_PER_SEED = 5
 # diff the owner accepted (D5 re-rule, 2026-10-20), because the sample now
 # holds seeds 3 and 123 (D3). The numbers above are the seed-42 history;
 # the bounds below are SIM-5030's own multi-seed bounds. SIM-3080, SIM-5020
-# and ACC-4030 keep 0.65 as a seed-42 bound (D4) and do not share these.
+# and ACC-4030 report 0.65 as a seed-42 baseline (D4) and do not share these.
 #
 # Multi-seed samples, 35 runs each (7 seeds x 5), CI, sha 9c8c73b, availability
 # 1.0 on every run, post-3.1b tree, main's alphas (CI_SAMPLE_A / _B below
@@ -155,6 +163,7 @@ RUNS_PER_SEED = 5
 # rounded up to 2.35 (was 0.65). The bound's margin over the worst run it
 # has seen is 2.35 / 1.569 = 1.50; the old 0.65 had 0.65 / 0.570 = 1.14, so
 # the looser of the two ratios was chosen. Availability stays 0.99.
+# Tracking thresholds, not gates (ADR 0008): they flag a sample in the report.
 ATE_RMSE_MAXIMUM = 2.35  # worst run 1.569 (CI 39423332965, seed 3)
 ATE_RMSE_MEDIAN_MAXIMUM = 0.45  # highest pooled median 0.3384 (CI 39423349401)
 AVAILABILITY_MINIMUM = 0.99  # sample minimum 1.0 (seed-42 history 0.99411)
@@ -248,16 +257,28 @@ def test_sim_5030_amcl_run_to_run_spread(tmp_path: Path) -> None:
     evidence = sample_evidence(scores)
     evidence["wall_seconds"] = time.monotonic() - started
     evidence["host_load"] = host_load_delta(load_before, read_host_load())
-    (log_dir / "sim-5030.json").write_text(json.dumps(evidence, indent=2))
     violated = amcl_violations(rmses, availabilities)
+    evidence["tracking_flags"] = violated
+    (log_dir / "sim-5030.json").write_text(json.dumps(evidence, indent=2))
+    write_report(
+        "SIM-5030",
+        evidence,
+        seed=None,
+        scenario=SCENARIO,
+        implementation="amcl",
+        baseline={
+            "ate_rmse_maximum": ATE_RMSE_MAXIMUM,
+            "ate_rmse_median_maximum": ATE_RMSE_MEDIAN_MAXIMUM,
+            "availability_minimum": AVAILABILITY_MINIMUM,
+        },
+    )
     if violated:
         worst = scores[rmses.index(max(rmses))]
         shutil.copyfile(
             tmp_path / f"amcl-{worst['seed']}-{worst['run']}.jsonl",
             log_dir / "sim-5030-max.jsonl",
         )
-
-    assert not violated, (violated, sorted(rmses), availabilities)
+    # No assert on `violated`: the flags are reported (ADR 0008).
 
 
 # The two multi-seed CI samples the bounds were derived from (35 runs each,

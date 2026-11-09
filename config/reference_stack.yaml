@@ -19,6 +19,12 @@
 # `verified_by` is who answers for a test; measuring-instrument couplings
 # (the simulator feeding every estimator, the evaluator scoring them) are
 # `paths` instead, so `--owners SIM-3080` names the claimant only.
+#
+# An alternative may be `status: experimental` (ADR 0008): selectable and
+# benchmarked, gated by tiers 0-2 only, with its `paths` (so the map still
+# fails closed) and an empty `verified_by`. It is never a role's default.
+# Promotion is a reviewed PR that adds its tier-3/4 test to `verified_by`
+# and drops `status`.
 schema_version: 1
 # The one lap `--ready` always runs: it exercises every default below.
 reference_lap: SIM-3020

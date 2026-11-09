@@ -161,6 +161,9 @@ class Implementation:
     default: bool
     paths: tuple[str, ...]
     verified_by: tuple[str, ...]  # tier-3/4 IDs; a YAML scalar is one ID
+    # "" (verified) or "experimental" (ADR 0008): selectable and benchmarked,
+    # gated by tiers 0-2, with paths and no verified_by. Never a default.
+    status: str = ""
 
     @property
     def key(self) -> str:
@@ -191,6 +194,22 @@ def _as_tuple(value: object) -> tuple[str, ...]:
     return tuple(str(item) for item in value)  # type: ignore[attr-defined]
 
 
+def _check_status(impl: Implementation) -> None:
+    """`status` is "" or "experimental"; experimental is never a role's
+    default and never carries a verified_by (promotion removes it, ADR 0008)."""
+    if impl.status not in ("", "experimental"):
+        raise ValueError(
+            f"{impl.key}: status must be 'experimental' or absent, "
+            f"not {impl.status!r}"
+        )
+    if impl.status == "experimental" and impl.default:
+        raise ValueError(f"{impl.key}: a default cannot be experimental")
+    if impl.status == "experimental" and impl.verified_by:
+        raise ValueError(
+            f"{impl.key}: an experimental implementation has no verified_by"
+        )
+
+
 def stack_from_dict(
     data: Mapping[str, object],
     system_tests: Mapping[str, str],
@@ -206,16 +225,17 @@ def stack_from_dict(
             *[(a, False) for a in entry.get("alternatives", ())],
         ]
         for fields, default in entries:
-            implementations.append(
-                Implementation(
-                    role=role,
-                    name=fields["implementation"],
-                    package=fields["package"],
-                    default=default,
-                    paths=_as_tuple(fields.get("paths")),
-                    verified_by=_as_tuple(fields.get("verified_by")),
-                )
+            implementation = Implementation(
+                role=role,
+                name=fields["implementation"],
+                package=fields["package"],
+                default=default,
+                paths=_as_tuple(fields.get("paths")),
+                verified_by=_as_tuple(fields.get("verified_by")),
+                status=str(fields.get("status", "")),
             )
+            _check_status(implementation)
+            implementations.append(implementation)
     return StackMap(
         implementations=tuple(implementations),
         reference_lap=str(data.get("reference_lap", "")),
@@ -292,7 +312,7 @@ def load_stack(root: Path) -> StackMap:
         data, discover_system_tests(root), discover_acceptance_tags(root)
     )
     for impl in stack.implementations:
-        if not impl.verified_by:
+        if not impl.verified_by and impl.status != "experimental":
             raise ValueError(f"{impl.key} claims no test (empty verified_by)")
     return stack
 
