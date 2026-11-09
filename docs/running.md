@@ -58,8 +58,8 @@ container. Artifacts (`qualification.json`, `porto_run.npz`, `launch.log`) land 
 `--workdir` selects a checkout inside `dev` and `--dry-run` prints the three commands without running them.
 
 `scripts/autodrive_qualify.sh --domain 64 --case fast_lap` runs the fast car on its committed minimum-time Porto line for two
-laps (about 20 s) and prints the stack's and the simulator's lap times, collisions and peak speed; it writes `fast_lap.json`
-beside the other artifacts.
+laps (the drive is about 20 s; the command also recreates the simulator container and starts the stack, as qualification does) and prints the stack's and the simulator's lap times, collisions and peak speed; it writes `fast_lap.json`
+to `.scratch-out/autodrive_fast_lap/`.
 
 The minimum-curvature line from `config/racelines/`, raced at its own speed:
 

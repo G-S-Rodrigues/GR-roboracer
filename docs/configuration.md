@@ -108,7 +108,7 @@ launch first. Its arguments:
 The server's vehicle values are in `config/vehicles/autodrive_roboracer/server.yaml`, one comment per
 value, and where AutoDRIVE's world sits in the Porto map is in `config/autodrive/porto_frame.yaml`
 (rotation 90 degrees, translation (-2.84, 1.17) m, measured from a live 12-lap run's lidar). The simulator has no time scaling and no held start, so `time_scale` other than 1 and
-`start_held:=true` are errors; so are any vehicle but `autodrive_roboracer` and any scenario but
+`start_held:=true` are errors; so are any vehicle but `autodrive_roboracer` or `autodrive_roboracer_fast` and any scenario but
 `porto`, the only track the build has active. Every node then runs on wall time (`use_sim_time`
 false), because AutoDRIVE publishes no clock. `seed` is accepted; a reset returns to the start pose.
 
@@ -170,9 +170,9 @@ starts it beside the held stack and is the supported entry point
 schema_version: 1  # Available: 1
 workflow: mapping  # Available: mapping, racing
 scenario: config/scenarios/spielberg_survey.yaml  # Available: config/scenarios/spielberg_survey.yaml (exact sensors)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Runs on `simulator: autodrive` only: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; the gym refuses it). The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Runs on `simulator: autodrive` only: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car), config/vehicles/autodrive_roboracer_fast.yaml (the same car with the fast tyre set); the gym refuses both. The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
 stack:
-  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer only)
+  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer or autodrive_roboracer_fast only)
   pose_source: ground_truth  # Available: ground_truth (the survey drives on exact pose)
   mapper: slam_toolbox  # Available: slam_toolbox (survey mapper, never owns map -> odom)
   planner: track_centerline  # Available: track_centerline
@@ -209,9 +209,9 @@ is a reviewed diff. The example writes to `log/maps/Spielberg` so following it i
 schema_version: 1  # Available: 1
 workflow: racing  # Available: mapping, racing
 scenario: config/scenarios/spielberg.yaml  # Available: config/scenarios/spielberg.yaml, config/scenarios/spielberg_1080.yaml (the same track with a 1080-beam, 270 degree lidar), config/scenarios/contract_test.yaml (no localization). Runs on `simulator: autodrive` only: config/scenarios/porto.yaml (the AutoDRIVE practice track; the gym has no map for it)
-vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Runs on `simulator: autodrive` only: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car; the gym refuses it). The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
+vehicle: config/vehicles/f1tenth_default.yaml  # Available: config/vehicles/f1tenth_default.yaml, config/vehicles/f1tenth_gym_limits.yaml. Runs on `simulator: autodrive` only: config/vehicles/autodrive_roboracer.yaml (the AutoDRIVE car), config/vehicles/autodrive_roboracer_fast.yaml (the same car with the fast tyre set); the gym refuses both. The RViz model follows the vehicle (`urdf/descriptions.yaml`); autodrive_roboracer draws the AutoDRIVE RoboRacer
 stack:
-  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer only)
+  simulator: f1tenth_gym_jax  # Available: f1tenth_gym_jax, autodrive (in development; scenario porto and vehicle autodrive_roboracer or autodrive_roboracer_fast only)
   pose_source: amcl  # Available: ground_truth, slam_toolbox, amcl, mola
   planner: track_centerline  # Available: track_centerline, optimized_raceline
   raceline_optimizer: tum_mincurv_iqp  # Available: tum_mincurv_iqp (default), tum_mintime (used by optimized_raceline)
