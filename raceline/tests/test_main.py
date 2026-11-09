@@ -515,3 +515,110 @@ def test_raceline_1445_mintime_is_one_solve(monkeypatch, tmp_path):
                 tmp_path, tmp_path / "o", "--track", str(oval), "--passes", "2"
             )
         )
+
+
+# -- the opt-in speed re-profile through the CLI (RACELINE-1570/1580) --------
+
+
+def _wrap_reprofile(monkeypatch):
+    calls, verified = [], []
+    real = runner.reprofile_speed
+    real_verify = runner.verify.verify
+
+    def reprofile(line, vehicle, **kw):
+        out = real(line, vehicle, **kw)
+        calls.append((line, out))
+        return out
+
+    def verify(line, vehicle, walls, reference):
+        verified.append(line)
+        return real_verify(line, vehicle, walls, reference)
+
+    monkeypatch.setattr(runner, "reprofile_speed", reprofile)
+    monkeypatch.setattr(runner.verify, "verify", verify)
+    return calls, verified
+
+
+def test_raceline_1570_reprofile_speed_is_applied_verified_and_recorded(
+    monkeypatch, tmp_path, capsys
+):
+    calls, verified = _wrap_reprofile(monkeypatch)
+    folder, doc, _, _ = _run_mintime(
+        monkeypatch, tmp_path, tmp_path / "a", "--reprofile-speed"
+    )
+    assert len(calls) == 1
+    raw, out = calls[0]
+    assert verified[-1] is out
+    written = optimize.load_raceline_csv(folder / "tum_mintime.csv")
+    assert np.allclose(written.v, out.v, atol=1e-8)
+    assert "--reprofile-speed" in doc["command"]
+    assert doc["parameters"]["speed_reprofile"] == {"limit_scale": 0.995}
+    assert "speed reprofile:" in capsys.readouterr().err
+    # a --reference run records the same parameters
+    reference = folder / "reference" / "tum_mintime.csv"
+    _, doc2, _, _ = _run_mintime(
+        monkeypatch,
+        tmp_path,
+        tmp_path / "b",
+        "--reference",
+        str(reference),
+        "--reprofile-speed",
+    )
+    assert doc2["parameters"] == doc["parameters"]
+
+
+def test_raceline_1570_reprofile_speed_is_refused_for_mincurv(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    oval = _oval_yaml(tmp_path)
+    with pytest.raises(SystemExit, match="tum_mintime"):
+        runner.main(
+            [
+                "--vehicle",
+                DEFAULT,
+                "--optimizer",
+                "tum_mincurv_iqp",
+                "--out-dir",
+                str(tmp_path / "o"),
+                "--track",
+                str(oval),
+                "--reprofile-speed",
+            ]
+        )
+
+
+def test_raceline_1580_without_the_flag_nothing_is_reprofiled(
+    monkeypatch, tmp_path
+):
+    def boom(*a, **k):
+        raise AssertionError("reprofile_speed called without the flag")
+
+    monkeypatch.setattr(runner, "reprofile_speed", boom)
+    chained = []
+    real_chain = runner.mintime_chain
+
+    def chain(*a, **k):
+        line, status = real_chain(*a, **k)
+        chained.append(line)
+        return line, status
+
+    monkeypatch.setattr(runner, "mintime_chain", chain)
+    folder, doc, _, _ = _run_mintime(monkeypatch, tmp_path, tmp_path / "a")
+    expected = tmp_path / "expected.csv"
+    optimize.write_raceline_csv(chained[0], expected)
+    assert (folder / "tum_mintime.csv").read_bytes() == expected.read_bytes()
+    assert "--reprofile-speed" not in doc["command"]
+    assert "speed_reprofile" not in doc["parameters"]
+    assert set(doc) == D9_KEYS | {"ground_truth_map", "solver"}
+    assert set(doc["parameters"]) == {
+        "margin",
+        "safety_width",
+        "passes",
+        "allowance",
+        "walls",
+        "ini",
+        "tyre_set",
+        "solver_options",
+        "reference",
+    }

@@ -15,6 +15,7 @@ import time
 import tomllib
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 from raceline import diagnose, verify
@@ -34,9 +35,12 @@ from raceline.optimize import (
     MINTIME_THREADS,
     MINTIME_TYRE_SET,
     OPTIMIZERS,
+    REPROFILE_LIMIT_SCALE,
     Raceline,
+    _lap_time,
     mintime_chain,
     optimize,
+    reprofile_speed,
     tum_ini,
     tum_mintime_ini,
     write_raceline_csv,
@@ -127,6 +131,13 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="where the diagnostic plots go (default log/raceline/<track>/"
         "<vehicle>/<optimizer>/, never config/racelines/)",
+    )
+    p.add_argument(
+        "--reprofile-speed",
+        action="store_true",
+        help="tum_mintime only: re-profile the solved speed on the exported "
+        "path to 0.995 x the GGV a_y and 0.995 x the GGV / machines a_x "
+        "(optimize.reprofile_speed)",
     )
     p.add_argument("--no-plots", action="store_true")
     p.add_argument("--name")
@@ -251,6 +262,8 @@ def _provenance(
         params["ini"] = tum_ini(vehicle)
     else:
         params.update(_mintime_parameters(args, vehicle, mintime["reference"]))
+        if args.reprofile_speed:
+            params["speed_reprofile"] = {"limit_scale": REPROFILE_LIMIT_SCALE}
         vehicle_doc["dynamics_sha256"] = _sha256(vehicle.dynamics_path)
         vehicle_doc["tyres_sha256"] = _sha256(
             load_tyres(vehicle, MINTIME_TYRE_SET).path
@@ -295,6 +308,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.reference and not mintime:
         sys.exit(
             f"--reference goes with --optimizer tum_mintime, not "
+            f"{args.optimizer}"
+        )
+    if args.reprofile_speed and not mintime:
+        sys.exit(
+            f"--reprofile-speed goes with --optimizer tum_mintime, not "
             f"{args.optimizer}"
         )
     if args.margin is None:
@@ -350,6 +368,18 @@ def main(argv: list[str] | None = None) -> int:
                 reference_csv=args.reference,
                 reference_out=reference_csv,
             )
+            if args.reprofile_speed:
+                raw = line
+                line = reprofile_speed(raw, vehicle)
+                raw_r = verify._limit_ratios(raw, vehicle)
+                print(
+                    f"speed reprofile: lap estimate {_lap_time(raw):.3f} -> "
+                    f"{_lap_time(line):.3f} s, "
+                    f"{int(np.sum(line.v < raw.v))} points lowered, raw max "
+                    f"a_y ratio {raw_r['ay_ratio'].max():.4f}, a_x ratio "
+                    f"{raw_r['ax_ratio'].max():.4f}",
+                    file=sys.stderr,
+                )
             solver = {
                 "status": status["status"],
                 "iterations": status["iterations"],
