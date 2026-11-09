@@ -559,6 +559,19 @@ COMMITTED_RACELINES = {
     "spielberg/f1tenth-gym-limits-v1/tum_mincurv_iqp",
     "spielberg/f1tenth-default-v1/tum_mintime",
     "spielberg/f1tenth-gym-limits-v1/tum_mintime",
+    "porto/autodrive-roboracer-fast-v1/tum_mintime",
+}
+# The ground-truth tip records each track's offset walls produce, pinned as
+# measured (xy, observed): a property of the track, so the vacuity guard is
+# per track. Porto's three sit where the official map's walls have sharp
+# corners; the first lies on an unobserved wall.
+EXPECTED_TIPS = {
+    "spielberg": [((-74.878, 52.090), True)],
+    "porto": [
+        ((-7.637, 0.106), False),
+        ((-7.473, 0.731), True),
+        ((3.238, 0.248), True),
+    ],
 }
 RECORDED_TOL = 1e-6
 
@@ -579,7 +592,7 @@ def _same(recorded, now, where):
 
 
 def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
-    """RACELINE-1395: the committed lines are exactly the expected four; each
+    """RACELINE-1395: the committed lines are exactly the expected five; each
     yaml's hashes match the files it was made from (a redrawn map, a changed
     vehicle or a new ground-truth track turns this red and forces a reviewed
     regeneration, never a hash edit), and its line passes the verifier
@@ -674,6 +687,8 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         assert verdict.ok, verdict.failures
         _same(doc["verdict"], runner._verdict_doc(verdict), rel)
         tips = doc["verdict"]["tips"]["ground_truth"]
-        assert len(tips) == 1  # vacuity guard: the rule is exercised
-        assert tips[0]["xy"] == pytest.approx([-74.878, 52.090], abs=1e-3)
-        assert tips[0]["observed"] is True
+        expected = EXPECTED_TIPS[name]
+        assert len(tips) == len(expected)  # vacuity guard: rule exercised
+        for tip, (xy, observed) in zip(tips, expected, strict=True):
+            assert tip["xy"] == pytest.approx(xy, abs=1e-3)
+            assert tip["observed"] is observed
