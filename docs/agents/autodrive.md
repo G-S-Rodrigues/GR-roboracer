@@ -110,6 +110,9 @@ Three places hold its tests, by what each needs:
 - Porto runs **clockwise** (the sim's lap counter increments 12 times with the regenerated `config/tracks/porto.yaml`).
   The spawn lands within 0.05 m of the mapped start. Measured live, three runs: lap 13.73 s, stack and sim lap times within
   0.05 s, 0 collisions, qualification score 137.3 s, `/ground_truth/odom` max gap 54-80 ms (median 6 ms), no STALE_INPUT.
+- `tests/autodrive/test_sim_3750_porto_fast_mintime_lap.py` (`scripts/autodrive_qualify.sh --case fast_lap`) drives the fast
+  car's min-time line for two laps through the shared driver `tests/autodrive/_porto_drive.py`; it gates on completion,
+  collisions and latch, not lap time.
 - `tests/autodrive/test_sim_3730_porto_qualification.py` is the live check, run by `scripts/autodrive_qualify.sh`. It is in
   no gate (no gate has a sim), fails rather than skips, and the simulator container serves one run.
 - `/racing_sim/autodrive_counters` is debug-only (league rules restrict the counters at race time).

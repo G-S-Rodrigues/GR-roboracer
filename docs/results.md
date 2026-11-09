@@ -78,6 +78,20 @@ accelerates at 5.2 m/s^2 (spread 0.08 % over the repeats), and the throttle gain
 throttle. The file is data about the simulator's car, not a result of the stack. To redo it, see
 [The AutoDRIVE vehicle](configuration.md#the-autodrive-vehicle).
 
+## AutoDRIVE fast minimum-time lap
+
+The fast AutoDRIVE car (`autodrive_roboracer_fast`) drove the committed minimum-time Porto line twice from a standing
+start on the real simulator, headless, with `scripts/autodrive_qualify.sh --domain 64 --case fast_lap` (2026-11-09, host
+load1 3.4). Lap 1 includes the standing start. This is reported, not a bound.
+
+| | lap 1 | lap 2 |
+|---|---|---|
+| stack lap time | 7.85 s | 7.40 s |
+| simulator lap time | 7.61 s | 7.39 s |
+
+Peak speed 4.44 m/s (cap 4.5), mean 3.84 m/s, 0 collisions on the stack and the simulator, no latch (every safety status
+message `REASON_NONE`). The solver's estimate for the line is 7.306 s.
+
 ## Mapping demonstration
 
 The recording shows the real simulator, ROS and SLAM Toolbox path building the Spielberg grid

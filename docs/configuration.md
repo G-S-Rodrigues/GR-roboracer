@@ -71,6 +71,11 @@ from the same sources and AutoDRIVE's simulator code, with each value's provenan
 no committed raceline of either kind (minimum-curvature or minimum-time) exists for it, so
 `planner:=optimized_raceline` has none to load on it yet.
 
+`config/vehicles/autodrive_roboracer_fast.yaml` is the same car with higher caps (speed 4.5 m/s, acceleration 4.0 m/s^2,
+steering rate 1.5 rad/s) and its own tables in `config/vehicles/autodrive_roboracer_fast/`. The caps are the owner's choice,
+not measurements, and its GGV is a modelling bound (friction 1.0, from the prefab). It runs on `simulator:=autodrive` only; the
+gym refuses it. A committed minimum-time Porto line exists for it, `config/racelines/porto/autodrive-roboracer-fast-v1/tum_mintime.csv`.
+
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):
 
