@@ -127,6 +127,8 @@ def test_check_2290_bound_edges_and_reasons(metric, edge, past):
     assert report.catastrophic_violations({key: edge}, fields) == []
     assert len(report.catastrophic_violations({key: past}, fields)) == 1
     assert len(report.catastrophic_violations({key: math.nan}, fields)) == 1
+    # a metric with no value (an empty map gives None) is outside too
+    assert len(report.catastrophic_violations({key: None}, fields)) == 1
 
 
 @pytest.mark.parametrize("metric,edge,past", BOUND_CASES[:2])
@@ -266,6 +268,33 @@ def _strings_in(node) -> set[str]:
     }
 
 
+def _asserted_empty_names(tree) -> set[str]:
+    """Names an `assert` requires empty: `assert x == []` or `assert not x`."""
+    import ast
+
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert):
+            continue
+        test = node.test
+        if (
+            isinstance(test, ast.Compare)
+            and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.Eq)
+            and isinstance(test.left, ast.Name)
+            and isinstance(test.comparators[0], ast.List)
+            and not test.comparators[0].elts
+        ):
+            names.add(test.left.id)
+        elif (
+            isinstance(test, ast.UnaryOp)
+            and isinstance(test.op, ast.Not)
+            and isinstance(test.operand, ast.Name)
+        ):
+            names.add(test.operand.id)
+    return names
+
+
 @pytest.mark.parametrize(
     "path,superseded,report_id,metrics", INVENTORY, ids=_INVENTORY_IDS
 )
@@ -274,7 +303,8 @@ def test_check_2300_no_superseded_bound_and_catastrophic_kept(
 ):
     """CHECK-2300: no assert (nor a compare_localization argument) reads a
     superseded bound or a `*_BASELINE` name, and the file still checks each
-    of its catastrophic metrics through the catastrophic helpers."""
+    of its catastrophic metrics through the catastrophic helpers and asserts
+    each helper result empty (`assert x == []`)."""
     import ast
 
     tree = _tree(path)
@@ -294,13 +324,28 @@ def test_check_2300_no_superseded_bound_and_catastrophic_kept(
     assert not found, f"{path} still gates on: {sorted(set(found))}"
 
     checked: set[str] = set()
+    unasserted: list[str] = []
+    asserted = _asserted_empty_names(tree)
+    helpers = ("catastrophic", "catastrophic_violations")
+
+    def has_helper(part) -> bool:
+        return any(
+            isinstance(inner, ast.Call) and _call_name(inner) in helpers
+            for inner in ast.walk(part)
+        )
+
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and _call_name(node) in (
-            "catastrophic",
-            "catastrophic_violations",
-        ):
-            for part in [*node.args, *(k.value for k in node.keywords)]:
-                checked |= _strings_in(part)
+        if isinstance(node, ast.Assign) and has_helper(node.value):
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if not set(targets) & asserted:
+                unasserted.append(f"{targets} :{node.lineno}")
+            checked |= _strings_in(node.value)
+        elif isinstance(node, ast.Assert) and has_helper(node.test):
+            checked |= _strings_in(node.test)
+    assert not unasserted, (
+        f"{path} computes catastrophic violations but never asserts them "
+        f"empty: {unasserted}"
+    )
     missing = [metric for metric in metrics if metric not in checked]
     assert not missing, f"{path} no longer checks catastrophic {missing}"
 

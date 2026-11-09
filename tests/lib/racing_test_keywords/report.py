@@ -80,11 +80,18 @@ def catastrophic_violations(
 ) -> list[str]:
     """Messages for each `actual[key]` outside the catastrophic bound of
     `fields[key]`. Same rule as `compare_localization`: the bound itself is
-    inside, and NaN is outside every bound."""
+    inside, and NaN or no value (None) is outside every bound."""
     messages: list[str] = []
     for key, metric in fields.items():
         bound = CATASTROPHIC_BOUNDS[metric]
-        value = float(actual[key])
+        raw = actual[key]
+        if raw is None:
+            messages.append(
+                f"{key} has no value, outside the catastrophic bound of "
+                f"{metric}"
+            )
+            continue
+        value = float(raw)
         for kind in ("maximum", "minimum"):
             if kind not in bound:
                 continue
