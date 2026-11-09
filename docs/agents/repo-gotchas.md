@@ -163,8 +163,14 @@ Traps any task in this repository can hit. Each one cost real time at least once
 ## Metrics
 
 14. **Golden baselines are regenerated as a reviewed diff, never to make a run pass.** The same goes
-    for tolerances in `scripts/compare_metrics.py`: widening one to green a run silently removes the
-    guard. Every tolerance there carries the measurement that justifies it.
+    for tolerances in `scripts/compare_metrics.py` and for the catastrophic bounds (ADR 0008):
+    widening one to green a run silently removes the guard. Every tolerance there carries the
+    measurement that justifies it; every catastrophic bound carries the geometric argument. A golden
+    compares two pipelines running the same code (`sim/rollout.py` imports the controller core), so a
+    change to that code regenerates the golden in the same PR, as its reviewed diff. ADR 0008 moved the
+    tier-3/4/5 *quality* bounds (ATE, availability, lap time, map accuracy) to reported, once, from one
+    inventory. That was a reclassification, not a widening, and it is never repeated test by test to
+    green a run.
 
 17. **Noise on `/scan` silently rewrites two metrics.** `racing_metrics` subscribes `/scan` and
     uses it for `minimum_wall_clearance` *and* for `collision_count`

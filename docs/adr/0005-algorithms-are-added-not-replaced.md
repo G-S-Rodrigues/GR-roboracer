@@ -4,6 +4,7 @@
 **Date:** 2026-09-10
 **Supersedes:** none
 **Constrains:** ADR 0004 (what may be added to `tests/acceptance/`)
+**Amended by:** ADR 0007 (§3 wording, §4), ADR 0008 (§2, §3, §4)
 
 ## Context
 
@@ -56,6 +57,11 @@ means here.
 **The composition axis is pinned, not swept.** Test count therefore grows **linearly** with the
 number of implementations, not quadratically.
 
+Amended by ADR 0008: "verified" means the implementation passes the gates there (lap completes, 0
+collisions, no latch, the instrument recorded data, one catastrophic bound per quality metric), and its
+quality numbers are reported, not bounded. An implementation may first land *experimental*:
+selectable and benchmarked, gated by tiers 0-2 only, until its verification lands.
+
 ### 3. What this permits in `tests/acceptance/`
 
 ADR 0004 keeps the `.robot` suite to a handful of cases on the grounds that a reader checks all of
@@ -67,6 +73,9 @@ cross-product belongs in tier 3 or tier 5 `pytest`, which is parameterizable and
 
 Row wording amended by ADR 0007: in `.robot`, a row is a one-row test case sharing the template, so
 that it can carry its `impl:` tag; still one claim, one ID.
+
+Amended by ADR 0008: the claim is "the estimate does not diverge" (the shared catastrophic bound), so a
+row names its implementation and scenario and carries no bound of its own.
 
 ### 4. Where the expensive coverage lives
 
@@ -86,6 +95,10 @@ Note, 2026-10-22 (part 7.0): the nightly is now split by region of interest, one
 seed running `check.sh --nightly-region <region>`, with tier 5 only on seed 42 of the region that owns
 it. The union of the regions is the same set of tests, and the reasoning about not squaring the cost
 still holds.
+
+Amended by ADR 0008: the nightly asserts gates only. A quality number there is reported and tracked
+over time, never red. Method-vs-method comparison is a benchmark: on demand, or in CI when a new method
+lands, never on the nightly schedule.
 
 ## Consequences
 

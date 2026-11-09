@@ -26,7 +26,7 @@ Each fact lives on one **owner page**; every other page links there instead of r
 
 | Fact | Owner page |
 |---|---|
-| What exists and its status (Available / In development / Planned / Exploratory) | `README.md` capability table |
+| What exists and its status (Available / Experimental / In development / Planned / Exploratory) | `README.md` capability table |
 | The headline video | `README.md` `## Demonstration` |
 | Installing and first run | `docs/setup.md`, `docs/quick-start.md` |
 | Launch arguments, their values, the target YAML fields | `docs/configuration.md` |
@@ -44,6 +44,9 @@ A row's status is a claim about `main`, backed as follows:
 
 - **Available** — merged code a user can run or select today, documented on its workflow page
   with the exact command. An offline tool counts when it has a command.
+- **Experimental** — merged code a user can select, `status: experimental` in
+  `config/reference_stack.yaml`, documented on its workflow page with the command; numbers come from the
+  benchmark. It becomes Available when its verification merges.
 - **In development** — work in flight on an open issue or branch.
 - **Planned** — a written spec exists; nothing merged.
 - **Exploratory** — the owner chose to investigate it; no spec. A brainstormed idea enters the

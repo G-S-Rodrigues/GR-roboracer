@@ -31,12 +31,12 @@ To reproduce a record and compare it, see [Running a scenario](running.md#runnin
 
 ## Localization evidence
 
-There is no golden for localization. The acceptance cases bound the estimate against ground truth on
-Spielberg: `slam_toolbox` within 4.0 m RMSE and `amcl` within 0.65 m, each with availability above
-0.99 (ACC-4030). `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
+There is no golden for localization. The acceptance cases gate on the catastrophic bounds (ATE RMSE 5 m, availability 0.90); the error
+is reported, not a pass condition (ADR 0008). On Spielberg `slam_toolbox` and `amcl` are measured
+against ground truth (ACC-4030): `amcl` seed-42 runs 0.14-0.44 m, `slam_toolbox` three runs 2.43-2.88 m. `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
 loop: ATE RMSE 0.70-2.13 m and maximum 1.41-4.15 m over five laps (the spread is wide and varies run to run; three
-runs at low load gave 0.74-0.75 m), availability 0.9975 or better, bounded at 2.5 m RMSE (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
-(ACC-4040). `slam_toolbox` with its 1080-beam file (selected by `spielberg_1080`), 5x, open loop, six laps over seeds 42 and 7: ATE RMSE 0.81-1.25 m, maximum 1.53-2.24 m, map median 0.28-0.56 m and 95th percentile 0.92-1.93 m from the true walls, availability 0.9996 or better; bounded at 1.57 m RMSE and 2.80 m maximum (SIM-3550). The 64-beam file on the same scenario gave 6.9-8.2 m RMSE, which is the number this improved on; the 64 file stays selectable with `slam_toolbox_config:=`.
+runs at low load gave 0.74-0.75 m), availability 0.9975 or better, reported (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
+(ACC-4040). `slam_toolbox` with its 1080-beam file (selected by `spielberg_1080`), 5x, open loop, six laps over seeds 42 and 7: ATE RMSE 0.81-1.25 m, maximum 1.53-2.24 m, map median 0.28-0.56 m and 95th percentile 0.92-1.93 m from the true walls, availability 0.9996 or better; reported (SIM-3550). The 64-beam file on the same scenario gave 6.9-8.2 m RMSE, which is the number this improved on; the 64 file stays selectable with `slam_toolbox_config:=`.
 See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
 
 ## MOLA map accuracy
