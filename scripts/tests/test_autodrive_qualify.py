@@ -109,7 +109,10 @@ def test_check_2160_case_selects_the_fast_lap_test(tmp_path) -> None:
     assert "autodrive_fast_lap" in done.stdout
     assert "test_sim_3730" not in done.stdout
     done, _ = _run(tmp_path, "dflt", "--domain", "64", "--dry-run")
+    assert done.returncode == 0, done.stderr
     assert "test_sim_3730_porto_qualification.py" in done.stdout
+    assert "autodrive_qualify" in done.stdout
+    assert "autodrive_fast_lap" not in done.stdout
     done, calls = _run(tmp_path, "bad", "--domain", "64", "--case", "nope")
     assert done.returncode == 2
     assert "qualification" in done.stderr and "fast_lap" in done.stderr

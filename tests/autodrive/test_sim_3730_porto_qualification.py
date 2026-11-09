@@ -88,7 +88,7 @@ def test_sim_3730_porto_qualification(tmp_path):
     print("QUALIFICATION", json.dumps(result))
 
     spawn_error = run.spawn_error
-    first = (None, *run.first_pose)
+    first = (None, *(run.first_pose or ()))
     verdict = judge_stale_input(
         run.latch,
         run.stamps,
@@ -99,6 +99,7 @@ def test_sim_3730_porto_qualification(tmp_path):
     )
     stale = run.stale
     assert stale == 0, f"STALE_INPUT x{stale}: {verdict}"
+    assert spawn_error is not None, "no odom frame after the reset"
     assert spawn_error[0] <= SPAWN_TOL_M and spawn_error[1] <= SPAWN_TOL_RAD, (
         f"first pose after reset {first[1:]} vs {SPAWN_MAP}: {spawn_error}"
     )

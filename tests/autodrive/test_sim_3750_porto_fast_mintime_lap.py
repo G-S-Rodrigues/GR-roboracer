@@ -66,7 +66,16 @@ def test_sim_3750_porto_fast_mintime_lap(tmp_path):
     m = run.metrics
     stack_laps = list(m.lap_times) if m else []
     sim_laps = [i[1] for i in run.increments]
-    speeds = np.array(run.speeds) if run.speeds else np.zeros(1)
+    # Only the drive: frames before the reset answers are the parked car.
+    drive = run.speeds[run.first_after :]
+    speeds = np.array(drive) if drive else np.zeros(1)
+    # Lap 2 is the last stack lap: the drive ends when it is counted.
+    stamps = run.stamps[run.first_after :]
+    lap2 = [
+        v
+        for t, v in zip(stamps, drive)
+        if stack_laps and t >= stamps[-1] - stack_laps[-1]
+    ]
     result = {
         "note": "lap 1 is a standing start; lap 2 is the flying lap",
         "laps_stack_s": stack_laps,
@@ -75,6 +84,7 @@ def test_sim_3750_porto_fast_mintime_lap(tmp_path):
         "collisions_sim": run.sim_collisions,
         "peak_speed_mps": float(speeds.max()),
         "mean_speed_mps": float(speeds.mean()),
+        "mean_speed_lap2_mps": float(np.mean(lap2)) if lap2 else None,
         "speed_source": "/ground_truth/odom twist.twist.linear (x, y)",
         "safety_reasons": dict(run.reasons),
         "stale_input": run.stale,
@@ -97,6 +107,7 @@ def test_sim_3750_porto_fast_mintime_lap(tmp_path):
     assert run.reasons.get("REASON_ESTOP_LATCHED", 0) == 0, (
         f"emergency stop latched: {dict(run.reasons)}"
     )
+    assert run.spawn_error is not None, "no odom frame after the reset"
     assert (
         run.spawn_error[0] <= SPAWN_TOL_M
         and run.spawn_error[1] <= SPAWN_TOL_RAD

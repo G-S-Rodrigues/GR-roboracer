@@ -85,8 +85,8 @@ class PortoRun:
     load: object
     wall_s: float
     first_after: int
-    spawn_error: tuple[float, float]
-    first_pose: tuple
+    spawn_error: tuple[float, float] | None  # None: no frame after reset
+    first_pose: tuple | None
     reasons: Counter = field(default_factory=Counter)
 
     @property
@@ -226,13 +226,13 @@ def drive_porto(
         stale = observer.stale_count
         latch = observer.first_latch
         trace = observer._startup_trace()
-        wall_s = time.monotonic() - began
     finally:
         if observer is not None:
             observer.close()
         node.destroy_node()
         reset_rclpy()
         stop(launched, 60.0)
+    wall_s = time.monotonic() - began
     stamps = [o[0] for o in odoms]
     rows = np.array([s[1] for s in scans])
     np.savez(
@@ -248,14 +248,21 @@ def drive_porto(
     # spawn is the closest of the first SPAWN_WINDOW frames after the call;
     # the car starts at rest, so the true first frame is the nearest.
     window = odoms[first_after : first_after + SPAWN_WINDOW]
-    first = min(
-        window,
-        key=lambda o: math.hypot(o[1] - SPAWN_MAP[0], o[2] - SPAWN_MAP[1]),
-    )
-    spawn_error = (
-        math.hypot(first[1] - SPAWN_MAP[0], first[2] - SPAWN_MAP[1]),
-        abs(_wrap(first[3] - SPAWN_MAP[2])),
-    )
+    if window:
+        first = min(
+            window,
+            key=lambda o: math.hypot(
+                o[1] - SPAWN_MAP[0], o[2] - SPAWN_MAP[1]
+            ),
+        )
+        spawn_error = (
+            math.hypot(first[1] - SPAWN_MAP[0], first[2] - SPAWN_MAP[1]),
+            abs(_wrap(first[3] - SPAWN_MAP[2])),
+        )
+        first_pose = first[1:]
+    else:  # the caller writes its JSON, then fails on None
+        spawn_error = None
+        first_pose = None
     return PortoRun(
         stamps=stamps,
         speeds=speeds,
@@ -270,6 +277,6 @@ def drive_porto(
         wall_s=wall_s,
         first_after=first_after,
         spawn_error=spawn_error,
-        first_pose=first[1:],
+        first_pose=first_pose,
         reasons=reasons,
     )
