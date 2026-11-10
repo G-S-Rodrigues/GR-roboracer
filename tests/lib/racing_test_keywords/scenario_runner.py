@@ -824,7 +824,27 @@ def run_scenario(
         try:
             for probe in probes:
                 probe.attach(node)
-            _reset_at_deterministic_t0(node, seed, timeout, pose_source)
+            try:
+                _reset_at_deterministic_t0(node, seed, timeout, pose_source)
+            except TimeoutError as stall:
+                # A stall names what launch saw: which process exited (and
+                # with what code) and which nodes the driver could see.
+                detail = ledger.describe()
+                try:
+                    names = ", ".join(
+                        sorted(
+                            f"{namespace.rstrip('/')}/{name}"
+                            for name, namespace in (
+                                node.get_node_names_and_namespaces()
+                            )
+                        )
+                    )
+                    names = f"[{names}]"
+                except Exception:  # noqa: BLE001 - never mask the stall
+                    names = "(unavailable)"
+                raise TimeoutError(
+                    f"{stall} [t0 stall: {detail}; nodes: {names}]"
+                ) from stall
             for probe in probes:
                 probe.started()
             if stop_on_frozen_pose is None:

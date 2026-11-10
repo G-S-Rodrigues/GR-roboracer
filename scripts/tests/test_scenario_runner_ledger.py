@@ -202,3 +202,22 @@ def test_check_2371_a_failure_carries_the_escalations(real_launch_run):
     assert text.startswith(message)
     assert "shutdown escalations: stubborn" in text
     assert "SIGKILL" in text
+
+
+def test_check_2377_a_t0_stall_names_what_exited(real_launch_run):
+    real_launch_run.launch_file(f"{EARLY_ENTITY}, {POLITE_ENTITY}")
+
+    def stall() -> None:
+        time.sleep(0.8)  # the early stand-in has exited by now
+        raise TimeoutError("node not found within 1s: slam_toolbox")
+
+    real_launch_run.state["reset"] = stall
+    with pytest.raises(TimeoutError) as raised:
+        scenario_runner.run_scenario(seed=1, timeout=30.0)
+    text = str(raised.value)
+    assert text.startswith("node not found within 1s: slam_toolbox")
+    assert "exited rc=3" in text
+    assert "early" in text
+    assert "alive" in text
+    assert "polite" in text
+    assert "nodes: [/racing_sim]" in text
