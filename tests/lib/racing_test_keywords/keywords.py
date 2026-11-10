@@ -36,6 +36,12 @@ LOCALIZATION_TIME_SCALE = 5.0
 LOCALIZATION_TIMEOUT_SECONDS = 400.0
 
 
+# What `score_localization` adds beside the score: when the estimator started.
+# Kept out of a report's `numbers` (every passing report stays byte-identical)
+# and carried as `diagnostics` instead.
+START_KEYS = ("first_estimate_stamp", "travel_before_first_estimate")
+
+
 def _frozen_window_seconds() -> float:
     """``scripts.frozen_pose.FROZEN_WINDOW_SECONDS``, imported lazily: tier 4
     runs ``robot --pythonpath tests/lib``, where ``scripts`` is not importable
@@ -69,6 +75,7 @@ class RacingTestKeywords:
         self._metrics: dict[str, Any] | None = None
         self._violation: dict[str, Any] | None = None
         self._localization: dict[str, Any] | None = None
+        self._estimator_start: dict[str, Any] = {}
         self._recording: Path | None = None
         # Seed, scenario and implementation of the last run, for reports.
         self._run_info: dict[str, Any] = {}
@@ -158,7 +165,11 @@ class RacingTestKeywords:
             stop_on_frozen_pose=2 * _frozen_window_seconds(),
             track_length=scenario_track_length(scenario),
         )
-        self._localization = score_localization(recording)
+        score = score_localization(recording)
+        self._estimator_start = {
+            key: score.pop(key, None) for key in START_KEYS
+        }
+        self._localization = score
         self._run_info = {
             "seed": int(seed),
             "scenario": scenario,
@@ -187,6 +198,8 @@ class RacingTestKeywords:
             "ate_rmse",
         )
         detail = ", ".join(f"{name}={score.get(name)}" for name in fields)
+        for name in START_KEYS:
+            detail += f", {name}={self._estimator_start.get(name)}"
         return f" ({detail}; recording {self._recording})" + (
             self._escalation_note()
         )
@@ -254,6 +267,7 @@ class RacingTestKeywords:
                     getattr(metrics, "shutdown_escalations", None) or []
                 ),
                 "frozen_at": None if frozen_at is None else list(frozen_at),
+                **{key: self._estimator_start.get(key) for key in START_KEYS},
             }
         except Exception:  # noqa: BLE001
             return {"shutdown_escalations": [], "frozen_at": None}

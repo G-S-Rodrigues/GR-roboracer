@@ -897,11 +897,17 @@ def score_localization(
     """
     if str(REPOSITORY_ROOT) not in sys.path:
         sys.path.insert(0, str(REPOSITORY_ROOT))
-    from scripts.compare_localization import read_recording, score_recording
-
-    return score_recording(
-        read_recording(Path(recording)), estimate_topic=estimate_topic
+    from scripts.compare_localization import (
+        estimator_start,
+        read_recording,
+        score_recording,
     )
+
+    events = read_recording(Path(recording))
+    return {
+        **score_recording(events, estimate_topic=estimate_topic),
+        **estimator_start(events, estimate_topic),
+    }
 
 
 def run_scenario_with_track_limit_violation(

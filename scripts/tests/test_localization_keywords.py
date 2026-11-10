@@ -444,3 +444,40 @@ def test_check_2375_a_diagnostic_never_hides_the_assertion(tmp_path):
     text = _lap_text(library)
     assert text.startswith("expected lap_completed=True, was False")
     assert "ground truth frozen at sim 110.51 s" in text
+
+
+# ---- CHECK-2376: the keyword keeps the estimator start out of `numbers` ----
+
+START = {
+    "first_estimate_stamp": 1.03,
+    "travel_before_first_estimate": 2.42,
+}
+
+
+def test_check_2376_start_goes_to_diagnostics_not_numbers(monkeypatch, reports):
+    import json
+
+    seen = _run(monkeypatch, drive_on_estimate="false")
+    library = seen["library"]
+    # the stubbed score carries the start keys, as score_localization's does
+    monkeypatch.setattr(
+        keywords, "score_localization", lambda path: {**SCORE, **START}
+    )
+    library.run_racing_scenario_on_pose_source("amcl")
+    assert "first_estimate_stamp" not in library._localization
+    assert library._localization == SCORE
+    summary = library._localization_summary()
+    assert "first_estimate_stamp=1.03" in summary
+    assert "travel_before_first_estimate=2.42" in summary
+    library.write_localization_report("ACC-9004")
+    record = json.loads((reports / "ACC-9004.json").read_text())
+    assert record["numbers"] == SCORE
+    assert record["diagnostics"]["first_estimate_stamp"] == 1.03
+    assert record["diagnostics"]["travel_before_first_estimate"] == 2.42
+
+
+def test_check_2376_a_score_without_the_start_still_works(monkeypatch):
+    seen = _run(monkeypatch)  # CHECK-1400/1410's stubbed score
+    library = seen["library"]
+    assert library._localization == SCORE
+    assert "first_estimate_stamp=None" in library._localization_summary()

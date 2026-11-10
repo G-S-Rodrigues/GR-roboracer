@@ -28,6 +28,7 @@ from racing_test_keywords.scenario_runner import run_scenario
 
 from scripts.compare_localization import (
     compare_localization,
+    estimator_start,
     format_report,
     last_live_error,
     read_recording,
@@ -91,6 +92,11 @@ def test_sim_3510_mola_tracks_ground_truth(tmp_path: Path) -> None:
     assert live["sample_count"] > 10000, live
     availability = live["available_count"] / live["sample_count"]
     offline = score_recording(events, estimate_topic=ESTIMATE_TOPIC)
+    # When the estimator started, for a red run's text and the report
+    # (diagnostics, not numbers). No assert reads it (N1.4).
+    start = estimator_start(events, ESTIMATE_TOPIC)
+    escalations = list(getattr(metrics, "shutdown_escalations", []))
+    context = f" (estimator start {start}, shutdown escalations {escalations})"
     # Reported before anything quality-related is asserted, so a red run
     # keeps its record (ADR 0008).
     write_report(
@@ -100,17 +106,13 @@ def test_sim_3510_mola_tracks_ground_truth(tmp_path: Path) -> None:
         scenario=SCENARIO,
         implementation="mola",
         baseline=BASELINE,
-        diagnostics={
-            "shutdown_escalations": list(
-                getattr(metrics, "shutdown_escalations", [])
-            ),
-        },
+        diagnostics={"shutdown_escalations": escalations, **start},
     )
     live_violations = catastrophic_violations(
         {**live, "availability": availability},
         {"availability": "availability", "position_rmse": "ate_rmse"},
     )
-    assert live_violations == [], (live_violations, live)
+    assert live_violations == [], (live_violations, live, context)
 
     violations = compare_localization(catastrophic("availability"), offline)
-    assert violations == [], format_report(offline, violations)
+    assert violations == [], format_report(offline, violations) + context
