@@ -30,7 +30,7 @@ on:
         default: all
 
 concurrency:
-  group: benchmark-${{ github.ref }}
+  group: benchmark-${{ github.ref }}-${{ inputs.role || 'pr' }}
   cancel-in-progress: true
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
   detect:
     name: "Benchmark (non-blocking): detect"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     outputs:
       roles: ${{ steps.roles.outputs.roles }}
     steps:
@@ -50,17 +50,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build the dev image
-        uses: docker/build-push-action@v6
+      # No image: `roles` reads the stack file and a path list, so plain
+      # Python with the two packages the scripts import is enough, and a PR
+      # that edits docker/ cannot time this job out on an image build.
+      - uses: actions/setup-python@v5
         with:
-          context: .
-          file: docker/Dockerfile
-          target: dev
-          tags: gr-roboracer:dev
-          load: true
-          cache-from: type=gha,scope=dev
+          python-version: "3.12"
+
+      - name: Install the script dependencies
+        run: pip install numpy pyyaml
 
       - name: Which benchmarks
         id: roles
@@ -69,7 +67,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           DISPATCH_ROLE: ${{ inputs.role }}
         run: |
-          # On the runner, not in the container: no gotcha-23 git problem.
+          # On the runner, not in a container: no gotcha-23 git problem.
           if [ "$EVENT" = workflow_dispatch ]; then
             args="--dispatch $DISPATCH_ROLE"
           else
@@ -77,8 +75,7 @@ jobs:
             git diff --name-only "$BASE_SHA" HEAD > changed_paths.txt
             args="--base-stack base_stack.yaml --changed changed_paths.txt"
           fi
-          docker run --rm --volume "$PWD:/ws" --workdir /ws \
-            gr-roboracer:dev python3 scripts/benchmark.py roles $args \
+          python3 scripts/benchmark.py roles $args \
             > roles.json 2> roles.err
           cat roles.err
           # An implementation in a role with no benchmark is a gap to name,
@@ -128,6 +125,7 @@ jobs:
             --volume "$PWD:/ws" \
             --workdir /ws \
             --env ROS_DOMAIN_ID=42 \
+            --env ROS_LOG_DIR=/ws/log/ros \
             --env RACING_REVISION=${{ github.sha }} \
             gr-roboracer:dev bash -c 'source /opt/ros/jazzy/setup.bash &&
               { [ ! -f /opt/racing_underlay/setup.bash ] ||
@@ -150,3 +148,11 @@ jobs:
           name: benchmark-${{ matrix.role }}
           path: log/benchmark/${{ matrix.role }}/
           if-no-files-found: ignore
+
+      - name: Upload the node logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-logs-${{ matrix.role }}
+          path: log/ros/
+          if-no-files-found: warn
