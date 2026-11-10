@@ -8,9 +8,10 @@ assembles them into frames (`devkit.DevkitAssembler`), runs the same
 reset back as the devkit's three command topics.
 
 Every contract message carries the devkit's `lidar` header stamp (ruling E2:
-the stamp of the event the devkit received, as A stamps its own receipt), and
-dt is the difference of those stamps. `dt_source=lap_time` does not exist
-here (owner D4).
+the stamp of the event the devkit received, as A stamps its own receipt;
+published, never earlier than 1 us after the last published stamp, gotcha
+46), and dt is the difference of those stamps. `dt_source=lap_time` does not
+exist here (owner D4).
 
 `DevkitLink` is the part that talks to the devkit's graph: its own node, so
 a second rclpy context can hold it (step 7).

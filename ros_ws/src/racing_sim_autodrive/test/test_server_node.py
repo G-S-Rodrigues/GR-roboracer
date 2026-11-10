@@ -1,8 +1,8 @@
 """Tier 2: the Socket.IO server node against the replayed recording.
 
-SIMAD-2010..2040, 2270, 2300. The server listens on an ephemeral port (never
-4567) and `racing_sim_autodrive.replay` stands in for the sim. Needs the pip
-closure (plan D2) and ROS_DOMAIN_ID set by the caller.
+SIMAD-2010..2040, 2270, 2300, 2310. The server listens on an ephemeral port
+(never 4567) and `racing_sim_autodrive.replay` stands in for the sim. Needs
+the pip closure (plan D2) and ROS_DOMAIN_ID set by the caller.
 """
 
 import json
@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
+from diagnostic_msgs.msg import DiagnosticStatus
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import SimCounters
 from racing_interfaces.srv import Reset
@@ -40,6 +41,7 @@ TRUTH = launch_support.topic("/ground_truth/odom")
 IMU = launch_support.topic("/imu")
 COUNTERS = f"{launch_support.PREFIX}/racing_sim/autodrive_counters"
 RESET = f"{launch_support.PREFIX}/racing_sim/reset"
+STAMP_STATUS = f"{launch_support.PREFIX}/racing_sim/stamp_status"
 FRAMES = 300
 SENSOR = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
@@ -52,6 +54,14 @@ STATE = QoSProfile(
     depth=2000,
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.VOLATILE,
+)
+# Latched (transient_local): the launch test's one server serves every method,
+# and this one runs last, so the first-frame status went out long before.
+STATUS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
 
 
@@ -426,3 +436,52 @@ class TestServerNode(unittest.TestCase):
         # The test is not satisfied by zeros.
         peak = max(abs(m.linear_acceleration.y) for m in messages)
         self.assertGreater(peak, 0.4)
+
+    def test_simad_2310_stamp_status_reports_the_clamp_counts(self):
+        """SIMAD-2310: `~/stamp_status` (private, latched) carries one
+        `racing_sim: stamps` DiagnosticStatus with `clamped_frames`,
+        `step_backs` and `largest_behind_ms`, published on the first frame
+        and whenever a count changes (never on a timer). Whether the host
+        clock steps during the replay is not ours to command, so the counts
+        are only bounded: non-negative, step_backs <= clamped_frames, never
+        falling between messages, the level WARN exactly when a frame was
+        clamped. Every `/odom` stamp rises strictly whether or not it did."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, got = self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                "100",
+                collect=[
+                    (DiagnosticStatus, STAMP_STATUS, STATUS),
+                    (Odometry, ODOM, STATE),
+                ],
+            )
+        statuses = got[STAMP_STATUS]
+        self.assertTrue(
+            statuses,
+            f"no 'racing_sim: stamps' status on {STAMP_STATUS}",
+        )
+        previous = (0, 0)
+        for message in statuses:
+            self.assertEqual(message.name, "racing_sim: stamps")
+            values = {kv.key: kv.value for kv in message.values}
+            self.assertEqual(
+                set(values),
+                {"clamped_frames", "step_backs", "largest_behind_ms"},
+            )
+            clamped = int(values["clamped_frames"])
+            steps = int(values["step_backs"])
+            self.assertGreaterEqual(float(values["largest_behind_ms"]), 0.0)
+            self.assertLessEqual(steps, clamped)
+            self.assertGreaterEqual((clamped, steps), previous)
+            self.assertEqual(
+                message.level,
+                DiagnosticStatus.WARN if clamped else DiagnosticStatus.OK,
+            )
+            previous = (clamped, steps)
+        odom = [_stamp(m) for m in got[ODOM]]
+        self.assertTrue(
+            all(b > a for a, b in zip(odom, odom[1:], strict=False))
+        )

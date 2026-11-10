@@ -12,7 +12,9 @@ from the handler is safe; the only shared state is the latest `/drive`
 (under a lock) and the session's reset flag (one bool).
 
 Stamps are the node clock at frame receipt (ADR 0006, `free_running`),
-exactly as the official devkit stamps; the sim sends none.
+exactly as the official devkit stamps; the sim sends none. Published, a stamp
+is never earlier than 1 us after the last one (`bridge.StampClamp`, gotcha
+46).
 """
 
 import faulthandler

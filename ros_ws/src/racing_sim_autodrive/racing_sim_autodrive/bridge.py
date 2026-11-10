@@ -7,8 +7,9 @@ odometry and the track-relative state. The node (`server_node.py`) only
 stamps, publishes and emits.
 
 No clock (ADR 0006: the shell's receipt time is the source stamp, as in the
-official devkit). Which dt the throttle loop and odometry integrate over is
-`dt_source`:
+official devkit; published, it is never earlier than 1 us after the last
+published stamp, `StampClamp`). Which dt the throttle loop and odometry
+integrate over is `dt_source`:
 
 - `"lap_time"` (default; development under front end A): the `V1 Lap Time`
   delta (`core.sim_dt`, gotcha 35). `received_at` is ignored.
@@ -145,6 +146,54 @@ class Step:
     throttle: float  # what `reply` formats; front end B publishes these
     steering: float  # normalized, [-1, 1]
     reset: bool
+
+
+class StampClamp:
+    """Published stamps never go backwards (gotcha 46).
+
+    Under front end A every stamp is the node's wall clock at receipt, and
+    that clock steps back (about every 30 s, 15-19 ms, in `dev` under WSL2).
+    `racing_metrics` throws on a backwards sample and dies. The result is
+    `max(now, last + step)`, strictly rising, so an input equal to the last
+    is raised too. The step is 1 us, not 1 ns: at ~1.79e9 s a double
+    resolves 0.24 us, so 1 ns steps collapse to equal floats in a consumer
+    that turns a stamp into seconds. One clamp per node, applied once per
+    frame, so every message of a frame keeps one equal stamp. Integer ns, no
+    clock, no rclpy.
+    """
+
+    def __init__(self, step_ns: int = 1_000) -> None:
+        self._step_ns = step_ns
+        self._last: int | None = None
+        self._in_run = False
+        self.clamped_frames = 0
+        self.step_backs = 0
+        self.largest_behind_ns = 0
+
+    def __call__(self, now_ns: int) -> int:
+        last = self._last
+        if last is None or now_ns >= last + self._step_ns:
+            self._last = now_ns
+            self._in_run = False
+            return now_ns
+        self.clamped_frames += 1
+        if not self._in_run:
+            self.step_backs += 1
+            self._in_run = True
+        self.largest_behind_ns = max(self.largest_behind_ns, last - now_ns)
+        self._last = last + self._step_ns
+        return self._last
+
+    def status(self) -> tuple[int, dict[str, float | int]]:
+        """(level, values): level 0 (OK) with no clamp, 1 (WARN) after."""
+        return (
+            1 if self.clamped_frames else 0,
+            {
+                "clamped_frames": self.clamped_frames,
+                "step_backs": self.step_backs,
+                "largest_behind_ms": self.largest_behind_ns / 1e6,
+            },
+        )
 
 
 class StallWatch:

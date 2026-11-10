@@ -113,3 +113,7 @@ Consequences for a `free_running` backend:
   `V1 Lap Time` deltas under our own server (development only; `dt_source=lap_time`, the default), or
   consecutive receipt stamps on the node clock (`dt_source=receipt`, the race-time path, since
   `lap_time` is a restricted topic). Both fall back to feedforward when `dt` is missing.
+- **2026-11-10 (call #7): the AutoDRIVE server's published stamps never go backwards.** The node clock is
+  the wall clock, which steps back (gotcha #46), so each frame's stamp is `max(now, last + 1 µs)`, one stamp
+  per frame for every topic, never earlier than 1 µs after the last published stamp; clamps are reported on
+  `/racing_sim/stamp_status` (gotcha #46). `received_at` and dt are unchanged.

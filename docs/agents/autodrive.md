@@ -116,6 +116,7 @@ Three places hold its tests, by what each needs:
 - `tests/autodrive/test_sim_3730_porto_qualification.py` is the live check, run by `scripts/autodrive_qualify.sh`. It is in
   no gate (no gate has a sim), fails rather than skips, and the simulator container serves one run.
 - `/racing_sim/autodrive_counters` is debug-only (league rules restrict the counters at race time).
+- Published stamps never go backwards (the wall clock steps); the clamps are on `/racing_sim/stamp_status`, see gotcha #46.
 - Known problems: `racing_metrics`' collision threshold (0.01 m) is below the AutoDRIVE lidar's 0.06 m `range_min`, so its count
   cannot see a contact and the sim's counter is the collision truth here; stack lap 1 is longer than the sim's (the stack
   times from the reset, the sim from the line) and is not compared; lap times are wall-clock in the stack and Unity time in the

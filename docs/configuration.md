@@ -117,6 +117,10 @@ false), because AutoDRIVE publishes no clock. `seed` is accepted; a reset return
 - `/racing_sim/autodrive_counters` (`racing_interfaces/SimCounters`) carries the simulator's own lap and collision
   counters. It is for debugging and cross-checks only (the league restricts these counters at race time), and no
   stack node reads it.
+- `/racing_sim/stamp_status` (`diagnostic_msgs/DiagnosticStatus`, latched: reliable, transient_local) carries the
+  server's `racing_sim: stamps` status. Published stamps never go backwards; `clamped_frames`, `step_backs` and
+  `largest_behind_ms` say how often the host clock stepped back under them, and the level is WARN once any frame
+  was clamped.
 
 Status: the launch is tested against a recorded AutoDRIVE stream, through either bridge (with a
 stand-in for the devkit under `official`), and live through `ours` on Porto by `scripts/autodrive_qualify.sh`

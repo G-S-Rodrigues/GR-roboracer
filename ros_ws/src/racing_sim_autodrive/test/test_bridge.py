@@ -486,6 +486,56 @@ def test_simad_1340_stall_watch_report_carries_counters_and_gap():
     assert "1.50 s" in report
 
 
+def test_simad_1490_stamp_clamp_never_goes_backwards():
+    """SIMAD-1490: published stamps strictly rise. An input behind or equal
+    to the last published stamp becomes last + 1 us (the wall clock steps
+    back, gotcha 46); a later input rejoins the clock. 1 us, not 1 ns: at
+    ~1.79e9 s a double resolves 0.24 us, so 1 ns steps collapse to one
+    float and a consumer's float seconds merge two frames. The counts say
+    how often it happened: frames raised, runs of them (one per clock step)
+    and the most the clock was behind."""
+    clamp = bridge.StampClamp()
+    assert clamp.status() == (
+        0,
+        {"clamped_frames": 0, "step_backs": 0, "largest_behind_ms": 0.0},
+    )
+    assert clamp(1_000_000_000) == 1_000_000_000  # in order: unchanged
+    assert clamp(1_006_000_000) == 1_006_000_000
+    assert clamp.clamped_frames == 0 and clamp.step_backs == 0
+    # The clock steps back 18 ms: clamped to just after the last.
+    assert clamp(1_006_000_000 - 18_000_000) == 1_006_001_000
+    assert clamp(1_006_000_000 - 12_000_000) == 1_006_002_000  # same run
+    assert clamp(1_006_000_000) == 1_006_003_000  # still behind the last
+    assert clamp(1_006_010_000) == 1_006_010_000  # rejoined the clock
+    assert clamp(1_006_010_000) == 1_006_011_000  # equal: raised too
+    assert clamp.clamped_frames == 4
+    level, values = clamp.status()
+    assert level == 1  # WARN after any clamp
+    assert values["step_backs"] == 2  # the 18 ms step and the equal repeat
+    assert values["largest_behind_ms"] == pytest.approx(18.0, abs=0.01)
+    # A second, separate step makes a new run.
+    clamp(1_006_020_000)
+    clamp(1_006_000_000)
+    assert clamp.status()[1]["step_backs"] == 3
+
+
+def test_simad_1490_one_microsecond_steps_stay_distinct_floats():
+    """SIMAD-1490: on a real epoch base, three 1 ns steps give one float
+    and three 1 us steps three increasing floats (what `racing_metrics`'
+    stamp_seconds and the recorder's `_seconds` compute)."""
+    base = 1_794_351_206 * 1_000_000_000 + 123_456_789
+
+    def seconds(ns):
+        return ns // 1_000_000_000 + (ns % 1_000_000_000) * 1e-9
+
+    ns_steps = [seconds(base + k) for k in range(3)]
+    assert len(set(ns_steps)) == 1  # why 1 ns is rejected
+    clamp = bridge.StampClamp()
+    clamp(base)
+    out = [seconds(clamp(base - 5_000_000)) for _ in range(3)]
+    assert out[0] < out[1] < out[2]
+
+
 def _same_frame(a, b):
     for field in a.__dataclass_fields__:
         x, y = getattr(a, field), getattr(b, field)
