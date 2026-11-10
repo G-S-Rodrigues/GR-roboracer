@@ -45,151 +45,37 @@ the PR from a run at host load below 8.
 
 from __future__ import annotations
 
-import contextlib
-import dataclasses
-import importlib.util
 import json
 from pathlib import Path
 
-import racing_common
-from racing_evaluation.map_accuracy import (
-    load_grid,
-    map_to_wall,
-    scenario_truth_grid,
+from scripts.benchmark_runs import (
+    LOCALIZATION_TIMEOUT_SECONDS as TIMEOUT_SECONDS,
 )
-from racing_test_keywords.probes import LastMapProbe, ProcessCpuProbe, RateProbe
-from racing_test_keywords.scenario_runner import (
-    BRINGUP_LAUNCH_FILE,
-    ESTIMATE_TOPIC,
-    host_load_delta,
-    read_host_load,
-    run_scenario,
+from scripts.benchmark_runs import (
+    SEEDS,
+    TIME_SCALE,
+    launch_keys,
+    localization_run,
+    reference_row,
 )
-
-from scripts.compare_localization import read_recording, score_recording
+from scripts.benchmark_runs import track_length as committed_track_length
 from scripts.pose_source_report import (
     METHODS,
     SCENARIOS,
     absent_record,
     present_sources,
-    record,
     render,
     structural_failures,
 )
-from scripts.raceline_report import read_recording_tolerant, run_outcome
 
 REPO = Path(__file__).resolve().parents[2]
-TRACK = REPO / "config" / "tracks" / "spielberg.yaml"
 REPORT_DIR = REPO / "log" / "pose-source-report"
-SURVEY = (
-    REPO / "config/scenarios/maps/Spielberg/slam/Spielberg.yaml"
-)  # amcl's prior
-# Owner ruling O4: four seeds, as SIM-5050.
-SEEDS = (42, 1030, 7, 2026)
-# A ceiling, not the rate reached: the sim is step-bound (4-5 ms CPU per step
-# against a 2 ms period at 5x, diagnostic host), so it runs nearer 2x. Both
-# scenarios lap with no latch at this setting.
-TIME_SCALE = 5.0
-# SIM-5020's budget: the longest measured row was 220 s on a loaded host.
-TIMEOUT_SECONDS = 400.0
-FROZEN_WINDOW_SECONDS = 1.0
-NO_METRICS = "no message on /scenario/metrics"
-
-
-def launch_keys() -> list[str]:
-    """The pose sources the installed launch file accepts."""
-    spec = importlib.util.spec_from_file_location(
-        "sim_pure_pursuit_launch", BRINGUP_LAUNCH_FILE
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.POSE_SOURCE_CONFIGS)
-
-
-def one_run(source: str, scenario: str, seed: int, track_length, tmp: Path):
-    recording = tmp / f"{source}-{scenario}-{seed}.jsonl"
-    rate, cpu, last_map = (
-        RateProbe(),
-        ProcessCpuProbe(METHODS[source].process),
-        LastMapProbe(),
-    )
-    run = {
-        "time_scale": TIME_SCALE,
-        "drive_on_estimate": False,
-        "error": None,
-    }
-    load_before = read_host_load()
-    try:
-        metrics = run_scenario(
-            seed,
-            str(REPO / SCENARIOS[scenario]),
-            timeout=TIMEOUT_SECONDS,
-            time_scale=TIME_SCALE,
-            pose_source=source,
-            drive_on_estimate=False,
-            launch_arguments={"recording_path": str(recording)},
-            probes=[rate, cpu, last_map],
-        )
-        run.update(outcome="completed", metrics=metrics)
-    except TimeoutError as error:
-        text = str(error)
-        if text.startswith(NO_METRICS) and recording.exists():
-            events = read_recording_tolerant(recording)
-            run.update(
-                run_outcome(events, text, track_length, FROZEN_WINDOW_SECONDS)
-            )
-            run["error"] = text
-        else:
-            run.update(outcome="infrastructure", error=text)
-    except Exception as error:  # noqa: BLE001 - recorded, never hidden
-        run.update(outcome="infrastructure", error=f"{error!r}")
-    run["host_load_delta"] = host_load_delta(load_before, read_host_load())
-
-    score = None
-    if recording.exists():
-        with contextlib.suppress(Exception):
-            score = score_recording(
-                read_recording(recording), estimate_topic=ESTIMATE_TOPIC
-            )
-    rates = rate.results() if rate.samples or rate.scans else None
-    accuracy = None
-    grid = last_map.grid()
-    if grid is not None and grid.occupied.any():
-        accuracy = dataclasses.asdict(
-            map_to_wall(grid, scenario_truth_grid(REPO / SCENARIOS[scenario]))
-        )
-    return record(
-        source,
-        scenario,
-        seed,
-        run,
-        score,
-        rates,
-        cpu.cpu_ms_per_scan(rate.scans),
-        accuracy,
-        cpu_error=cpu.error,
-    )
-
-
-def reference_row() -> dict:
-    """The committed survey grid, measured with this metric (O2)."""
-    accuracy = map_to_wall(
-        load_grid(SURVEY), scenario_truth_grid(REPO / SCENARIOS["spielberg"])
-    )
-    return {
-        "map": str(SURVEY.relative_to(REPO)),
-        "definition": (
-            "raw cell-centre distance to the gym PNG's wall faces; a "
-            "perfect 5 cm map scores 2.5 cm"
-        ),
-        **dataclasses.asdict(accuracy),
-    }
 
 
 def test_sim_5510_pose_source_data(tmp_path: Path) -> None:
     keys = launch_keys()
     present, unknown = present_sources(keys)
-    track_length = racing_common.Track.from_yaml(str(TRACK)).length()
+    track_length = committed_track_length()
     expected = {
         "launch_keys": keys,
         "scenarios": list(SCENARIOS),
@@ -201,7 +87,7 @@ def test_sim_5510_pose_source_data(tmp_path: Path) -> None:
             for scenario in SCENARIOS:
                 for seed in SEEDS:
                     if source in present:
-                        row = one_run(
+                        row = localization_run(
                             source, scenario, seed, track_length, tmp_path
                         )
                     else:

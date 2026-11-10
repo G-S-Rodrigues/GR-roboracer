@@ -26,148 +26,38 @@ submodule is initialised and says "not available" otherwise.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import time
 from pathlib import Path
 
-import racing_common
-import yaml
-from racing_test_keywords.scenario_runner import run_scenario
-
+from scripts.benchmark_runs import (
+    DEFAULT_VEHICLE,
+    REPORT_DIR,
+    SEEDS,
+    UPSTREAM,
+    VEHICLES,
+    lines_of,
+    planning_run,
+    regeneration_record,
+    static_fields,
+)
+from scripts.benchmark_runs import (
+    track_length as committed_track_length,
+)
 from scripts.raceline_report import (
-    raceline_geometry,
-    read_manifest,
-    read_recording_tolerant,
-    read_regeneration,
     render,
-    run_outcome,
     structural_failures,
     summarise,
     upstream_reference,
 )
 
-REPO = Path(__file__).resolve().parents[2]
-SCENARIO = str(REPO / "config" / "scenarios" / "spielberg.yaml")
-TRACK = REPO / "config" / "tracks" / "spielberg.yaml"
-REPORT_DIR = REPO / "log" / "raceline-report"
-RACELINES = REPO / "config" / "racelines" / "spielberg"
-UPSTREAM = REPO / "third_party" / "f1tenth_racetracks"
-
-# vehicle name -> (vehicle file, vehicle_parameter_version)
-VEHICLES = {
-    "gym_limits": ("f1tenth_gym_limits.yaml", "f1tenth-gym-limits-v1"),
-    "default": ("f1tenth_default.yaml", "f1tenth-default-v1"),
-}
-DEFAULT_VEHICLE = "default"
-# O5: four seeds; revisit if the seed-42 leg passes 150 min.
-SEEDS = (42, 1030, 7, 2026)
-TIME_SCALE = 5.0
-# SIM-3110's 3 x 65 s. A run that is still moving at the end costs all of it;
-# one whose pose froze (a DNF or a latch) is stopped by the frozen-pose hook
-# 2 x FROZEN_WINDOW_SECONDS of sim time after it stops, 0.4 s of wall at x5.
-TIMEOUT_SECONDS = 195.0
-# Sim seconds over which s and d must not move for a pose to be frozen.
-# Measured (part 7 step 2, gym-limits, seed 42, 100 Hz recordings): the car is
-# frozen from sim 2.98 s (centerline) and 2.53 s (min-curv) to the end, while
-# before that the longest stretch with s and d still is 0.02 s. 1.0 s is 50x
-# that, and a creeping car moves more than the 1 mm threshold in it.
-FROZEN_WINDOW_SECONDS = 1.0
 # Collection time, before SIM-5040 writes regeneration.json in this session:
 # an older file is a previous session's and renders "not measured" (N2).
 SESSION_START = time.time()
-NO_METRICS = "no message on /scenario/metrics"
-
-
-def lines_of(version: str) -> list[str]:
-    stems = sorted(p.stem for p in (RACELINES / version).glob("*.csv"))
-    return ["centerline", *stems]
-
-
-def launch_arguments(vehicle_file: str, line: str, recording: Path) -> dict:
-    arguments = {
-        "vehicle": str(REPO / "config" / "vehicles" / vehicle_file),
-        "recording_path": str(recording),
-    }
-    if line == "centerline":
-        arguments["planner"] = "track_centerline"
-        arguments["speed_source"] = "curvature_schedule"
-    else:
-        arguments["planner"] = "optimized_raceline"
-        arguments["raceline_optimizer"] = line
-        arguments["speed_source"] = "trajectory"
-    return arguments
-
-
-def one_run(vehicle: str, line: str, seed: int, track_length: float, tmp: Path):
-    vehicle_file, _ = VEHICLES[vehicle]
-    recording = tmp / f"{vehicle}-{line}-{seed}.jsonl"
-    run = {"vehicle": vehicle, "line": line, "seed": seed}
-    try:
-        metrics = run_scenario(
-            seed,
-            SCENARIO,
-            timeout=TIMEOUT_SECONDS,
-            time_scale=TIME_SCALE,
-            launch_arguments=launch_arguments(vehicle_file, line, recording),
-            # Twice the window: run_outcome classifies from the recording,
-            # whose subscriber is not the hook's, and a stop at exactly one
-            # window can leave a recorded still tail short of it (`budget`).
-            stop_on_frozen_pose=2 * FROZEN_WINDOW_SECONDS,
-            track_length=track_length,
-        )
-        if metrics.get("lap_completed"):
-            run.update(outcome="completed", metrics=metrics)
-        else:
-            # The hook stopped a frozen pose; finalize published partial
-            # metrics. Classify from the recording, as for a timeout.
-            run["partial_metrics"] = metrics
-            events = read_recording_tolerant(recording)
-            run.update(
-                run_outcome(
-                    events,
-                    "frozen-pose stop",
-                    track_length,
-                    FROZEN_WINDOW_SECONDS,
-                )
-            )
-    except TimeoutError as error:
-        text = str(error)
-        if text.startswith(NO_METRICS) and recording.exists():
-            events = read_recording_tolerant(recording)
-            run.update(
-                run_outcome(events, text, track_length, FROZEN_WINDOW_SECONDS)
-            )
-        else:
-            run.update(outcome="infrastructure", error=text)
-    except Exception as error:  # noqa: BLE001 - recorded, never hidden
-        run.update(outcome="infrastructure", error=f"{error!r}")
-    if recording.exists():
-        with contextlib.suppress(ValueError, KeyError):
-            manifest = read_manifest(recording)
-            run["manifest_version"] = manifest["vehicle_parameter_version"]
-    return run
-
-
-def static_fields(version: str, line: str) -> dict:
-    if line == "centerline":
-        return {"length_m": racing_common.Track.from_yaml(str(TRACK)).length()}
-    geometry = raceline_geometry(RACELINES / version / f"{line}.csv")
-    document = yaml.safe_load(
-        (RACELINES / version / f"{line}.yaml").read_text(encoding="utf-8")
-    )
-    clearance = document["verdict"]["min_clearance"]
-    fields = dict(geometry)
-    fields["verifier_min_clearance"] = clearance.get("ground_truth_judged")
-    return fields
-
-
-def regeneration_record() -> dict:
-    return read_regeneration(REPORT_DIR / "regeneration.json", SESSION_START)
 
 
 def test_sim_5050_raceline_comparison(tmp_path: Path) -> None:
-    track_length = racing_common.Track.from_yaml(str(TRACK)).length()
+    track_length = committed_track_length()
     expected = {
         "vehicles": {name: version for name, (_, version) in VEHICLES.items()},
         "default_vehicle": DEFAULT_VEHICLE,
@@ -181,7 +71,9 @@ def test_sim_5050_raceline_comparison(tmp_path: Path) -> None:
         for vehicle, lines in expected["rows"].items():
             for line in lines:
                 for seed in SEEDS:
-                    run = one_run(vehicle, line, seed, track_length, tmp_path)
+                    run = planning_run(
+                        vehicle, line, seed, track_length, tmp_path
+                    )
                     runs.append(run)
                     lap = run.get("metrics", {}).get("lap_time")
                     print(
@@ -190,7 +82,7 @@ def test_sim_5050_raceline_comparison(tmp_path: Path) -> None:
                         f"distance {run.get('distance_m')}"
                     )
     finally:
-        regeneration = regeneration_record()
+        regeneration = regeneration_record(SESSION_START)
         statics = {}
         for vehicle, (_, version) in VEHICLES.items():
             for line in lines_of(version):

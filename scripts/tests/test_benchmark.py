@@ -120,3 +120,43 @@ def test_check_2700_dispatch_expands_all() -> None:
     assert benchmark.dispatch_roles("all") == ["localization", "planning"]
     with pytest.raises(ValueError):
         benchmark.dispatch_roles("controller")
+
+
+# -- CHECK-2780 ---------------------------------------------------------------
+
+
+def _runs():
+    from scripts import benchmark_runs  # noqa: PLC0415
+
+    return benchmark_runs
+
+
+def test_check_2780_launch_arguments_centerline() -> None:
+    runs = _runs()
+    arguments = runs.launch_arguments(
+        "f1tenth_default.yaml", "centerline", Path("/tmp/r.jsonl")
+    )
+    assert arguments["planner"] == "track_centerline"
+    assert arguments["speed_source"] == "curvature_schedule"
+    assert arguments["recording_path"] == "/tmp/r.jsonl"
+    assert arguments["vehicle"].endswith("config/vehicles/f1tenth_default.yaml")
+    assert "raceline_optimizer" not in arguments
+
+
+def test_check_2780_launch_arguments_committed_line() -> None:
+    runs = _runs()
+    arguments = runs.launch_arguments(
+        "f1tenth_default.yaml", "tum_mintime", Path("/tmp/r.jsonl")
+    )
+    assert arguments["planner"] == "optimized_raceline"
+    assert arguments["raceline_optimizer"] == "tum_mintime"
+    assert arguments["speed_source"] == "trajectory"
+
+
+def test_check_2780_lines_of_committed_tree() -> None:
+    runs = _runs()
+    assert runs.lines_of("f1tenth-default-v1") == [
+        "centerline",
+        "tum_mincurv_iqp",
+        "tum_mintime",
+    ]
