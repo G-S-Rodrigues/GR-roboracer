@@ -26,10 +26,30 @@ for _path in (REPO, REPO / "tests" / "lib"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+from scripts import benchmark_runs  # noqa: E402
 from scripts.changed_scope import stack_from_dict  # noqa: E402
 
 # reference_stack role -> the benchmark role that compares its implementations.
 BENCHMARKED_ROLES = {"pose_source": "localization", "planner": "planning"}
+# Implementations of a benchmarked role that are deliberately not rows.
+NOT_BENCHMARKED = {
+    "pose_source": {
+        "ground_truth": (
+            "not an estimator; publishes no composed /localization/odom "
+            "(SIM-5510 docstring)"
+        )
+    }
+}
+# planner implementation -> the lines of a vehicle parameter version it
+# drives: the track centerline, or each committed raceline.
+PLANNER_RUNNABLE = {
+    "track_centerline": lambda version: ["centerline"],
+    "optimized_raceline": lambda version: [
+        line
+        for line in benchmark_runs.lines_of(version)
+        if line != "centerline"
+    ],
+}
 # The benchmark roles in the order they run and print.
 ROLE_ORDER = ("localization", "planning")
 

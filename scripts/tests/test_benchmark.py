@@ -160,3 +160,77 @@ def test_check_2780_lines_of_committed_tree() -> None:
         "tum_mincurv_iqp",
         "tum_mintime",
     ]
+
+
+# -- CHECK-2710 ---------------------------------------------------------------
+
+
+def _committed_stack() -> dict:
+    import yaml  # noqa: PLC0415
+
+    return yaml.safe_load(
+        (ROOT / "config" / "reference_stack.yaml").read_text(encoding="utf-8")
+    )
+
+
+def _coverage_failures(stack: dict) -> list[str]:
+    """Why the benchmark does not cover ``stack``'s pose sources/planners."""
+    from scripts import benchmark_runs  # noqa: PLC0415
+    from scripts.pose_source_report import METHODS  # noqa: PLC0415
+
+    failures = []
+    names = {
+        impl.name: impl.role
+        for impl in benchmark.stack_from_dict(stack, {}, {}).implementations
+    }
+    pose = {n for n, r in names.items() if r == "pose_source"}
+    pose -= set(benchmark.NOT_BENCHMARKED["pose_source"])
+    methods = {name for name, method in METHODS.items() if method}
+    failures += [
+        f"pose_source {n}: no METHODS entry in pose_source_report"
+        for n in sorted(pose - methods)
+    ]
+    failures += [
+        f"METHODS {n}: not a pose_source implementation in the stack"
+        for n in sorted(methods - pose)
+    ]
+    planners = {n for n, r in names.items() if r == "planner"}
+    failures += [
+        f"planner {n}: the planning runner does not map it"
+        for n in sorted(planners - set(benchmark.PLANNER_RUNNABLE))
+    ]
+    for _, (_, version) in benchmark_runs.VEHICLES.items():
+        for planner, lines_for in benchmark.PLANNER_RUNNABLE.items():
+            if not lines_for(version):
+                failures.append(f"planner {planner}: no line for {version}")
+    return failures
+
+
+def test_check_2710_committed_stack_is_covered() -> None:
+    assert _coverage_failures(_committed_stack()) == []
+
+
+def test_check_2710_a_new_pose_source_fails_naming_it() -> None:
+    stack = _committed_stack()
+    stack["roles"]["pose_source"]["alternatives"].append(
+        {
+            "implementation": "brand_new",
+            "package": "p",
+            "status": "experimental",
+        }
+    )
+    failures = _coverage_failures(stack)
+    assert any("brand_new" in f for f in failures)
+
+
+def test_check_2710_a_new_planner_fails_naming_it() -> None:
+    stack = _committed_stack()
+    stack["roles"]["planner"]["alternatives"].append(
+        {"implementation": "spline", "package": "p", "status": "experimental"}
+    )
+    assert any("spline" in f for f in _coverage_failures(stack))
+
+
+def test_check_2710_ground_truth_is_named_as_not_an_estimator() -> None:
+    reason = benchmark.NOT_BENCHMARKED["pose_source"]["ground_truth"]
+    assert "not an estimator" in reason
