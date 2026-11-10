@@ -112,10 +112,10 @@ MANOEUVRES = (
 )
 
 
-def build_schedule(repeats: int) -> list[Segment]:
+def build_schedule(repeats: int, manoeuvres=MANOEUVRES) -> list[Segment]:
     segments: list[Segment] = []
     for _ in range(repeats):
-        for manoeuvre in MANOEUVRES:
+        for manoeuvre in manoeuvres:
             segments += _pre() + manoeuvre()
     return segments
 
@@ -133,14 +133,117 @@ def _command(throttle: float, steering: float, reset: bool) -> dict[str, str]:
     }
 
 
-def identify_schedule(t: float) -> dict[str, str]:
+def identify_schedule(t: float, segments=_SEGMENTS) -> dict[str, str]:
     """The command for `t` seconds after the first sim message."""
     end = 0.0
-    for seg in _SEGMENTS:
+    for seg in segments:
         end += seg.duration
         if t < end:
             return _command(seg.throttle, seg.steering, seg.reset)
     return _command(0.0, 0.0, False)
+
+
+# --- the lateral schedule (part 1L increment 1) -------------------------------
+# Step-steer doublets on Porto's spawn straight: bring the wheels to v, settle
+# the slip, steer +A then -A, centre, brake with locked wheels. The rungs are
+# the corridor table of the plan (A, v, hold); each is heading-balanced (the
+# second lobe is held s longer, s the slew time) and its planned path stays
+# inside CORRIDOR_OFFSET_M (CHECK-2650). Step 2a's live probe ran all ten
+# rungs twice with no collision (max |dx| 0.11-0.22 m).
+LATERAL_SCHEDULE_ID = "porto-lateral-v1"
+LATERAL_REPEATS = 3
+# 0.52 m is free on the narrowest side of the spawn straight; slew and drift
+# take the rest (Step 2a's measured offsets were 0.11-0.22 m).
+CORRIDOR_OFFSET_M = 0.35
+# The part-4 probe's clear straight (Porto spawn, heading -y).
+STRAIGHT_CLEAR_M = 7.9
+MAX_FINAL_HEADING_DEG = 3.0
+STEER_SLEW = 3.2  # rad/s, the identified actuator slew
+STEER_LIMIT = 0.5236  # rad, the steering command 1.0
+WHEEL_SETPOINT_GAIN = 24.86  # wheel rad/s per throttle (F1)
+DRIVE_A0, DRIVE_C = 5.38, 0.273  # full throttle: a = 5.38 - 0.273 v (F2)
+BRAKE_A0 = 5.40  # throttle 0 locks the wheels: a = 5.40 + 0.273 v (F2)
+# (steering fraction A, speed v, hold T of the first lobe)
+LATERAL_RUNGS = (
+    (0.3, 3.5, 0.170),
+    (0.3, 4.0, 0.140),
+    (0.3, 4.5, 0.115),
+    (0.3, 4.8, 0.100),
+    (0.4, 2.8, 0.165),
+    (0.4, 3.2, 0.130),
+    (0.4, 3.5, 0.110),
+    (0.5, 2.4, 0.150),
+    (0.5, 2.8, 0.115),
+    (0.6, 2.4, 0.105),
+)
+
+
+def _drive_time(v: float) -> float:
+    """Seconds of full throttle from rest to v: v' = 5.38 - 0.273 v."""
+    return -math.log(1.0 - v * DRIVE_C / DRIVE_A0) / DRIVE_C
+
+
+def lateral_rung(
+    a: float, v: float, hold: float, balanced: bool = True
+) -> list[Segment]:
+    """One doublet. `balanced` holds the second lobe `s` longer, so the
+    steering's net area, and with it the heading, returns to ~zero."""
+    slew = a * STEER_LIMIT / STEER_SLEW
+    throttle = v / WHEEL_SETPOINT_GAIN
+    return [
+        Segment(_drive_time(v), 1.0, 0.0, False, "accel"),
+        Segment(0.3, throttle, 0.0, False, "settle"),
+        Segment(hold, throttle, a, False, "lobe1"),
+        Segment(
+            hold + (slew if balanced else 0.0), throttle, -a, False, "lobe2"
+        ),
+        Segment(slew + 0.02, throttle, 0.0, False, "return"),
+        Segment(1.7, 0.0, 0.0, False, "stop"),
+    ]
+
+
+LATERAL_MANOEUVRES = tuple(
+    (lambda rung=rung: lateral_rung(*rung)) for rung in LATERAL_RUNGS
+)
+_LATERAL_SEGMENTS = build_schedule(LATERAL_REPEATS, LATERAL_MANOEUVRES)
+LATERAL_END = sum(seg.duration for seg in _LATERAL_SEGMENTS) + TAIL
+
+
+def lateral_schedule(t: float) -> dict[str, str]:
+    """The lateral drive's command `t` seconds after the first sim message."""
+    return identify_schedule(t, _LATERAL_SEGMENTS)
+
+
+def planned_path(
+    manoeuvre: list[Segment], v: float, wheelbase: float, dt: float = 0.001
+) -> dict[str, float]:
+    """A kinematic bicycle driven through `manoeuvre` (the segments of one
+    rung, `lateral_rung`): full throttle follows the drive law to v, a
+    throttle holds v, throttle 0 is the locked-wheel stop, and the steering
+    slews at STEER_SLEW. An upper bound on the path below the limit and in
+    understeer, not in oversteer. Returns the largest |y|, the final heading
+    (deg), the distance travelled (m)."""
+    x = y = psi = delta = speed = 0.0
+    max_y = 0.0
+    for seg in manoeuvre:
+        for _ in range(int(round(seg.duration / dt))):
+            if seg.throttle >= 1.0:
+                speed = min(v, speed + (DRIVE_A0 - DRIVE_C * speed) * dt)
+            elif seg.throttle > 0.0:
+                speed = v
+            else:
+                speed = max(0.0, speed - (BRAKE_A0 + DRIVE_C * speed) * dt)
+            target = seg.steering * STEER_LIMIT
+            delta += max(-STEER_SLEW * dt, min(STEER_SLEW * dt, target - delta))
+            psi += speed * math.tan(delta) / wheelbase * dt
+            x += speed * math.cos(psi) * dt
+            y += speed * math.sin(psi) * dt
+            max_y = max(max_y, abs(y))
+    return {
+        "max_y": max_y,
+        "heading_deg": math.degrees(psi),
+        "distance": x,
+    }
 
 
 DROPPED_KEYS = ("V1 Front Camera Image", "V1 LIDAR Range Array")
@@ -716,16 +819,29 @@ def _recorder():
     return module
 
 
+def schedule_for(name: str):
+    """(id, command function, end, repeats) of a named recording schedule."""
+    if name == "identify":
+        return SCHEDULE_ID, identify_schedule, SCHEDULE_END, REPEATS
+    if name == "lateral":
+        return (
+            LATERAL_SCHEDULE_ID,
+            lateral_schedule,
+            LATERAL_END,
+            LATERAL_REPEATS,
+        )
+    raise ValueError(f"unknown schedule {name!r}")
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     rec = _recorder()
-    header = rec._header(args.config, SCHEDULE_ID)
+    schedule_id, command, end, repeats = schedule_for(args.schedule)
+    header = rec._header(args.config, schedule_id)
     header["host_load"] = list(os.getloadavg())
-    header["repeats"] = REPEATS
+    header["repeats"] = repeats
     args.out.parent.mkdir(parents=True, exist_ok=True)
     writer = rec.RecordWriter(args.out, header)
-    handler = rec.BridgeHandler(
-        writer, identify_schedule, SCHEDULE_END, strip_frame
-    )
+    handler = rec.BridgeHandler(writer, command, end, strip_frame)
     print(f"recording to {args.out}; start the sim now", flush=True)
     try:
         rec.serve(handler, args.port)
@@ -932,32 +1048,56 @@ def analyse(recording: Path, source: Path) -> dict:
 def cmd_analyse(args: argparse.Namespace) -> int:
     import yaml
 
-    result = analyse(args.recording, args.source)
-    args.out.write_text(
-        "# Written by tools/autodrive_identify.py analyse; never edit by\n"
-        "# hand (CHECK-1780 re-derives it from the committed recording).\n"
-        + yaml.safe_dump(result, sort_keys=False)
-    )
-    print(f"wrote {args.out}", flush=True)
-    return 0
+    rec = _recorder()
+    header, _ = rec.read_records(args.recording)
+    schedule = header.get("schedule")
+    if schedule == SCHEDULE_ID:
+        if args.out is None or args.out_dir is not None:
+            print(f"{SCHEDULE_ID} takes --out, not --out-dir", file=sys.stderr)
+            return 2
+        result = analyse(args.recording, args.source)
+        args.out.write_text(
+            "# Written by tools/autodrive_identify.py analyse; never edit by\n"
+            "# hand (CHECK-1780 re-derives it from the committed recording).\n"
+            + yaml.safe_dump(result, sort_keys=False)
+        )
+        print(f"wrote {args.out}", flush=True)
+        return 0
+    if schedule == LATERAL_SCHEDULE_ID:
+        if args.out_dir is None or args.out is not None:
+            print(
+                f"{LATERAL_SCHEDULE_ID} takes --out-dir, not --out",
+                file=sys.stderr,
+            )
+            return 2
+        raise NotImplementedError("the lateral analysis arrives in Step 6")
+    raise ValueError(f"unknown schedule {schedule!r} in {args.recording}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    record = sub.add_parser("record", help="record the identification drive")
+    record = sub.add_parser("record", help="record a scripted drive")
     record.add_argument("--config", type=Path, required=True)
     record.add_argument("--out", type=Path, required=True)
     record.add_argument("--port", type=int, default=4567)
+    record.add_argument(
+        "--schedule", choices=("identify", "lateral"), default="identify"
+    )
     record.set_defaults(func=cmd_record)
     analyse_parser = sub.add_parser(
-        "analyse", help="analyse a recording into identified.yaml"
+        "analyse", help="analyse a recording (identified.yaml or the limits)"
     )
     analyse_parser.add_argument("--recording", type=Path, required=True)
     analyse_parser.add_argument("--source", type=Path, required=True)
-    analyse_parser.add_argument("--out", type=Path, required=True)
+    analyse_parser.add_argument("--out", type=Path)
+    analyse_parser.add_argument("--out-dir", type=Path)
     analyse_parser.set_defaults(func=cmd_analyse)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     return args.func(args)
 
 

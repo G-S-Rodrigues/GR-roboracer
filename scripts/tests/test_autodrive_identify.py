@@ -634,3 +634,172 @@ def test_check_2615_sensor_checks_imu_against_the_kinematics() -> None:
     assert _approx(scaled.ax_ratio, checks.ax_ratio / 1.1, 0.02), scaled
     assert _approx(scaled.ay_ratio, checks.ay_ratio / 1.1, 0.02), scaled
     assert not _approx(scaled.ax_ratio, 1.001, 0.02)
+
+
+# --- part 1L increment 1: the lateral schedule --------------------------------
+SOURCE = (
+    REPO_ROOT / "config" / "vehicles" / "autodrive_roboracer" / "source.yaml"
+)
+
+
+def _wheelbase() -> float:
+    import yaml
+
+    values = yaml.safe_load(SOURCE.read_text())["values"]
+    return values["wheelbase_table_m"]["value"]
+
+
+def test_check_2650_lateral_schedule_stays_in_the_corridor() -> None:
+    """CHECK-2650: `lateral_schedule` is a pure function of time, writes the
+    devkit's strings, stays in [-1, 1], opens every manoeuvre with the reset
+    pulse and rest and ends at rest. For every rung a kinematic bicycle
+    (`planned_path`: L from source.yaml, steering slewed at 3.2 rad/s, the
+    locked-wheel stop) keeps max |y| <= CORRIDOR_OFFSET_M, ends within 3 deg
+    of straight and fits STRAIGHT_CLEAR_M. Oracles come from independent
+    throwaway code (plan.py of the step: the same bicycle, its distance
+    short by the schedule's 0.02 s return tail, 0.02 v). Three negative cases
+    fail one condition each. The v1 schedule is unchanged."""
+    tool = _tool()
+    steps = int(tool.LATERAL_END / 0.05) + 20
+    for i in range(steps):
+        t = i * 0.05
+        command = tool.lateral_schedule(t)
+        assert set(command) == REPLY_KEYS, t
+        assert command == tool.lateral_schedule(t), t
+        assert abs(float(command["V1 Throttle"])) <= 1.0, t
+        assert abs(float(command["V1 Steering"])) <= 1.0, t
+    assert tool.lateral_schedule(tool.LATERAL_END + 5.0) == {
+        "V1 Throttle": "0.0",
+        "V1 Steering": "0.0",
+        "V1 Reset": "False",
+    }
+    assert tool.LATERAL_SCHEDULE_ID == "porto-lateral-v1"
+    assert tool.LATERAL_REPEATS == 3 and tool.CORRIDOR_OFFSET_M == 0.35
+    assert tool.STRAIGHT_CLEAR_M == 7.9
+
+    segments = tool.build_schedule(
+        tool.LATERAL_REPEATS, tool.LATERAL_MANOEUVRES
+    )
+    assert len(tool.LATERAL_MANOEUVRES) == len(tool.LATERAL_RUNGS) == 10
+    assert (
+        abs(tool.LATERAL_END - (sum(s.duration for s in segments) + tool.TAIL))
+        < 1e-9
+    )
+    for first in range(0, len(segments), 8):  # 2 pre + 6 rung segments
+        assert segments[first].reset and segments[first].duration == 0.5
+        assert segments[first + 1].duration == 1.5
+        assert not segments[first + 1].reset
+        stop = segments[first + 7]
+        assert stop.name == "stop" and stop.throttle == 0.0
+        assert stop.steering == 0.0
+
+    wheelbase = _wheelbase()
+    for a, v, hold in tool.LATERAL_RUNGS:
+        path = tool.planned_path(tool.lateral_rung(a, v, hold), v, wheelbase)
+        assert path["max_y"] <= tool.CORRIDOR_OFFSET_M, (a, v, path)
+        assert abs(path["heading_deg"]) <= 3.0, (a, v, path)
+        assert path["distance"] <= tool.STRAIGHT_CLEAR_M, (a, v, path)
+
+    # Hand oracles (independent bicycle; distance + 0.02 s x v).
+    for (a, v, hold), max_y, distance in (
+        ((0.3, 3.5, 0.170), 0.221, 4.872 + 0.02 * 3.5),
+        ((0.3, 4.8, 0.100), 0.167, 7.267 + 0.02 * 4.8),
+        ((0.4, 3.2, 0.130), 0.170, 4.119 + 0.02 * 3.2),
+        ((0.5, 2.8, 0.115), 0.144, 3.397 + 0.02 * 2.8),
+        ((0.6, 2.4, 0.105), 0.121, 2.760 + 0.02 * 2.4),
+    ):
+        path = tool.planned_path(tool.lateral_rung(a, v, hold), v, wheelbase)
+        assert _approx(path["max_y"], max_y, 0.02), (a, v, path)
+        assert _approx(path["distance"], distance, 0.02), (a, v, path)
+        scaled = tool.planned_path(
+            tool.lateral_rung(a, v, hold), v, wheelbase * 1.1
+        )
+        assert not _approx(scaled["max_y"], max_y, 0.001), (a, v, scaled)
+
+    unbalanced = tool.planned_path(
+        tool.lateral_rung(0.5, 3.5, 0.065, balanced=False), 3.5, wheelbase
+    )
+    assert abs(unbalanced["heading_deg"]) > 3.0, unbalanced  # 8.4 deg
+    wide = tool.planned_path(tool.lateral_rung(1.0, 2.7, 0.0), 2.7, wheelbase)
+    assert wide["max_y"] > tool.CORRIDOR_OFFSET_M, wide  # 0.77 m
+    long_run = tool.planned_path(
+        tool.lateral_rung(0.3, 5.2, 0.1), 5.2, wheelbase
+    )
+    assert long_run["distance"] > tool.STRAIGHT_CLEAR_M, long_run  # 8.4 m
+
+    # The v1 schedule is untouched (CHECK-1710 holds it too).
+    assert tool.build_schedule(tool.REPEATS) == tool.build_schedule(
+        tool.REPEATS, tool.MANOEUVRES
+    )
+    assert tool.SCHEDULE_END == 115.9 and len(tool._SEGMENTS) == 105
+    assert tool.identify_schedule(3.0) == tool.identify_schedule(
+        3.0, tool._SEGMENTS
+    )
+
+
+def test_check_2655_record_and_analyse_know_the_lateral_schedule(
+    tmp_path,
+) -> None:
+    """CHECK-2655: `record --schedule lateral` is accepted and writes header
+    `schedule: porto-lateral-v1` with `repeats: 3`; the default stays
+    `identify`; an unknown schedule exits 2; `analyse` dispatches on the
+    header (`--out` for identify, `--out-dir` for lateral, the wrong one for
+    the header's schedule exits 2); a header naming no schedule raises."""
+    import pytest
+
+    tool = _tool()
+    parser = tool.build_parser()
+    args = parser.parse_args(["record", "--config", "c.yaml", "--out", "o.gz"])
+    assert args.schedule == "identify"
+    args = parser.parse_args(
+        [
+            "record",
+            "--config",
+            "c.yaml",
+            "--out",
+            "o.gz",
+            "--schedule",
+            "lateral",
+        ]
+    )
+    assert args.schedule == "lateral"
+    with pytest.raises(SystemExit) as exit_info:
+        parser.parse_args(
+            ["record", "--config", "c", "--out", "o", "--schedule", "bogus"]
+        )
+    assert exit_info.value.code == 2
+    assert tool.schedule_for("identify") == (
+        tool.SCHEDULE_ID,
+        tool.identify_schedule,
+        tool.SCHEDULE_END,
+        tool.REPEATS,
+    )
+    assert tool.schedule_for("lateral") == (
+        tool.LATERAL_SCHEDULE_ID,
+        tool.lateral_schedule,
+        tool.LATERAL_END,
+        tool.LATERAL_REPEATS,
+    )
+    with pytest.raises(ValueError, match="bogus"):
+        tool.schedule_for("bogus")
+    # analyse: the wrong output option for the header's schedule exits 2.
+    rec = tool._recorder()
+    for schedule_id, wrong in (
+        (tool.LATERAL_SCHEDULE_ID, ["--out", str(tmp_path / "x.yaml")]),
+        (tool.SCHEDULE_ID, ["--out-dir", str(tmp_path)]),
+    ):
+        path = tmp_path / f"{schedule_id}.jsonl.gz"
+        writer = rec.RecordWriter(path, {"schedule": schedule_id, "repeats": 3})
+        writer.close()
+        code = tool.main(
+            ["analyse", "--recording", str(path), "--source", str(SOURCE)]
+            + wrong
+        )
+        assert code == 2, schedule_id
+    bad = tmp_path / "bad.jsonl.gz"
+    rec.RecordWriter(bad, {"schedule": "bogus"}).close()
+    with pytest.raises(ValueError, match="bogus"):
+        tool.main(
+            ["analyse", "--recording", str(bad), "--source", str(SOURCE),
+             "--out", str(tmp_path / "y.yaml")]
+        )  # fmt: skip
