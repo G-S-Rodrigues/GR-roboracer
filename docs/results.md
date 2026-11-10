@@ -92,6 +92,17 @@ load1 3.0, a rerun after the speed figures were trimmed to the drive; the first 
 Peak speed 4.44 m/s (cap 4.5), mean over lap 2 3.97 m/s (stack lap time window of `/ground_truth/odom` speed), 0 collisions on the stack and the simulator, no latch (every safety status
 message `REASON_NONE`). TUM's own estimate for the line is 7.303 s and the re-profiled line's is 7.306 s.
 
+The recording shows both laps in RViz with the launch's own display configuration, watching the
+run from a second container on the same ROS domain (the command itself starts no RViz). Its run
+gave stack laps 7.93 s and 7.40 s, simulator laps 7.61 s and 7.39 s, 0 collisions on both sides
+and no latch.
+
+[![The fast AutoDRIVE car on the minimum-time Porto line, two laps, 2.0x playback](assets/autodrive-fast-mintime-porto-preview.gif)](https://drive.google.com/file/d/1-ydUWBptUNeeYx-ORXAE2_fLO-hFCgny/view)
+
+▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1-ydUWBptUNeeYx-ORXAE2_fLO-hFCgny/view):
+both laps at 1.0x simulated time (the preview above plays at 2.0x). Recorded with `scripts/autodrive_qualify.sh --domain 64 --case fast_lap`
+on `config/scenarios/porto.yaml` at commit `e604c81`.
+
 ## Mapping demonstration
 
 The recording shows the real simulator, ROS and SLAM Toolbox path building the Spielberg grid
