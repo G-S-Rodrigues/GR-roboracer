@@ -57,6 +57,7 @@ def _run(monkeypatch, **call) -> dict:
         path = Path(kwargs["launch_arguments"]["recording_path"])
         seen["run_path"] = path
         seen["launch_arguments"] = dict(kwargs["launch_arguments"])
+        seen["run_kwargs"] = dict(kwargs)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}\n")
         return {"lap_completed": True}
@@ -299,3 +300,147 @@ def test_check_2372_failure_text_names_the_escalations():
     with pytest.raises(AssertionError) as raised:
         library.lap_completion_should_be("true")
     assert str(raised.value) == "expected lap_completed=True, was False"
+
+
+# ---- CHECK-2373: the pose-source keyword stops on a frozen pose ----
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+def _scenario_track_length(scenario: str) -> float:
+    import racing_common
+    from racing_bringup.scenario_parameters import track_parameters
+
+    parameters = track_parameters(Path(scenario))
+    path = parameters["racing_metrics"]["track_path"]
+    return racing_common.Track.from_yaml(str(path)).length()
+
+
+@pytest.mark.parametrize(
+    "pose_source,call",
+    [
+        ("amcl", {"drive_on_estimate": "true"}),
+        (
+            "mola",
+            {
+                "scenario": "config/scenarios/spielberg_1080.yaml",
+                "time_scale": "1.0",
+            },
+        ),
+    ],
+)
+def test_check_2373_pose_source_keyword_stops_on_frozen_pose(
+    monkeypatch, pose_source, call
+):
+    from scripts import frozen_pose
+
+    monkeypatch.chdir(REPO)
+    seen: dict = {}
+
+    def fake_run_scenario(**kwargs):
+        seen.update(kwargs)
+        Path(kwargs["launch_arguments"]["recording_path"]).parent.mkdir(
+            parents=True, exist_ok=True
+        )
+        Path(kwargs["launch_arguments"]["recording_path"]).write_text("{}\n")
+        return {"lap_completed": True}
+
+    monkeypatch.setattr(keywords, "run_scenario", fake_run_scenario)
+    monkeypatch.setattr(keywords, "score_localization", lambda p: dict(SCORE))
+    monkeypatch.setattr(keywords, "_output_root", lambda: REPO / "log" / "t")
+    library = keywords.RacingTestKeywords()
+    library.run_racing_scenario_on_pose_source(pose_source, **call)
+    assert seen["stop_on_frozen_pose"] == 2 * frozen_pose.FROZEN_WINDOW_SECONDS
+    scenario = call.get("scenario", keywords.LOCALIZATION_SCENARIO)
+    assert seen["track_length"] == _scenario_track_length(scenario)
+
+
+def test_check_2373_the_track_length_is_the_metrics_node_s():
+    """Gotcha 15: one definition of a lap. Spielberg's is 343.3 m."""
+    from racing_test_keywords.scenario_runner import scenario_track_length
+
+    length = scenario_track_length(
+        str(REPO / "config/scenarios/spielberg.yaml")
+    )
+    assert length == pytest.approx(343.3, abs=0.1)
+    with pytest.raises(TypeError):
+        scenario_track_length(None)
+
+
+# ---- CHECK-2375: the frozen pose gets a named verdict ----
+
+
+def _freeze_library(tmp_path, **attributes):
+    import json
+
+    recording = tmp_path / "amcl.jsonl"
+    event = {
+        "record_type": "event",
+        "stamp": {"sec": 110, "nanosec": 400_000_000},
+        "topic": "/evaluation/localization_error",
+        "payload": {
+            "estimate_topic": "/localization/odom",
+            "longitudinal_error": 1.38,
+            "lateral_error": 0.02,
+        },
+    }
+    recording.write_text(json.dumps(event) + "\n")
+    library = keywords.RacingTestKeywords()
+    library._metrics = _outcome(**attributes)
+    library._recording = recording
+    return library
+
+
+def _lap_text(library) -> str:
+    with pytest.raises(AssertionError) as raised:
+        library.lap_completion_should_be("true")
+    return str(raised.value)
+
+
+def test_check_2375_a_frozen_pose_is_named_a_collision(tmp_path):
+    library = _freeze_library(
+        tmp_path,
+        frozen_at=(110.51, 173.8, -0.88),
+        stop_context={"text": "observer text", "latched": False},
+    )
+    text = _lap_text(library)
+    assert text.startswith("expected lap_completed=True, was False")
+    assert (
+        "ground truth frozen at sim 110.51 s, s 173.8, d -0.88: "
+        "the gym holds its state on a collision"
+    ) in text
+    assert "estimate lon +1.38 m, lat +0.02 m at the freeze" in text
+    assert "observer text" in text
+
+
+def test_check_2375_a_latch_is_not_called_a_collision(tmp_path):
+    library = _freeze_library(
+        tmp_path,
+        frozen_at=(4.95, 12.0, 0.1),
+        stop_context={
+            "text": "first non-NONE status: REASON_TRACK_LIMIT",
+            "latched": True,
+        },
+    )
+    text = _lap_text(library)
+    assert "ground truth frozen at sim 4.95 s" in text
+    assert "a latch, not a collision" in text
+    assert "holds its state on a collision" not in text
+    assert "REASON_TRACK_LIMIT" in text
+
+
+def test_check_2375_not_frozen_keeps_todays_text(tmp_path):
+    library = _freeze_library(tmp_path)
+    assert _lap_text(library) == "expected lap_completed=True, was False"
+
+
+def test_check_2375_a_diagnostic_never_hides_the_assertion(tmp_path):
+    library = _freeze_library(
+        tmp_path,
+        frozen_at=(110.51, 173.8, -0.88),
+        stop_context={"text": "x", "latched": False},
+    )
+    library._recording = tmp_path / "missing.jsonl"
+    text = _lap_text(library)
+    assert text.startswith("expected lap_completed=True, was False")
+    assert "ground truth frozen at sim 110.51 s" in text

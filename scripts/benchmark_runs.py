@@ -28,6 +28,7 @@ for _path in (REPO, REPO / "tests" / "lib"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+from scripts.frozen_pose import FROZEN_WINDOW_SECONDS  # noqa: E402,F401
 from scripts.pose_source_report import (  # noqa: E402
     METHODS,
     SCENARIOS,
@@ -70,12 +71,6 @@ PLANNING_TIMEOUT_SECONDS = 195.0
 # Localization: SIM-5020's budget: the longest measured row was 220 s on a
 # loaded host.
 LOCALIZATION_TIMEOUT_SECONDS = 400.0
-# Sim seconds over which s and d must not move for a pose to be frozen.
-# Measured (part 7 step 2, gym-limits, seed 42, 100 Hz recordings): the car is
-# frozen from sim 2.98 s (centerline) and 2.53 s (min-curv) to the end, while
-# before that the longest stretch with s and d still is 0.02 s. 1.0 s is 50x
-# that, and a creeping car moves more than the 1 mm threshold in it.
-FROZEN_WINDOW_SECONDS = 1.0
 NO_METRICS = "no message on /scenario/metrics"
 
 

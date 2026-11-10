@@ -658,17 +658,32 @@ FINALIZE_SERVICE = "/racing_metrics/finalize"
 STATE_TOPIC = "/ground_truth/track_relative_state"
 
 
+def scenario_track_length(scenario: str | None) -> float:
+    """Length of the track ``racing_metrics`` laps on for ``scenario``.
+
+    Resolved as the launch does (``Path(scenario)`` against the process's
+    working directory, ``track_parameters``), so a frozen-pose stop wraps s on
+    the same track the lap is counted on (gotcha 15). Raises on ``None``."""
+    import racing_common
+    from racing_bringup.scenario_parameters import track_parameters
+
+    track = track_parameters(Path(scenario))["racing_metrics"]["track_path"]
+    return racing_common.Track.from_yaml(str(track)).length()
+
+
 def _wait_for_metrics_or_frozen_pose(
     node: Any, timeout: float, window_s: float, track_length: float
-) -> Any:
+) -> tuple[Any, tuple[float, float, float] | None]:
     """``wait_for_message`` for ``/scenario/metrics`` that also ends a run
     whose pose froze.
 
     Once the pose (s and d) has stood still for ``window_s`` of sim time, the
     metrics node is asked to publish once (``~/finalize``, ``lap_completed``
     false) and the wait goes on for that message until the original deadline.
-    Raises the same ``TimeoutError`` ``wait_for_message`` does, so a caller
-    that classifies by its text is unchanged. Imported lazily: tier 4 runs
+    Returns ``(message, frozen_at)``: ``frozen_at`` is ``(t, s, d)`` where the
+    pose stopped, ``None`` when the metrics came with no freeze. Raises the
+    same ``TimeoutError`` ``wait_for_message`` does, so a caller that
+    classifies by its text is unchanged. Imported lazily: tier 4 runs
     ``robot --pythonpath tests/lib``, where ``scripts`` is not importable
     until the repository root is put on the path.
     """
@@ -709,7 +724,7 @@ def _wait_for_metrics_or_frozen_pose(
         node.destroy_client(client)
     if not messages:
         raise TimeoutError(f"no message on {METRICS_TOPIC} within {timeout}s")
-    return messages[0]
+    return messages[0], pose.frozen_at
 
 
 def run_scenario(
@@ -801,6 +816,7 @@ def run_scenario(
 
     outcome: dict[str, Any] = {}
     failure: list[BaseException] = []
+    frozen: dict[str, Any] = {}
 
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
@@ -816,9 +832,18 @@ def run_scenario(
                     node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
                 )
             else:
-                message = _wait_for_metrics_or_frozen_pose(
+                message, frozen_at = _wait_for_metrics_or_frozen_pose(
                     node, timeout, stop_on_frozen_pose, track_length
                 )
+                if frozen_at is not None:
+                    # A supervisor latch freezes the pose too; the keyword
+                    # must not call it a collision (raceline_report orders
+                    # `latched` before `dnf` for this reason).
+                    frozen["at"] = frozen_at
+                    frozen["context"] = {
+                        "text": observer.describe(),
+                        "latched": observer.first_latch is not None,
+                    }
             outcome.update(metrics_to_dict(message))
         except TimeoutError as error:
             failure.append(TimeoutError(f"{error} [{observer.describe()}]"))
@@ -853,6 +878,8 @@ def run_scenario(
         raise error
     result = RunOutcome(outcome)
     result.shutdown_escalations = escalations
+    result.frozen_at = frozen.get("at")
+    result.stop_context = frozen.get("context")
     return result
 
 
@@ -928,6 +955,7 @@ def run_scenario_with_track_limit_violation(
 
     outcome: dict[str, Any] = {}
     failure: list[BaseException] = []
+    frozen: dict[str, Any] = {}
 
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_track_limit_injector")
@@ -1026,4 +1054,6 @@ def run_scenario_with_track_limit_violation(
         raise error
     result = RunOutcome(outcome)
     result.shutdown_escalations = escalations
+    result.frozen_at = frozen.get("at")
+    result.stop_context = frozen.get("context")
     return result

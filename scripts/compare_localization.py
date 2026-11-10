@@ -111,6 +111,22 @@ def last_live_error(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def error_at(
+    events: Iterable[Mapping[str, Any]], t: float
+) -> dict[str, Any] | None:
+    """The live evaluator's last error at or before sim time ``t`` (NaN
+    restored from null), or ``None`` when it had published none by then."""
+    last = None
+    for event in events:
+        if event["topic"] == ERROR_TOPIC and _stamp(event) <= t:
+            last = event["payload"]
+    if last is None:
+        return None
+    return {
+        key: math.nan if value is None else value for key, value in last.items()
+    }
+
+
 def score(
     estimates: list[Pose],
     truth: list[Pose],

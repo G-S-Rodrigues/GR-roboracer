@@ -9,6 +9,7 @@ read like plain English.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from .scenario_runner import (
     REPOSITORY_ROOT,
     run_scenario,
     run_scenario_with_track_limit_violation,
+    scenario_track_length,
     score_localization,
 )
 
@@ -32,6 +34,17 @@ LOCALIZATION_SCENARIO = "config/scenarios/spielberg.yaml"
 # these keywords are given was measured at (ADR 0006).
 LOCALIZATION_TIME_SCALE = 5.0
 LOCALIZATION_TIMEOUT_SECONDS = 400.0
+
+
+def _frozen_window_seconds() -> float:
+    """``scripts.frozen_pose.FROZEN_WINDOW_SECONDS``, imported lazily: tier 4
+    runs ``robot --pythonpath tests/lib``, where ``scripts`` is not importable
+    until the repository root is on the path."""
+    if str(REPOSITORY_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPOSITORY_ROOT))
+    from scripts.frozen_pose import FROZEN_WINDOW_SECONDS
+
+    return FROZEN_WINDOW_SECONDS
 
 
 def _output_root() -> Path:
@@ -139,6 +152,11 @@ class RacingTestKeywords:
             pose_source=pose_source,
             drive_on_estimate=closed_loop,
             launch_arguments=launch_arguments,
+            # A frozen pose ends the lap about 2 sim s after it stops, with a
+            # named verdict, instead of 400 s later with a TimeoutError
+            # (N1.3). Window and length from the one definition of each.
+            stop_on_frozen_pose=2 * _frozen_window_seconds(),
+            track_length=scenario_track_length(scenario),
         )
         self._localization = score_localization(recording)
         self._run_info = {
@@ -240,6 +258,52 @@ class RacingTestKeywords:
         except Exception:  # noqa: BLE001
             return {"shutdown_escalations": [], "frozen_at": None}
 
+    def _freeze_note(self) -> str:
+        """Why a lap that never finished stopped, when the pose froze: the
+        time and place, a collision or a latch, and the estimate's error
+        there. Empty when the pose never froze (the text stays today's);
+        never raises (a fixed fallback keeps the original assertion)."""
+        try:
+            frozen_at = getattr(self._metrics, "frozen_at", None)
+            if frozen_at is None:
+                return ""
+            t, s, d = frozen_at
+            context = getattr(self._metrics, "stop_context", None) or {}
+            where = (
+                f"ground truth frozen at sim {t:.2f} s, s {s:.1f}, d {d:.2f}"
+            )
+            if context.get("latched"):
+                verdict = (
+                    "pose frozen after a safety latch: a latch, not a collision"
+                )
+            else:
+                verdict = "the gym holds its state on a collision"
+            note = f"; {where}: {verdict}"
+            note += self._estimate_error_at(t)
+            if context.get("text"):
+                note += f" [{context['text']}]"
+            return note
+        except Exception:  # noqa: BLE001
+            return "; ground truth frozen (diagnostic unavailable)"
+
+    def _estimate_error_at(self, t: float) -> str:
+        """`; estimate lon +1.38 m, lat +0.02 m at the freeze`, from the
+        recording, or nothing when there is none to read."""
+        try:
+            from scripts.compare_localization import error_at, read_recording
+
+            if self._recording is None:
+                return ""
+            found = error_at(read_recording(self._recording), t)
+            if found is None:
+                return ""
+            lon, lat = found["longitudinal_error"], found["lateral_error"]
+            return (
+                f"; estimate lon {lon:+.2f} m, lat {lat:+.2f} m at the freeze"
+            )
+        except Exception:  # noqa: BLE001
+            return ""
+
     def _escalation_note(self) -> str:
         """`; shutdown escalations: <name> SIGKILL, ...` for a failure's text,
         or nothing when launch escalated nothing (the text stays today's)."""
@@ -282,6 +346,7 @@ class RacingTestKeywords:
         if actual != expected_bool:
             raise AssertionError(
                 f"expected lap_completed={expected_bool}, was {actual}"
+                + self._freeze_note()
                 + self._escalation_note()
             )
 
