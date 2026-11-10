@@ -809,6 +809,263 @@ def reference_points(segs: list[list[Sample]]) -> PointCheck:
     )
 
 
+# --- lateral windows and radius bins (part 1L increment 1) --------------------
+# A window is the frames of one steering lobe within WINDOW_BAND of its plateau.
+# Constants cite Step 2a's probe (2026-11-10, 10 rungs x 2, load 1-2).
+WINDOW_BAND = 0.9
+MIN_WINDOW_FRAMES = 5
+# Slip beyond this is longitudinal slip in the window, not a lateral limit.
+MAX_WINDOW_SLIP = 0.05
+# Linear-range a_y / a_kin was 0.94 (MAD 0.015, six rungs; P3): 0.94 - 3 MAD.
+SATURATION_RATIO = 0.895
+# The linear-range w_z ratio was 0.91-0.93 (P3): above 1.05 is over the
+# kinematic rate, which an understeering car cannot be.
+OVERSTEER_WZ_RATIO = 1.05
+# Saturated rungs' w_z and a_y ratios differed by at most 0.15 (P1).
+INCONSISTENT_GAP = 0.2
+# a_y lags the steering (the lobes last 0.1-0.17 s): a window whose median is
+# below the linear line but whose last third has reached it was still rising,
+# not saturated (P1: A 0.3 at 4.0 m/s, max 7.9 against a_kin 8.0).
+
+
+@dataclass(frozen=True)
+class LateralWindow:
+    rung: int
+    repeat: int
+    speed: float  # median wheel speed, m/s
+    steering: float  # median |actual steering|, rad
+    a_kin: float  # v^2 tan(d) / L, median over the frames
+    r_kin: float  # L / tan(d), median
+    ay: float  # IMU |a_y| window median
+    ay_ratio: float  # ay / a_kin
+    wz_ratio: float  # median |w_z| / (v tan(d) / L)
+    radius: float  # median path radius v / |w_z|
+    sideslip: float  # max |v_y / v_x|
+    slip: float  # median slip ratio
+    n: int
+    rising: bool  # a_y reached the linear line by the end of the window
+    label: str  # linear | saturated | oversteer | inconsistent
+
+
+def _lobes(seg: list[Sample]) -> list[list[tuple[Sample, Sample]]]:
+    """Runs of (previous, current) frame pairs with one steering sign and
+    |steering| above TURN_MIN_ANGLE."""
+    lobes: list[list[tuple[Sample, Sample]]] = []
+    current: list[tuple[Sample, Sample]] = []
+    sign = 0.0
+    for prev, cur in zip(seg, seg[1:], strict=False):
+        s = math.copysign(1.0, cur.steering)
+        if abs(cur.steering) > TURN_MIN_ANGLE and (not current or s == sign):
+            current.append((prev, cur))
+            sign = s
+        elif current:
+            lobes.append(current)
+            current = []
+    if current:
+        lobes.append(current)
+    return lobes
+
+
+def _window_label(ay_ratio: float, wz_ratio: float, rising: bool) -> str:
+    if ay_ratio >= SATURATION_RATIO:
+        return "linear"
+    if wz_ratio > OVERSTEER_WZ_RATIO:
+        return "oversteer"
+    if rising:
+        return "linear"  # understeer gradient: a_y has not settled
+    if abs(ay_ratio - wz_ratio) > INCONSISTENT_GAP:
+        return "inconsistent"
+    return "saturated"
+
+
+def lateral_windows(
+    segs: list[list[Sample]],
+    wheelbase: float,
+    wheel_radius: float,
+    rungs: int,
+) -> list[LateralWindow]:
+    """One window per steering lobe, in segment order. Segment i is rung
+    i % rungs of repeat i // rungs (the layout `_by_repeat` assumes). Speed
+    is the wheel speed, slip the wheel against the body; a window of fewer
+    than MIN_WINDOW_FRAMES frames, or with |slip| >= MAX_WINDOW_SLIP, is not
+    used. The sensors are read as F5 found them: a_y is the body's, so
+    |a_y| / a_kin is 1 in the linear range (0.94 measured)."""
+    out: list[LateralWindow] = []
+    for index, seg in enumerate(segs):
+        for lobe in _lobes(seg):
+            peak = max(abs(cur.steering) for _, cur in lobe)
+            frames = []
+            for prev, cur in lobe:
+                w = wheel_speed(prev, cur, wheel_radius)
+                if w is None or abs(cur.steering) < WINDOW_BAND * peak:
+                    continue
+                frames.append((cur, w))
+            if len(frames) < MIN_WINDOW_FRAMES:
+                continue
+            tans = [math.tan(abs(c.steering)) for c, _ in frames]
+            a_kin = [
+                w * w * t / wheelbase
+                for (_, w), t in zip(frames, tans, strict=True)
+            ]
+            r_kin = [wheelbase / t for t in tans]
+            wz_kin = [
+                w * t / wheelbase
+                for (_, w), t in zip(frames, tans, strict=True)
+            ]
+            slip = statistics.median(slip_ratio(w, c.vx) for c, w in frames)
+            if abs(slip) >= MAX_WINDOW_SLIP:
+                continue
+            ay_values = [abs(c.ay) for c, _ in frames]
+            third = max(1, len(ay_values) // 3)
+            last = statistics.median(ay_values[-third:])
+            ay = statistics.median(ay_values)
+            a_kin_m = statistics.median(a_kin)
+            wz_ratio = statistics.median(
+                abs(c.wz) / k for (c, _), k in zip(frames, wz_kin, strict=True)
+            )
+            ay_ratio = ay / a_kin_m
+            rising = last / a_kin_m >= SATURATION_RATIO
+            speeds = [w for _, w in frames]
+            out.append(
+                LateralWindow(
+                    rung=index % rungs,
+                    repeat=index // rungs,
+                    speed=statistics.median(speeds),
+                    steering=statistics.median(
+                        abs(c.steering) for c, _ in frames
+                    ),
+                    a_kin=a_kin_m,
+                    r_kin=statistics.median(r_kin),
+                    ay=ay,
+                    ay_ratio=ay_ratio,
+                    wz_ratio=wz_ratio,
+                    radius=statistics.median(
+                        w / abs(c.wz) for c, w in frames if abs(c.wz) > 1e-9
+                    ),
+                    sideslip=max(abs(c.vy / c.vx) for c, _ in frames if c.vx),
+                    slip=slip,
+                    n=len(frames),
+                    rising=rising,
+                    label=_window_label(ay_ratio, wz_ratio, rising),
+                )
+            )
+    return out
+
+
+@dataclass(frozen=True)
+class SpeedCell:
+    speed: float  # median wheel speed of the cell's windows, m/s
+    plateau: float  # median a_y of its saturated windows
+    n: int
+    spread: float  # (max - min) / mean over repeats
+
+
+@dataclass(frozen=True)
+class RadiusBin:
+    radius: float  # the bin's centre, m
+    n: int  # windows in the bin
+    peak: Estimate | None  # per-repeat peaks: value, repeats, spread
+    bound: str  # exact | lower
+    post_cliff: Estimate | None  # saturated windows' median a_y
+    cells: tuple[SpeedCell, ...]
+    speed_dependent: bool
+
+
+def _bin_index(radius: float, centres: tuple[float, ...]) -> int:
+    """Edges at the geometric means of neighbouring centres, open at both
+    ends."""
+    for i, (a, b) in enumerate(zip(centres, centres[1:], strict=False)):
+        if radius < math.sqrt(a * b):
+            return i
+    return len(centres) - 1
+
+
+def _peak(windows: list[LateralWindow]) -> tuple[float | None, bool]:
+    """(peak a_y, exact): the larger of the highest linear window and the
+    onset window (the lowest-demand saturated one). Exact iff saturation was
+    seen and the onset window is the peak; otherwise a lower bound."""
+    linear = [w.ay for w in windows if w.label == "linear"]
+    saturated = [w for w in windows if w.label == "saturated"]
+    if not linear and not saturated:
+        return None, False
+    if not saturated:
+        return max(linear), False
+    onset = min(saturated, key=lambda w: w.a_kin).ay
+    top = max([*linear, onset])
+    return top, onset >= top
+
+
+def lateral_by_radius(
+    windows: list[LateralWindow], centres: tuple[float, ...]
+) -> list[RadiusBin]:
+    """Windows binned by measured path radius, one `RadiusBin` per centre.
+    `peak` is the median over repeats of each repeat's `_peak`; the bin is
+    `exact` iff every repeat's peak is exact. `speed_dependent` is set when
+    two speed cells' plateaus differ by more than the larger spread."""
+    grouped: list[list[LateralWindow]] = [[] for _ in centres]
+    for w in windows:
+        grouped[_bin_index(w.radius, centres)].append(w)
+    bins = []
+    for centre, members in zip(centres, grouped, strict=True):
+        repeats = sorted({w.repeat for w in members})
+        peaks, exact = [], []
+        for repeat in repeats:
+            value, ok = _peak([w for w in members if w.repeat == repeat])
+            if value is not None:
+                peaks.append(value)
+                exact.append(ok)
+        peak = None
+        if peaks:
+            peak = Estimate(
+                statistics.median(peaks),
+                len(peaks),
+                _spread(peaks) or 0.0,
+            )
+        saturated = [w for w in members if w.label == "saturated"]
+        post = None
+        if saturated:
+            values = [w.ay for w in saturated]
+            post = Estimate(
+                statistics.median(values), len(values), _spread(values) or 0.0
+            )
+        by_speed: dict[float, list[LateralWindow]] = {}
+        for w in saturated:
+            by_speed.setdefault(round(w.speed, 1), []).append(w)
+        cells = []
+        for speed in sorted(by_speed):
+            ws = by_speed[speed]
+            plateaus = [
+                statistics.median(x.ay for x in ws if x.repeat == r)
+                for r in sorted({x.repeat for x in ws})
+            ]
+            cells.append(
+                SpeedCell(
+                    speed=statistics.median(w.speed for w in ws),
+                    plateau=statistics.median(plateaus),
+                    n=len(ws),
+                    spread=_spread(plateaus) or 0.0,
+                )
+            )
+        dependent = any(
+            abs(a.plateau - b.plateau)
+            > max(a.spread, b.spread) * (a.plateau + b.plateau) / 2.0
+            for i, a in enumerate(cells)
+            for b in cells[i + 1 :]
+        )
+        bins.append(
+            RadiusBin(
+                radius=centre,
+                n=len(members),
+                peak=peak,
+                bound="exact" if peaks and all(exact) else "lower",
+                post_cliff=post,
+                cells=tuple(cells),
+                speed_dependent=dependent,
+            )
+        )
+    return bins
+
+
 def _recorder():
     """tools/autodrive_record.py, loaded by path (the two share a folder)."""
     path = Path(__file__).resolve().with_name("autodrive_record.py")

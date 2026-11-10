@@ -803,3 +803,231 @@ def test_check_2655_record_and_analyse_know_the_lateral_schedule(
             ["analyse", "--recording", str(bad), "--source", str(SOURCE),
              "--out", str(tmp_path / "y.yaml")]
         )  # fmt: skip
+
+
+# --- part 1L increment 1: steady-delta windows and radius bins ----------------
+LAT_L = 0.324
+LAT_R = 0.059
+LAT_DT = 0.01
+
+
+def _lat_segment(
+    tool,
+    v: float,
+    delta: float,
+    ay,
+    wz,
+    n: int = 12,
+    sign: float = 1.0,
+    wheel_scale: float = 1.0,
+):
+    """One lobe: 3 rest frames, a two-frame steering ramp, `n` frames at the
+    steering `delta` (rad) with IMU a_y `ay` and yaw rate `wz` (a number, or
+    one per frame), a two-frame return, the car at `v` with its wheels at
+    `wheel_scale` x v. Lap time runs 0.01 s per frame."""
+    ays = list(ay) if isinstance(ay, list | tuple) else [ay] * n
+    wzs = list(wz) if isinstance(wz, list | tuple) else [wz] * n
+    steering = [0.0] * 3 + [0.4 * delta, 0.7 * delta] + [delta] * n
+    steering += [0.5 * delta, 0.0]
+    frames = []
+    angle = 0.0
+    for i, st in enumerate(steering):
+        k = i - 5
+        in_window = 0 <= k < n
+        frames.append(
+            tool.Sample(
+                lap_time=i * LAT_DT, throttle=0.1, steering=sign * st,
+                x=0.0, y=0.0, z=0.07, yaw=0.0, vx=v, vy=0.0,
+                wz=sign * (wzs[k] if in_window else 0.0), collisions=0,
+                ax=0.0, ay=sign * (ays[k] if in_window else 0.0),
+                wheel_angles=(angle, angle),
+            )
+        )  # fmt: skip
+        angle += wheel_scale * v * LAT_DT / LAT_R
+    return frames
+
+
+def _kin(v: float, delta: float) -> tuple[float, float]:
+    import math
+
+    return v * v * math.tan(delta) / LAT_L, LAT_L / math.tan(delta)
+
+
+def test_check_2665_lateral_windows_label_linear_saturated_oversteer() -> None:
+    """CHECK-2665: per steady-steering window (frames within 90 % of the
+    lobe's plateau, at least 5, |slip| < 0.05), the kinematic demand a_kin =
+    v^2 tan(d) / L and r_kin = L / tan(d) (v the wheel speed), the IMU a_y
+    window median, the w_z ratio, the path radius v / w_z, the sideslip and
+    the label. Hand oracle: v 3.0, d 0.15708 (A 0.3): tan d = 0.158384, a_kin
+    4.3996, r_kin 2.0457. A flat 7.0 at v 4.5 is `saturated` (a_kin 9.899,
+    ratio 0.707); the same demand met by an a_y that is still rising and
+    reaches the linear line (0.895 a_kin) in the window's last third is
+    `linear` (understeer gradient: the lobe ended before a_y settled); w_z
+    above the kinematic rate with a_y below it is `oversteer`; a one-frame
+    4.4 spike moves no median; a spinning wheel (slip 0.23) or four frames
+    give no window."""
+    import math
+
+    tool = _tool()
+    assert tool.SATURATION_RATIO == 0.895
+    delta = 0.3 * 0.5236
+
+    # Linear: a_y 0.94 a_kin, w_z 0.92 of the kinematic rate.
+    a_kin, r_kin = _kin(3.0, delta)
+    assert _approx(a_kin, 4.3996, 0.002) and _approx(r_kin, 2.0457, 0.002)
+    seg = _lat_segment(tool, 3.0, delta, 0.94 * a_kin, 0.92 * 3.0 / r_kin)
+    (w,) = tool.lateral_windows([seg], LAT_L, LAT_R, rungs=1)
+    assert w.label == "linear" and w.n == 12 and w.rung == 0
+    assert _approx(w.a_kin, 4.3996, 0.002) and _approx(w.r_kin, 2.0457, 0.002)
+    assert _approx(w.ay, 0.94 * 4.3996, 0.002) and _approx(
+        w.ay_ratio, 0.94, 0.002
+    )
+    assert _approx(w.wz_ratio, 0.92, 0.002)
+    assert _approx(w.radius, 2.0457 / 0.92, 0.002) and abs(w.slip) < 1e-6
+    assert _approx(w.speed, 3.0, 0.002)
+    assert not _approx(w.a_kin, 4.3996 * 1.1, 0.002)
+    # The sign of the lobe does not matter.
+    mirrored = _lat_segment(
+        tool, 3.0, delta, 0.94 * a_kin, 0.92 * 3.0 / r_kin, sign=-1.0
+    )
+    (n,) = tool.lateral_windows([mirrored], LAT_L, LAT_R, rungs=1)
+    assert _approx(n.ay, w.ay, 1e-6) and n.label == "linear"
+
+    # Saturated flat at 7.0 (v 4.5): peak 7.0, and a one-frame spike is no
+    # median.
+    a_kin, r_kin = _kin(4.5, delta)
+    assert _approx(a_kin, 9.899, 0.002)
+    flat = [7.0] * 12
+    spiked = list(flat)
+    spiked[6] = 4.4
+    for ay in (flat, spiked):
+        seg = _lat_segment(tool, 4.5, delta, ay, [a / 4.5 for a in ay])
+        (s,) = tool.lateral_windows([seg], LAT_L, LAT_R, rungs=1)
+        assert s.label == "saturated", s
+        assert _approx(s.ay, 7.0, 0.001) and _approx(s.ay_ratio, 0.707, 0.002)
+        assert not s.rising
+
+    # A slow rise that never reaches the linear line is still saturated.
+    creep = [6.5 + 0.06 * k for k in range(12)]  # 6.5 .. 7.16
+    seg = _lat_segment(tool, 4.5, delta, creep, [a / 4.5 for a in creep])
+    (c,) = tool.lateral_windows([seg], LAT_L, LAT_R, rungs=1)
+    assert c.label == "saturated" and not c.rising, c
+
+    # Understeer gradient: a_y still rising through the window while the
+    # ratio is below the threshold: linear, not saturated.
+    rising = [5.0 + 0.5 * k for k in range(12)]  # 5.0 .. 10.5, median 7.75
+    seg = _lat_segment(tool, 4.5, delta, rising, [a / 4.5 for a in rising])
+    (r,) = tool.lateral_windows([seg], LAT_L, LAT_R, rungs=1)
+    assert r.ay_ratio < tool.SATURATION_RATIO and r.rising
+    assert r.label == "linear", r
+
+    # Oversteer: w_z at 1.2 of the kinematic rate, a_y at 0.6 of a_kin.
+    seg = _lat_segment(tool, 4.5, delta, 0.6 * a_kin, 1.2 * 4.5 / r_kin)
+    (o,) = tool.lateral_windows([seg], LAT_L, LAT_R, rungs=1)
+    assert o.label == "oversteer", o
+    # a_y low but w_z low by a different amount: the two disagree.
+    seg = _lat_segment(tool, 4.5, delta, 0.5 * a_kin, 0.8 * 4.5 / r_kin)
+    (i,) = tool.lateral_windows([seg], LAT_L, LAT_R, rungs=1)
+    assert i.label == "inconsistent", i
+
+    # Not used: spinning wheels (slip 0.23), or fewer than 5 frames.
+    spin = _lat_segment(tool, 3.0, delta, 4.0, 1.0, wheel_scale=1.3)
+    assert tool.lateral_windows([spin], LAT_L, LAT_R, rungs=1) == []
+    short = _lat_segment(tool, 3.0, delta, 4.0, 1.0, n=4)
+    assert tool.lateral_windows([short], LAT_L, LAT_R, rungs=1) == []
+    # rung and repeat come from the segment's place in the layout.
+    segs = [_lat_segment(tool, 3.0, delta, 4.0, 1.0) for _ in range(6)]
+    got = tool.lateral_windows(segs, LAT_L, LAT_R, rungs=3)
+    assert [(g.repeat, g.rung) for g in got] == [
+        (0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2),
+    ]  # fmt: skip
+    assert math.isfinite(got[0].sideslip)
+
+
+def _bin_segments(tool, factor: float = 1.0, repeats: int = 2):
+    """For each radius-bin centre R_c (1.00, 1.21, 1.52, 2.05 m) and f(R) =
+    9 + 1.5 R: a linear window (a_y 0.94 a_kin, 0.25 of f) and a saturated
+    one (a_y f, demand 1.4 f) at the speed whose path radius v^2 / f is R_c.
+    `factor` scales every IMU a_y but not the yaw rate, so the path radius
+    (and the bin) stays. One rung per (centre, kind), `repeats` times."""
+    import math
+
+    segs = []
+    for _ in range(repeats):
+        for centre in (1.00, 1.21, 1.52, 2.05):
+            f = 9.0 + 1.5 * centre
+            v = math.sqrt(centre * f)
+            for kind in ("linear", "saturated"):
+                if kind == "linear":
+                    speed = 0.5 * v
+                    r_kin = 0.94 * centre
+                    demand = speed * speed / r_kin
+                    ay = 0.94 * demand
+                else:
+                    speed = v
+                    r_kin = centre / 1.4
+                    demand = speed * speed / r_kin
+                    ay = f
+                delta = math.atan(LAT_L / r_kin)
+                segs.append(
+                    _lat_segment(
+                        tool, speed, delta, factor * ay, ay / speed,
+                    )
+                )  # fmt: skip
+    return segs
+
+
+def test_check_2675_lateral_by_radius_recovers_f_of_r() -> None:
+    """CHECK-2675: windows binned by their measured path radius v / w_z, bins
+    centred on the schedule's R_kin (1.00, 1.21, 1.52, 2.05 m) with edges at
+    their geometric means (open at both ends). Per bin: `peak` (the larger of
+    the highest linear window and the onset window, the lowest-demand
+    saturated one), `bound` (`exact` iff saturation was seen and the onset
+    window is the peak, else `lower`), `post_cliff` (median of the saturated
+    windows), the relative spread of the peak over repeats, `n`, and per-speed
+    cells with `speed_dependent` when two cells' plateaus in one bin differ
+    by more than their spreads. A synthetic f(R) = 9 + 1.5 R is recovered at
+    each centre; a_y x 2 doubles the peak (nothing saturates then, so it is
+    a lower bound)."""
+    tool = _tool()
+    centres = (1.00, 1.21, 1.52, 2.05)
+    segs = _bin_segments(tool)
+    windows = tool.lateral_windows(segs, LAT_L, LAT_R, rungs=8)
+    assert len(windows) == 16
+    bins = tool.lateral_by_radius(windows, centres)
+    assert [b.radius for b in bins] == list(centres)
+    for b, centre in zip(bins, centres, strict=True):
+        f = 9.0 + 1.5 * centre
+        assert b.n == 4 and b.bound == "exact", b
+        assert _approx(b.peak.value, f, 0.02), (centre, b.peak, f)
+        assert _approx(b.post_cliff.value, f, 0.02) and b.post_cliff.n == 2
+        assert b.peak.spread == 0.0 and not b.speed_dependent
+        assert b.peak.n == 2  # one value per repeat
+    doubled = tool.lateral_by_radius(
+        tool.lateral_windows(
+            _bin_segments(tool, factor=2.0), LAT_L, LAT_R, rungs=8
+        ),
+        centres,
+    )
+    for d, centre in zip(doubled, centres, strict=True):
+        f = 9.0 + 1.5 * centre
+        assert d.bound == "lower" and d.post_cliff is None, d
+        assert _approx(d.peak.value, 2.0 * f, 0.02), (centre, d.peak)
+
+    # Speed dependence: two plateaus at one radius (R 1.5: v 3.0 at 6.0 and
+    # v 3.3 at 7.26 m/s^2) differ by more than their spreads (0, one value
+    # per repeat); equal plateaus do not.
+    def cell(v, ay, delta=0.5):
+        return _lat_segment(tool, v, delta, ay, ay / v)
+
+    split = [cell(3.0, 6.0), cell(3.3, 7.26)] * 2
+    (b,) = tool.lateral_by_radius(
+        tool.lateral_windows(split, LAT_L, LAT_R, rungs=2), (1.52,)
+    )
+    assert b.speed_dependent and len(b.cells) == 2, b
+    assert [round(c.speed, 1) for c in b.cells] == [3.0, 3.3]
+    same = [cell(3.0, 6.0), cell(3.1, 6.0)] * 2  # R 1.50 and 1.60
+    (b,) = tool.lateral_by_radius(
+        tool.lateral_windows(same, LAT_L, LAT_R, rungs=2), (1.52,)
+    )
+    assert not b.speed_dependent, b
