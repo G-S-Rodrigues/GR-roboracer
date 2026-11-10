@@ -239,7 +239,7 @@ def structural_failures(records, expected) -> list[str]:
     return failures
 
 
-def _cell(value) -> str:
+def cell(value) -> str:
     if value is None:
         return "-"
     if isinstance(value, float):
@@ -292,5 +292,5 @@ def render(records) -> str:
                     cells += ["-"] * (len(RENDER_COLUMNS) - 4)
                 else:
                     cells = [row[c] for c in RENDER_COLUMNS]
-                lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
+                lines.append("| " + " | ".join(cell(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"

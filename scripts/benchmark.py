@@ -28,6 +28,7 @@ for _path in (REPO, REPO / "tests" / "lib"):
 
 from scripts import benchmark_runs  # noqa: E402
 from scripts.changed_scope import stack_from_dict  # noqa: E402
+from scripts.pose_source_report import cell  # noqa: E402
 
 # reference_stack role -> the benchmark role that compares its implementations.
 BENCHMARKED_ROLES = {"pose_source": "localization", "planner": "planning"}
@@ -92,3 +93,33 @@ def dispatch_roles(role: str) -> list[str]:
     raise ValueError(
         f"unknown role {role!r}: expected one of {ROLE_ORDER} or all"
     )
+
+
+def lap_cell(run) -> str:
+    """A planning run as a table cell: the lap time, ``DNF <m> m`` with the
+    distance reached, or the outcome word. A DNF is never a time."""
+    if run is None:
+        return "-"
+    if run["outcome"] == "completed":
+        return f"{run['metrics']['lap_time']:.2f}"
+    if run["outcome"] == "dnf":
+        return f"DNF {run['distance_m']:.1f} m"
+    return str(run["outcome"])
+
+
+def pivot(table: Mapping, row_keys, seeds, cell_of=cell) -> str:
+    """An implementation x seed markdown table.
+
+    ``table`` maps ``(row_key, seed)`` to a value; ``cell_of`` formats it. Rows
+    appear in ``row_keys`` order and columns in ``seeds`` order: never sorted
+    by value, because nothing here ranks. A missing (row, seed) is ``-``."""
+    header = ["implementation", *map(str, seeds)]
+    lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
+    for key in row_keys:
+        label = " / ".join(key) if isinstance(key, tuple) else str(key)
+        cells = [
+            cell_of(table[(key, seed)]) if (key, seed) in table else "-"
+            for seed in seeds
+        ]
+        lines.append("| " + " | ".join([label, *cells]) + " |")
+    return "\n".join(lines) + "\n"

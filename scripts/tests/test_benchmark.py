@@ -234,3 +234,46 @@ def test_check_2710_a_new_planner_fails_naming_it() -> None:
 def test_check_2710_ground_truth_is_named_as_not_an_estimator() -> None:
     reason = benchmark.NOT_BENCHMARKED["pose_source"]["ground_truth"]
     assert "not an estimator" in reason
+
+
+# -- CHECK-2720 ---------------------------------------------------------------
+
+
+def test_check_2720_rows_keep_key_order_never_value_order() -> None:
+    table = {("a", 1): 9.0, ("b", 1): 1.0, ("c", 1): 5.0}
+    out = benchmark.pivot(table, ["a", "b", "c"], [1])
+    lines = [line for line in out.splitlines() if line.startswith("| ")]
+    assert [line.split("|")[1].strip() for line in lines[1:]] == ["a", "b", "c"]
+    reversed_out = benchmark.pivot(table, ["c", "b", "a"], [1])
+    assert reversed_out != out
+
+
+def test_check_2720_missing_seed_is_a_dash() -> None:
+    out = benchmark.pivot({("a", 1): 2.5}, ["a"], [1, 2])
+    assert out.splitlines()[0].split("|")[2:4] == [" 1 ", " 2 "]
+    assert "| a | 2.5 | - |" in out
+
+
+def test_check_2720_tuple_row_keys_join_with_slash() -> None:
+    out = benchmark.pivot(
+        {(("default", "centerline"), 1): "x"}, [("default", "centerline")], [1]
+    )
+    assert "| default / centerline | x |" in out
+
+
+def test_check_2720_lap_cell() -> None:
+    done = {"outcome": "completed", "metrics": {"lap_time": 12.3412}}
+    dnf = {"outcome": "dnf", "distance_m": 52.31}
+    assert benchmark.lap_cell(done) == "12.34"
+    assert benchmark.lap_cell(dnf) == "DNF 52.3 m"
+    for word in ("latched", "infrastructure", "budget"):
+        assert benchmark.lap_cell({"outcome": word}) == word
+    assert benchmark.lap_cell(None) == "-"
+
+
+def test_check_2720_cell_none_is_dash_and_nan_stays_nan() -> None:
+    from scripts.pose_source_report import cell  # noqa: PLC0415
+
+    assert cell(None) == "-"
+    assert cell(float("nan")) == "nan"
+    assert cell(0.123456) == "0.123"
