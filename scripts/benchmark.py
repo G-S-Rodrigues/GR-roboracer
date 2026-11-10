@@ -94,6 +94,41 @@ def benchmark_roles(
     return [role for role in ROLE_ORDER if role in wanted], unbenchmarked
 
 
+# THE trigger list of the Benchmark workflow (.github/workflows/benchmark.yaml
+# `paths`, pinned by CHECK-2770). A change to one of these runs the roles it
+# names; `roles` also runs a role for each implementation the diff adds to the
+# reference stack. Globs are GitHub's: `**` crosses directories. To trigger on
+# another path, add one line here and the same line to the workflow.
+STACK_FILE = "config/reference_stack.yaml"
+TRIGGER_PATHS: dict[str, tuple[str, ...]] = {
+    # an added implementation (ADR 0008 section 5, Q9): roles come from the diff
+    STACK_FILE: (),
+    # a new or changed committed Spielberg line is a planning method
+    # (owner call, 2026-11-10): it lands under the one optimized_raceline
+    "config/racelines/spielberg/**/*.csv": ("planning",),
+    # the runner's own edits run once, so a harness change cannot bit-rot
+    "scripts/benchmark_runs.py": ROLE_ORDER,
+}
+
+
+def _glob_matches(glob: str, path: str) -> bool:
+    import fnmatch  # noqa: PLC0415
+
+    return fnmatch.fnmatchcase(path, glob.replace("**/", "*"))
+
+
+def triggered_roles(changed: Sequence[str]) -> list[str]:
+    """The benchmark roles a list of changed paths triggers, in run order."""
+    wanted = {
+        role
+        for path in changed
+        for glob, roles in TRIGGER_PATHS.items()
+        for role in roles
+        if _glob_matches(glob, path)
+    }
+    return [role for role in ROLE_ORDER if role in wanted]
+
+
 def dispatch_roles(role: str) -> list[str]:
     """What a manual dispatch of ``role`` runs: ``all`` is both roles."""
     if role == "all":
@@ -181,6 +216,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=None,
         help="a flattened numbers key, e.g. live.ate_rmse; repeatable",
+    )
+    roles = commands.add_parser(
+        "roles", help="the benchmark roles a PR triggers, as a JSON list"
+    )
+    roles.add_argument("--base-stack", type=Path)
+    roles.add_argument(
+        "--stack", type=Path, default=REPO / STACK_FILE, help="the head stack"
+    )
+    roles.add_argument(
+        "--changed",
+        type=Path,
+        help="a file of changed paths, one per line (git diff --name-only)",
+    )
+    roles.add_argument(
+        "--dispatch", choices=(*ROLE_ORDER, "all"), help="a manual run"
     )
     return parser
 
@@ -562,12 +612,42 @@ def _command_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_roles(args: argparse.Namespace) -> int:
+    import yaml  # noqa: PLC0415
+
+    if args.dispatch:
+        print(json.dumps(dispatch_roles(args.dispatch)))
+        return 0
+    if args.base_stack is None:
+        build_parser().error("roles needs --base-stack or --dispatch")
+    base = yaml.safe_load(args.base_stack.read_text(encoding="utf-8"))
+    head = yaml.safe_load(args.stack.read_text(encoding="utf-8"))
+    roles, unbenchmarked = benchmark_roles(added_implementations(base, head))
+    changed = []
+    if args.changed:
+        changed = [
+            line.strip()
+            for line in args.changed.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    wanted = set(roles) | set(triggered_roles(changed))
+    for role, name in unbenchmarked:
+        print(
+            f"no benchmark for role {role} ({name} added); ADR 0008 section 5",
+            file=sys.stderr,
+        )
+    print(json.dumps([role for role in ROLE_ORDER if role in wanted]))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
         return _command_run(args)
     if args.command == "render":
         return _command_render(args)
+    if args.command == "roles":
+        return _command_roles(args)
     if args.command == "history":
         text, skipped = history(args.dirs, args.field)
         for path in skipped:

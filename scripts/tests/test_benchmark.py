@@ -677,3 +677,153 @@ def test_check_2760_non_report_json_is_skipped_and_named(
     dirs = _history_tree(tmp_path)
     benchmark.main(["history", *map(str, dirs)])
     assert "other.json" in capsys.readouterr().err
+
+
+# -- CHECK-2700 (roles command and path triggers) ------------------------------
+
+
+def _write_stacks(tmp_path: Path, base: dict, head: dict):
+    import yaml  # noqa: PLC0415
+
+    (tmp_path / "base.yaml").write_text(yaml.safe_dump(base), encoding="utf-8")
+    (tmp_path / "head.yaml").write_text(yaml.safe_dump(head), encoding="utf-8")
+    return tmp_path / "base.yaml", tmp_path / "head.yaml"
+
+
+def _roles(tmp_path, capsys, base, head, changed=None, extra=()):
+    base_file, head_file = _write_stacks(tmp_path, base, head)
+    argv = [
+        "roles",
+        "--base-stack",
+        str(base_file),
+        "--stack",
+        str(head_file),
+        *extra,
+    ]
+    if changed is not None:
+        listing = tmp_path / "changed.txt"
+        listing.write_text("\n".join(changed) + "\n", encoding="utf-8")
+        argv += ["--changed", str(listing)]
+    assert benchmark.main(argv) == 0
+    shown = capsys.readouterr()
+    import json  # noqa: PLC0415
+
+    return json.loads(shown.out), shown.err
+
+
+def test_check_2700_roles_command_prints_json_and_warns(
+    tmp_path, capsys
+) -> None:
+    head = _stack(pose=("amcl", "far_lio"), ctrl=("mpc",))
+    roles, err = _roles(tmp_path, capsys, _stack(), head)
+    assert roles == ["localization"]
+    assert "controller" in err and "mpc" in err
+
+
+def test_check_2700_roles_nothing_added_is_empty(tmp_path, capsys) -> None:
+    roles, err = _roles(tmp_path, capsys, _stack(), _stack())
+    assert roles == [] and err == ""
+
+
+def test_check_2700_a_changed_spielberg_raceline_csv_runs_planning(
+    tmp_path, capsys
+) -> None:
+    changed = ["config/racelines/spielberg/f1tenth-default-v1/new_line.csv"]
+    roles, _ = _roles(tmp_path, capsys, _stack(), _stack(), changed)
+    assert roles == ["planning"]
+
+
+def test_check_2700_the_raceline_yaml_alone_or_another_track_does_not(
+    tmp_path, capsys
+) -> None:
+    changed = [
+        "config/racelines/spielberg/f1tenth-default-v1/tum_mintime.yaml",
+        "config/racelines/porto/autodrive-roboracer-fast-v1/tum_mintime.csv",
+    ]
+    roles, _ = _roles(tmp_path, capsys, _stack(), _stack(), changed)
+    assert roles == []
+
+
+def test_check_2700_a_runner_change_runs_both_roles(tmp_path, capsys) -> None:
+    roles, _ = _roles(
+        tmp_path, capsys, _stack(), _stack(), ["scripts/benchmark_runs.py"]
+    )
+    assert roles == ["localization", "planning"]
+
+
+def test_check_2700_triggers_combine_in_role_order(tmp_path, capsys) -> None:
+    changed = ["config/racelines/spielberg/v/x.csv"]
+    head = _stack(pose=("amcl", "far_lio"))
+    roles, _ = _roles(tmp_path, capsys, _stack(), head, changed)
+    assert roles == ["localization", "planning"]
+
+
+def test_check_2700_roles_dispatch_expands_all(tmp_path, capsys) -> None:
+    base_file, _ = _write_stacks(tmp_path, _stack(), _stack())
+    assert benchmark.main(["roles", "--dispatch", "all"]) == 0
+    import json  # noqa: PLC0415
+
+    assert json.loads(capsys.readouterr().out) == ["localization", "planning"]
+    assert benchmark.main(["roles", "--dispatch", "planning"]) == 0
+    assert json.loads(capsys.readouterr().out) == ["planning"]
+
+
+# -- CHECK-2770 ---------------------------------------------------------------
+
+WORKFLOWS = ROOT / ".github" / "workflows"
+
+
+def _workflow(name: str) -> dict:
+    import yaml  # noqa: PLC0415
+
+    return yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
+
+
+def _triggers(doc: dict) -> dict:
+    # PyYAML reads the key `on:` as the boolean True.
+    return doc.get("on", doc.get(True))
+
+
+def test_check_2770_benchmark_triggers() -> None:
+    triggers = _triggers(_workflow("benchmark.yaml"))
+    assert set(triggers) == {"pull_request", "workflow_dispatch"}
+    assert set(triggers["pull_request"]["paths"]) == set(
+        benchmark.TRIGGER_PATHS
+    )
+    role = triggers["workflow_dispatch"]["inputs"]["role"]
+    assert role["type"] == "choice"
+    assert set(role["options"]) == {"localization", "planning", "all"}
+
+
+def test_check_2770_trigger_paths_are_one_list() -> None:
+    assert benchmark.STACK_FILE in benchmark.TRIGGER_PATHS
+    assert "scripts/benchmark_runs.py" in benchmark.TRIGGER_PATHS
+    assert "config/racelines/spielberg/**/*.csv" in benchmark.TRIGGER_PATHS
+
+
+def test_check_2770_every_job_name_says_non_blocking() -> None:
+    jobs = _workflow("benchmark.yaml")["jobs"]
+    assert jobs
+    for key, job in jobs.items():
+        assert "(non-blocking)" in job["name"], key
+
+
+def test_check_2770_ci_workflow_never_names_the_benchmark() -> None:
+    text = (WORKFLOWS / "ci.yaml").read_text(encoding="utf-8")
+    for needle in (
+        "scripts/benchmark.py",
+        "benchmark_runs",
+        "pose-source-report",
+        "test_sim_5050",
+        "test_sim_5510",
+    ):
+        assert needle not in text, needle
+
+
+def test_check_2770_no_nightly_test_imports_the_benchmark() -> None:
+    offenders = [
+        path.name
+        for path in (ROOT / "tests" / "nightly").glob("*.py")
+        if "benchmark" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
