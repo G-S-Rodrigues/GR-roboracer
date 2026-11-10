@@ -99,11 +99,18 @@ void EventRecorder::record(const std::string &topic,
     }
     const auto seconds = timestamp_nanoseconds / nanoseconds_per_second;
     const auto nanoseconds = timestamp_nanoseconds % nanoseconds_per_second;
-    output_ << "{\"record_type\":\"event\",\"stamp\":{\"sec\":" << seconds
-            << ",\"nanosec\":" << nanoseconds << "},\"topic\":\""
-            << escape_json(topic) << "\",\"message_type\":\""
-            << escape_json(message_type) << "\",\"payload\":" << json_payload
-            << "}\n";
+    // One record is one write and one flush: a process launch SIGKILLs never
+    // runs the destructor, and a record split across the stream buffer's
+    // boundary would leave a cut last line that read_recording rejects.
+    std::ostringstream line;
+    line << "{\"record_type\":\"event\",\"stamp\":{\"sec\":" << seconds
+         << ",\"nanosec\":" << nanoseconds << "},\"topic\":\""
+         << escape_json(topic) << "\",\"message_type\":\""
+         << escape_json(message_type) << "\",\"payload\":" << json_payload
+         << "}\n";
+    const std::string text = line.str();
+    output_.write(text.data(), static_cast<std::streamsize>(text.size()));
+    output_.flush();
     if (!output_) {
         throw std::runtime_error("cannot write recording event");
     }
