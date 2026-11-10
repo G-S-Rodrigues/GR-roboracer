@@ -47,7 +47,7 @@ NOT_BENCHMARKED = {
     "pose_source": {
         "ground_truth": (
             "not an estimator; publishes no composed /localization/odom "
-            "(SIM-5510 docstring)"
+            "(pose_source_report)"
         )
     }
 }
