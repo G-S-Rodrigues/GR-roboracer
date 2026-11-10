@@ -277,3 +277,249 @@ def test_check_2720_cell_none_is_dash_and_nan_stays_nan() -> None:
     assert cell(None) == "-"
     assert cell(float("nan")) == "nan"
     assert cell(0.123456) == "0.123"
+
+
+# -- CHECK-2730 ---------------------------------------------------------------
+
+
+def _args(*argv):
+    return benchmark.build_parser().parse_args(["run", *argv])
+
+
+def test_check_2730_defaults() -> None:
+    from scripts import benchmark_runs  # noqa: PLC0415
+    from scripts.pose_source_report import SCENARIOS  # noqa: PLC0415
+
+    matrix = benchmark.plan_matrix(_args())
+    assert matrix.roles == ["localization", "planning"]
+    assert matrix.seeds == list(benchmark_runs.SEEDS) == [42, 1030, 7, 2026]
+    assert matrix.scenarios == list(SCENARIOS)
+
+
+def test_check_2730_role_choice_and_single_role() -> None:
+    assert benchmark.plan_matrix(_args("--role", "planning")).roles == [
+        "planning"
+    ]
+    with pytest.raises(SystemExit) as stop:
+        _args("--role", "controller")
+    assert stop.value.code == 2
+
+
+@pytest.mark.parametrize("bad", [["--seeds"], ["--seeds", "x"]])
+def test_check_2730_seeds_must_be_a_nonempty_integer_list(bad) -> None:
+    with pytest.raises(SystemExit) as stop:
+        _args(*bad)
+    assert stop.value.code == 2
+
+
+def test_check_2730_a_seed_given_twice_is_refused() -> None:
+    with pytest.raises(SystemExit) as stop:
+        benchmark.plan_matrix(_args("--seeds", "42", "42"))
+    assert stop.value.code == 2
+
+
+def test_check_2730_analytic_circle_is_refused_with_the_reason(capsys) -> None:
+    with pytest.raises(SystemExit) as stop:
+        benchmark.plan_matrix(_args("--scenarios", "analytic_circle"))
+    assert stop.value.code == 2
+    assert "rotationally symmetric" in capsys.readouterr().err
+
+
+def test_check_2730_unknown_scenario_is_refused(capsys) -> None:
+    with pytest.raises(SystemExit) as stop:
+        benchmark.plan_matrix(_args("--scenarios", "monza"))
+    assert stop.value.code == 2
+    assert "monza" in capsys.readouterr().err
+
+
+def test_check_2730_scenario_override_reaches_expected() -> None:
+    matrix = benchmark.plan_matrix(
+        _args("--seeds", "7", "--scenarios", "spielberg")
+    )
+    assert matrix.seeds == [7]
+    assert matrix.scenarios == ["spielberg"]
+
+
+# -- CHECK-2740 ---------------------------------------------------------------
+
+
+def _fake_stack(monkeypatch, *, latch=None, raises=False):
+    """Replace the launches with fakes: ``latch`` names a role whose runs
+    latch, ``raises`` makes every launch raise."""
+    from scripts import benchmark_runs  # noqa: PLC0415
+    from scripts.pose_source_report import record  # noqa: PLC0415
+
+    monkeypatch.setenv("RACING_REVISION", "abc1234deadbeef")
+    monkeypatch.setattr(benchmark_runs, "track_length", lambda: 100.0)
+    monkeypatch.setattr(
+        benchmark_runs, "launch_keys", lambda: ["slam_toolbox", "amcl", "mola"]
+    )
+    monkeypatch.setattr(benchmark_runs, "reference_row", lambda: {"map": "m"})
+    monkeypatch.setattr(
+        benchmark_runs, "static_fields", lambda version, line: {"length_m": 1.0}
+    )
+    monkeypatch.setattr(benchmark_runs, "regeneration_record", lambda t: {})
+    state = {"loc": 0, "plan": 0}
+
+    def localization_run(source, scenario, seed, length, tmp):
+        if raises:
+            raise RuntimeError("boom")
+        state["loc"] += 1
+        outcome = "latched" if latch == "localization" else "completed"
+        run = {
+            "outcome": outcome,
+            "time_scale": 5.0,
+            "drive_on_estimate": False,
+            "metrics": {"lap_completed": True, "lap_time": 100.0},
+        }
+        return record(
+            source,
+            scenario,
+            seed,
+            run,
+            {"ate_rmse": 0.3, "availability": 1.0},
+            {"pose_rate_hz": 40.0, "tf_rate_hz": 90.0, "scan_rate_hz": 40.0},
+            2.0,
+            {"median": 0.04},
+        )
+
+    def planning_run(vehicle, line, seed, length, tmp):
+        if raises:
+            raise RuntimeError("boom")
+        state["plan"] += 1
+        version = benchmark_runs.VEHICLES[vehicle][1]
+        run = {
+            "vehicle": vehicle,
+            "line": line,
+            "seed": seed,
+            "manifest_version": version,
+        }
+        if latch == "planning":
+            return {**run, "outcome": "latched"}
+        metrics = dict.fromkeys(
+            (
+                "lap_time",
+                "minimum_wall_clearance",
+                "maximum_tracking_error",
+                "p95_tracking_error",
+                "control_saturation_events",
+            ),
+            1.0,
+        )
+        metrics["vehicle_parameter_version"] = version
+        return {**run, "outcome": "completed", "metrics": metrics}
+
+    monkeypatch.setattr(benchmark_runs, "localization_run", localization_run)
+    monkeypatch.setattr(benchmark_runs, "planning_run", planning_run)
+    return state
+
+
+def test_check_2740_clean_run_writes_both_reports(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    import json  # noqa: PLC0415
+
+    _fake_stack(monkeypatch)
+    out = tmp_path / "out"
+    code = benchmark.main(
+        ["run", "--role", "all", "--seeds", "42", "--out", str(out)]
+    )
+    assert code == 0
+    shown = capsys.readouterr().out
+    assert "| implementation | 42 |" in shown
+    for role in ("localization", "planning"):
+        assert (out / role / "report.md").is_file()
+        document = json.loads((out / role / "report.json").read_text())
+        block = document["benchmark"]
+        assert block["role"] == role
+        assert block["revision"] == "abc1234deadbeef"
+        assert block["started_utc"].endswith("+00:00")
+        assert "host_load" in block
+        assert block["scored_against"].startswith("simulator ground truth")
+        header = (out / role / "report.md").read_text()
+        assert "abc1234" in header
+        assert "scored against" in header
+    assert "SIM-5040" in (out / "planning" / "report.md").read_text()
+
+
+@pytest.mark.parametrize("role", ["localization", "planning"])
+def test_check_2740_a_latched_run_exits_1_per_role(
+    monkeypatch, tmp_path, capsys, role
+) -> None:
+    _fake_stack(monkeypatch, latch=role)
+    code = benchmark.main(
+        ["run", "--role", role, "--seeds", "42", "--out", str(tmp_path)]
+    )
+    assert code == 1
+    assert "latched" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("role", ["localization", "planning"])
+def test_check_2740_a_missing_record_exits_1(
+    monkeypatch, tmp_path, capsys, role
+) -> None:
+    from scripts import benchmark_runs  # noqa: PLC0415
+
+    _fake_stack(monkeypatch)
+    real = getattr(benchmark_runs, f"{role}_run")
+    seen = []
+
+    def lossy(*args):
+        seen.append(args)
+        return None if len(seen) == 1 else real(*args)
+
+    monkeypatch.setattr(benchmark_runs, f"{role}_run", lossy)
+    # a runner that returns nothing leaves a hole structural_failures names
+    code = benchmark.main(
+        ["run", "--role", role, "--seeds", "42", "--out", str(tmp_path)]
+    )
+    assert code == 1
+    assert "missing" in capsys.readouterr().out
+
+
+def test_check_2740_a_subset_run_is_not_missing_records(
+    monkeypatch, tmp_path
+) -> None:
+    import json  # noqa: PLC0415
+
+    state = _fake_stack(monkeypatch)
+    code = benchmark.main(
+        [
+            "run",
+            "--role",
+            "localization",
+            "--seeds",
+            "42",
+            "--scenarios",
+            "spielberg",
+            "--out",
+            str(tmp_path),
+        ]
+    )
+    assert code == 0
+    # 3 present methods x 1 scenario x 1 seed
+    assert state["loc"] == 3
+    records = json.loads(
+        (tmp_path / "localization" / "report.json").read_text()
+    )["records"]
+    assert {r["scenario"] for r in records} == {"spielberg"}
+
+
+def test_check_2740_report_is_written_when_a_run_raises(
+    monkeypatch, tmp_path
+) -> None:
+    _fake_stack(monkeypatch, raises=True)
+    with pytest.raises(RuntimeError):
+        benchmark.main(
+            [
+                "run",
+                "--role",
+                "planning",
+                "--seeds",
+                "42",
+                "--out",
+                str(tmp_path),
+            ]
+        )
+    assert (tmp_path / "planning" / "report.json").is_file()
+    assert (tmp_path / "planning" / "report.md").is_file()
