@@ -3,9 +3,9 @@
 The measurements on [Results](results.md) and the behaviour of each Available implementation in the
 README's capability matrix are backed by tests that run on every pull request or every night. Two
 things are not. The Mapping demonstration on Results is a recording, not a test. GPU runs are not tested in CI: the GPU image's structure is checked on every pull request, but
-building and running it is a manual check on a GPU machine. Rows marked Experimental are selectable and to be compared by the benchmark command once it lands, but not yet verified. A test here proves an
+building and running it is a manual check on a GPU machine. Rows marked Experimental are selectable and compared by the [benchmark command](running.md#comparing-implementations), but not yet verified. A test here proves an
 implementation works (it laps, does not collide, does not latch, and its error stays inside a loose
-catastrophic bound); how well it works is on [Results](results.md) and in the benchmark once it lands, not a pass
+catastrophic bound); how well it works is on [Results](results.md) and in the [benchmark command](running.md#comparing-implementations), not a pass
 condition. Rows marked Planned or Exploratory are
 not claims of working code. This page says what each of five layers proves, then how to run the checks.
 
@@ -86,8 +86,7 @@ layer 5 test. Its track dimension is Spielberg alone today.
 - SIM-5030: the `amcl` run-to-run spread over seeds 42, 1030, 1, 7, 99, 123 and 3, 5 runs per seed, reported and tracked night to night; it fails only on a lap that does not complete or collides.
 - SIM-5040: every committed minimum-curvature raceline regenerates from its recorded command. The inputs (survey map, vehicle, TUM pins, parameters) must match exactly and the line must land within a measured tolerance of the committed one.
 - SIM-5060: each committed minimum-time line regenerates from its committed reference line (inputs exact, line within the same tolerance as SIM-5040), but only on a night the optimizer code changed (the fork pin or the wrapper's files); on any other night it records that it did not run and passes.
-- SIM-5050: the raceline comparison report, both vehicles by every committed line by seeds 42, 1030, 7 and 2026. A gym-limits run that does not finish is recorded with the distance it reached; a default-vehicle run that does not finish fails the test. No lap time or ranking is asserted.
-- SIM-5510: every pose source the build has, on `spielberg` (64 beams) and `spielberg_1080` (1080 beams, 270 degrees; slam_toolbox runs the file its scenario selects), by seeds 42, 1030, 7 and 2026, open loop. It records the error, availability, changed-pose rate, scan rate, CPU per scan and the produced map's distance to the true walls, and writes `log/pose-source-report/`. A method the build lacks is recorded as absent. Only structure is asserted (a record per row, no latch, a finite error, probes that heard something); no value is bounded and no method is ranked.
+- Method comparison is not a nightly test: the [benchmark command](running.md#comparing-implementations) runs on demand, or in the non-blocking Benchmark job on a PR that adds an implementation, and never nightly.
 
 ## Running the checks
 

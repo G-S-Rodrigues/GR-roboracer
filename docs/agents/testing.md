@@ -31,7 +31,7 @@ belongs there when its cost is laps rather than seconds and what it catches is a
 combination shows.
 
 A red nightly leaves evidence: node logs and Robot output (`logs-<region>-seed-<n>`, failed jobs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when a tracking flag is raised), the quality reports of every job (`reports-<region>-seed-<n>`: `log/reports/<ID>.json`), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the pose-source data report (`pose-source-report`: `log/pose-source-report/{report.md,report.json}`, from `slam`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop[-<planner>].jsonl`, whose stamps locate a lost stretch of availability), and, when a
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when a tracking flag is raised), the quality reports of every job (`reports-<region>-seed-<n>`: `log/reports/<ID>.json`), the raceline regeneration record (`raceline-regeneration`: `log/raceline-report/regeneration.json`, from `path_planning`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop[-<planner>].jsonl`, whose stamps locate a lost stretch of availability), and, when a
 `run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
 (`supervisor-lag`, `supervisor-clock-late` (the first status ever is already STALE), `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`); a t=0 wait that never hears the supervisor's `~/clock_received` raises with `verdict=supervisor-clock-unheard`. An ACC-4020 failure message carries the same record (`safety_record`: the first non-NONE `/safety/status` and its verdict). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
 prints nothing to the job log, so SIM-5030's JSON and the reports are the record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and reports the pooled median, the maximum
@@ -75,7 +75,7 @@ justified a bound stays beside the report, as its baseline.
 
 - **Do not add a pass/fail quality bound.** "Is it better than X" is a benchmark.
 - **Benchmarks** compare implementations of one role. They run on demand, or in CI as a non-required
-  job on a PR that adds an implementation. They never run nightly and never block.
+  job on a PR that adds an implementation. They never run nightly and never block. The command is `python3 scripts/benchmark.py run|render|history` (Running); the Benchmark workflow runs it on a PR whose diff adds an implementation, a Spielberg raceline CSV or edits the runner, uploads `benchmark-<role>` artifacts, and is never waited on.
 - **Regression tracking** of one method over time (SIM-5030) runs in the nightly, reports, and is
   never red on a number.
 - **An experimental implementation** (`status: experimental` in `config/reference_stack.yaml`) is
@@ -211,7 +211,7 @@ Where a test is not where you would look:
 - **SIM-3100** — dead reckoning must drift past a stated floor over a lap. It is the only test that
   notices noise silently disabled, which would make every localization test vacuous and green.
 - **The catastrophic bounds** (ADR 0008) — loose on purpose. A green localization test means the
-  estimate did not diverge, not that it is good; how good is in `log/reports/` and, once it lands, the benchmark.
+  estimate did not diverge, not that it is good; how good is in `log/reports/` and the benchmark.
 
 ## What stays unverified, deliberately
 
