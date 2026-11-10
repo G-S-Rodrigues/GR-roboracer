@@ -6,7 +6,7 @@ timeout. Its lap time is reported (`log/reports/SIM-3110.json`), not asserted
 The default vehicle follows `config/racelines/spielberg/f1tenth-default-v1/
 tum_mincurv_iqp.csv` with `speed_source: trajectory`, so the line's own speed
 (a flat 3.0 m/s) is the command, not the curvature schedule. Ground-truth
-pose only. The 20 m/s gym-limits vehicle is the nightly's (part 7), not this
+pose only. The 20 m/s gym-limits vehicle is the planning benchmark's, not this
 gate's.
 
 The reported lap time is *this* line's own measurement, read against the

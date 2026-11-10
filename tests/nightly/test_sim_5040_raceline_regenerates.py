@@ -18,7 +18,7 @@ line, and RACELINE-1395 already guards the committed line itself.
 
 It prints the measured deltas on every run, passing or not, and writes
 `log/raceline-report/regeneration.json` (overwritten, never appended) for
-SIM-5050's report. The TUM solve is deterministic only up to the CPU's
+the planning report. The TUM solve is deterministic only up to the CPU's
 OpenBLAS kernel, which is why the line is compared within a tolerance and
 the inputs are compared exactly.
 """

@@ -1,7 +1,7 @@
-"""The tier-5 raceline comparison report and regeneration helpers.
+"""The raceline comparison report (the benchmark) and regeneration helpers.
 
-ROS-free: standard library, ``yaml`` and ``numpy``. Only SIM-5050 adds
-``racing_common`` (the track length a lap is counted on, repo-gotchas #15).
+ROS-free: standard library, ``yaml`` and ``numpy``. Only the benchmark's
+runner adds ``racing_common`` (the track length a lap is counted on, repo-gotchas #15).
 Everything here is a pure function of its arguments: no network, no git, and
 nothing is read from disk that the caller did not name.
 """

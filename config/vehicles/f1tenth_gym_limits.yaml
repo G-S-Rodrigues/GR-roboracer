@@ -30,8 +30,8 @@
 # file's 0.3302). Pure Pursuit's geometry is exact at the rear axle and runs on
 # base_link (the CoG) by owner ruling 2026-10-15.
 #
-# No gate lap runs on this vehicle (owner ruling 2026-10-11): it runs nightly
-# only, and gate laps use f1tenth_default.yaml.
+# No gate lap runs on this vehicle (owner ruling 2026-10-11): it runs in the
+# planning benchmark, never on a schedule, and gate laps use f1tenth_default.yaml.
 
 racing_sim:
   ros__parameters:

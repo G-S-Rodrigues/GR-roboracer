@@ -5,7 +5,7 @@ time is reported (`log/reports/SIM-3120.json`), not asserted (ADR 0008).
 The default vehicle follows `config/racelines/spielberg/f1tenth-default-v1/
 tum_mintime.csv` with `speed_source: trajectory`, so the line's own speed is
 the command. Ground-truth pose only. The 20 m/s gym-limits vehicle is the
-nightly's (SIM-5050), not this gate's (owner 2026-10-11).
+planning benchmark's, not this gate's (owner 2026-10-11).
 
 The reported lap time is *this* line's own measurement, read against the
 baseline below; it is not a comparison with the minimum-curvature line (ADR
