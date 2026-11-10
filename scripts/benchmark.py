@@ -591,13 +591,23 @@ def history(
 def _command_run(args: argparse.Namespace) -> int:
     matrix = plan_matrix(args)
     broken = False
+    raised: BaseException | None = None
     for role in matrix.roles:
-        failures = run_role(role, matrix.seeds, matrix.scenarios, args.out)
+        try:
+            failures = run_role(role, matrix.seeds, matrix.scenarios, args.out)
+        except Exception as error:  # noqa: BLE001
+            # The role's report is already written; the next role still runs
+            # and the error is re-raised after it.
+            print(f"BENCHMARK ERROR ({role}): {error!r}", flush=True)
+            raised = raised or error
+            continue
         print((Path(args.out) / role / "report.md").read_text(encoding="utf-8"))
         if failures:
             broken = True
             print(f"STRUCTURAL FAILURES ({role}):")
             print("\n".join(failures))
+    if raised is not None:
+        raise raised
     return 1 if broken else 0
 
 

@@ -345,7 +345,8 @@ def test_check_2730_scenario_override_reaches_expected() -> None:
 
 def _fake_stack(monkeypatch, *, latch=None, raises=False):
     """Replace the launches with fakes: ``latch`` names a role whose runs
-    latch, ``raises`` makes every launch raise."""
+    latch, ``raises`` makes every launch raise (or, given a role, only that
+    role's)."""
     from scripts import benchmark_runs  # noqa: PLC0415
     from scripts.pose_source_report import record  # noqa: PLC0415
 
@@ -362,7 +363,7 @@ def _fake_stack(monkeypatch, *, latch=None, raises=False):
     state = {"loc": 0, "plan": 0}
 
     def localization_run(source, scenario, seed, length, tmp):
-        if raises:
+        if raises in (True, "localization"):
             raise RuntimeError("boom")
         state["loc"] += 1
         outcome = "latched" if latch == "localization" else "completed"
@@ -384,7 +385,7 @@ def _fake_stack(monkeypatch, *, latch=None, raises=False):
         )
 
     def planning_run(vehicle, line, seed, length, tmp):
-        if raises:
+        if raises in (True, "planning"):
             raise RuntimeError("boom")
         state["plan"] += 1
         version = benchmark_runs.VEHICLES[vehicle][1]
@@ -523,6 +524,19 @@ def test_check_2740_report_is_written_when_a_run_raises(
         )
     assert (tmp_path / "planning" / "report.json").is_file()
     assert (tmp_path / "planning" / "report.md").is_file()
+
+
+def test_check_2740_a_raising_role_does_not_abort_the_next(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    state = _fake_stack(monkeypatch, raises="localization")
+    with pytest.raises(RuntimeError):
+        benchmark.main(
+            ["run", "--role", "all", "--seeds", "42", "--out", str(tmp_path)]
+        )
+    assert state["plan"] > 0
+    assert (tmp_path / "planning" / "report.json").is_file()
+    assert "localization" in capsys.readouterr().out
 
 
 # -- CHECK-2750 ---------------------------------------------------------------
