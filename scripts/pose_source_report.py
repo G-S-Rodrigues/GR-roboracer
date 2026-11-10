@@ -1,4 +1,4 @@
-"""The pose-source data report (the benchmark): record schema, structure, render.
+"""The pose-source data report: record schema, structure, render.
 
 ROS-free and pure: functions over dicts, no rclpy, no disk, no clock. One
 record per (pose source, scenario, seed). The report records numbers and

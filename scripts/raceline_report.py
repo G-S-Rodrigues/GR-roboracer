@@ -1,7 +1,8 @@
 """The raceline comparison report (the benchmark) and regeneration helpers.
 
 ROS-free: standard library, ``yaml`` and ``numpy``. Only the benchmark's
-runner adds ``racing_common`` (the track length a lap is counted on, repo-gotchas #15).
+runner adds ``racing_common`` (the track length a lap is counted on,
+repo-gotchas #15).
 Everything here is a pure function of its arguments: no network, no git, and
 nothing is read from disk that the caller did not name.
 """
