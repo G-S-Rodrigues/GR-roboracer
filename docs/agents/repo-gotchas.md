@@ -103,6 +103,13 @@ Traps any task in this repository can hit. Each one cost real time at least once
     with `start_new_session=True`, signal its group and its children's groups, and check the groups are
     empty (SIM-3530; a leaked map_server fed amcl a second `/map`).
 
+44. **A process that launch escalates to SIGKILL loses its buffered tail, and the reader fails far from the cause.**
+    In the 2026-11-05 SIM-3510 run the recorder was killed (exit -9) with a partly written line, and
+    `read_recording` died with `JSONDecodeError` at char 271: one Odometry record less its closing `}`.
+    Symptom: a parse error in a test far from the node that hung. Remedy: write and flush each record whole
+    (REC-1010/2010); `read_recording` stays strict on purpose. `run_scenario` lists the escalations (CHECK-2370/2371).
+    Any other buffered writer a launch can kill has the same trap.
+
 ## Simulation
 
 11. **The gym_jax action mapping fails silently.** Never change it without re-running COMMON-1060.
