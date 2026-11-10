@@ -28,7 +28,9 @@ AUTODRIVE_BRIDGES = ("ours", "official")
 # Vehicle files the gym cannot cast a scan for: the launch refuses them on the
 # gym and points at `simulator:=autodrive`. BRINGUP-1650 keeps this equal to
 # the contract test's NOT_GYM_CAST.
-GYM_INCOMPATIBLE_VEHICLES = frozenset({"autodrive_roboracer"})
+GYM_INCOMPATIBLE_VEHICLES = frozenset(
+    {"autodrive_roboracer", "autodrive_roboracer_fast"}
+)
 
 
 def _vehicle_version(vehicle_path: Path) -> str:

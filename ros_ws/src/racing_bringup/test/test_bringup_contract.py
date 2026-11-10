@@ -17,7 +17,7 @@ VEHICLE_FILES = sorted((REPOSITORY_ROOT / "config" / "vehicles").glob("*.yaml"))
 # pinned to its own source (CHECK-1790) and to its own URDF (BRINGUP-1057).
 # A name here must be a committed file, or the exclusion silently outlives
 # the file.
-NOT_GYM_CAST = frozenset({"autodrive_roboracer"})
+NOT_GYM_CAST = frozenset({"autodrive_roboracer", "autodrive_roboracer_fast"})
 GYM_CAST_FILES = [p for p in VEHICLE_FILES if p.stem not in NOT_GYM_CAST]
 
 

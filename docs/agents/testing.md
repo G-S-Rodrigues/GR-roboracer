@@ -193,6 +193,7 @@ Where a test is not where you would look:
   no tier-1 test.
 - The live sim (port 4567) and `tests/autodrive/` are outside every gate (ADR 0007), run by
   `scripts/autodrive_qualify.sh` or by hand.
+- SIM-3750 is local, run by `autodrive_qualify.sh --case fast_lap`.
 
 ## The tests that matter most
 
