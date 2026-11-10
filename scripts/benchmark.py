@@ -171,6 +171,17 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
     render = commands.add_parser("render", help="re-render a saved report.json")
     render.add_argument("report", type=Path)
+    history = commands.add_parser(
+        "history",
+        help="tabulate downloaded nightly quality reports (write_report)",
+    )
+    history.add_argument("dirs", nargs="+", type=Path)
+    history.add_argument(
+        "--field",
+        action="append",
+        default=None,
+        help="a flattened numbers key, e.g. live.ate_rmse; repeatable",
+    )
     return parser
 
 
@@ -451,6 +462,79 @@ def render_report(document: dict) -> str:
     raise ValueError("not a benchmark report: no records, or rows and runs")
 
 
+# -- history ------------------------------------------------------------------
+
+
+def _flatten(value, prefix: str = "") -> dict:
+    """Scalar leaves of nested dicts, keyed ``a.b``; lists are skipped."""
+    if isinstance(value, Mapping):
+        out: dict = {}
+        for key, item in value.items():
+            out.update(_flatten(item, f"{prefix}.{key}" if prefix else key))
+        return out
+    if isinstance(value, (list, tuple)):
+        return {}
+    return {prefix: value}
+
+
+def history(
+    dirs: Sequence[Path], fields: Sequence[str] | None = None
+) -> tuple[str, list[Path]]:
+    """(markdown, skipped files): one table per report ID from the
+    ``write_report`` records under each run directory, one row per record.
+
+    Rows are ordered by run directory (as given), revision and seed, never by
+    value. Reads files only. A JSON file that is not a report is skipped."""
+    by_id: dict[str, list[tuple]] = {}
+    skipped: list[Path] = []
+    for order, folder in enumerate(dirs):
+        for path in sorted(Path(folder).rglob("*.json")):
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+                report_id, numbers = doc["id"], doc["numbers"]
+                if not isinstance(numbers, Mapping):
+                    raise TypeError("numbers is not a mapping")
+            except (OSError, ValueError, KeyError, TypeError):
+                skipped.append(path)
+                continue
+            seed = doc.get("seed")
+            sort = (
+                order,
+                str(doc.get("revision")),
+                -1 if seed is None else seed,
+                str(doc.get("implementation")),
+            )
+            row = (
+                Path(folder).name,
+                str(doc.get("revision", "unknown"))[:7],
+                seed,
+                doc.get("implementation"),
+            )
+            by_id.setdefault(report_id, []).append(
+                (sort, row, _flatten(numbers))
+            )
+    out: list[str] = []
+    for report_id in by_id:
+        entries = sorted(by_id[report_id], key=lambda e: e[0])
+        columns = (
+            list(fields)
+            if fields
+            else _unique(key for _, _, leaves in entries for key in leaves)
+        )
+        head = ["run", "revision", "seed", "implementation", *columns]
+        out += [
+            f"## {report_id}",
+            "",
+            "| " + " | ".join(head) + " |",
+            "|" + "---|" * len(head),
+        ]
+        for _, row, leaves in entries:
+            cells = [*row, *(leaves.get(c) for c in columns)]
+            out.append("| " + " | ".join(cell(c) for c in cells) + " |")
+        out.append("")
+    return "\n".join(out), skipped
+
+
 # -- main ---------------------------------------------------------------------
 
 
@@ -484,6 +568,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _command_run(args)
     if args.command == "render":
         return _command_render(args)
+    if args.command == "history":
+        text, skipped = history(args.dirs, args.field)
+        for path in skipped:
+            print(f"skipped (not a quality report): {path}", file=sys.stderr)
+        print(text, end="")
+        return 0
     raise SystemExit(2)
 
 

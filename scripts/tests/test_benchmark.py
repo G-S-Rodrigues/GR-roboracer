@@ -582,3 +582,96 @@ def test_check_2750_unrecognised_json_exits_2(tmp_path) -> None:
     with pytest.raises(SystemExit) as stop:
         benchmark.main(["render", str(path)])
     assert stop.value.code == 2
+
+
+# -- CHECK-2760 ---------------------------------------------------------------
+
+
+def _report(
+    folder: Path, name: str, report_id: str, seed, impl, revision, numbers
+) -> None:
+    import json  # noqa: PLC0415
+
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.json").write_text(
+        json.dumps(
+            {
+                "id": report_id,
+                "numbers": numbers,
+                "baseline": None,
+                "seed": seed,
+                "scenario": "spielberg",
+                "implementation": impl,
+                "revision": revision,
+                "host_load": {"load1": 1.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _history_tree(tmp_path: Path) -> list[Path]:
+    one, two = tmp_path / "run-1", tmp_path / "run-2"
+    slam = "reports-slam-seed-42"
+    _report(
+        one / slam, "SIM-5020-amcl", "SIM-5020", 42, "amcl", "aaaaaaa1234",
+        {"live": {"ate_rmse": 0.9, "availability": 0.99}, "n": 3},
+    )  # fmt: skip
+    _report(
+        one / slam, "SIM-5020-slam", "SIM-5020", 42, "slam_toolbox", "aaaaaaa1234",
+        {"live": {"ate_rmse": 0.2, "availability": 0.95}, "n": 3},
+    )  # fmt: skip
+    _report(
+        two / slam, "SIM-5020-amcl", "SIM-5020", 42, "amcl", "bbbbbbb5678",
+        {"live": {"ate_rmse": 0.5, "availability": 1.0}, "n": 3},
+    )  # fmt: skip
+    _report(
+        two / slam, "SIM-3110", "SIM-3110", 42, "optimized_raceline", "bbbbbbb5678",
+        {"lap_time": 111.0, "series": [1, 2]},
+    )  # fmt: skip
+    (two / slam / "other.json").write_text('{"hello": 1}', encoding="utf-8")
+    return [one, two]
+
+
+def test_check_2760_groups_by_id_one_row_per_run(tmp_path, capsys) -> None:
+    dirs = _history_tree(tmp_path)
+    assert benchmark.main(["history", *map(str, dirs)]) == 0
+    shown = capsys.readouterr()
+    assert shown.out.count("## SIM-5020") == 1
+    assert shown.out.count("## SIM-3110") == 1
+    section = shown.out.split("## SIM-5020")[1].split("## SIM-3110")[0]
+    rows = [r for r in section.splitlines() if r.startswith("| run-")]
+    assert len(rows) == 3
+    # run dir, short revision, seed, implementation, then the leaves
+    assert rows[0].startswith("| run-1 | aaaaaaa | 42 | amcl | ")
+    assert "live.ate_rmse" in section
+    assert "series" not in shown.out  # lists are not scalar leaves
+
+
+def test_check_2760_never_orders_by_value(tmp_path, capsys) -> None:
+    dirs = _history_tree(tmp_path)
+    benchmark.main(["history", *map(str, dirs)])
+    section = (
+        capsys.readouterr().out.split("## SIM-5020")[1].split("## SIM-3110")[0]
+    )
+    order = [
+        r.split("|")[4].strip() for r in section.splitlines() if "| run-" in r
+    ]
+    # run-1 amcl (0.9), run-1 slam (0.2), run-2 amcl (0.5): by run dir
+    assert order == ["amcl", "slam_toolbox", "amcl"]
+
+
+def test_check_2760_field_restricts_the_columns(tmp_path, capsys) -> None:
+    dirs = _history_tree(tmp_path)
+    benchmark.main(["history", *map(str, dirs), "--field", "live.ate_rmse"])
+    out = capsys.readouterr().out
+    assert "live.ate_rmse" in out
+    assert "live.availability" not in out
+
+
+def test_check_2760_non_report_json_is_skipped_and_named(
+    tmp_path, capsys
+) -> None:
+    dirs = _history_tree(tmp_path)
+    benchmark.main(["history", *map(str, dirs)])
+    assert "other.json" in capsys.readouterr().err
