@@ -519,3 +519,118 @@ def test_check_1795_autodrive_wheelbase_is_the_specification() -> None:
     assert dynamics["wheelbase_front"] + dynamics["wheelbase_rear"] == (
         pytest.approx(spec, abs=1e-9)
     )
+
+
+# --- part 1L increment 1: the readers the lateral work needs -----------------
+WHEEL_RADIUS = 0.059  # source.yaml wheel_radius_m
+
+
+def test_check_2600_parse_frame_carries_imu_and_encoder_angles() -> None:
+    """CHECK-2600: `parse_frame` keeps the IMU a_x / a_y and both encoder
+    angles (the recorder strips only camera and lidar, so every frame has
+    them); a frame without them gives nan / None; a hand-built `Sample` still
+    constructs without them. Oracle: fixture frame 300, read by hand."""
+    import math
+
+    tool = _tool()
+    samples = _samples(tool)
+    s = samples[300]
+    assert s.ax == -0.0346 and s.ay == -0.4620
+    assert s.wheel_angles == (133.9628, 134.5518)
+    assert samples[299].wheel_angles == (133.6846, 134.2835)
+    bare = tool.parse_frame(
+        {
+            "V1 Position": "0 0 0",
+            "V1 Linear Velocity": "1 0 0",
+            "V1 Orientation Euler Angles": "0 0 0",
+            "V1 Angular Velocity": "0 0 0",
+            "V1 Lap Time": "1.0",
+            "V1 Throttle": "0",
+            "V1 Steering": "0",
+            "V1 Collisions": "0",
+        }
+    )
+    assert math.isnan(bare.ax) and math.isnan(bare.ay)
+    assert bare.wheel_angles is None
+    hand = tool.Sample(
+        lap_time=0.0, throttle=0.0, steering=0.0, x=0.0, y=0.0, z=0.0,
+        yaw=0.0, vx=0.0, vy=0.0, wz=0.0, collisions=0,
+    )  # fmt: skip
+    assert math.isnan(hand.ax) and hand.wheel_angles is None
+
+
+def test_check_2605_wheel_speed_is_the_encoder_delta_over_lap_time() -> None:
+    """CHECK-2605: wheel speed = mean encoder angle delta x r / lap-time dt
+    (gotcha 35: never the receive time). None on dt <= 0 (a lap-line reset)
+    and on a backward angle (the encoders zero on a reset), never a negative
+    speed. It equals `racing_sim_autodrive.core.encoder_speed` on every
+    fixture pair: the tool is stdlib-only and duplicates those 8 lines, and
+    this is what stops the copy drifting. Hand oracle: frames 300 -> 301,
+    1.0521 rad mean in 0.062 s is 1.0012 m/s."""
+    import dataclasses
+    from types import SimpleNamespace
+
+    from racing_sim_autodrive import core
+
+    tool = _tool()
+    samples = _samples(tool)
+    speed = tool.wheel_speed(samples[300], samples[301], WHEEL_RADIUS)
+    assert _approx(speed, 1.0012, 0.001), speed
+    assert not _approx(
+        tool.wheel_speed(samples[300], samples[301], WHEEL_RADIUS * 1.1),
+        1.0012,
+        0.001,
+    )
+    n = 0
+    for prev, cur in zip(samples, samples[1:], strict=False):
+        dt = cur.lap_time - prev.lap_time
+        expected = core.encoder_speed(
+            SimpleNamespace(encoder_angles=prev.wheel_angles),
+            SimpleNamespace(encoder_angles=cur.wheel_angles),
+            WHEEL_RADIUS,
+            dt if dt > 0.0 else None,
+        )
+        got = tool.wheel_speed(prev, cur, WHEEL_RADIUS)
+        assert got == expected, (prev.lap_time, cur.lap_time)
+        n += got is not None
+    assert n > 300, n
+    back = dataclasses.replace(samples[301], wheel_angles=(0.0, 0.0))
+    assert tool.wheel_speed(samples[300], back, WHEEL_RADIUS) is None
+    same = dataclasses.replace(samples[301], lap_time=samples[300].lap_time)
+    assert tool.wheel_speed(samples[300], same, WHEEL_RADIUS) is None
+    none = dataclasses.replace(samples[301], wheel_angles=None)
+    assert tool.wheel_speed(samples[300], none, WHEEL_RADIUS) is None
+
+
+def test_check_2610_slip_ratio_signs_and_rest() -> None:
+    """CHECK-2610: slip = (w - v) / max(w, v): +1 for full spin (v 0), -1 for
+    locked wheels (w 0), 0 when both are below REST_SPEED, and 0.15 for a
+    wheel at 5.0 against a body at 4.25."""
+    tool = _tool()
+    assert tool.slip_ratio(5.0, 0.0) == 1.0
+    assert tool.slip_ratio(0.0, 3.0) == -1.0
+    assert tool.slip_ratio(0.0, 0.0) == 0.0
+    assert tool.slip_ratio(0.004, 0.002) == 0.0
+    assert abs(tool.slip_ratio(5.0, 4.25) - 0.15) < 1e-12
+    assert abs(tool.slip_ratio(4.25, 5.0) + 0.15) < 1e-12
+
+
+def test_check_2615_sensor_checks_imu_against_the_kinematics() -> None:
+    """CHECK-2615: on the committed recording the IMU a_x is the body
+    acceleration (median ratio to dv_x/dt ~1.001, no gravity) and the IMU a_y
+    is v_x w_z in turns (median ratio ~1.003): the facts F5 rests the lateral
+    work on. This re-derives a committed recording (CHECK-1780's class), it is
+    not a bound on the car. v_x x 1.1 moves the first to ~1/1.1 and the
+    second to ~1/1.1 as well."""
+    tool = _tool()
+    rec = tool._recorder()
+    _, events = rec.read_records(RECORDING)
+    segs = tool.segments(tool.samples_from_events(events))
+    checks = tool.sensor_checks(segs)
+    assert checks.ax_n > 1000 and checks.ay_n > 300, checks
+    assert _approx(checks.ax_ratio, 1.001, 0.02), checks
+    assert _approx(checks.ay_ratio, 1.003, 0.02), checks
+    scaled = tool.sensor_checks(_scaled(segs, vx=1.1))
+    assert _approx(scaled.ax_ratio, checks.ax_ratio / 1.1, 0.02), scaled
+    assert _approx(scaled.ay_ratio, checks.ay_ratio / 1.1, 0.02), scaled
+    assert not _approx(scaled.ax_ratio, 1.001, 0.02)

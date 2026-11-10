@@ -198,6 +198,12 @@ class Sample:
     collisions: int
     cmd_steering: float | None = None
     wall: float = math.nan  # arrival time: only for the clock-ratio check
+    # IMU linear acceleration in the car frame, gravity not included (its z
+    # median is 0.001 m/s^2 over the committed recording), and the left and
+    # right encoder angles, rad, accumulated (zeroed by a reset).
+    ax: float = math.nan
+    ay: float = math.nan
+    wheel_angles: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -241,6 +247,13 @@ def parse_frame(
 ) -> Sample:
     x, y, z = _floats(data["V1 Position"])
     vx, vy, _ = _floats(data["V1 Linear Velocity"])
+    ax = ay = math.nan
+    if "V1 Linear Acceleration" in data:
+        ax, ay, _ = _floats(data["V1 Linear Acceleration"])
+    angles = None
+    if "V1 Encoder Angles" in data:
+        left, right = _floats(data["V1 Encoder Angles"])
+        angles = (left, right)
     return Sample(
         lap_time=float(data["V1 Lap Time"]),
         throttle=float(data["V1 Throttle"]),
@@ -255,6 +268,87 @@ def parse_frame(
         collisions=int(float(data["V1 Collisions"])),
         cmd_steering=cmd_steering,
         wall=wall,
+        ax=ax,
+        ay=ay,
+        wheel_angles=angles,
+    )
+
+
+def wheel_speed(prev: Sample, cur: Sample, wheel_radius: float) -> float | None:
+    """Mean wheel speed from the encoder angle deltas, m/s, over the lap-time
+    delta (gotcha 35: the sim's clock, never the arrival time).
+
+    None when either frame has no angles, when the lap-time delta is not
+    positive (a lap-line reset) or when either wheel's angle went backwards
+    (the encoders zero on a reset). Duplicates
+    `racing_sim_autodrive.core.encoder_speed` on purpose: this file is a uv
+    script with no overlay (CHECK-2605 holds the two equal).
+    """
+    if prev.wheel_angles is None or cur.wheel_angles is None:
+        return None
+    dt = cur.lap_time - prev.lap_time
+    if not dt > 0.0:
+        return None
+    deltas = [
+        c - p for p, c in zip(prev.wheel_angles, cur.wheel_angles, strict=True)
+    ]
+    if any(d < 0.0 for d in deltas):
+        return None
+    return sum(deltas) / len(deltas) * wheel_radius / dt
+
+
+def slip_ratio(wheel: float, body: float) -> float:
+    """(w - v) / max(w, v): +1 is full spin, -1 locked wheels, 0 when both
+    speeds are below REST_SPEED."""
+    top = max(wheel, body)
+    if max(abs(wheel), abs(body)) < REST_SPEED:
+        return 0.0
+    return (wheel - body) / top
+
+
+@dataclass(frozen=True)
+class SensorChecks:
+    """Median IMU / kinematics ratios and the frames each rests on."""
+
+    ax_ratio: float
+    ax_n: int
+    ay_ratio: float
+    ay_n: int
+
+
+# F5 (plan, 2026-11-08, committed recording): the IMU a_x is the body's
+# acceleration, median ratio to dv_x/dt 1.0012 (n 2199); the IMU a_y is v_x w_z
+# in turns, 1.0027 (n 623). Only frames where the kinematic value is well
+# above the IMU's noise are used, and a central difference over a gap longer
+# than MAX_DIFF_GAP (the frame rate follows host load, gotcha 31) is not.
+AX_MIN = 0.5
+AY_MIN = 0.2
+MAX_DIFF_GAP = 0.2
+
+
+def sensor_checks(segs: list[list[Sample]]) -> SensorChecks:
+    """Median of IMU a_x over the central-difference dv_x/dt, and of IMU a_y
+    over v_x w_z, per frame. Both are 1 when the IMU is the body's
+    acceleration without gravity."""
+    ax_ratios: list[float] = []
+    ay_ratios: list[float] = []
+    for seg in segs:
+        for a, b, c in zip(seg, seg[1:], seg[2:], strict=False):
+            span = c.lap_time - a.lap_time
+            if math.isnan(b.ax) or math.isnan(b.ay):
+                continue
+            if 0.0 < span < MAX_DIFF_GAP:
+                dv = (c.vx - a.vx) / span
+                if abs(dv) > AX_MIN:
+                    ax_ratios.append(b.ax / dv)
+            lateral = b.vx * b.wz
+            if abs(lateral) > AY_MIN:
+                ay_ratios.append(b.ay / lateral)
+    return SensorChecks(
+        statistics.median(ax_ratios) if ax_ratios else math.nan,
+        len(ax_ratios),
+        statistics.median(ay_ratios) if ay_ratios else math.nan,
+        len(ay_ratios),
     )
 
 
