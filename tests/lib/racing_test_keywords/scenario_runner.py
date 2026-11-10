@@ -31,6 +31,7 @@ from typing import Any
 
 import launch
 import launch.actions
+import launch.event_handlers
 import launch.launch_description_sources
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
@@ -207,6 +208,107 @@ _METRICS_FIELDS = (
 
 def metrics_to_dict(message: ScenarioMetrics) -> dict[str, Any]:
     return {field: getattr(message, field) for field in _METRICS_FIELDS}
+
+
+class RunOutcome(dict):
+    """``run_scenario``'s metrics, plus what the run itself learned.
+
+    The keys are exactly ``_METRICS_FIELDS``, so ``compare_metrics``, the
+    goldens, the benchmark's run JSON and a report's ``numbers`` are unchanged;
+    the diagnostics ride as attributes. A caller holding a plain ``dict`` (a
+    stub) reads them with ``getattr(outcome, name, default)``.
+
+    ``shutdown_escalations``: ``[{"name", "signal"}]`` for each process launch
+    had to SIGTERM/SIGKILL at the end. ``frozen_at``: ``(t, s, d)`` where a
+    frozen-pose stop saw the pose stop, else ``None``. ``stop_context``: on
+    a frozen stop, ``{"text", "latched"}`` from the hang observer.
+    """
+
+    shutdown_escalations: list[dict[str, str]]
+    frozen_at: tuple[float, float, float] | None
+    stop_context: dict[str, Any] | None
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.shutdown_escalations = []
+        self.frozen_at = None
+        self.stop_context = None
+
+
+_ESCALATION_SIGNALS = {-9: "SIGKILL", -15: "SIGTERM"}
+
+
+class _ProcessLedger:
+    """What launch did to each process: started, exited with which code, and
+    which it had to escalate to SIGTERM or SIGKILL at shutdown.
+
+    Launch dispatches a ``ProcessExited`` for every process during
+    ``LaunchService.shutdown()``, before ``run()`` returns, with a return code
+    of -9 for one it had to SIGKILL. A diagnostic never fails a run: each
+    handler catches ``Exception`` (one that raised would make launch shut a
+    green run down) and records it for ``describe()``.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.started: dict[str, float] = {}
+        self.exited: dict[str, tuple[int, bool]] = {}
+        self.errors: list[str] = []
+        self.shutting_down = False
+
+    def actions(self) -> list[Any]:
+        return [
+            launch.actions.RegisterEventHandler(
+                launch.event_handlers.OnProcessStart(on_start=self._on_start)
+            ),
+            launch.actions.RegisterEventHandler(
+                launch.event_handlers.OnProcessExit(on_exit=self._on_exit)
+            ),
+        ]
+
+    def _on_start(self, event: Any, context: Any) -> None:
+        try:
+            with self._lock:
+                self.started[event.process_name] = time.monotonic()
+        except Exception as error:  # noqa: BLE001 - never fail a run
+            self._error(error)
+
+    def _on_exit(self, event: Any, context: Any) -> None:
+        try:
+            with self._lock:
+                self.exited[event.process_name] = (
+                    int(event.returncode),
+                    self.shutting_down,
+                )
+        except Exception as error:  # noqa: BLE001 - never fail a run
+            self._error(error)
+
+    def _error(self, error: Exception) -> None:
+        with contextlib.suppress(Exception), self._lock:
+            self.errors.append(repr(error))
+
+    @property
+    def shutdown_escalations(self) -> list[dict[str, str]]:
+        with self._lock:
+            return [
+                {"name": name, "signal": _ESCALATION_SIGNALS[code]}
+                for name, (code, during_shutdown) in self.exited.items()
+                if during_shutdown and code in _ESCALATION_SIGNALS
+            ]
+
+    def describe(self) -> str:
+        with self._lock:
+            parts = [
+                f"{name} exited rc={code}"
+                for name, (code, _) in self.exited.items()
+            ]
+            parts += [
+                f"{name} alive"
+                for name in self.started
+                if name not in self.exited
+            ]
+            parts += [f"ledger error: {error}" for error in self.errors]
+        return "; ".join(parts) if parts else "no process seen"
 
 
 def read_host_load() -> dict[str, float]:
@@ -682,14 +784,16 @@ def run_scenario(
         raise ValueError(f"launch_arguments may not set {sorted(overlap)}")
     launch_arguments = {**(launch_arguments or {}), **owned}
 
+    ledger = _ProcessLedger()
     description = launch.LaunchDescription(
         [
+            *ledger.actions(),
             launch.actions.IncludeLaunchDescription(
                 launch.launch_description_sources.PythonLaunchDescriptionSource(
                     str(BRINGUP_LAUNCH_FILE)
                 ),
                 launch_arguments=launch_arguments.items(),
-            )
+            ),
         ]
     )
     service = launch.LaunchService()
@@ -727,6 +831,7 @@ def run_scenario(
                     probe.close()
             observer.close()
             node.destroy_node()
+            ledger.shutting_down = True
             service.shutdown()
 
     driver = threading.Thread(target=_drive, daemon=True)
@@ -735,9 +840,20 @@ def run_scenario(
     driver.join(timeout=10.0)
     reset_rclpy()
 
+    escalations = ledger.shutdown_escalations
     if failure:
-        raise failure[0]
-    return outcome
+        error = failure[0]
+        if escalations:
+            note = "shutdown escalations: " + ", ".join(
+                f"{e['name']} {e['signal']}" for e in escalations
+            )
+            if isinstance(error, TimeoutError):
+                raise TimeoutError(f"{error} [{note}]") from error
+            error.add_note(note)
+        raise error
+    result = RunOutcome(outcome)
+    result.shutdown_escalations = escalations
+    return result
 
 
 def score_localization(
@@ -795,14 +911,16 @@ def run_scenario_with_track_limit_violation(
     if scenario is not None:
         launch_arguments["scenario"] = scenario
 
+    ledger = _ProcessLedger()
     description = launch.LaunchDescription(
         [
+            *ledger.actions(),
             launch.actions.IncludeLaunchDescription(
                 launch.launch_description_sources.PythonLaunchDescriptionSource(
                     str(BRINGUP_LAUNCH_FILE)
                 ),
                 launch_arguments=launch_arguments.items(),
-            )
+            ),
         ]
     )
     service = launch.LaunchService()
@@ -886,6 +1004,7 @@ def run_scenario_with_track_limit_violation(
         finally:
             observer.close()
             node.destroy_node()
+            ledger.shutting_down = True
             service.shutdown()
 
     driver = threading.Thread(target=_drive, daemon=True)
@@ -894,6 +1013,17 @@ def run_scenario_with_track_limit_violation(
     driver.join(timeout=10.0)
     reset_rclpy()
 
+    escalations = ledger.shutdown_escalations
     if failure:
-        raise failure[0]
-    return outcome
+        error = failure[0]
+        if escalations:
+            note = "shutdown escalations: " + ", ".join(
+                f"{e['name']} {e['signal']}" for e in escalations
+            )
+            if isinstance(error, TimeoutError):
+                raise TimeoutError(f"{error} [{note}]") from error
+            error.add_note(note)
+        raise error
+    result = RunOutcome(outcome)
+    result.shutdown_escalations = escalations
+    return result

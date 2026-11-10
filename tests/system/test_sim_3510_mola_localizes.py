@@ -100,6 +100,11 @@ def test_sim_3510_mola_tracks_ground_truth(tmp_path: Path) -> None:
         scenario=SCENARIO,
         implementation="mola",
         baseline=BASELINE,
+        diagnostics={
+            "shutdown_escalations": list(
+                getattr(metrics, "shutdown_escalations", [])
+            ),
+        },
     )
     live_violations = catastrophic_violations(
         {**live, "availability": availability},

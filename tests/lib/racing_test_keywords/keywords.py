@@ -169,7 +169,9 @@ class RacingTestKeywords:
             "ate_rmse",
         )
         detail = ", ".join(f"{name}={score.get(name)}" for name in fields)
-        return f" ({detail}; recording {self._recording})"
+        return f" ({detail}; recording {self._recording})" + (
+            self._escalation_note()
+        )
 
     def localization_error_should_be_below(self, threshold: float) -> None:
         """The estimate's ATE RMSE over the lap, scored offline."""
@@ -208,6 +210,7 @@ class RacingTestKeywords:
             str(report_id),
             self._require_localization(),
             baseline=None,
+            diagnostics=self._run_diagnostics(),
             **self._report_context(),
         )
 
@@ -217,8 +220,41 @@ class RacingTestKeywords:
             str(report_id),
             self._require_metrics(),
             baseline=None,
+            diagnostics=self._run_diagnostics(),
             **self._report_context(),
         )
+
+    def _run_diagnostics(self) -> dict[str, Any]:
+        """What the run itself learned, for a report's `diagnostics`. Read
+        with getattr: a stubbed runner returns a plain dict (CHECK-1400).
+        Never raises: a diagnostic must not turn a green run red."""
+        try:
+            metrics = self._metrics
+            frozen_at = getattr(metrics, "frozen_at", None)
+            return {
+                "shutdown_escalations": list(
+                    getattr(metrics, "shutdown_escalations", None) or []
+                ),
+                "frozen_at": None if frozen_at is None else list(frozen_at),
+            }
+        except Exception:  # noqa: BLE001
+            return {"shutdown_escalations": [], "frozen_at": None}
+
+    def _escalation_note(self) -> str:
+        """`; shutdown escalations: <name> SIGKILL, ...` for a failure's text,
+        or nothing when launch escalated nothing (the text stays today's)."""
+        try:
+            escalations = (
+                getattr(self._metrics, "shutdown_escalations", None) or []
+            )
+            if not escalations:
+                return ""
+            listed = ", ".join(
+                f"{e['name']} {e['signal']}" for e in escalations
+            )
+            return f"; shutdown escalations: {listed}"
+        except Exception:  # noqa: BLE001
+            return "; shutdown escalations: (diagnostic unavailable)"
 
     def _report_context(self) -> dict[str, Any]:
         info = self._run_info
@@ -246,6 +282,7 @@ class RacingTestKeywords:
         if actual != expected_bool:
             raise AssertionError(
                 f"expected lap_completed={expected_bool}, was {actual}"
+                + self._escalation_note()
             )
 
     def collision_count_should_be(self, expected: int) -> None:

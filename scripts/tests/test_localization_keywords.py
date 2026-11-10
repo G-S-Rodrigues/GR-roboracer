@@ -222,3 +222,80 @@ def test_check_2320_metrics_report_keyword(monkeypatch, tmp_path) -> None:
     data = json.loads((tmp_path / "reports" / "ACC-4010.json").read_text())
     for field in ("lap_time", "minimum_wall_clearance", "p95_tracking_error"):
         assert field in data["numbers"]
+
+
+# ---- CHECK-2372: diagnostics beside, never inside, the report's numbers ----
+
+
+def _outcome(**attributes):
+    from racing_test_keywords.scenario_runner import RunOutcome
+
+    outcome = RunOutcome(lap_completed=False, lap_time=0.0, collision_count=0)
+    for name, value in attributes.items():
+        setattr(outcome, name, value)
+    return outcome
+
+
+@pytest.fixture
+def reports(tmp_path, monkeypatch):
+    from racing_test_keywords import report
+
+    monkeypatch.setattr(report, "REPORT_ROOT", tmp_path / "reports")
+    monkeypatch.setenv("RACING_REVISION", "abc123")
+    return tmp_path / "reports"
+
+
+def test_check_2372_reports_carry_the_run_diagnostics(reports):
+    import json
+
+    library = keywords.RacingTestKeywords()
+    escalation = [{"name": "racing_recording-4", "signal": "SIGKILL"}]
+    library._metrics = _outcome(
+        shutdown_escalations=escalation, frozen_at=(110.51, 173.8, -0.88)
+    )
+    library._localization = dict(SCORE)
+    library._run_info = {"seed": 7, "scenario": "s", "implementation": "amcl"}
+    library.write_metrics_report("ACC-9001")
+    library.write_localization_report("ACC-9002")
+    metrics = json.loads((reports / "ACC-9001.json").read_text())
+    localization = json.loads((reports / "ACC-9002.json").read_text())
+    assert metrics["diagnostics"]["shutdown_escalations"] == escalation
+    assert metrics["diagnostics"]["frozen_at"] == [110.51, 173.8, -0.88]
+    assert localization["diagnostics"]["shutdown_escalations"] == escalation
+    # numbers stay exactly what they were: the metrics, and the score
+    assert set(metrics["numbers"]) == {
+        "lap_completed",
+        "lap_time",
+        "collision_count",
+    }
+    assert localization["numbers"] == SCORE
+
+
+def test_check_2372_a_plain_dict_outcome_still_reports(reports):
+    """CHECK-1400/1410 stub the runner with a plain dict."""
+    import json
+
+    library = keywords.RacingTestKeywords()
+    library._metrics = {"lap_completed": True}
+    library._run_info = {"seed": 1}
+    library.write_metrics_report("ACC-9003")
+    record = json.loads((reports / "ACC-9003.json").read_text())
+    assert record["numbers"] == {"lap_completed": True}
+    assert record["diagnostics"]["shutdown_escalations"] == []
+
+
+def test_check_2372_failure_text_names_the_escalations():
+    library = keywords.RacingTestKeywords()
+    library._metrics = _outcome(
+        shutdown_escalations=[{"name": "stubborn-1", "signal": "SIGKILL"}]
+    )
+    with pytest.raises(AssertionError) as raised:
+        library.lap_completion_should_be("true")
+    text = str(raised.value)
+    assert text.startswith("expected lap_completed=True, was False")
+    assert "shutdown escalations: stubborn-1 SIGKILL" in text
+    # none seen: the text is exactly today's
+    library._metrics = _outcome()
+    with pytest.raises(AssertionError) as raised:
+        library.lap_completion_should_be("true")
+    assert str(raised.value) == "expected lap_completed=True, was False"
