@@ -1,8 +1,8 @@
 """Tier 2: the Socket.IO server node against the replayed recording.
 
-SIMAD-2010..2040, 2270. The server listens on an ephemeral port (never 4567) and
-`racing_sim_autodrive.replay` stands in for the sim. Needs the pip closure
-(plan D2) and ROS_DOMAIN_ID set by the caller.
+SIMAD-2010..2040, 2270, 2300. The server listens on an ephemeral port (never
+4567) and `racing_sim_autodrive.replay` stands in for the sim. Needs the pip
+closure (plan D2) and ROS_DOMAIN_ID set by the caller.
 """
 
 import json
@@ -26,7 +26,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Imu, LaserScan
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -37,6 +37,7 @@ SCAN = launch_support.topic("/scan")
 DRIVE = launch_support.topic("/drive")
 ODOM = launch_support.topic("/odom")
 TRUTH = launch_support.topic("/ground_truth/odom")
+IMU = launch_support.topic("/imu")
 COUNTERS = f"{launch_support.PREFIX}/racing_sim/autodrive_counters"
 RESET = f"{launch_support.PREFIX}/racing_sim/reset"
 FRAMES = 300
@@ -366,3 +367,62 @@ class TestServerNode(unittest.TestCase):
         self.assertTrue(
             all(m.header.stamp.sec or m.header.stamp.nanosec for m in counters)
         )
+
+    def test_simad_2300_imu_carries_the_frames_acceleration(self):
+        """SIMAD-2300: `/imu` carries the frame's `V1 Linear Acceleration`:
+        x and y equal to it, z the frame's plus g (the raw value has no
+        gravity, its z median is 0.001 m/s^2 over the committed recording;
+        a REP 145 IMU reports the specific force, as the gym's `/imu`
+        does). In turns a_y has the sign of v_x w_z (the axes are the
+        car's): on the fixture 258 of the 259 raw frames with |v_x w_z| > 0.2
+        agree, the odd one a steering-snap spike, so the share is asserted,
+        at 95 %, not every frame. Best effort, like /scan, so a message may
+        be lost: each one is matched, in order, to the next frame it
+        equals."""
+        import gzip
+        import tempfile
+
+        frames_wanted = 460
+        with gzip.open(launch_support.FIXTURE, "rt", encoding="utf-8") as f:
+            events = [json.loads(line) for line in f if line.strip()][1:]
+        frames = []
+        for event in events:
+            if event["dir"] != "sim":
+                continue
+            data = event["data"]
+            ax, ay, az = (
+                float(v) for v in data["V1 Linear Acceleration"].split()
+            )
+            vx = float(data["V1 Linear Velocity"].split()[0])
+            wz = float(data["V1 Angular Velocity"].split()[2])
+            frames.append((ax, ay, az, vx * wz))
+        frames = frames[:frames_wanted]
+        with tempfile.TemporaryDirectory() as tmp:
+            _, got = self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                str(frames_wanted),
+                collect=[(Imu, IMU, SENSOR)],
+            )
+        messages = got[IMU]
+        self.assertGreaterEqual(len(messages), int(0.98 * frames_wanted))
+        matched = []
+        index = 0
+        for message in messages:
+            a = message.linear_acceleration
+            while index < len(frames) and not (
+                abs(a.x - frames[index][0]) < 1e-9
+                and abs(a.y - frames[index][1]) < 1e-9
+            ):
+                index += 1
+            self.assertLess(index, len(frames), "an /imu with no frame")
+            self.assertAlmostEqual(a.z, frames[index][2] + 9.81, places=6)
+            matched.append((a.y, frames[index][3]))
+            index += 1
+        turning = [(ay, lat) for ay, lat in matched if abs(lat) > 0.2]
+        self.assertGreater(len(turning), 100)
+        agree = sum(1 for ay, lat in turning if ay * lat > 0.0)
+        self.assertGreaterEqual(agree / len(turning), 0.95)
+        # The test is not satisfied by zeros.
+        peak = max(abs(m.linear_acceleration.y) for m in messages)
+        self.assertGreater(peak, 0.4)

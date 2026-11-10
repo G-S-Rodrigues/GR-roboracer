@@ -51,6 +51,10 @@ STATE_QOS = QoSProfile(
 )
 
 SCAN_FRAME_ID = bridge.SCAN_FRAME_ID  # both scans, the contract name
+# The sim's `V1 Linear Acceleration` has no gravity (its z median is 0.001
+# m/s^2 over the committed recording); /imu reports the specific force (REP
+# 145), as the gym's /imu does (racing_sim_gym_jax/imu.py, the same 9.81).
+GRAVITY_M_S2 = 9.81
 
 VEHICLE_PARAMETERS = (
     "lr",
@@ -225,6 +229,10 @@ class ContractNode(Node):
         imu.header.frame_id = "base_link"
         imu.orientation = truth_message.pose.pose.orientation
         imu.angular_velocity.z = truth.wz
+        accel = step.frame.linear_acceleration
+        imu.linear_acceleration.x = accel[0]
+        imu.linear_acceleration.y = accel[1]
+        imu.linear_acceleration.z = accel[2] + GRAVITY_M_S2
         self._imu_publisher.publish(imu)
 
         encoders = JointState()
