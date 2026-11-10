@@ -169,6 +169,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="localization only",
     )
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    render = commands.add_parser("render", help="re-render a saved report.json")
+    render.add_argument("report", type=Path)
     return parser
 
 
@@ -465,10 +467,23 @@ def _command_run(args: argparse.Namespace) -> int:
     return 1 if broken else 0
 
 
+def _command_render(args: argparse.Namespace) -> int:
+    try:
+        document = json.loads(args.report.read_text(encoding="utf-8"))
+        text = render_report(document)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        print(f"benchmark render: {args.report}: {error}", file=sys.stderr)
+        raise SystemExit(2) from error
+    print(text, end="")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
         return _command_run(args)
+    if args.command == "render":
+        return _command_render(args)
     raise SystemExit(2)
 
 

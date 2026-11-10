@@ -523,3 +523,62 @@ def test_check_2740_report_is_written_when_a_run_raises(
         )
     assert (tmp_path / "planning" / "report.json").is_file()
     assert (tmp_path / "planning" / "report.md").is_file()
+
+
+# -- CHECK-2750 ---------------------------------------------------------------
+
+FIXTURES = ROOT / "scripts" / "tests" / "fixtures" / "benchmark"
+
+
+def _run_for_render(monkeypatch, tmp_path, role) -> Path:
+    _fake_stack(monkeypatch)
+    out = tmp_path / "out"
+    assert (
+        benchmark.main(
+            ["run", "--role", role, "--seeds", "42", "--out", str(out)]
+        )
+        == 0
+    )
+    return out / role / "report.json"
+
+
+@pytest.mark.parametrize("role", ["localization", "planning"])
+def test_check_2750_render_reproduces_a_run_s_report(
+    monkeypatch, tmp_path, capsys, role
+) -> None:
+    path = _run_for_render(monkeypatch, tmp_path, role)
+    written = (path.parent / "report.md").read_text(encoding="utf-8")
+    capsys.readouterr()
+    assert benchmark.main(["render", str(path)]) == 0
+    assert capsys.readouterr().out.strip() == written.strip()
+
+
+def test_check_2750_legacy_pose_source_artifact(capsys) -> None:
+    path = FIXTURES / "legacy_pose_source_report.json"
+    assert benchmark.main(["render", str(path)]) == 0
+    shown = capsys.readouterr().out
+    assert (
+        "scored against: simulator ground truth (legacy nightly artifact)"
+        in (shown)
+    )
+    assert "## spielberg: ate_rmse" in shown
+    assert "| implementation | 42 | 7 |" in shown
+    # rows follow METHODS order, never ate_rmse order (amcl 0.31 > slam 0.22)
+    assert shown.index("| slam_toolbox |") < shown.index("| amcl |")
+
+
+def test_check_2750_legacy_raceline_artifact(capsys) -> None:
+    path = FIXTURES / "legacy_raceline_report.json"
+    assert benchmark.main(["render", str(path)]) == 0
+    shown = capsys.readouterr().out
+    assert "legacy nightly artifact" in shown
+    assert "| default / centerline |" in shown
+    assert "DNF 52.3 m" in shown
+
+
+def test_check_2750_unrecognised_json_exits_2(tmp_path) -> None:
+    path = tmp_path / "other.json"
+    path.write_text('{"id": "SIM-3070", "numbers": {}}', encoding="utf-8")
+    with pytest.raises(SystemExit) as stop:
+        benchmark.main(["render", str(path)])
+    assert stop.value.code == 2
