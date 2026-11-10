@@ -618,7 +618,8 @@ def _history_tree(tmp_path: Path) -> list[Path]:
         {"live": {"ate_rmse": 0.9, "availability": 0.99}, "n": 3},
     )  # fmt: skip
     _report(
-        one / slam, "SIM-5020-slam", "SIM-5020", 42, "slam_toolbox", "aaaaaaa1234",
+        one / slam, "SIM-5020-slam", "SIM-5020", 42, "slam_toolbox",
+        "aaaaaaa1234",
         {"live": {"ate_rmse": 0.2, "availability": 0.95}, "n": 3},
     )  # fmt: skip
     _report(
@@ -626,7 +627,8 @@ def _history_tree(tmp_path: Path) -> list[Path]:
         {"live": {"ate_rmse": 0.5, "availability": 1.0}, "n": 3},
     )  # fmt: skip
     _report(
-        two / slam, "SIM-3110", "SIM-3110", 42, "optimized_raceline", "bbbbbbb5678",
+        two / slam, "SIM-3110", "SIM-3110", 42, "optimized_raceline",
+        "bbbbbbb5678",
         {"lap_time": 111.0, "series": [1, 2]},
     )  # fmt: skip
     (two / slam / "other.json").write_text('{"hello": 1}', encoding="utf-8")
