@@ -56,13 +56,12 @@ The denser surveys beside the committed grid, measured against the track's groun
 
 ## Pose-source data
 
-The nightly records every pose source on `spielberg` (64 beams) and `spielberg_1080` (1080 beams over
-270 degrees), per seed, as `report.md` and `report.json` in the `pose-source-report` artifact of the
-`slam` seed-42 job (SIM-5510 in [Verification](verification.md#5-nightly-coverage)). It reports the
+The [benchmark command](running.md#comparing-implementations) records every pose source on `spielberg` (64 beams) and `spielberg_1080` (1080 beams over
+270 degrees), per seed, as `report.md` and `report.json` under `log/benchmark/localization/` (the `benchmark-localization` artifact in CI). It reports the
 estimate's error and availability, the rate of changed poses, the scan rate, CPU per scan and the produced
 map's distance to the true walls. The wall distance is the raw distance from each occupied cell's centre
 to the gym map image's wall faces, so a perfect map at 0.05 m cells scores 0.025 m, not 0. The report is
-data: it ranks nothing and bounds no value. No numbers are published here until a nightly produces them. From the merge of the 1080 slam_toolbox
+data: it ranks nothing and bounds no value. No numbers are published here until a benchmark run produces them. From the merge of the 1080 slam_toolbox
 file, its `spielberg_1080` rows run that file instead of the 64-beam one, so earlier and later rows are not
 the same configuration.
 

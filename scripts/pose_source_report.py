@@ -1,4 +1,4 @@
-"""The pose-source data report (SIM-5510): record schema, structure, render.
+"""The pose-source data report: record schema, structure, render.
 
 ROS-free and pure: functions over dicts, no rclpy, no disk, no clock. One
 record per (pose source, scenario, seed). The report records numbers and
@@ -239,7 +239,7 @@ def structural_failures(records, expected) -> list[str]:
     return failures
 
 
-def _cell(value) -> str:
+def cell(value) -> str:
     if value is None:
         return "-"
     if isinstance(value, float):
@@ -292,5 +292,5 @@ def render(records) -> str:
                     cells += ["-"] * (len(RENDER_COLUMNS) - 4)
                 else:
                     cells = [row[c] for c in RENDER_COLUMNS]
-                lines.append("| " + " | ".join(_cell(c) for c in cells) + " |")
+                lines.append("| " + " | ".join(cell(c) for c in cells) + " |")
     return "\n".join(lines) + "\n"

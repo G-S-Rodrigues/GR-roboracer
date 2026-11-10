@@ -7,7 +7,7 @@ An autonomous racing stack for F1TENTH / RoboRacer on ROS 2 Jazzy, plus a headle
 ## The rule
 
 **`./scripts/check.sh --ready` must pass once at the end of an implementation (and again after a
-failure), and CI must be green on the PR head, before any change is described as done.** Not "the tests
+failure), and CI must be green on the PR head, before any change is described as done.** CI means the `CI` workflow; a check whose name contains `(non-blocking)` (the Benchmark workflow) is never waited on and never stops a merge (ADR 0008 section 5). Not "the tests
 I touched" — the gate. It runs in the `dev` container:
 
 ```bash

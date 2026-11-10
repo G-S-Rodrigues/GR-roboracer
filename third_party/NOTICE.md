@@ -11,7 +11,7 @@ installed into the image unmodified.
 - Upstream: `https://github.com/f1tenth/f1tenth_racetracks`, pinned at
   `866fe657f0bbe245f90a5042bc6eec0b0489d4c3`.
 - Licence: **GPL-3.0**, under its own terms (see `LICENSE` in the submodule).
-- Use: read at tier 5 only, by SIM-5050, as data (the upstream raceline's
+- Use: read only by the planning benchmark (`scripts/benchmark.py`), as data (the upstream raceline's
   geometry for the report's reference row). Nothing else reads it, and the
   report renders "upstream reference: not available" when the submodule is not
   initialised, which is the default in a clone.

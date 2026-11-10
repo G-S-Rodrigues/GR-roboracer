@@ -111,3 +111,21 @@ not set physics parameters the rollout does not (SIMJAX-1060).
 
 Symptoms and fixes (latched stop, silent topics, stale launches) are in
 [Setup](setup.md#troubleshooting).
+
+## Comparing implementations
+
+`python3 scripts/benchmark.py run` drives every implementation of a role side by side and prints
+implementation-by-seed tables. Roles: `localization` (every pose source on `spielberg` and
+`spielberg_1080`, open loop) and `planning` (every committed Spielberg line on the default and
+gym-limits vehicles). Default seeds are 42, 1030, 7 and 2026; `--role`, `--seeds` and `--scenarios`
+narrow a run. Output goes to `log/benchmark/<role>/report.md` and `report.json`.
+`benchmark.py render <report.json>` reprints a saved report and `benchmark.py history <dirs>` tabulates
+saved ones.
+
+The benchmark ranks nothing and gates nothing: a gym-limits run that does not finish is data. It
+exits 1 on a structural failure: a default-vehicle run that does not finish, a latched, over-budget or
+infrastructure-failed run on any row, a method it cannot run, or a missing record. Errors are scored against
+simulator ground truth. A full run takes about 34 minutes (localization) and 15 minutes (planning) on a
+CI runner; run it on a private `ROS_DOMAIN_ID`. The Benchmark workflow runs it on a PR that adds an
+implementation to the reference stack, adds or changes a committed Spielberg raceline CSV, or edits
+`scripts/benchmark_runs.py`, and by hand with `gh workflow run benchmark.yaml -f role=all`.
