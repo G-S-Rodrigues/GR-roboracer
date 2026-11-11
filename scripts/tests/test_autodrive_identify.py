@@ -1269,9 +1269,11 @@ def test_check_2670_committed_lateral_recording_reanalyses_to_limits(
     tool = _tool()
     assert LATERAL_RECORDING.is_file(), "lateral recording not committed"
     digest = hashlib.sha256(LATERAL_RECORDING.read_bytes()).hexdigest()
-    for _ in range(2):  # deterministic
+    outs = [tmp_path / f"write{i}" for i in range(2)]
+    for out in outs:  # deterministic: both writes are compared
+        out.mkdir()
         tool.write_limits(
-            tmp_path,
+            out,
             tool.lateral_bins(LATERAL_RECORDING, SOURCE),
             source=SOURCE,
             recording_sha256=digest,
@@ -1284,7 +1286,11 @@ def test_check_2670_committed_lateral_recording_reanalyses_to_limits(
     for name in ("limits_sliding.yaml", "limits_peak.yaml"):
         committed = VEHICLE_DIR / name
         assert committed.is_file(), f"{name} not committed"
-        assert (tmp_path / name).read_text() == committed.read_text(), name
+        for out in outs:
+            assert (out / name).read_text() == committed.read_text(), (
+                out.name,
+                name,
+            )
         assert digest in committed.read_text(), name
 
 
