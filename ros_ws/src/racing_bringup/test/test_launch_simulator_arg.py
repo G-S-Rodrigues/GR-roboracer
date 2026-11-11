@@ -326,9 +326,11 @@ def test_bringup_1840_the_fast_car_has_its_own_porto_raceline():
     support = _launched(context, module, "racing_bringup")
     assert support["raceline_path"] == str(
         REPOSITORY_ROOT
-        / "config"
+        / "third_party"
+        / "GR-roboracer-data"
+        / "tracks"
+        / "Porto"
         / "racelines"
-        / "porto"
         / "autodrive-roboracer-fast-v1"
         / "tum_mintime.csv"
     )
