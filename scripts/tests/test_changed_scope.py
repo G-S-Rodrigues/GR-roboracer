@@ -973,7 +973,7 @@ def test_check_2330_every_reference_stack_glob_matches_a_file() -> None:
     matcher is `changed_scope`'s own, `fnmatchcase` on repo-relative paths.
     The tree is walked rather than listed with git, which fails in `dev` on a
     host worktree (repo-gotchas #23); build output, logs and the submodules
-    are not part of it."""
+    are not part of it; `.github` is (a glob may name a workflow)."""
     import fnmatch
 
     stack = load_stack(REPO_ROOT)
@@ -981,7 +981,9 @@ def test_check_2330_every_reference_stack_glob_matches_a_file() -> None:
     files: list[str] = []
     for directory, names, filenames in os.walk(REPO_ROOT):
         names[:] = [
-            n for n in names if n not in skipped and not n.startswith(".")
+            n
+            for n in names
+            if n not in skipped and (n == ".github" or not n.startswith("."))
         ]
         base = Path(directory).relative_to(REPO_ROOT)
         files.extend((base / f).as_posix() for f in filenames)
