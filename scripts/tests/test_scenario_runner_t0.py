@@ -315,6 +315,31 @@ def test_check_2570_a_late_started_report_keeps_its_stamp():
     assert observer.metrics_start == pytest.approx(0.43)
 
 
+def test_check_2575_the_state_reader_is_destroyed_at_first_motion():
+    """After first motion nothing reads the state again: rclpy would still
+    deserialize every sample of the lap, runner CPU where load matters."""
+    destroyed = []
+    topics = {}
+
+    class _Tracking(_FakeNode):
+        def create_subscription(self, message_type, topic, *args, **kwargs):
+            subscription = object()
+            topics[subscription] = topic
+            return subscription
+
+        def destroy_subscription(self, subscription) -> None:
+            destroyed.append(topics[subscription])
+
+    observer = scenario_runner._HangObserver(_Tracking([]))
+    observer._on_state(_state(0.0))
+    observer._on_state(_state(0.01, 0.0))
+    assert "/ground_truth/track_relative_state" not in destroyed
+    observer._on_state(_state(0.02, 0.05))
+    assert destroyed == ["/ground_truth/track_relative_state"]
+    observer.close()
+    assert destroyed.count("/ground_truth/track_relative_state") == 1
+
+
 def test_check_2570_the_observer_listens_to_state_and_started():
     topics = []
 

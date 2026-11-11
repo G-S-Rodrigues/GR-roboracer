@@ -459,6 +459,12 @@ class _HangObserver:
         self.tick: float | None = None
         self.first_motion: float | None = None
         self.metrics_start: float | None = None
+        self._state_subscription = node.create_subscription(
+            TrackRelativeState,
+            STATE_TOPIC,
+            self._on_state,
+            OBSERVER_DRIVE_QOS,
+        )
         self._subscriptions = [
             node.create_subscription(
                 SafetyStatus, SAFETY_STATUS_TOPIC, self._on_status, RELIABLE_QOS
@@ -470,12 +476,6 @@ class _HangObserver:
                 AckermannDriveStamped,
                 CONTROLLER_DRIVE_TOPIC,
                 self._on_drive,
-                OBSERVER_DRIVE_QOS,
-            ),
-            node.create_subscription(
-                TrackRelativeState,
-                STATE_TOPIC,
-                self._on_state,
                 OBSERVER_DRIVE_QOS,
             ),
             node.create_subscription(
@@ -518,6 +518,13 @@ class _HangObserver:
             self.tick = seconds
         if message.v_s != 0.0:
             self.first_motion = seconds
+            # Nothing reads the state again; stop deserializing it all lap.
+            self._drop_state_subscription()
+
+    def _drop_state_subscription(self) -> None:
+        subscription, self._state_subscription = self._state_subscription, None
+        if subscription is not None:
+            self._node.destroy_subscription(subscription)
 
     def _on_started(self, message) -> None:
         if self.metrics_start is None:
@@ -545,6 +552,7 @@ class _HangObserver:
         self.clock = message.clock
 
     def close(self) -> None:
+        self._drop_state_subscription()
         for subscription in self._subscriptions:
             self._node.destroy_subscription(subscription)
 
