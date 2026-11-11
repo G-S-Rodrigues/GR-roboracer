@@ -97,11 +97,13 @@ jobs:
       matrix:
         role: ${{ fromJSON(needs.detect.outputs.roles) }}
     steps:
-      # The submodule is read only by the planning benchmark's upstream row
-      # (third_party/NOTICE.md).
+      # Both roles read the data submodule (ADR 0009): every scenario's
+      # map_directory and amcl's survey map live in it. The planning
+      # benchmark's upstream row also reads f1tenth_racetracks
+      # (third_party/NOTICE.md). CHECK-2340 pins this.
       - uses: actions/checkout@v4
         with:
-          submodules: ${{ matrix.role == 'planning' }}
+          submodules: true
 
       - uses: docker/setup-buildx-action@v3
 
