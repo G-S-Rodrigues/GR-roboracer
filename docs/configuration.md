@@ -76,6 +76,10 @@ steering rate 1.5 rad/s) and its own tables in `config/vehicles/autodrive_robora
 not measurements, and its GGV is a modelling bound (friction 1.0, from the prefab). It runs on `simulator:=autodrive` only; the
 gym refuses it. A committed minimum-time Porto line exists for it, `third_party/GR-roboracer-data/tracks/Porto/racelines/autodrive-roboracer-fast-v1/tum_mintime.csv`.
 
+Both AutoDRIVE files set the supervisor's `stale_input_timeout_ms` to 200 ms, against the gym's 100 ms, because the
+AutoDRIVE sim runs on wall time and its frames have arrived 127-145 ms apart on a busy host; a gap longer than 200 ms
+still stops the car (owner ruling 2026-11-11).
+
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):
 

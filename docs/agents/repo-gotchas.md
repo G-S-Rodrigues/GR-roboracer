@@ -75,7 +75,8 @@ Traps any task in this repository can hit. Each one cost real time at least once
    lets the whole track/Frenet/action layer be tested in milliseconds with no graph.
 
 19. **A late-starting estimator latches an emergency stop before it ever publishes.**
-    `stale_input_timeout_ms` is 100 ms, and its comment in `config/vehicles/f1tenth_default.yaml`
+    `stale_input_timeout_ms` is 100 ms on the gym's vehicle files (200 ms on AutoDRIVE's, owner call #27:
+    wall-time delivery gaps, `docs/agents/autodrive.md`), and its comment in `config/vehicles/f1tenth_default.yaml`
     says — correctly — that widening it is the wrong response to a latch. But `nav2_amcl` is
     lifecycle-managed, and `slam_toolbox` needs several scans before it emits anything. Start the
     drive stream before the active pose source is up and publishing and the supervisor latches an
