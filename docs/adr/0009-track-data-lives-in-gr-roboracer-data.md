@@ -39,7 +39,7 @@ racelines live there too, pinned by SHA as a `third_party/` submodule.
 ## Consequences
 
 - Every checkout and worktree needs `git submodule update --init third_party/GR-roboracer-data`, run on
-  the host (repo-gotchas #47). CI initialises it (CHECK-2340).
+  the host (repo-gotchas #44). CI initialises it (CHECK-2340).
 - A new or re-surveyed map, or a regenerated raceline, is two PRs: one into the data repo, then a
   gitlink bump here. A record's `code:` blobs pin the raceline code, so a change to `CODE_FILES`
   regenerates the records in the data repo first.

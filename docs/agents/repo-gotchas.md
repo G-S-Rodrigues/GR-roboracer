@@ -371,7 +371,7 @@ Traps any task in this repository can hit. Each one cost real time at least once
 
 ## Track data
 
-47. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
+44. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
     `git submodule update --init third_party/GR-roboracer-data` **on the host**: in `dev` git fails on a
     host worktree (#23). Do it again in every new worktree and after merging a main that bumped the pin.
     Without it, real-track scenarios raise at load naming the init command (SIMJAX-1600), where the

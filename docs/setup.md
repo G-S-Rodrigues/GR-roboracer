@@ -13,7 +13,7 @@ page does not repeat its build and launch sequence.
   FUSE-mounted filesystem a colcon build can be much slower and file watchers can stop firing
   without any error.
 - **Required:** `git submodule update --init third_party/GR-roboracer-data` after the clone, and in
-  every new `.scratch` worktree (on the host; ADR 0009, repo-gotchas #47). It holds the Spielberg and
+  every new `.scratch` worktree (on the host; ADR 0009, repo-gotchas #44). It holds the Spielberg and
   Porto maps and the Spielberg and Porto racelines. Without it the seeded lap on `analytic_circle` still runs,
   but every scenario that reads a real track fails at load, naming this command.
 - Optional: `git submodule update --init third_party/f1tenth_racetracks` fetches the upstream
