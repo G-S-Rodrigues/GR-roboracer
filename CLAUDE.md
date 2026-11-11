@@ -11,7 +11,7 @@ failure), and CI must be green on the PR head, before any change is described as
 I touched" — the gate. It runs in the `dev` container:
 
 ```bash
-docker exec gr-roboracer-dev bash -lc 'cd /ws && ./scripts/check.sh --ready'
+docker exec gr-roboracer-dev bash -lc 'cd /ws && scripts/heavy_lane.sh -- ./scripts/check.sh --ready'
 ```
 
 `--ready` is `--fast`'s scoped tiers 0–2, the seeded lap, and the tier-3/4 tests that

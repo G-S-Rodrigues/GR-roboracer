@@ -107,3 +107,15 @@ part2-w3-unverified). The facts so far: the pinned `autodrive-sim` image runs th
 (`-batchmode -nographics`); a window needs a display, an NVIDIA GPU with Vulkan, host networking so
 the sim reaches `127.0.0.1:4567`, and the bridge started first with
 `AUTODRIVE_ROS_DOMAIN_ID=<not 42> scripts/autodrive_gui.sh`.
+
+## The shared heavy lane under systemd-tmpfiles
+
+`/tmp/gr-roboracer-lane` is the one directory every heavy run locks (gotcha #48). The host's
+systemd-tmpfiles ages `/tmp` out after 30 days and empties it at boot (`D /tmp 1777 root root 30d` in
+`/usr/lib/tmpfiles.d/tmp.conf`). A removed lane leaves `dev`'s `/lane` a deleted directory, and
+`scripts/heavy_lane.sh` exits 4 there (CHECK-2445). To keep the lane, add a file
+`/etc/tmpfiles.d/gr-roboracer-lane.conf` on the host with this line:
+
+```
+x /tmp/gr-roboracer-lane
+```

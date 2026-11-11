@@ -11,8 +11,8 @@
 # when every holder of fd 9 is gone: a shell orphan of the command keeps it,
 # a Python child (colcon, pytest, ros2 launch) does not.
 # --wait gives up after SECONDS (default: wait forever).
-# Exit: the command's own, 2 bad arguments, 3 gave up waiting, 4 no lane, or a
-# lane whose heavy.lock cannot be opened.
+# Exit: the command's own, 2 bad arguments, 3 gave up waiting, 4 no lane, a
+# deleted /lane, or a lane whose heavy.lock cannot be opened.
 set -euo pipefail
 
 max_load=8
@@ -51,6 +51,13 @@ if [ -n "${GR_LANE_DIR:-}" ]; then
     lane=$GR_LANE_DIR
 elif [ -d "$lane_mount" ]; then
     lane=$lane_mount
+    # A host directory removed under a running container (systemd-tmpfiles'
+    # 30-day /tmp clean) leaves /lane openable with link count 0; the host
+    # would then make a new lane and the two sides would hold two locks.
+    if [ "$(stat -c %h "$lane" 2>/dev/null || echo 1)" = 0 ]; then
+        echo "$lane_mount is a deleted directory: the host lane /tmp/gr-roboracer-lane was removed (for example by systemd-tmpfiles' 30-day /tmp clean) while this container ran; a lock here would exclude nobody. Re-make the host dir and recreate dev, or exclude it with a tmpfiles.d 'x /tmp/gr-roboracer-lane' line" >&2
+        exit 4
+    fi
     # Compose creates a missing source root:root 0755; open it so the host user
     # can take the lock too (effective only as root, which dev is).
     chmod 1777 "$lane" 2>/dev/null || true

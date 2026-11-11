@@ -94,8 +94,9 @@ justified a bound stays beside the report, as its baseline.
 ```
 
 Heavy runs (a ready gate, a live qualification, a recording) take one lock so they do not overlap and
-starve each other: `scripts/heavy_lane.sh -- ./scripts/check.sh --ready` (on the host or in `dev` / `fast-sim`, which mount `/lane`; `gpu` and the autodrive services do not, so wrap them from the host; it waits
-for the lane, then for load under 8, `--max-load`). See gotcha #48.
+starve each other: `scripts/heavy_lane.sh -- ./scripts/check.sh --ready` (on the host or in `dev` /
+`fast-sim`, which mount `/lane`; `gpu` and the autodrive services do not, so wrap them from the host; it
+waits for the lane, then for load under 8, `--max-load`). See gotcha #48.
 
 `--fast` diffs the branch against `main` (plus index, worktree and untracked files) and lints and tests
 only what that touches: `clang-format` and `clang-tidy` run only when a C/C++ file changed, and then
@@ -255,4 +256,4 @@ The D1 data-repo migration added tier 1 `CHECK-2320`, `CHECK-2330`, `CHECK-2340`
 
 The F-T0 fix added tier 1 `CHECK-2560`..`CHECK-2564` and `CHECK-2570`..`CHECK-2573`, and tier 2 `METRICS-2020` and `METRICS-2030`.
 
-The heavy-lane work added tier 1 `CHECK-2400` to `CHECK-2440` and `CHECK-2441` to `CHECK-2444` (`scripts/tests/test_heavy_lane.py`).
+The heavy-lane work added tier 1 `CHECK-2400` to `CHECK-2440` and `CHECK-2441` to `CHECK-2445` (`scripts/tests/test_heavy_lane.py`).

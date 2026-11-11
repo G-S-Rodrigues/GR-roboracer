@@ -68,7 +68,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     goes through `scripts/heavy_lane.sh -- <command>`, which takes `flock` on `/lane/heavy.lock`, the host's
     `/tmp/gr-roboracer-lane` mounted into `dev` and `fast-sim` (CHECK-2400; `gpu` and the autodrive services
     have no mount: wrap them from the host). A container made before the mount lacks `/lane` and the script
-    exits 4 there (CHECK-2440); recreate it. Compose creates a missing `/tmp/gr-roboracer-lane` as `root` 0755: the host then takes the lock through the readable `heavy.lock` but cannot stamp `owner`, and one wrapper run in `dev` opens the lane (CHECK-2441..2443); with neither a lock nor write access it exits 4 and names `chmod 1777` (CHECK-2444). `fs.protected_regular` also refuses an `O_CREAT` open, root included, of another user's file in a sticky directory, so `owner` is stamped in place (`dd conv=nocreat`): a plain `>` would leave a stamp that is permanently stale and names the wrong holder, with no error (CHECK-2443).
+    exits 4 there (CHECK-2440); recreate it. Compose creates a missing `/tmp/gr-roboracer-lane` as `root`
+    0755: the host then takes the lock through the readable `heavy.lock` but cannot stamp `owner`, and one
+    wrapper run in `dev` opens the lane (CHECK-2441..2443); with neither a lock nor write access it exits 4
+    and names `chmod 1777` (CHECK-2444). `fs.protected_regular` also refuses an `O_CREAT` open, root
+    included, of another user's file in a sticky directory, so `owner` is stamped in place (`dd
+    conv=nocreat`): a plain `>` would leave a stamp that is permanently stale and names the wrong holder,
+    with no error (CHECK-2443). The host's systemd-tmpfiles cleans `/tmp` after 30 days and at boot, and a
+    removed host lane leaves `dev`'s `/lane` a deleted directory: the script exits 4 there (CHECK-2445);
+    `docs/agents/running-wsl.md` has the exclusion.
 
 ## ROS
 
