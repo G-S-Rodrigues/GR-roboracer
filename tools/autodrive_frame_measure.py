@@ -22,7 +22,7 @@ from racing_evaluation.frame_fit import compose, fit_correction
 from racing_evaluation.map_accuracy import load_grid
 
 REPO = Path(__file__).resolve().parents[1]
-MAP = REPO / "third_party/GR-roboracer-data/tracks/Porto/maps/Porto/Porto.yaml"
+MAP = REPO / "third_party/GR-roboracer-data/tracks/Porto/Porto.yaml"
 FRAME = REPO / "config/autodrive/porto_frame.yaml"
 LASER_X = 0.2733  # config/vehicles/autodrive_roboracer.yaml
 UNCERTAINTY = (0.15, 0.03, 0.02)

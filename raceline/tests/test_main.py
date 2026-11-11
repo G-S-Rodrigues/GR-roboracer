@@ -20,10 +20,12 @@ VEHICLES = Path(__file__).resolve().parents[2] / "config" / "vehicles"
 DEFAULT = str(VEHICLES / "f1tenth_default.yaml")
 OPTIMIZER_PY = Path(optimize.__file__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
+LIMIT_SET = "gym-nominal-std-const-v1"
 D9_KEYS = {
     "format_version",
     "track",
     "vehicle_version",
+    "limit_set",
     "optimizer",
     "source",
     "ground_truth",
@@ -103,6 +105,8 @@ def _argv(tmp_path, *extra):
         DEFAULT,
         "--optimizer",
         "tum_mincurv_iqp",
+        "--limit-set",
+        LIMIT_SET,
         "--margin",
         "0.1",
         "--out-dir",
@@ -123,13 +127,15 @@ def test_raceline_1385_a_track_run_writes_the_csv_and_provenance(
     oval = _oval_yaml(tmp_path)
     code = runner.main(_argv(tmp_path, "--track", str(oval)))
     assert code == 0
-    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
-    with (folder / "tum_mincurv_iqp.csv").open() as f:
+    folder = (
+        tmp_path / "out" / "oval" / "racelines" / "tum_mincurv_iqp" / LIMIT_SET
+    )
+    with (folder / "raceline.csv").open() as f:
         rows = list(csv.reader(f, delimiter=";"))
     assert len(rows) == len(test_smoke._oval())
     assert all(len(r) == 7 for r in rows)
     assert float(rows[0][0]) == 0.0
-    doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
+    doc = yaml.safe_load((folder / "raceline.yaml").read_text())
     assert set(doc) >= D9_KEYS
     digest = hashlib.sha256(oval.read_bytes()).hexdigest()
     assert doc["source"]["sha256"] == digest
@@ -174,8 +180,9 @@ def test_raceline_1387_walls_reach_the_extractor_and_the_yaml(
             / "out"
             / "ring"
             / "racelines"
-            / "f1tenth-default-v1"
-            / "tum_mincurv_iqp.yaml"
+            / "tum_mincurv_iqp"
+            / LIMIT_SET
+            / "raceline.yaml"
         ).read_text()
     )
     assert doc["parameters"]["walls"] == "non_free"
@@ -260,8 +267,10 @@ def test_raceline_1388_the_ground_truth_map_gives_cells_to_that_set_only(
     cells = by_name["ground_truth"].cells
     assert cells.resolution == grid.resolution
     assert len(cells.centres) == int((grid.data == 100).sum())
-    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
-    doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
+    folder = (
+        tmp_path / "out" / "oval" / "racelines" / "tum_mincurv_iqp" / LIMIT_SET
+    )
+    doc = yaml.safe_load((folder / "raceline.yaml").read_text())
     gt_map = doc["ground_truth_map"]
     assert gt_map["path"] == str(ring)
     assert gt_map["sha256"] == hashlib.sha256(ring.read_bytes()).hexdigest()
@@ -303,10 +312,13 @@ def test_raceline_1470_a_written_line_is_plotted_to_the_plot_dir(
     argv = _argv(tmp_path, "--track", str(oval), "--plots", str(plots))
     assert runner.main(argv) == 0
     assert _plotted(plots)
-    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
+    folder = (
+        tmp_path / "out" / "oval" / "racelines" / "tum_mincurv_iqp" / LIMIT_SET
+    )
     assert sorted(p.name for p in folder.iterdir()) == [
-        "tum_mincurv_iqp.csv",
-        "tum_mincurv_iqp.yaml",
+        "limits.md",
+        "raceline.csv",
+        "raceline.yaml",
     ]
 
 
@@ -331,9 +343,7 @@ def test_raceline_1470_the_default_plot_dir_is_the_log_tree(
     monkeypatch.setattr(runner, "DEFAULT_PLOTS", tmp_path / "log")
     oval = _oval_yaml(tmp_path)
     assert runner.main(_argv(tmp_path, "--track", str(oval))) == 0
-    assert _plotted(
-        tmp_path / "log" / "oval" / "f1tenth-default-v1" / "tum_mincurv_iqp"
-    )
+    assert _plotted(tmp_path / "log" / "oval" / "tum_mincurv_iqp" / LIMIT_SET)
     assert runner.DEFAULT_OUT not in runner.DEFAULT_PLOTS.parents
 
 
@@ -368,6 +378,8 @@ def _mintime_argv(tmp_path, out, *extra):
         DEFAULT,
         "--optimizer",
         "tum_mintime",
+        "--limit-set",
+        LIMIT_SET,
         "--out-dir",
         str(out),
         *extra,
@@ -385,8 +397,8 @@ def _run_mintime(monkeypatch, tmp_path, out, *extra):
         _mintime_argv(tmp_path, out, "--track", str(oval), *extra)
     )
     assert code == 0
-    folder = out / "oval" / "racelines" / "f1tenth-default-v1"
-    doc = yaml.safe_load((folder / "tum_mintime.yaml").read_text())
+    folder = out / "oval" / "racelines" / "tum_mintime" / LIMIT_SET
+    doc = yaml.safe_load((folder / "raceline.yaml").read_text())
     return folder, doc, mincurv_calls, mintime_calls
 
 
@@ -401,8 +413,8 @@ def test_raceline_1445_a_mintime_run_writes_line_reference_and_provenance(
     folder, doc, mincurv_calls, mintime_calls = _run_mintime(
         monkeypatch, tmp_path, out
     )
-    assert (folder / "tum_mintime.csv").is_file()
-    reference = folder / "reference" / "tum_mintime.csv"
+    assert (folder / "raceline.csv").is_file()
+    reference = folder / "reference.csv"
     assert reference.is_file()
     # default margin of the optimizer, one solve, the min-curv stage first
     assert doc["parameters"]["margin"] == 0.40
@@ -438,7 +450,7 @@ def test_raceline_1445_a_reference_run_records_the_same_parameters(
     monkeypatch, tmp_path
 ):
     first, doc1, _, _ = _run_mintime(monkeypatch, tmp_path, tmp_path / "a")
-    reference = first / "reference" / "tum_mintime.csv"
+    reference = first / "reference.csv"
     second, doc2, mincurv_calls, mintime_calls = _run_mintime(
         monkeypatch, tmp_path, tmp_path / "b", "--reference", str(reference)
     )
@@ -446,7 +458,7 @@ def test_raceline_1445_a_reference_run_records_the_same_parameters(
     assert doc2["vehicle"] == doc1["vehicle"]
     assert mincurv_calls == []  # stages 1-2 skipped
     assert mintime_calls == [reference]  # seeded from the file as given
-    assert not (second / "reference").exists()
+    assert not (second / "reference.csv").exists()
     # the command differs only by --reference (CHECK-1560 drops it)
     assert doc1["command"] != doc2["command"]
     assert "--reference" in doc2["command"]
@@ -458,9 +470,8 @@ def test_raceline_1445_the_repo_relative_reference_path(monkeypatch, tmp_path):
     try:
         folder, doc, _, _ = _run_mintime(monkeypatch, tmp_path, out)
         assert doc["parameters"]["reference"]["path"] == (
-            "log/pytest-1445/out/oval/racelines/f1tenth-default-v1/"
-            "reference/"
-            "tum_mintime.csv"
+            "log/pytest-1445/out/oval/racelines/tum_mintime/"
+            f"{LIMIT_SET}/reference.csv"
         )
     finally:
         import shutil
@@ -478,14 +489,18 @@ def test_raceline_1445_a_mincurv_yaml_is_unchanged_by_the_new_optimizer(
         DEFAULT,
         "--optimizer",
         "tum_mincurv_iqp",
+        "--limit-set",
+        LIMIT_SET,
         "--out-dir",
         str(tmp_path / "out"),
         "--track",
         str(oval),
     ]
     assert runner.main(argv) == 0
-    folder = tmp_path / "out" / "oval" / "racelines" / "f1tenth-default-v1"
-    doc = yaml.safe_load((folder / "tum_mincurv_iqp.yaml").read_text())
+    folder = (
+        tmp_path / "out" / "oval" / "racelines" / "tum_mincurv_iqp" / LIMIT_SET
+    )
+    doc = yaml.safe_load((folder / "raceline.yaml").read_text())
     assert set(doc) == D9_KEYS | {"ground_truth_map"}
     assert doc["parameters"]["margin"] == 0.30  # no --margin: today's default
     assert doc["parameters"]["passes"] == 2
@@ -496,7 +511,7 @@ def test_raceline_1445_a_mincurv_yaml_is_unchanged_by_the_new_optimizer(
         "ax_max_machines_sha256",
     }
     assert "reference" not in doc["parameters"]
-    assert not (folder / "reference").exists()
+    assert not (folder / "reference.csv").exists()
 
 
 def test_raceline_1445_reference_is_refused_with_mincurv(monkeypatch, tmp_path):
@@ -521,21 +536,22 @@ def test_raceline_1445_mintime_is_one_solve(monkeypatch, tmp_path):
 
 def test_raceline_1530_the_default_out_dir_is_where_the_launch_looks():
     """RACELINE-1530: `DEFAULT_OUT` is the data repo's tracks root, so a
-    record lands in `<DEFAULT_OUT>/<Map>/racelines/<vehicle version>/`. That
-    is the folder the launch searches: for every committed scenario whose
-    `map_directory` resolves under `DEFAULT_OUT`, `DEFAULT_OUT / <map> /
-    racelines` equals `<map_directory>/../../<map>/racelines`. At least one
+    record lands in
+    `<DEFAULT_OUT>/<Map>/racelines/<optimizer>/<limit set>/`. That is the folder
+    the launch searches: for every committed scenario whose
+    `map_directory` is `DEFAULT_OUT`, `DEFAULT_OUT / <map> /
+    racelines` equals `<map_directory>/<map>/racelines`. At least one
     scenario qualifies, so the check is never vacuous."""
     scenarios = REPO_ROOT / "config" / "scenarios"
     checked = []
     for path in sorted(scenarios.glob("*.yaml")):
         doc = yaml.safe_load(path.read_text())
         maps = (path.parent / doc["map_directory"]).resolve()
-        if runner.DEFAULT_OUT not in maps.parents:
+        if maps != runner.DEFAULT_OUT.resolve():
             continue
         name = doc["environment"]["map"]
         assert runner.DEFAULT_OUT / name / "racelines" == (
-            maps.parent.parent / name / "racelines"
+            maps / name / "racelines"
         ), path.name
         checked.append(path.name)
     assert "spielberg.yaml" in checked
@@ -545,9 +561,9 @@ def test_raceline_1530_the_folder_is_keyed_by_the_map_files_cased_stem(
     monkeypatch, tmp_path
 ):
     """RACELINE-1530: a `--map Ring.yaml` record goes to
-    `<out-dir>/Ring/racelines/<vv>/` (the case kept, the folder the launch
-    derives from the scenario's map name), while its `track` field stays the
-    lower-case stem."""
+    `<out-dir>/Ring/racelines/<optimizer>/<set>/` (the case kept, the folder
+    the launch derives from the scenario's map name), while its `track` field
+    stays the lower-case stem."""
     monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
     _, pose = _ring_args(tmp_path)
     ring = _write_map(test_extract._ring(), tmp_path, stem="Ring")
@@ -557,8 +573,9 @@ def test_raceline_1530_the_folder_is_keyed_by_the_map_files_cased_stem(
         / "out"
         / "Ring"
         / "racelines"
-        / "f1tenth-default-v1"
-        / "tum_mincurv_iqp.yaml"
+        / "tum_mincurv_iqp"
+        / LIMIT_SET
+        / "raceline.yaml"
     )
     assert yaml.safe_load(sidecar.read_text())["track"] == "ring"
 
@@ -595,13 +612,13 @@ def test_raceline_1570_reprofile_speed_is_applied_verified_and_recorded(
     assert len(calls) == 1
     raw, out = calls[0]
     assert verified[-1] is out
-    written = optimize.load_raceline_csv(folder / "tum_mintime.csv")
+    written = optimize.load_raceline_csv(folder / "raceline.csv")
     assert np.allclose(written.v, out.v, atol=1e-8)
     assert "--reprofile-speed" in doc["command"]
     assert doc["parameters"]["speed_reprofile"] == {"limit_scale": 0.995}
     assert "speed reprofile:" in capsys.readouterr().err
     # a --reference run records the same parameters
-    reference = folder / "reference" / "tum_mintime.csv"
+    reference = folder / "reference.csv"
     _, doc2, _, _ = _run_mintime(
         monkeypatch,
         tmp_path,
@@ -625,6 +642,8 @@ def test_raceline_1570_reprofile_speed_is_refused_for_mincurv(
                 DEFAULT,
                 "--optimizer",
                 "tum_mincurv_iqp",
+                "--limit-set",
+                LIMIT_SET,
                 "--out-dir",
                 str(tmp_path / "o"),
                 "--track",
@@ -653,7 +672,7 @@ def test_raceline_1580_without_the_flag_nothing_is_reprofiled(
     folder, doc, _, _ = _run_mintime(monkeypatch, tmp_path, tmp_path / "a")
     expected = tmp_path / "expected.csv"
     optimize.write_raceline_csv(chained[0], expected)
-    assert (folder / "tum_mintime.csv").read_bytes() == expected.read_bytes()
+    assert (folder / "raceline.csv").read_bytes() == expected.read_bytes()
     assert "--reprofile-speed" not in doc["command"]
     assert "speed_reprofile" not in doc["parameters"]
     assert set(doc) == D9_KEYS | {"ground_truth_map", "solver"}
@@ -668,3 +687,125 @@ def test_raceline_1580_without_the_flag_nothing_is_reprofiled(
         "solver_options",
         "reference",
     }
+
+
+# -- the limit-set layout (D2: RACELINE-1610..1612, 1620) --------------------
+def test_raceline_1611_limit_set_is_required_and_checked(monkeypatch, tmp_path):
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    oval = _oval_yaml(tmp_path)
+    base = [
+        "--vehicle",
+        DEFAULT,
+        "--optimizer",
+        "tum_mincurv_iqp",
+        "--margin",
+        "0.1",
+        "--out-dir",
+        str(tmp_path / "out"),
+        "--track",
+        str(oval),
+    ]
+    with pytest.raises(SystemExit) as missing:
+        runner.main(base)
+    assert missing.value.code == 2
+    for bad in ("f1tenth-default-v1", "gym-nominal-std-const", "Gym-x-y-z-v1"):
+        with pytest.raises(SystemExit) as refused:
+            runner.main([*base, "--limit-set", bad])
+        assert refused.value.code != 0
+    assert not (tmp_path / "out").exists()  # refused before any solve
+    assert runner.main([*base, "--limit-set", LIMIT_SET]) == 0
+
+
+def test_raceline_1610_the_record_lands_in_the_limit_set_folder(
+    monkeypatch, tmp_path
+):
+    out = tmp_path / "out"
+    folder, doc, _, _ = _run_mintime(monkeypatch, tmp_path, out)
+    assert folder == out / "oval" / "racelines" / "tum_mintime" / LIMIT_SET
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "limits.md",
+        "raceline.csv",
+        "raceline.yaml",
+        "reference.csv",
+    ]
+    assert doc["parameters"]["reference"]["path"] == str(
+        folder / "reference.csv"
+    )
+
+
+def test_raceline_1612_the_record_carries_limit_set_and_no_default_out_dir(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(optimize, "run_tum", _feasible_tum())
+    oval = _oval_yaml(tmp_path)
+    out = tmp_path / "default_out"
+    monkeypatch.setattr(runner, "DEFAULT_OUT", out)
+    argv = [
+        "--vehicle",
+        DEFAULT,
+        "--optimizer",
+        "tum_mincurv_iqp",
+        "--limit-set",
+        LIMIT_SET,
+        "--margin",
+        "0.1",
+        "--out-dir",
+        str(out),
+        "--track",
+        str(oval),
+    ]
+    assert runner.main(argv) == 0
+    doc = yaml.safe_load(
+        (
+            out
+            / "oval"
+            / "racelines"
+            / "tum_mincurv_iqp"
+            / LIMIT_SET
+            / "raceline.yaml"
+        ).read_text()
+    )
+    assert doc["limit_set"] == LIMIT_SET
+    assert f"--limit-set {LIMIT_SET}" in doc["command"]
+    assert "--out-dir" not in doc["command"]
+    # a non-default --out-dir stays in the command (it is an input)
+    other = tmp_path / "other"
+    argv[argv.index("--out-dir") + 1] = str(other)
+    assert runner.main(argv) == 0
+    again = yaml.safe_load(
+        (
+            other
+            / "oval"
+            / "racelines"
+            / "tum_mincurv_iqp"
+            / LIMIT_SET
+            / "raceline.yaml"
+        ).read_text()
+    )
+    assert "--out-dir" in again["command"]
+
+
+def test_raceline_1620_limits_md_is_rendered_from_the_record(
+    monkeypatch, tmp_path
+):
+    from raceline.vehicle import load_vehicle
+
+    from raceline import limits
+
+    folder, doc, _, _ = _run_mintime(monkeypatch, tmp_path, tmp_path / "out")
+    vehicle = load_vehicle(Path(DEFAULT))
+    text = (folder / "limits.md").read_text()
+    block = limits.render(doc, vehicle)
+    assert block and block in text
+    assert str(vehicle.a_x_max).rstrip("0").rstrip(".") in block
+    assert doc["vehicle"]["ggv_sha256"] in block
+    assert doc["parameters"]["tyre_set"] in block
+    # rendering again keeps a hand-written provenance and replaces the table
+    (folder / "limits.md").write_text(
+        text.replace(limits.STUB, "Hand-written: the gym, by elimination.")
+    )
+    limits.write(folder / "limits.md", doc, vehicle)
+    kept = (folder / "limits.md").read_text()
+    assert "Hand-written: the gym, by elimination." in kept
+    assert limits.has_provenance(kept)
+    assert not limits.has_provenance(text)  # the stub is not provenance

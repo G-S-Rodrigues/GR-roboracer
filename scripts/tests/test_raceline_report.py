@@ -21,6 +21,7 @@ from scripts.raceline_report import (
     read_manifest,
     read_recording_tolerant,
     read_regeneration,
+    regenerated_paths,
     regeneration_argv,
     run_outcome,
     structural_failures,
@@ -500,7 +501,7 @@ def test_check_1490_normalise_round_trip() -> None:
 
 def test_check_1560_reference_is_dropped_like_out_dir() -> None:
     base = "python -m raceline --map a.yaml --optimizer tum_mintime"
-    with_reference = base + " --reference config/x/reference/tum_mintime.csv"
+    with_reference = base + " --reference config/x/reference.csv"
     assert normalise_command(with_reference) == normalise_command(base)
     assert normalise_command(base + " --out-dir /t --reference r.csv") == (
         normalise_command(base)
@@ -592,3 +593,39 @@ def test_check_1550_regeneration_record_must_be_fresh(tmp_path: Path) -> None:
     assert read_regeneration(path, 2000.0) == {}
     assert read_regeneration(path, 1000.0) == {"line": {"ok": True}}
     assert read_regeneration(path, 500.0) == {"line": {"ok": True}}
+
+
+# CHECK-2954 -------------------------------------------------------------
+
+
+def test_check_2954_regenerated_paths_follow_the_layout(
+    tmp_path: Path,
+) -> None:
+    doc = {
+        "source": {
+            "path": "third_party/GR-roboracer-data/tracks/Spielberg/maps/"
+            "slam_toolbox/res_0050/Spielberg.yaml"
+        },
+        "optimizer": "tum_mintime",
+        "limit_set": "gym-nominal-std-const-v1",
+    }
+    folder = (
+        tmp_path
+        / "Spielberg"
+        / "racelines"
+        / "tum_mintime"
+        / "gym-nominal-std-const-v1"
+    )
+    assert regenerated_paths(doc, tmp_path) == (
+        folder / "raceline.csv",
+        folder / "raceline.yaml",
+    )
+
+
+def test_check_2954_a_changed_limit_set_is_a_difference() -> None:
+    fresh = provenance_doc()
+    committed = provenance_doc()
+    committed["limit_set"] = "gym-nominal-std-const-v1"
+    fresh["limit_set"] = "gym-model-std-const-v1"
+    result = provenance_diff(committed, fresh)
+    assert any("limit_set" in line for line in result["differences"])

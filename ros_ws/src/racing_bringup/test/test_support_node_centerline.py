@@ -50,7 +50,7 @@ def test_bringup_1580_no_raceline_file_means_the_centerline_planner() -> None:
     assert porto["racing_bringup_support"]["raceline_path"] == ""
     porto_raceline = (
         REPOSITORY_ROOT
-        / "third_party/GR-roboracer-data/tracks/Porto/maps/Porto"
+        / "third_party/GR-roboracer-data/tracks/Porto"
         / "Porto_raceline.csv"
     )
     assert porto_raceline.parent.is_dir(), "the data submodule is missing"

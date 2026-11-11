@@ -31,6 +31,8 @@ from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
 from lifecycle_msgs.msg import Transition
 
+from racing_bringup import track_data
+
 SLAM_TOOLBOX_EXECUTABLES = {
     "mapping": "async_slam_toolbox_node",
     "localization": "localization_slam_toolbox_node",
@@ -119,27 +121,6 @@ def amcl(parameters: list, map_yaml: str, use_sim_time: bool = True) -> list:
     ]
 
 
-def mola_map_files(grid_yaml: str) -> tuple[str, str]:
-    """(.mm, provenance yaml) of the MOLA map that belongs to `grid_yaml`.
-
-    `grid_yaml` is the scenario's occupancy grid,
-    <data>/tracks/<Map>/maps/<Map>/slam/<Map>.yaml; MOLA's own map lives beside
-    it in maps/<Map>/mola/<Map>.{mm,yaml}. Derived from the scenario, as
-    amcl's grid is, so a run can only be localized on its own track. Raises
-    FileNotFoundError, naming the script that builds it, when it is absent.
-    """
-    grid = Path(grid_yaml)
-    mola_dir = grid.parent.parent / "mola"
-    mm = mola_dir / f"{grid.stem}.mm"
-    provenance = mola_dir / f"{grid.stem}.yaml"
-    for path in (mm, provenance):
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"no MOLA map {path}; build it with scripts/mola_map_track.sh"
-            )
-    return str(mm), str(provenance)
-
-
 def mola_launch_arguments(
     configuration: str,
     mm_file: str | None = None,
@@ -191,15 +172,17 @@ def mola_alignment_arguments(provenance_yaml: str) -> list[str]:
     ]
 
 
-def mola(configuration: str, grid_yaml: str, use_sim_time: bool = True) -> list:
-    """MOLA-LO localizing on the map it built itself for `grid_yaml`'s track.
+def mola(
+    configuration: str, track_directory: str, use_sim_time: bool = True
+) -> list:
+    """MOLA-LO localizing on the map it built itself for `track_directory`.
 
     MOLA owns `mola_map -> odom`; the static `map -> mola_map` joins that to
     the world frame (BRINGUP-2010), so the support node's `map -> odom`
     lookup resolves through the chain unchanged. Reads committed files only
     and spawns nothing at description time.
     """
-    mm_file, provenance = mola_map_files(grid_yaml)
+    mm_file, provenance = track_data.mola_files(Path(track_directory))
     share = Path(get_package_share_directory("mola_lidar_odometry"))
     return [
         Node(

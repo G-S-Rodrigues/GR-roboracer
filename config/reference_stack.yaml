@@ -131,8 +131,8 @@ roles:
       - implementation: amcl
         package: nav2_amcl
         # Localizes against the track's committed occupancy grid,
-        # tracks/<Map>/maps/<Map>/slam/ in the data submodule (a bump is whole
-        # tree, ADR 0009), served by nav2_map_server.
+        # tracks/<Map>/maps/slam_toolbox/res_0050/ in the data submodule (a
+        # bump is whole tree, ADR 0009), served by nav2_map_server.
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
           - config/localization/amcl.yaml
@@ -145,7 +145,7 @@ roles:
         # MOLA-LO's lidar2d pipeline: localization on the map MOLA built
         # itself, and the mapping workflow that builds it
         # (mola_mapping.launch.py, mola_map_track.sh). The .mm and the
-        # _grid land in the data submodule, tracks/<Map>/maps/<Map>/mola/, with
+        # _grid land in the data submodule, tracks/<Map>/maps/mola/, with
         # provenance (owner ruling 2026-10-25; a bump is whole tree, ADR 0009).
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
@@ -171,8 +171,9 @@ roles:
       - implementation: optimized_raceline
         package: racing_bringup
         # The committed raceline in the data submodule,
-        # tracks/<Map>/racelines/<vehicle version>/<raceline_optimizer>.csv,
-        # selected by planner:=optimized_raceline (a bump is whole tree, ADR 0009).
+        # tracks/<Map>/racelines/<raceline_optimizer>/<limit set>/raceline.csv,
+        # chosen by the vehicle's version and selected by
+        # planner:=optimized_raceline (a bump is whole tree, ADR 0009).
         paths:
           - ros_ws/src/racing_bringup/*
           - ros_ws/src/racing_controller_baseline/*  # speed_source: trajectory

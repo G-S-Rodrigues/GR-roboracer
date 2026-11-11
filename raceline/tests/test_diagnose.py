@@ -72,12 +72,12 @@ def test_raceline_1465_works_on_a_committed_line_without_a_reference(
     tmp_path,
 ):
     """No reference line, no TUM run dir: the CSV, the vehicle and a track."""
-    rel = "f1tenth-default-v1"
-    doc = yaml.safe_load((COMMITTED / rel / "tum_mincurv_iqp.yaml").read_text())
+    rel = "tum_mincurv_iqp/gym-nominal-std-const-v1"
+    doc = yaml.safe_load((COMMITTED / rel / "raceline.yaml").read_text())
     out = tmp_path / "out"
     code = diagnose.main(
         [
-            str(COMMITTED / rel / "tum_mincurv_iqp.csv"),
+            str(COMMITTED / rel / "raceline.csv"),
             "--track",
             str(REPO / doc["ground_truth"]["path"]),
             "--vehicle",
@@ -94,7 +94,7 @@ def test_raceline_1465_works_on_a_committed_line_without_a_reference(
     assert saved["ay_ratio"].max() == pytest.approx(
         doc["verdict"]["max_ay_ratio"], abs=1e-6
     )
-    line = load_raceline_csv(COMMITTED / rel / "tum_mincurv_iqp.csv")
+    line = load_raceline_csv(COMMITTED / rel / "raceline.csv")
     assert len(saved["s"]) == len(line.s)
     for name in diagnose.PNG_NAMES:
         assert (out / name).is_file()

@@ -1,6 +1,6 @@
 """SIM-5520: the committed MOLA map regenerates from its recorded command.
 
-`tracks/Spielberg/maps/Spielberg/mola/Spielberg.{mm,yaml}` (data repo)
+`tracks/Spielberg/maps/mola/Spielberg.{mm,yaml}` (data repo)
 is a committed artifact produced by `scripts/mola_map_track.sh` (a lap plus
 MOLA-LO's shutdown save and `sm2mm`). MOLA is multi-threaded and which
 scans it keeps is not deterministic, so two runs are close and never
@@ -37,7 +37,6 @@ COMMITTED = (
     / "tracks"
     / "Spielberg"
     / "maps"
-    / "Spielberg"
     / "mola"
     / "Spielberg.yaml"
 )

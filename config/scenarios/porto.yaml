@@ -1,6 +1,7 @@
 # AutoDRIVE's Porto practice track, for `simulator:=autodrive` (#44 part 8).
-# The gym has no Porto map (the data repo's tracks/Porto/maps/Porto/slam holds
-# the surveyed grid for the AutoDRIVE runs, see its NOTICE.md), so the gym
+# The gym has no Porto map (the data repo's tracks/Porto/maps/slam_toolbox/
+# res_0050 holds the surveyed grid for the AutoDRIVE runs, see
+# tracks/Porto/NOTICE.md), so the gym
 # fields below exist because the scenario loader requires them. AutoDRIVE has no sensor noise, so there is
 # no `noise` block (as in spielberg_survey.yaml). Part 8 may amend the fields
 # its backend reads.
@@ -26,4 +27,4 @@ metrics:
   scenario_id: porto
   track_version: porto-v2
 track: ../tracks/porto.yaml
-map_directory: ../../third_party/GR-roboracer-data/tracks/Porto/maps
+map_directory: ../../third_party/GR-roboracer-data/tracks

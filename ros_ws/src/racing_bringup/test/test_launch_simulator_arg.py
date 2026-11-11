@@ -232,14 +232,16 @@ def test_bringup_1640_estimators_follow_the_simulator_clock() -> None:
             assert _sim_time_of(node) is False
 
     scenario = REPOSITORY_ROOT / "config/scenarios/spielberg_1080.yaml"
-    grid = track_parameters(scenario)["map_server"]["yaml_filename"]
+    parameters = track_parameters(scenario)
+    grid = parameters["map_server"]["yaml_filename"]
+    track = parameters["track_data"]["directory"]
     for use_sim_time in (True, False):
         for node in amcl(
             [str(config / "amcl.yaml")], grid, use_sim_time=use_sim_time
         ):
             assert _sim_time_of(node) is use_sim_time, node._Node__package
         static, _include = mola(
-            str(config / "mola_lidar2d.yaml"), grid, use_sim_time=use_sim_time
+            str(config / "mola_lidar2d.yaml"), track, use_sim_time=use_sim_time
         )
         assert _sim_time_of(static) is use_sim_time
     assert (
@@ -331,8 +333,9 @@ def test_bringup_1840_the_fast_car_has_its_own_porto_raceline():
         / "tracks"
         / "Porto"
         / "racelines"
-        / "autodrive-roboracer-fast-v1"
-        / "tum_mintime.csv"
+        / "tum_mintime"
+        / "autodrive-nominal-fast-const-gymfit-v1"
+        / "raceline.csv"
     )
     module, context = _launch_context(**{**AUTODRIVE, **line})
     with pytest.raises(RuntimeError, match="no committed raceline"):

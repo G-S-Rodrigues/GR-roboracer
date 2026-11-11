@@ -6,7 +6,7 @@ again offline by `scripts/compare_localization.py`.
 
 This measures localization **on MOLA's own map** (owner ruling 2026-10-25):
 the data repo's
-`tracks/Spielberg/maps/Spielberg/mola/`, from one seed-7 mapping lap with no
+`tracks/Spielberg/maps/mola/`, from one seed-7 mapping lap with no
 loop closure (`scripts/mola_map_track.sh`). The error therefore includes
 MOLA's own map error (drift where the lap closes, wall offsets) and the
 alignment T from the map frame to the world frame (its residual is in the
@@ -44,7 +44,7 @@ TIMEOUT_SECONDS = 400.0
 
 MEASUREMENT = (
     "SIM-3510, Spielberg 1080 beams, seed 42, 1x, open loop, on "
-    "maps/Spielberg/mola/Spielberg.mm (mm_sha256 5b4ec52..., mapping seed 7), "
+    "maps/mola/Spielberg.mm (mm_sha256 5b4ec52..., mapping seed 7), "
     "localization icp_prior_weight 5.0, 5 full laps on the dev host at "
     "1-minute load 7.7-8.0 at each start (2026-10-30): ate_rmse 0.704, "
     "1.944, 2.071, 2.091, 2.131 m, ate_maximum 1.414-4.149 m, availability "

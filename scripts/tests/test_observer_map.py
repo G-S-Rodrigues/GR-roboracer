@@ -33,10 +33,10 @@ def _map_base(scenario):
 def _porto_without_mola(tmp_path: Path) -> Path:
     """A copy of porto.yaml whose map directory has no `mola/`, so the check
     holds whether or not the data repo carries Porto's MOLA map."""
-    real = _map_base(PORTO)[0].parent
+    track = _map_base(PORTO)[0]
     shutil.copytree(
-        real / "Porto",
-        tmp_path / "maps" / "Porto",
+        track,
+        tmp_path / "tracks" / "Porto",
         ignore=shutil.ignore_patterns("mola"),
     )
     text = PORTO.read_text()
@@ -44,8 +44,8 @@ def _porto_without_mola(tmp_path: Path) -> Path:
         "track: ../tracks/porto.yaml",
         f"track: {REPO_ROOT / 'config/tracks/porto.yaml'}",
     ).replace(
-        "map_directory: ../../third_party/GR-roboracer-data/tracks/Porto/maps",
-        f"map_directory: {tmp_path / 'maps'}",
+        "map_directory: ../../third_party/GR-roboracer-data/tracks",
+        f"map_directory: {tmp_path / 'tracks'}",
     )
     scenario = tmp_path / "porto.yaml"
     scenario.write_text(text)
@@ -67,15 +67,17 @@ def _msg(width, height, resolution, origin, frame="map"):
 
 
 def test_check_2450_map_yaml_per_pose_source(tmp_path: Path) -> None:
-    """CHECK-2450: ground truth serves maps/<M>/<M>.yaml, mola serves
-    maps/<M>/mola/<M>_grid.yaml, amcl and slam_toolbox are refused (they
+    """CHECK-2450: ground truth serves tracks/<M>/<M>.yaml, mola serves
+    tracks/<M>/maps/mola/<M>_grid.yaml, amcl and slam_toolbox are refused (they
     publish /map), and a missing file raises naming it."""
     base, name = _map_base(PORTO)
     truth = observer_map.map_yaml(PORTO, "ground_truth")
     assert Path(truth) == (base / f"{name}.yaml").resolve()
     base, name = _map_base(SPIELBERG)
     mola = observer_map.map_yaml(SPIELBERG, "mola")
-    assert Path(mola) == (base / "mola" / f"{name}_grid.yaml").resolve()
+    assert (
+        Path(mola) == (base / "maps" / "mola" / f"{name}_grid.yaml").resolve()
+    )
     for source in ("amcl", "slam_toolbox"):
         with pytest.raises(observer_map.Refused, match="publish"):
             observer_map.map_yaml(PORTO, source)

@@ -390,11 +390,7 @@ def _run_planning(seeds, out, started, tmp, session_start) -> list[str]:
             for line in expected["rows"][vehicle]:
                 fields = benchmark_runs.static_fields(version, line)
                 # SIM-5040's key: the record's path under the tracks root
-                key = (
-                    (benchmark_runs.RACELINES / version / f"{line}.yaml")
-                    .relative_to(benchmark_runs.TRACKS)
-                    .as_posix()
-                )
+                key = benchmark_runs.regeneration_key(version, line)
                 if key in regeneration:
                     fields["solve_seconds"] = regeneration[key]["solve_seconds"]
                 statics[(vehicle, line)] = fields

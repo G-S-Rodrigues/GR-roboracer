@@ -44,3 +44,25 @@ racelines live there too, pinned by SHA as a `third_party/` submodule.
   gitlink bump here. A record's `code:` blobs pin the raceline code, so a change to `CODE_FILES`
   regenerates the records in the data repo first.
 - A data-only bump costs a whole-tree `--fast` and `--ready`.
+
+## 2026-11-11 amendment (D2): the layout of record
+
+This supersedes the layout bullets above (left in place as history). The data repo is laid out by method:
+
+- `tracks/<Map>/`: the simulator's own map (`<Map>.yaml` + image: the ground truth), `NOTICE.md`, `README.md`,
+  and for Spielberg the importer's `<Map>_centerline.csv` and `<Map>_raceline.csv`.
+- `tracks/<Map>/maps/<method>/[<variant>/]`: maps this stack built (`slam_toolbox/res_NNNN/`, `mola/`, later
+  `far_lio/`). Each folder has a PNG and a README (simulator, odometry, resolution, accuracy vs ground truth,
+  command, date, commit); the walker `scripts/tests/test_data_layout.py` (CHECK-2950..2953) holds it to that.
+- `tracks/<Map>/racelines/<optimizer>/<limit set>/`: `raceline.csv`, `raceline.yaml`, `limits.md`, and
+  `reference.csv` for `tum_mintime`. The limit-set grammar (`<sim>-<source>-<caps>-<grip>[-<qualifier>]-v<N>`)
+  is owned by the data repo's README; `python -m raceline` takes `--limit-set` (required) and records it as
+  `limit_set:` beside `vehicle_version:`. No simulator name appears above the limit-set folder.
+
+`map_directory` in a scenario is now the tracks root, because the gym and the launch find the ground truth as
+`<map_directory>/<Map>/<Map>.yaml`; it could not live in a `ground_truth/` folder under that rule. The
+launch's raceline lookup is by the record's `vehicle_version` (`racing_bringup.track_data`), not by path: two
+sets for one version is an error until a launch argument chooses between them. The five committed records
+were regenerated in place after their commands reproduced their CSVs byte for byte (Step 0 of the D2 plan), so
+they carry current code blobs and the rule above ("regenerate first") holds; the `.csv` files did not change.
+

@@ -773,7 +773,8 @@ def test_check_2700_a_file_inside_the_data_repo_path_is_not_the_gitlink(
     tmp_path, capsys
 ) -> None:
     changed = [
-        "third_party/GR-roboracer-data/tracks/Spielberg/racelines/x.yaml",
+        "third_party/GR-roboracer-data/tracks/Spielberg/racelines/"
+        "tum_mintime/x/raceline.yaml",
         "config/tracks/spielberg.yaml",
     ]
     roles, _ = _roles(tmp_path, capsys, _stack(), _stack(), changed)

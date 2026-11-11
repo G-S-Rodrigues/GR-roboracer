@@ -51,11 +51,10 @@ def map_yaml(scenario, pose_source):
     if pose_source == "ground_truth":
         yaml_path = base / f"{loaded.map_name}.yaml"
     elif pose_source == "mola":
-        from racing_bringup.estimators import mola_map_files
+        from racing_bringup import track_data
 
-        slam = base / "slam" / f"{loaded.map_name}.yaml"
-        mola_map_files(str(slam))  # raises FileNotFoundError, naming it
-        yaml_path = base / "mola" / f"{loaded.map_name}_grid.yaml"
+        track_data.mola_files(base)  # raises FileNotFoundError, naming it
+        yaml_path = base / "maps" / "mola" / f"{loaded.map_name}_grid.yaml"
     else:
         raise ValueError(f"unsupported pose source: {pose_source}")
     if not yaml_path.is_file():

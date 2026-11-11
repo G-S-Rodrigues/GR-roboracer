@@ -18,13 +18,21 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from raceline import diagnose, verify
+from raceline import diagnose, limits, verify
 from raceline.extract import (
     Pose2D,
     extract_track,
     load_map,
     observed_mask,
     track_bounds,
+)
+from raceline.layout import (
+    LIMITS_MD,
+    RACELINE_CSV,
+    RACELINE_YAML,
+    REFERENCE_CSV,
+    check_limit_set,
+    record_dir,
 )
 from raceline.optimize import (
     DEFAULT_MARGINS,
@@ -50,7 +58,7 @@ from raceline.vehicle import VehicleLimits, load_tyres, load_vehicle
 
 PACKAGE = Path(__file__).resolve().parents[1]
 # The data repo's tracks root: a record goes to
-# `<out-dir>/<Map>/racelines/<vehicle version>/` (ADR 0009).
+# `<out-dir>/<Map>/racelines/<optimizer>/<limit set>/` (ADR 0009, D2).
 DEFAULT_OUT = PACKAGE.parent / "third_party" / "GR-roboracer-data" / "tracks"
 CODE_FILES = (
     "raceline/__main__.py",
@@ -94,6 +102,32 @@ def _tum_pin() -> dict[str, str]:
     }
 
 
+def _limit_set(value: str) -> str:
+    try:
+        return check_limit_set(value)
+    except ValueError as err:
+        raise argparse.ArgumentTypeError(str(err)) from err
+
+
+def _recorded_command(argv: list[str]) -> str:
+    """The command as recorded: ``--out-dir`` is left out when it is the
+    default, so the record replays on any checkout (and in a worktree)."""
+    kept, skip = [], False
+    for i, arg in enumerate(argv):
+        if skip:
+            skip = False
+            continue
+        if (
+            arg == "--out-dir"
+            and i + 1 < len(argv)
+            and Path(argv[i + 1]).resolve() == Path(DEFAULT_OUT).resolve()
+        ):
+            skip = True
+            continue
+        kept.append(arg)
+    return "python -m raceline " + " ".join(kept)
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m raceline", description=__doc__)
     src = p.add_mutually_exclusive_group(required=True)
@@ -106,6 +140,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--walls", choices=("observed", "non_free"), default=None)
     p.add_argument("--vehicle", type=Path, required=True)
     p.add_argument("--optimizer", required=True, choices=sorted(OPTIMIZERS))
+    p.add_argument(
+        "--limit-set",
+        required=True,
+        type=_limit_set,
+        help="the folder this record is filed under: "
+        "<sim>-<source>-<caps>-<grip>[-<qualifier>]-v<N> (data repo README)",
+    )
     p.add_argument("--ground-truth-track", type=Path)
     p.add_argument(
         "--ground-truth-map",
@@ -132,7 +173,7 @@ def _parser() -> argparse.ArgumentParser:
         "--plots",
         type=Path,
         help="where the diagnostic plots go (default log/raceline/<track>/"
-        "<vehicle>/<optimizer>/, never the data repo)",
+        "<optimizer>/<limit set>/, never the data repo)",
     )
     p.add_argument(
         "--reprofile-speed",
@@ -275,6 +316,7 @@ def _provenance(
         "format_version": 1,
         "track": track.name,
         "vehicle_version": vehicle.version,
+        "limit_set": args.limit_set,
         "optimizer": args.optimizer,
         "source": src,
         "ground_truth": (
@@ -287,7 +329,7 @@ def _provenance(
         "parameters": params,
         "verdict": _verdict_doc(verdict),
         **extra,
-        "command": "python -m raceline " + " ".join(argv),
+        "command": _recorded_command(argv),
     }
 
 
@@ -355,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    folder = Path(args.out_dir) / map_key / "racelines" / vehicle.version
+    folder = record_dir(args.out_dir, map_key, args.optimizer, args.limit_set)
     scratch = tempfile.TemporaryDirectory()
     solver = None
     reference_csv = args.reference
@@ -432,7 +474,7 @@ def _verify_and_write(
     if not args.no_plots:
         # On rejection too: the plot is how a rejected line is understood.
         plots = args.plots or (
-            DEFAULT_PLOTS / name / vehicle.version / args.optimizer
+            DEFAULT_PLOTS / name / args.optimizer / args.limit_set
         )
         diagnose.write(line, vehicle, pairs, track, plots)
     if not verdict.ok:
@@ -441,16 +483,15 @@ def _verify_and_write(
             print(f"  {failure}", file=sys.stderr)
         return 2
 
-    write_raceline_csv(line, folder / f"{args.optimizer}.csv")
+    write_raceline_csv(line, folder / RACELINE_CSV)
     if mintime is not None and args.reference is None:
-        written = folder / "reference" / f"{args.optimizer}.csv"
+        written = folder / REFERENCE_CSV
         written.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(mintime["reference"], written)
         mintime = {**mintime, "reference": written}
     doc = _provenance(args, vehicle, track, line, verdict, argv, mintime)
-    (folder / f"{args.optimizer}.yaml").write_text(
-        yaml.safe_dump(doc, sort_keys=False)
-    )
+    (folder / RACELINE_YAML).write_text(yaml.safe_dump(doc, sort_keys=False))
+    limits.write(folder / LIMITS_MD, doc, vehicle)
     return 0
 
 

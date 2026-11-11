@@ -12,7 +12,7 @@ dotted line in them is the default vehicle's raceline.
 | | Source | Length | Max curvature (0.5 m sampling) |
 |---|---|---|---|
 | Ground-truth centerline | `config/tracks/spielberg.yaml`, imported from [f1tenth_racetracks](https://github.com/f1tenth/f1tenth_racetracks) | 343.3 m | 1.25 1/m |
-| Survey map | `third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/`, built by slam_toolbox | — | — |
+| Survey map | `third_party/GR-roboracer-data/tracks/Spielberg/maps/slam_toolbox/res_0050/`, built by slam_toolbox | — | — |
 | Extracted centerline | `raceline.extract.extract_track(..., walls="observed")` on the survey map | 342.9 m | 1.63 1/m |
 | Minimum-curvature raceline | TUM global race trajectory optimizer, `mincurv_iqp`, through `raceline.tum` | 338.7 m | 0.50 1/m |
 | Minimum-time raceline | the same optimizer's minimum-time mode on the owner's fork, seeded from the minimum-curvature line | see below | see below |
@@ -46,7 +46,7 @@ curvature (the corner zoom shows it using up to 0.73 m of the width at a corner)
 curvature, and the line comes out 4.6 m shorter than the centerline. The optimizer's own estimate,
 with the gym's vehicle limits, is a 29.60 s lap; that is an estimate, not a measured lap.
 
-Raceline files are committed under `third_party/GR-roboracer-data/tracks/Spielberg/racelines/` (one per vehicle version) and
+Raceline files are committed under `third_party/GR-roboracer-data/tracks/Spielberg/racelines/<optimizer>/<limit set>/` (one per optimizer and limit set; `limits.md` beside each states the limits) and
 `python -m raceline` produces them. The stack can race the default-vehicle line:
 `planner:=optimized_raceline speed_source:=trajectory`. Measured in the sim (seed 42, 5x), that lap
 takes 113.08 s against 120.41 s for the centerline lap. The comparison changes both the line and

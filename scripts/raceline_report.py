@@ -34,6 +34,7 @@ INPUT_KEYS = (
     "format_version",
     "track",
     "vehicle_version",
+    "limit_set",
     "optimizer",
     "source",
     "ground_truth",
@@ -393,6 +394,23 @@ def regeneration_argv(doc: dict, out_dir: Path) -> list[str]:
     if "--out-dir" in tokens:
         raise ValueError("command already carries an --out-dir")
     return [*tokens, "--out-dir", str(out_dir)]
+
+
+def regenerated_paths(doc: dict, out_dir: Path) -> tuple[Path, Path]:
+    """Where a replayed ``command:`` writes the record's csv and yaml.
+
+    The CLI keys the folder by the map file's stem (case kept), which the
+    nightly's check_source guarantees is the map's name (ADR 0009), then
+    `racelines/<optimizer>/<limit set>/` (D2).
+    """
+    folder = (
+        Path(out_dir)
+        / Path(doc["source"]["path"]).stem
+        / "racelines"
+        / doc["optimizer"]
+        / doc["limit_set"]
+    )
+    return folder / "raceline.csv", folder / "raceline.yaml"
 
 
 def _differences(left, right, path: str = "") -> list[str]:

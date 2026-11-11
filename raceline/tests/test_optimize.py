@@ -158,19 +158,21 @@ RACELINES = (
 
 
 @pytest.mark.parametrize(
-    ("stem", "version"),
+    ("stem", "limit_set"),
     [
-        ("f1tenth_default", "f1tenth-default-v1"),
-        ("f1tenth_gym_limits", "f1tenth-gym-limits-v1"),
+        ("f1tenth_default", "gym-nominal-std-const-v1"),
+        ("f1tenth_gym_limits", "gym-model-std-const-v1"),
     ],
 )
 def test_raceline_1415_min_curv_ini_is_byte_identical_to_the_sidecar(
-    stem, version
+    stem, limit_set
 ):
     import yaml
 
     sidecar = yaml.safe_load(
-        (RACELINES / version / "tum_mincurv_iqp.yaml").read_text()
+        (
+            RACELINES / "tum_mincurv_iqp" / limit_set / "raceline.yaml"
+        ).read_text()
     )
     vehicle = load_vehicle(VEHICLES / f"{stem}.yaml")
 

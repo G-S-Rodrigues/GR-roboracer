@@ -38,6 +38,7 @@ import yaml
 from scripts.raceline_report import (
     compare_lines,
     provenance_diff,
+    regenerated_paths,
     regeneration_argv,
 )
 
@@ -48,7 +49,7 @@ TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
 # solve has its own iteration and wall-time bounds.
 RACELINES = sorted(
     path
-    for path in TRACKS.glob("*/racelines/*/*.yaml")
+    for path in TRACKS.glob("*/racelines/*/*/raceline.yaml")
     if yaml.safe_load(path.read_text())["optimizer"] != "tum_mintime"
 )
 # The recorded --timeout is per pass and the optimizer makes 2 passes (C3).
@@ -130,16 +131,8 @@ def regenerate(doc: dict, out_dir: Path) -> tuple[Path, dict, float]:
     )
     # The CLI keys the folder by the map file's stem (case kept), which
     # check_source guarantees is the map's name (ADR 0009).
-    folder = (
-        out_dir
-        / Path(doc["source"]["path"]).stem
-        / "racelines"
-        / doc["vehicle_version"]
-    )
-    fresh_csv = folder / f"{doc['optimizer']}.csv"
-    fresh_doc = yaml.safe_load(
-        (folder / f"{doc['optimizer']}.yaml").read_text(encoding="utf-8")
-    )
+    fresh_csv, fresh_yaml = regenerated_paths(doc, out_dir)
+    fresh_doc = yaml.safe_load(fresh_yaml.read_text(encoding="utf-8"))
     return fresh_csv, fresh_doc, seconds
 
 
@@ -147,11 +140,12 @@ def check_source(doc: dict) -> None:
     """The line must come from the SLAM survey map, not the ground truth."""
     path = doc["source"]["path"]
     assert re.fullmatch(
-        r"third_party/GR-roboracer-data/tracks/([^/]+)/maps/\1/slam/\1\.yaml",
+        r"third_party/GR-roboracer-data/tracks/(?P<m>[^/]+)/maps/"
+        r"slam_toolbox/res_\d{4}/(?P=m)\.yaml",
         path,
     ), (
         f"source.path {path!r} is not a survey map "
-        "(tracks/<Map>/maps/<Map>/slam/<Map>.yaml)"
+        "(tracks/<Map>/maps/slam_toolbox/res_NNNN/<Map>.yaml)"
     )
 
 

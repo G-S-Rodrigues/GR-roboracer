@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from racing_bringup import track_data
+
 # Optional scenario keys that set the identity racing_metrics and
 # racing_recording report. Absent, the vehicle file's values stand - which is
 # what keeps the analytic_circle golden's record unchanged.
@@ -56,49 +58,20 @@ def _vehicle_version(vehicle_path: Path) -> str:
 
 def _optimized_raceline(
     track_file: Path,
-    maps: Path,
-    map_name: str,
+    track: Path,
     optimizer: str,
     vehicle_path: Path | None,
 ) -> str:
     if vehicle_path is None:
         raise ValueError("planner optimized_raceline needs a vehicle_path")
-    version = _vehicle_version(vehicle_path)
-    # `maps` is `<data>/tracks/<Map>/maps`, so its grandparent is `tracks`
-    # and the folder is chosen by the scenario's map name, not the track stem.
-    csv = (
-        maps.parent.parent
-        / map_name
-        / "racelines"
-        / version
-        / f"{optimizer}.csv"
+    return str(
+        track_data.optimized_raceline(
+            track,
+            optimizer,
+            _vehicle_version(vehicle_path),
+            track_stem=track_file.stem,
+        )
     )
-    if not csv.is_file():
-        hint = ""
-        if not maps.is_dir():
-            hint = (
-                "; the track data is the GR-roboracer-data submodule, run "
-                "`git submodule update --init third_party/GR-roboracer-data` "
-                "on the host"
-            )
-        raise FileNotFoundError(f"no committed raceline at {csv}{hint}")
-    sidecar_path = csv.with_suffix(".yaml")
-    if not sidecar_path.is_file():
-        raise FileNotFoundError(f"no raceline sidecar at {sidecar_path}")
-    sidecar = yaml.safe_load(sidecar_path.read_text(encoding="utf-8"))
-    for key, expected in (
-        ("track", track_file.stem),
-        ("vehicle_version", version),
-        ("optimizer", optimizer),
-    ):
-        if sidecar.get(key) != expected:
-            raise ValueError(
-                f"{sidecar_path}: {key} is {sidecar.get(key)!r}, "
-                f"expected {expected!r}"
-            )
-    if (sidecar.get("verdict") or {}).get("ok") is not True:
-        raise ValueError(f"{sidecar_path}: verdict.ok is not true")
-    return str(csv)
 
 
 def scan_beam_count(scenario_path: Path) -> int:
@@ -127,8 +100,9 @@ def track_parameters(
 
     `planner="optimized_raceline"` swaps the scenario's own
     `<map>_raceline.csv` for the committed
-    `<data>/tracks/<Map>/racelines/<vehicle version>/<optimizer>.csv`, found
-    from the scenario's `map_directory` and `environment.map`. It fails
+    `<data>/tracks/<Map>/racelines/<optimizer>/<limit set>/raceline.csv` whose
+    sidecar names the vehicle's version (`track_data.optimized_raceline`),
+    found from the scenario's `map_directory` and `environment.map`. It fails
     closed: an unknown name, a missing file or a sidecar that disagrees raises,
     and the centerline is never a fallback. Under the default
     `track_centerline`, a map with no `<map>_raceline.csv` gets an empty
@@ -148,10 +122,11 @@ def track_parameters(
     track = str(track_file)
     map_name = str(document["environment"]["map"])
     maps = (base / document["map_directory"]).resolve()
-    raceline = str((maps / map_name / f"{map_name}_raceline.csv").resolve())
+    track_folder = track_data.track_dir(maps, map_name)
+    raceline = str((track_folder / f"{map_name}_raceline.csv").resolve())
     if planner == "optimized_raceline":
         raceline = _optimized_raceline(
-            track_file, maps, map_name, raceline_optimizer, vehicle_path
+            track_file, track_folder, raceline_optimizer, vehicle_path
         )
     elif not Path(raceline).is_file():
         # A map with no raceline of its own (Porto's is part 11's): the
@@ -162,9 +137,7 @@ def track_parameters(
     # own map for the same reason the raceline is: a hand-set grid path is a
     # second copy of which world this is, and localizing against another
     # track's walls is silent, not an error.
-    occupancy_grid = str(
-        (maps / map_name / "slam" / f"{map_name}.yaml").resolve()
-    )
+    occupancy_grid = str(track_data.survey_grid(track_folder).resolve())
     reported = document.get("metrics") or {}
     reporting = {
         key: reported[key] for key in REPORTING_KEYS if key in reported
@@ -179,4 +152,7 @@ def track_parameters(
         "racing_evaluation": {"track_path": track},
         "racing_recording": dict(reporting),
         "map_server": {"yaml_filename": occupancy_grid},
+        # The track's folder, for the readers that derive more from it (the
+        # MOLA map); the launch indexes this dict by node name only.
+        "track_data": {"directory": str(track_folder)},
     }
