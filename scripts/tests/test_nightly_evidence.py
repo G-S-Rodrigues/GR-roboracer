@@ -124,15 +124,18 @@ def test_check_2378_the_late_mola_start_is_named(tmp_path):
     start = compare_localization.estimator_start(events)
     assert start["first_estimate_stamp"] == pytest.approx(1.03)
     assert start["travel_before_first_estimate"] == pytest.approx(2.5, abs=0.05)
-    # an estimator that started at once would read 0.0, not None
-    prompt = [
+    # the verdict follows the data: with the early estimates removed, the
+    # start moves to the first one left and the travel grows with it
+    later = [
         e
         for e in events
         if not (
             e["topic"] == "/localization/odom"
-            and compare_localization._stamp(e) < 0.2
+            and compare_localization._stamp(e) < 1.1
         )
     ]
-    assert compare_localization.estimator_start(prompt)[
-        "first_estimate_stamp"
-    ] == pytest.approx(1.03)
+    moved = compare_localization.estimator_start(later)
+    assert moved["first_estimate_stamp"] == pytest.approx(1.1)
+    assert moved["travel_before_first_estimate"] > start[
+        "travel_before_first_estimate"
+    ]
