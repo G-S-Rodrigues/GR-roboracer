@@ -42,7 +42,7 @@ def _context(module, **arguments: str) -> LaunchContext:
     `arguments`: what `ros2 launch` hands the OpaqueFunction."""
     context = LaunchContext()
     for entity in module.generate_launch_description().entities:
-        if hasattr(entity, "default_value"):
+        if getattr(entity, "default_value", None) is not None:
             context.launch_configurations[entity.name] = "".join(
                 part.text for part in entity.default_value
             )

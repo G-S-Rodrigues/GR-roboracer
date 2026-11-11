@@ -264,8 +264,6 @@ def test_bringup_1700_mola_mapping_is_the_mapping_yaml_plus_an_output() -> None:
 MAPPING_LAUNCH = PACKAGE_ROOT / "launch" / "mola_mapping.launch.py"
 
 
-
-
 def test_bringup_1982_mola_mapping_takes_use_sim_time() -> None:
     """BRINGUP-1982: `mola_mapping(..., use_sim_time=)` defaults to True (the
     gym's value, BRINGUP-1700 stays unedited) and passes False through to
@@ -285,6 +283,7 @@ def test_bringup_1982_mola_mapping_takes_use_sim_time() -> None:
     assert argument() == "True"
     assert argument(use_sim_time=True) == "True"
     assert argument(use_sim_time=False) == "False"
+
 
 def test_bringup_1720_the_mapping_launch_starts_only_mola() -> None:
     """BRINGUP-1720: `mola_mapping.launch.py` declares `simplemap_output` and

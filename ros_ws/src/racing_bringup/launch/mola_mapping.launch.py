@@ -13,6 +13,7 @@ from launch import LaunchContext, LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from racing_bringup.estimators import mola_mapping
+from racing_bringup.simulators import sim_time_for
 
 MAPPING_CONFIG = "config/localization/mola_lidar2d_mapping.yaml"
 
@@ -21,6 +22,9 @@ def _mapping(context: LaunchContext) -> list:
     return mola_mapping(
         LaunchConfiguration("configuration").perform(context),
         LaunchConfiguration("simplemap_output").perform(context),
+        use_sim_time=sim_time_for(
+            LaunchConfiguration("simulator").perform(context)
+        ),
     )
 
 
@@ -35,6 +39,11 @@ def generate_launch_description() -> LaunchDescription:
                 "configuration",
                 default_value=MAPPING_CONFIG,
                 description="MOLA-LO's launch arguments, as a yaml.",
+            ),
+            DeclareLaunchArgument(
+                "simulator",
+                default_value="f1tenth_gym_jax",
+                description="The simulator, which decides use_sim_time.",
             ),
             OpaqueFunction(function=_mapping),
         ]
