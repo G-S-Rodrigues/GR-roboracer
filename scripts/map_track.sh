@@ -8,7 +8,7 @@
 # Run in the dev container, from /ws, after a colcon build:
 #
 #   ./scripts/map_track.sh config/scenarios/spielberg_survey.yaml \
-#       config/scenarios/maps/Spielberg/slam/Spielberg
+#       third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg
 #
 # The output is <stem>.png + <stem>.yaml, owned by the container's user:
 # chown it back before committing it as a reviewed diff. Which scans the

@@ -739,20 +739,20 @@ def test_check_2700_roles_nothing_added_is_empty(tmp_path, capsys) -> None:
     assert roles == [] and err == ""
 
 
-def test_check_2700_a_changed_spielberg_raceline_csv_runs_planning(
-    tmp_path, capsys
-) -> None:
-    changed = ["config/racelines/spielberg/f1tenth-default-v1/new_line.csv"]
+def test_check_2700_a_data_repo_bump_runs_planning(tmp_path, capsys) -> None:
+    # The racelines live in the data repo (ADR 0009); a change to them shows
+    # in the diff as the gitlink alone.
+    changed = ["third_party/GR-roboracer-data"]
     roles, _ = _roles(tmp_path, capsys, _stack(), _stack(), changed)
     assert roles == ["planning"]
 
 
-def test_check_2700_the_raceline_yaml_alone_or_another_track_does_not(
+def test_check_2700_a_file_inside_the_data_repo_path_is_not_the_gitlink(
     tmp_path, capsys
 ) -> None:
     changed = [
-        "config/racelines/spielberg/f1tenth-default-v1/tum_mintime.yaml",
-        "config/racelines/porto/autodrive-roboracer-fast-v1/tum_mintime.csv",
+        "third_party/GR-roboracer-data/tracks/Spielberg/racelines/x.yaml",
+        "config/tracks/spielberg.yaml",
     ]
     roles, _ = _roles(tmp_path, capsys, _stack(), _stack(), changed)
     assert roles == []
@@ -766,7 +766,7 @@ def test_check_2700_a_runner_change_runs_both_roles(tmp_path, capsys) -> None:
 
 
 def test_check_2700_triggers_combine_in_role_order(tmp_path, capsys) -> None:
-    changed = ["config/racelines/spielberg/v/x.csv"]
+    changed = ["third_party/GR-roboracer-data"]
     head = _stack(pose=("amcl", "far_lio"))
     roles, _ = _roles(tmp_path, capsys, _stack(), head, changed)
     assert roles == ["localization", "planning"]
@@ -812,7 +812,7 @@ def test_check_2770_benchmark_triggers() -> None:
 def test_check_2770_trigger_paths_are_one_list() -> None:
     assert benchmark.STACK_FILE in benchmark.TRIGGER_PATHS
     assert "scripts/benchmark_runs.py" in benchmark.TRIGGER_PATHS
-    assert "config/racelines/spielberg/**/*.csv" in benchmark.TRIGGER_PATHS
+    assert "third_party/GR-roboracer-data" in benchmark.TRIGGER_PATHS
 
 
 def test_check_2770_every_job_name_says_non_blocking() -> None:

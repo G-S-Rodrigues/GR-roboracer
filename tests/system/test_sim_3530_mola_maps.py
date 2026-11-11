@@ -39,7 +39,15 @@ from racing_test_keywords.report import catastrophic_violations, write_report
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCENARIO = REPOSITORY_ROOT / "config/scenarios/spielberg_1080.yaml"
 COMMITTED_GRID = (
-    REPOSITORY_ROOT / "config/scenarios/maps/Spielberg/mola/Spielberg_grid.yaml"
+    REPOSITORY_ROOT
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "maps"
+    / "Spielberg"
+    / "mola"
+    / "Spielberg_grid.yaml"
 )
 SEED = 42
 TIMEOUT_SECONDS = 900.0

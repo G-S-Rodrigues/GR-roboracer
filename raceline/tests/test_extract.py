@@ -349,7 +349,15 @@ def test_raceline_1090_no_usable_loop_raises_and_noise_is_cleaned():
 
 # ---- Spielberg ground truth ------------------------------------------------
 
-MAPS = REPO / "config" / "scenarios" / "maps" / "Spielberg"
+MAPS = (
+    REPO
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "maps"
+    / "Spielberg"
+)
 GYM_MAP = MAPS / "Spielberg.yaml"
 SURVEY_MAP = MAPS / "slam" / "Spielberg.yaml"
 # Tolerances, from the measurements of 2026-10-13 (raceline/README.md has the
@@ -881,7 +889,7 @@ def test_raceline_1170_the_survey_bounds_are_seen_walls(spielberg_maps):
 # The 1 % target is met (0.0090); only the guard is above it (owner ruling
 # 2026-10-30, T1). The baseline pipeline's five seed-42 laps gave 1.0019-
 # 1.0041 (0.006); icp_prior_weight 50 trades that length for closing seed 7.
-MOLA_GRID = REPO / "config/scenarios/maps/Spielberg/mola/Spielberg_grid.yaml"
+MOLA_GRID = MAPS / "mola" / "Spielberg_grid.yaml"
 MOLA_LENGTH_RTOL = 0.012
 
 

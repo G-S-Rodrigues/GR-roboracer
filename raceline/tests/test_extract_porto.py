@@ -15,7 +15,15 @@ import numpy as np
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-MAP_DIR = REPO / "config" / "scenarios" / "maps" / "Porto"
+MAP_DIR = (
+    REPO
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Porto"
+    / "maps"
+    / "Porto"
+)
 MAP_YAML = MAP_DIR / "Porto.yaml"
 TRACK = REPO / "config" / "tracks" / "porto.yaml"
 SCENARIO = REPO / "config" / "scenarios" / "porto.yaml"
@@ -95,7 +103,8 @@ def test_raceline_1185_cli_writes_what_the_extractor_extracts(tmp_path, capsys):
     assert note in joined
     # The recorded command replays: repo-relative map (the test passed an
     # absolute one) and the --source-note it was given.
-    assert "--map config/scenarios/maps/Porto/Porto.yaml " in joined
+    porto = "third_party/GR-roboracer-data/tracks/Porto/maps/Porto/Porto.yaml"
+    assert f"--map {porto} " in joined
     assert str(REPO) not in joined
     assert f"--source-note {shlex.quote(note)}" in joined
     grid = load_map(MAP_YAML)

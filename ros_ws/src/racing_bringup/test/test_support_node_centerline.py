@@ -48,9 +48,15 @@ def test_bringup_1580_no_raceline_file_means_the_centerline_planner() -> None:
     optimized_raceline never falls back to the centerline."""
     porto = track_parameters(PORTO)
     assert porto["racing_bringup_support"]["raceline_path"] == ""
-    assert not (
-        REPOSITORY_ROOT / "config/scenarios/maps/Porto/Porto_raceline.csv"
-    ).exists(), "Porto gained a raceline: this fallback is no longer needed"
+    porto_raceline = (
+        REPOSITORY_ROOT
+        / "third_party/GR-roboracer-data/tracks/Porto/maps/Porto"
+        / "Porto_raceline.csv"
+    )
+    assert porto_raceline.parent.is_dir(), "the data submodule is missing"
+    assert not porto_raceline.exists(), (
+        "Porto gained a raceline: this fallback is no longer needed"
+    )
 
     spielberg = track_parameters(SPIELBERG)["racing_bringup_support"]
     assert spielberg["raceline_path"].endswith("_raceline.csv")

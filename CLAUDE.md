@@ -91,6 +91,7 @@ nodes run in `gpu` (`dev` + CUDA), on the owner's machine only.
 | touching message stamps, timers, `use_sim_time`, or anything that reads the clock | `docs/adr/0006-simulated-time-is-the-time-base.md` |
 | changing `check.sh --ready`'s selection, or a `paths` / `verified_by` in `config/reference_stack.yaml` | `docs/adr/0007-ready-is-a-scoped-local-run.md` |
 | changing anything a user can see or run (a launch argument, an implementation, a command, a capability status, a result) | the `gr-roboracer-docs` skill (`.claude/skills/gr-roboracer-docs/`) |
+| adding or changing a map or raceline | `docs/adr/0009-track-data-lives-in-gr-roboracer-data.md`, `third_party/NOTICE.md` and the data repo's README |
 | launching, connecting or recording the AutoDRIVE simulator | `docs/agents/autodrive.md` |
 | regenerating `tests/golden/baseline.json` | `docs/agents/repo-gotchas.md` #14 — it is a reviewed diff, never a way to green a run |
 
@@ -124,7 +125,7 @@ tests/          Tier 3 (pytest), tier 4 (Robot Framework), shared keywords, gold
 raceline/       Offline raceline generation (TUM optimizer). uv project, no ROS, runs in dev.
 scripts/        check.sh (the gate), run_scenario.py, compare_metrics.py.
 docker/         Multi-stage image: base → underlay → dev (→ gpu) / fast-sim / runtime.
-third_party/    Referenced upstream sources (git submodules); NOTICE.md says what and why.
+third_party/    Referenced upstream sources and the track data (GR-roboracer-data), git submodules; NOTICE.md says what and why.
 docs/           ADRs, agent-facing notes, research.
 .scratch/       Grills, specs and plans. Gitignored; `git clean -e .scratch`.
 ```

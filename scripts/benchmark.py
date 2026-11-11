@@ -103,9 +103,10 @@ STACK_FILE = "config/reference_stack.yaml"
 TRIGGER_PATHS: dict[str, tuple[str, ...]] = {
     # an added implementation (ADR 0008 section 5, Q9): roles come from the diff
     STACK_FILE: (),
-    # a new or changed committed Spielberg line is a planning method
+    # a bump of the data repo (its racelines live there, ADR 0009) is a
+    # new or changed line, a planning method
     # (owner call, 2026-11-10): it lands under the one optimized_raceline
-    "config/racelines/spielberg/**/*.csv": ("planning",),
+    "third_party/GR-roboracer-data": ("planning",),
     # the runner's own edits run once, so a harness change cannot bit-rot
     "scripts/benchmark_runs.py": ROLE_ORDER,
 }
@@ -388,7 +389,12 @@ def _run_planning(seeds, out, started, tmp, session_start) -> list[str]:
         for vehicle, (_, version) in vehicles.items():
             for line in expected["rows"][vehicle]:
                 fields = benchmark_runs.static_fields(version, line)
-                key = f"spielberg/{version}/{line}.yaml"
+                # SIM-5040's key: the record's path under the tracks root
+                key = (
+                    (benchmark_runs.RACELINES / version / f"{line}.yaml")
+                    .relative_to(benchmark_runs.TRACKS)
+                    .as_posix()
+                )
                 if key in regeneration:
                     fields["solve_seconds"] = regeneration[key]["solve_seconds"]
                 statics[(vehicle, line)] = fields

@@ -44,10 +44,11 @@ from scripts.raceline_report import (  # noqa: E402
 SCENARIO = str(REPO / "config" / "scenarios" / "spielberg.yaml")
 TRACK = REPO / "config" / "tracks" / "spielberg.yaml"
 REPORT_DIR = REPO / "log" / "raceline-report"
-RACELINES = REPO / "config" / "racelines" / "spielberg"
+TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
+RACELINES = TRACKS / "Spielberg" / "racelines"
 UPSTREAM = REPO / "third_party" / "f1tenth_racetracks"
 SURVEY = (
-    REPO / "config/scenarios/maps/Spielberg/slam/Spielberg.yaml"
+    TRACKS / "Spielberg" / "maps" / "Spielberg" / "slam" / "Spielberg.yaml"
 )  # amcl's prior
 
 # vehicle name -> (vehicle file, vehicle_parameter_version)
