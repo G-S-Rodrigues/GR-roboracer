@@ -12,12 +12,13 @@ that changed the code merges. A claim a plan only promises is not true yet.
 
 | Audience | Files | Written for |
 |---|---|---|
-| **User** | `README.md`, `docs/*.md`, `docs/workflows/`, `docs/assets/` | someone on Linux with Docker who has never read the code |
+| **User** | `README.md`, `docs/*.md`, `docs/workflows/`, `docs/assets/` | someone on Linux, or on Windows with WSL2, with Docker, who has never read the code |
 | **Agent** | `CLAUDE.md`, `ros_ws/src/*/CLAUDE.md`, `docs/agents/`, `docs/adr/` | an agent working in the repo |
 
-User docs assume Linux with Docker and link only to user docs and code. Host quirks (WSL2,
-WSLg, the Windows shell), gotchas, test conventions and process rulings belong to agent docs
-(`docs/agents/running-wsl.md` holds the WSL material). A fact both audiences need is written
+User docs link only to user docs and code, and may document Windows or WSL2 steps where a
+workflow needs them (the AutoDRIVE GUI sim runs on Windows). Gotchas, test conventions, process
+rulings and measured route numbers belong to agent docs (`docs/agents/running-wsl.md` holds the
+WSL host material). A fact both audiences need is written
 once, in the user page, and the agent doc points at it.
 
 ## The owner page of each fact
@@ -77,8 +78,7 @@ sentence against its backing source line; a number is copied from the file that 
 python3 -I .claude/skills/gr-roboracer-docs/scripts/docs_check.py .
 ```
 
-It checks that links and anchors resolve, that no user page links an agent doc, and that no
-user page mentions WSL or Windows. It does not check prose; step 3 does.
+It checks that links and anchors resolve, and that no user page links an agent doc. It does not check prose; step 3 does.
 
 ### 3. Decide whether a video is due
 
@@ -89,6 +89,9 @@ Record a new video only when **what a user would see changes**:
   would look different; or
 - an implementation becomes Available whose behaviour looks unlike anything already shown — a
   new localizer, planner path, mapper or map type.
+
+A demonstration drives on an estimator's localization (`pose_source` other than
+`ground_truth`), never on ground truth; VIDEO.md has the rule and its one exemption.
 
 A change that only makes the same picture faster or more accurate updates `docs/results.md`'s
 numbers, not the video. Refactors, tests, tuning and docs never need one.
@@ -114,5 +117,5 @@ yours changes before either merges.
 A PR is **docs-only** when every file it changes is a `.md` file or under `docs/assets/`. It
 needs neither `check.sh --ready` nor green CI (owner ruling, 2026-10-22): run `docs_check.py`,
 then merge with `gh pr merge --merge` without waiting for CI. A PR that also touches code,
-config, a test or a script — the scripts in this skill included — takes the full gate in
-`CLAUDE.md`.
+config, a test or a script — the scripts in this skill included, so a PR that changes
+`docs_check.py` is not docs-only — takes the full gate in `CLAUDE.md`.
