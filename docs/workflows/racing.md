@@ -84,7 +84,7 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios
 
 **Drives on:** ground truth; MOLA-LO's estimate is published on `/localization/odom` and scored.
 MOLA localizes on the map it built itself in one mapping lap, committed in
-`config/scenarios/maps/Spielberg/mola/` (`Spielberg.mm` and the provenance `Spielberg.yaml`), not on
+`third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/mola/` (`Spielberg.mm` and the provenance `Spielberg.yaml`), not on
 the survey grid, so its error includes that map's own error.
 **Selected by:** `pose_source:=mola drive_on_estimate:=false`.
 
@@ -105,7 +105,7 @@ Selected by `planner:=`, which is `track_centerline` by default.
 - `track_centerline` publishes the scenario's `<map>_raceline.csv` on `/trajectory`, which is the
   centerline at constant speed. (It was called `track_raceline` before part 6 of issue #12.)
 - `optimized_raceline` publishes the committed line
-  `config/racelines/<track>/<vehicle_version>/<raceline_optimizer>.csv`, with
+  `third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle_version>/<raceline_optimizer>.csv`, with
   `raceline_optimizer:=tum_mincurv_iqp` (minimum curvature, the default) or `raceline_optimizer:=tum_mintime` (minimum time). A missing line, an unknown name or a
   line whose sidecar `.yaml` disagrees is an error; the launch never falls back to the centerline.
 
@@ -130,8 +130,8 @@ The gym-limits vehicle's lines resolve, but no gate lap drives them.
 Available, offline: map centerline extraction and the TUM minimum-curvature and minimum-time
 wrappers in `raceline/` (minimum time runs on the owner's TUM fork, pinned by commit). `env -u PYTHONPATH uv run --project raceline --locked python -m raceline` optimizes a
 line from a map or track, verifies it and writes
-`config/racelines/<track>/<vehicle_version>/<optimizer>.{csv,yaml}`; racelines of both optimizers for
-Spielberg are committed under `config/racelines/spielberg/`. See the
+`third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle_version>/<optimizer>.{csv,yaml}`; racelines of both optimizers for
+Spielberg are committed under `third_party/GR-roboracer-data/tracks/Spielberg/racelines/`. See the
 [raceline README](../../raceline/README.md#racelines-part-4) and [Path planning](../path-planning.md).
 
 The minimum-time line takes one command, end to end: it extracts the track, makes the
@@ -140,7 +140,7 @@ Run from the repo root in `dev`, one TUM process at a time, for each vehicle fil
 `f1tenth_default` or `f1tenth_gym_limits`):
 
 ```bash
-env -u PYTHONPATH uv run --project raceline --locked python -m raceline --map config/scenarios/maps/Spielberg/slam/Spielberg.yaml --walls observed --start-pose 0 0 -2.879 --direction cw --ground-truth-track config/tracks/spielberg.yaml --ground-truth-map config/scenarios/maps/Spielberg/Spielberg.yaml --vehicle config/vehicles/$v.yaml --optimizer tum_mintime --timeout 3000
+env -u PYTHONPATH uv run --project raceline --locked python -m raceline --map third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg.yaml --walls observed --start-pose 0 0 -2.879 --direction cw --ground-truth-track config/tracks/spielberg.yaml --ground-truth-map third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/Spielberg.yaml --vehicle config/vehicles/$v.yaml --optimizer tum_mintime --timeout 3000
 ```
 
 It saves `tum_mintime.csv` and `tum_mintime.yaml` beside the other lines and the minimum-curvature

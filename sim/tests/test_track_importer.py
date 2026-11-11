@@ -487,7 +487,10 @@ def test_sim_1070_a_reencoded_png_is_the_same_asset_a_changed_pixel_is_not(
     tmp_path: Path,
 ) -> None:
     """SIM-1070 helper: bytes may differ, pixels may not."""
-    source = Path("config/scenarios/maps/Spielberg/Spielberg.png")
+    source = Path(
+        "third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/"
+        "Spielberg.png"
+    )
     with Image.open(source) as image:
         image.save(tmp_path / "recompressed.png", compress_level=0)
         pixels = np.asarray(image).copy()
@@ -499,15 +502,22 @@ def test_sim_1070_a_reencoded_png_is_the_same_asset_a_changed_pixel_is_not(
 
 
 @pytest.mark.parametrize(
-    ("track", "name"),
-    [("analytic_circle", "analytic_circle"), ("spielberg", "Spielberg")],
+    ("track", "name", "root"),
+    [
+        ("analytic_circle", "analytic_circle", "config/scenarios/maps"),
+        (
+            "spielberg",
+            "Spielberg",
+            "third_party/GR-roboracer-data/tracks/Spielberg/maps",
+        ),
+    ],
 )
 def test_sim_1070_the_committed_gym_assets_are_the_importer_output(
-    tmp_path: Path, track: str, name: str
+    tmp_path: Path, track: str, name: str, root: str
 ) -> None:
     """SIM-1070: no hand edit and no stale redraw of a committed map."""
     track_dir = import_track(Path(f"config/tracks/{track}.yaml"), tmp_path)
-    committed = Path("config/scenarios/maps") / name
+    committed = Path(root) / name
     files = sorted(path.name for path in track_dir.iterdir())
     assert len(files) == 4
     stale = [

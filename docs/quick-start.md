@@ -26,6 +26,7 @@ Run these in a shell on the host:
 mkdir -p ~/gitroot
 git clone git@github.com:G-S-Rodrigues/GR-roboracer.git ~/gitroot/GR-roboracer
 cd ~/gitroot/GR-roboracer
+git submodule update --init third_party/GR-roboracer-data
 docker compose -f docker/docker-compose.yaml build dev
 docker compose -f docker/docker-compose.yaml up -d dev
 docker exec -it gr-roboracer-dev bash

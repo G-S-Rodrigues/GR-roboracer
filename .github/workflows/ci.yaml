@@ -33,6 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The maps and racelines live in the data repo (ADR 0009); every job
+      # that runs check.sh reads them. --depth 1 works because the pinned
+      # commit is on the data repo's main.
+      - name: Initialise the track data submodule
+        run: git submodule update --init --depth 1 third_party/GR-roboracer-data
+
       - uses: docker/setup-buildx-action@v3
 
       # Loaded into the local daemon rather than pushed: nothing outside this
@@ -112,6 +118,10 @@ jobs:
       # No nightly test reads the f1tenth_racetracks submodule: only the
       # planning benchmark does (.github/workflows/benchmark.yaml).
       - uses: actions/checkout@v4
+
+      # The track data (ADR 0009) is read by every region.
+      - name: Initialise the track data submodule
+        run: git submodule update --init --depth 1 third_party/GR-roboracer-data
 
       - uses: docker/setup-buildx-action@v3
 

@@ -1,3 +1,6 @@
 [submodule "third_party/f1tenth_racetracks"]
 	path = third_party/f1tenth_racetracks
 	url = https://github.com/f1tenth/f1tenth_racetracks.git
+[submodule "third_party/GR-roboracer-data"]
+	path = third_party/GR-roboracer-data
+	url = https://github.com/G-S-Rodrigues/GR-roboracer-data.git

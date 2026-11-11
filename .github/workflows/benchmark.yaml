@@ -3,8 +3,9 @@
 # It reports and never blocks. Every job name below carries "(non-blocking)",
 # which is how a lander (and CLAUDE.md "The rule") knows not to wait on it or
 # stop a merge for it; CHECK-2770 pins that. It is never scheduled: a PR runs
-# it only when its diff adds an implementation to the reference stack, adds or
-# changes a committed Spielberg raceline, or edits the runner. Anyone can run
+# it only when its diff adds an implementation to the reference stack, bumps
+# the data submodule (any change to its maps or racelines runs the planning
+# benchmark), or edits the runner. Anyone can run
 # it by hand (`gh workflow run benchmark.yaml -f role=all`).
 #
 # The trigger list is scripts/benchmark.py TRIGGER_PATHS; `paths` below must
@@ -19,7 +20,7 @@ on:
   pull_request:
     paths:
       - config/reference_stack.yaml
-      - config/racelines/spielberg/**/*.csv
+      - third_party/GR-roboracer-data
       - scripts/benchmark_runs.py
   workflow_dispatch:
     inputs:
@@ -97,11 +98,13 @@ jobs:
       matrix:
         role: ${{ fromJSON(needs.detect.outputs.roles) }}
     steps:
-      # The submodule is read only by the planning benchmark's upstream row
-      # (third_party/NOTICE.md).
+      # Both roles read the data submodule (ADR 0009): every scenario's
+      # map_directory and amcl's survey map live in it. The planning
+      # benchmark's upstream row also reads f1tenth_racetracks
+      # (third_party/NOTICE.md). CHECK-2340 pins this.
       - uses: actions/checkout@v4
         with:
-          submodules: ${{ matrix.role == 'planning' }}
+          submodules: true
 
       - uses: docker/setup-buildx-action@v3
 

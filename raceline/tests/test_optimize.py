@@ -147,7 +147,14 @@ def test_raceline_1380_real_tum_on_the_oval_passes_the_verifier():
 
 # --- RACELINE-1415: the min-curv ini reads mass and length from the file ----
 
-RACELINES = VEHICLES.parent / "racelines" / "spielberg"
+RACELINES = (
+    VEHICLES.parent.parent
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "racelines"
+)
 
 
 @pytest.mark.parametrize(

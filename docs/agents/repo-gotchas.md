@@ -375,3 +375,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     the count. Hence the chain always writes the
     reference and seeds from the file on disk, and any iteration bound (`MINTIME_MAX_ITER`) is
     measured in `gr-roboracer-dev`, the nightly's image, never copied from the fork's container.
+
+## Track data
+
+44. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
+    `git submodule update --init third_party/GR-roboracer-data` **on the host**: in `dev` git fails on a
+    host worktree (#23). Do it again in every new worktree and after merging a main that bumped the pin.
+    Without it, real-track scenarios raise at load naming the init command (SIMJAX-1600), where the
+    gym's bundled Spielberg would otherwise have masked the gap silently (G1). analytic_circle and
+    contract_test still run. ADR 0009. Run `python -m raceline` only after the init: its default
+    `--out-dir` is inside the submodule folder, so a run before init fills the empty folder and init
+    then fails with `clone ... failed`. Never push from the submodule checkout: its `origin` is HTTPS
+    and the push prompts forever (#5); push the data repo from a normal clone (`~/gitroot/GR-roboracer-data`).

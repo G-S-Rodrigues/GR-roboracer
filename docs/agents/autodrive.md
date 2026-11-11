@@ -17,6 +17,44 @@ The competition simulator's window is a **Windows** build; an agent in WSL start
    `docker logs autodrive-devkit-gui` on the devkit route, or a session id (`sid`) in our own
    server's or a probe recorder's log.
 
+## Recording the GUI window
+
+**Only the sim's window is ever saved (R-i, owner 2026-11-11):** never the desktop, never another
+window, never `ddagrab` or any desktop capture, cropped or not. This binds probe and test captures
+too. Record from WSL through interop; no Windows-side agent is needed (route A, decided
+2026-11-11 from a measured comparison: a Windows Claude session still needs the clock offset, costs
+~150-340 ms per cross-OS call, has a separate session registry and its own CLAUDE.md, so it
+improves nothing). `VIDEO.md` has the encoding, label and placement.
+
+- Windows ffmpeg 8.1.3 (`BtbN.FFmpeg.GPL.8.1`, installed 2026-11-10):
+  `C:\Users\guilh\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe`. WSL's ffmpeg cannot see Windows windows.
+- Run the whole job (stack and recording) inside the heavy lane (`scripts/heavy_lane.sh -- <recorder>` where it exists, otherwise `flock -x` on the lane lock file).
+- Start ffmpeg Windows-native so its lifetime does not depend on any WSL process:
+  `powershell.exe -NoProfile -Command "(Start-Process ffmpeg -ArgumentList '<args>' -WindowStyle Hidden -PassThru).Id"`,
+  with `-filter_complex "gfxcapture=window_exe=AutoDRIVE Simulator:max_framerate=60:capture_cursor=0,hwdownload,format=bgra,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p,fps=60"`
+  and an absolute `C:\...` output path (a fragmented mp4 survives a hard kill). **Never signal the
+  interop wrapper**: it kills ffmpeg hard and leaves a 48-byte, unplayable mp4.
+- The two filter-chain traps: `gfxcapture` emits only on change, so add `fps=`; D3D11 surfaces and
+  odd sizes need `hwdownload,format=bgra` and the even-size `scale`.
+- `window_exe=explorer` matched a 1x1 window in the install probe. Before any frame is written,
+  confirm the matched window is the sim's, at the sim's size (output to `-f null`, or enumerate the
+  sim's process windows). A capture of anything else is deleted and reported.
+- Stop with `taskkill /PID <pid>` without `/F`, then `ffprobe` the file. ffmpeg finalises only while
+  frames arrive: a window that presents nothing yields 0 frames and ignores `q`, `-t` and a plain
+  taskkill. So watch the frame count, and `taskkill /F` at teardown if it has not exited.
+- Never minimise the sim window: a minimised window gave usable frames in 1 of 5 runs. Overlapping
+  windows do not appear in a `gfxcapture` recording.
+- Measure the Windows-WSL clock offset before and after, with a ping-pong over one held
+  `powershell.exe` pipe (about +7.2 ms here, stdev 0.02-0.05 ms). Per-call `powershell.exe` stamps
+  are +-300 ms noise. The video has no time of day: align on an event visible in both streams.
+- `cd /mnt/c` before interop calls. `powershell.exe` sometimes prints only
+  `UtilAcceptVsock:273: accept4 failed 110` and returns nothing: retry once, and never read an empty
+  reply as success. Copy results into `.scratch/` through `/mnt/c`, never into the repo.
+
+**Unverified on the sim** (nothing here has recorded the real window yet): ffmpeg's start-to-first-frame
+latency, so frame-0 wall time from a launcher stamp; whether the Unity sim renders while occluded
+or unfocused; the sustained `gfxcapture` fps at 1920x991 with ~1.9 GB free RAM.
+
 ## The route to our own server (headless server in `dev`, Windows sim)
 
 `dev` publishes no port (ADR 0002), so the Windows sim reaches the server in it through two hops:

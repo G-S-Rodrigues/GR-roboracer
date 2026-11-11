@@ -75,7 +75,7 @@ justified a bound stays beside the report, as its baseline.
 
 - **Do not add a pass/fail quality bound.** "Is it better than X" is a benchmark.
 - **Benchmarks** compare implementations of one role. They run on demand, or in CI as a non-required
-  job on a PR that adds an implementation. They never run nightly and never block. The command is `python3 scripts/benchmark.py run|render|history` (Running); the Benchmark workflow runs it on a PR whose diff adds an implementation, a Spielberg raceline CSV or edits the runner, uploads `benchmark-<role>` artifacts, and is never waited on.
+  job on a PR that adds an implementation. They never run nightly and never block. The command is `python3 scripts/benchmark.py run|render|history` (Running); the Benchmark workflow runs it on a PR whose diff adds an implementation, bumps the data submodule (any change to its maps or racelines runs the planning benchmark) or edits the runner, uploads `benchmark-<role>` artifacts, and is never waited on.
 - **Regression tracking** of one method over time (SIM-5030) runs in the nightly, reports, and is
   never red on a number.
 - **An experimental implementation** (`status: experimental` in `config/reference_stack.yaml`) is
@@ -177,6 +177,10 @@ Where a test is not where you would look:
 - `tests/nightly_regions.yaml` assigns every nightly test to a region (`slam`, `path_planning`,
   `path_planning_mintime`, `control`, `shared`, and the implicit `static`). CHECK-1510/1520 hold it to
   the suite.
+- `scripts/tests/test_docs_check.py` (CHECK-2460..2462) and `scripts/tests/test_observer_map.py`
+  (CHECK-2450..2455) test tooling that is not a ROS package: the `gr-roboracer-docs` skill's
+  `docs_check.py`, and `scripts/observer_map.py`, which needs the sourced overlay. Both sit under
+  `scripts/tests/*`, so no lap is selected for them.
 - SIM-5060 solves only on a night the optimizer code changed. On any other night it records that it
   did not run.
 - The conformance tests select by the backend's declared capabilities
@@ -240,3 +244,4 @@ The AutoDRIVE part-9.1 fix added tier 2 `SIMAD-2280` (a positive control killed 
 
 The AutoDRIVE part-9.2 fix added tier 2 `SIMAD-2290` (TF the positive control wrote before it stopped, still queued in the listener after the graph emptied, is set aside by `Listener.mark()` on its DDS `source_timestamp` and never counted in SIMAD-2250's window; 9.1's `wait_until_gone` had removed the 1 s spin that used to drain it). Counts by ID: +1 tier-2.
 
+The D1 data-repo migration added tier 1 `CHECK-2320`, `CHECK-2330`, `CHECK-2340`, `CHECK-2350`, `CHECK-2360`, `SIMJAX-1600`, `BRINGUP-1960`, `BRINGUP-1970` and `RACELINE-1530` (nine IDs, counted by ID, on the counts above; the counting topic is still open). `CHECK-1420` keeps its ID and loses its `--ready` scope half to `CHECK-2320` (owner ruling E6). The track data is read from the `third_party/GR-roboracer-data` submodule, so every tier needs it initialised (repo-gotchas #44).
