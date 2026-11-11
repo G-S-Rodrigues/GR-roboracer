@@ -90,7 +90,11 @@ env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
 
 The lateral limits (`limits_sliding.yaml`, `limits_peak.yaml`) come from a second recording and a corner sweep.
 Record the lateral schedule the same way, with `record --schedule lateral`, run the closed-loop sweep with
-`scripts/autodrive_qualify.sh --domain 64 --case corner_sweep --sweep-dir <dir>`, and write the two files:
+`scripts/autodrive_qualify.sh --domain 64 --case corner_sweep --sweep-dir <dir>`, and write the two files.
+The sweep directory (scenario copy, vehicle copy, `sweep.json`) and the combined `sweep.jsonl.gz` with its
+`meta.rungs` came from a ladder driver that is not committed, so the committed recording cannot be
+re-produced from the repo alone, and a fresh ladder for a new edition is its own plan.
+`analyse --sweep` works on the committed `2026-iros-practice-corner-sweep.jsonl.gz` as it is:
 
 ```
 env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py record \
