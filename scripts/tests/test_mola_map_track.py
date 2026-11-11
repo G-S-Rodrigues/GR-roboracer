@@ -34,9 +34,7 @@ def test_check_2484_from_simplemap_dry_run_touches_nothing(tmp_path) -> None:
     exits 0 before the `cd`, the `source`, the `rm` and any launch, prints
     that it will skip the lap and start from F, and creates no file in the
     tree (the stem's directory included)."""
-    assert (
-        subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0
-    )
+    assert subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0
     root = _tree(tmp_path)
     simplemap = tmp_path / "lap.simplemap"
     simplemap.write_bytes(b"x")

@@ -25,12 +25,46 @@
 # diff. MOLA is multi-threaded, so two runs are close but not identical.
 set -euo pipefail
 
-usage="usage: mola_map_track.sh <scenario.yaml> <output-stem> <seed>"
+usage="usage: mola_map_track.sh [--from-simplemap FILE] [--dry-run] <scenario.yaml> <output-stem> <seed>"
+# --from-simplemap FILE skips the lap and builds the map from the simplemap a
+# mapping lap already wrote (a lap on another simulator, e.g. AutoDRIVE:
+# mola_mapping.launch.py simulator:=autodrive); the alignment T is then read
+# from the recording at $MOLA_RECORDING (default log/mola_mapping.jsonl) at
+# stamp $FIRST_STAMP (default 0.0). --dry-run prints that plan and exits
+# before anything is read, removed or launched.
+from_simplemap=
+dry_run=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --from-simplemap)
+        from_simplemap=${2:?$usage}
+        shift 2
+        ;;
+    --dry-run)
+        dry_run=1
+        shift
+        ;;
+    -*)
+        echo "$usage" >&2
+        exit 2
+        ;;
+    *) break ;;
+    esac
+done
 scenario=${1:?$usage}
 stem=${2:?$usage}
 seed=${3:?$usage}
 lap_wait=${LAP_WAIT:-300}
 time_scale=1.0
+if [ "$dry_run" = 1 ]; then
+    if [ -n "$from_simplemap" ]; then
+        echo "mola_map_track.sh: skip the lap; from simplemap $from_simplemap" \
+            "-> $stem (scenario $scenario, seed $seed)"
+    else
+        echo "mola_map_track.sh: lap on $scenario -> $stem (seed $seed)"
+    fi
+    exit 0
+fi
 
 trap 'echo "mola_map_track.sh: failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 cd "$(dirname "$0")/.."
@@ -46,89 +80,96 @@ case "$stem" in
 *) output=$(pwd)/$stem ;;
 esac
 simplemap=$(pwd)/log/mola_mapping.simplemap
-rm -f "$simplemap"
+recording=${MOLA_RECORDING:-log/mola_mapping.jsonl}
+if [ -n "$from_simplemap" ]; then
+    test -s "$from_simplemap" || { echo "no simplemap: $from_simplemap" >&2; exit 1; }
+    simplemap=$(realpath "$from_simplemap")
+    first_stamp=${FIRST_STAMP:-0.0}
+else
+    rm -f "$simplemap"
 
-# A kill watchdog. Its stdio is closed and stop_watchdog kills its `sleep`
-# too: a leftover `sleep` holding the caller's stdout pipe made
-# subprocess.run(capture_output=True) wait out its whole timeout after this
-# script had exited 0 (nightly 40663334967, SIM-5520; BRINGUP-1770).
-start_watchdog() {
-    ( exec >/dev/null 2>&1 </dev/null; sleep "$1"; kill -KILL "$2" ) &
-    watchdog=$!
-}
-stop_watchdog() {
-    # Subshell first, so it cannot go on to the kill when its sleep dies.
-    local children
-    children=$(pgrep -P "$watchdog" 2>/dev/null || true)
-    kill "$watchdog" 2>/dev/null || true
-    # shellcheck disable=SC2086
-    [ -z "$children" ] || kill $children 2>/dev/null || true
-}
+    # A kill watchdog. Its stdio is closed and stop_watchdog kills its `sleep`
+    # too: a leftover `sleep` holding the caller's stdout pipe made
+    # subprocess.run(capture_output=True) wait out its whole timeout after this
+    # script had exited 0 (nightly 40663334967, SIM-5520; BRINGUP-1770).
+    start_watchdog() {
+        ( exec >/dev/null 2>&1 </dev/null; sleep "$1"; kill -KILL "$2" ) &
+        watchdog=$!
+    }
+    stop_watchdog() {
+        # Subshell first, so it cannot go on to the kill when its sleep dies.
+        local children
+        children=$(pgrep -P "$watchdog" 2>/dev/null || true)
+        kill "$watchdog" 2>/dev/null || true
+        # shellcheck disable=SC2086
+        [ -z "$children" ] || kill $children 2>/dev/null || true
+    }
 
-setsid ros2 launch racing_bringup sim_pure_pursuit.launch.py \
-    scenario:="$scenario" use_rviz:=false seed:="$seed" start_held:=true \
-    time_scale:="$time_scale" recording_path:=log/mola_mapping.jsonl \
-    >log/mola_mapping_launch.log 2>&1 &
-launch=$!
-setsid ros2 launch racing_bringup mola_mapping.launch.py \
-    simplemap_output:="$simplemap" >log/mola_mapping_mola.log 2>&1 &
-mola=$!
-# Each launch is its own session (setsid execs in place, so $! is its session
-# and process-group id), and the cleanup signals only those groups: never a
-# process name, which would also hit any other stack in this container.
-trap 'kill -TERM -- "-$mola" "-$launch" 2>/dev/null || true; sleep 5; kill -KILL -- "-$mola" "-$launch" 2>/dev/null || true' EXIT
+    setsid ros2 launch racing_bringup sim_pure_pursuit.launch.py \
+        scenario:="$scenario" use_rviz:=false seed:="$seed" start_held:=true \
+        time_scale:="$time_scale" recording_path:=log/mola_mapping.jsonl \
+        >log/mola_mapping_launch.log 2>&1 &
+    launch=$!
+    setsid ros2 launch racing_bringup mola_mapping.launch.py \
+        simplemap_output:="$simplemap" >log/mola_mapping_mola.log 2>&1 &
+    mola=$!
+    # Each launch is its own session (setsid execs in place, so $! is its session
+    # and process-group id), and the cleanup signals only those groups: never a
+    # process name, which would also hit any other stack in this container.
+    trap 'kill -TERM -- "-$mola" "-$launch" 2>/dev/null || true; sleep 5; kill -KILL -- "-$mola" "-$launch" 2>/dev/null || true' EXIT
 
-# Deterministic t=0: the sim is held at clock 0 and republishes its snapshot.
-# Wait for MOLA to subscribe /scan and process its first scan - which it logs
-# as the initial re-localization, at the held stamp 0, so that stamp is the
-# one T is taken at - then reset.
-first_stamp=0.0
-for _ in $(seq 1 120); do
-    ros2 service list 2>/dev/null | grep -q racing_sim/reset &&
-        grep -q "Initial re-localization done" log/mola_mapping_mola.log &&
-        break
-    sleep 2
-done
-grep -q "Initial re-localization done" log/mola_mapping_mola.log
-# Subscribe to the metrics while the sim is still held, so that the CLI's
-# start-up and DDS discovery do not land in the first seconds of the lap, where
-# a stall would latch STALE_INPUT (gotcha #19).
-timeout "$lap_wait" ros2 topic echo --once \
-    --qos-durability transient_local --qos-reliability reliable \
-    /scenario/metrics racing_interfaces/msg/ScenarioMetrics \
-    >log/mola_mapping_metrics.txt &
-echo_pid=$!
-sleep 5
-# Release t=0 only once the supervisor has heard /clock (its latched
-# ~/clock_received, F1): a best-effort /clock writer matched after t=0 leaves
-# its clock at 0 and latches STALE (gotcha #19). A timeout fails the script.
-timeout 60 ros2 topic echo --once \
-    --qos-durability transient_local --qos-reliability reliable \
-    /racing_safety_supervisor/clock_received rosgraph_msgs/msg/Clock \
-    >log/mola_mapping_clock_received.txt
-ros2 service call /racing_sim/reset racing_interfaces/srv/Reset \
-    "{seed: $seed, scenario_id: \"\"}" >log/mola_mapping_reset.log
-wait "$echo_pid"
-grep -E "lap_completed|lap_time|collision_count" log/mola_mapping_metrics.txt
-grep -q "lap_completed: true" log/mola_mapping_metrics.txt
+    # Deterministic t=0: the sim is held at clock 0 and republishes its snapshot.
+    # Wait for MOLA to subscribe /scan and process its first scan - which it logs
+    # as the initial re-localization, at the held stamp 0, so that stamp is the
+    # one T is taken at - then reset.
+    first_stamp=0.0
+    for _ in $(seq 1 120); do
+        ros2 service list 2>/dev/null | grep -q racing_sim/reset &&
+            grep -q "Initial re-localization done" log/mola_mapping_mola.log &&
+            break
+        sleep 2
+    done
+    grep -q "Initial re-localization done" log/mola_mapping_mola.log
+    # Subscribe to the metrics while the sim is still held, so that the CLI's
+    # start-up and DDS discovery do not land in the first seconds of the lap, where
+    # a stall would latch STALE_INPUT (gotcha #19).
+    timeout "$lap_wait" ros2 topic echo --once \
+        --qos-durability transient_local --qos-reliability reliable \
+        /scenario/metrics racing_interfaces/msg/ScenarioMetrics \
+        >log/mola_mapping_metrics.txt &
+    echo_pid=$!
+    sleep 5
+    # Release t=0 only once the supervisor has heard /clock (its latched
+    # ~/clock_received, F1): a best-effort /clock writer matched after t=0 leaves
+    # its clock at 0 and latches STALE (gotcha #19). A timeout fails the script.
+    timeout 60 ros2 topic echo --once \
+        --qos-durability transient_local --qos-reliability reliable \
+        /racing_safety_supervisor/clock_received rosgraph_msgs/msg/Clock \
+        >log/mola_mapping_clock_received.txt
+    ros2 service call /racing_sim/reset racing_interfaces/srv/Reset \
+        "{seed: $seed, scenario_id: \"\"}" >log/mola_mapping_reset.log
+    wait "$echo_pid"
+    grep -E "lap_completed|lap_time|collision_count" log/mola_mapping_metrics.txt
+    grep -q "lap_completed: true" log/mola_mapping_metrics.txt
 
-# A clean MOLA shutdown writes the simplemap before the launch exits; wait on
-# the launch's own pid (a watchdog kills it if the save hangs).
-# SIGINT goes to the whole mapping session, so it reaches mola-cli itself:
-# sent only to `ros2 launch` it was measured to leave mola-cli running for 15
-# minutes, never saving.
-pkill -INT -s "$mola" || true
-start_watchdog 900 "$mola"
-wait "$mola" || true
-stop_watchdog
-test -s "$simplemap" || { echo "no simplemap written" >&2; exit 1; }
-# Stop the stack, so the recording the provenance reads is complete.
-# SIGTERM: a background job of a non-interactive shell starts with SIGINT
-# ignored, so a SIGINT sent to `ros2 launch` does nothing.
-kill -TERM "$launch" 2>/dev/null || true
-start_watchdog 120 "$launch"
-wait "$launch" || true
-stop_watchdog
+    # A clean MOLA shutdown writes the simplemap before the launch exits; wait on
+    # the launch's own pid (a watchdog kills it if the save hangs).
+    # SIGINT goes to the whole mapping session, so it reaches mola-cli itself:
+    # sent only to `ros2 launch` it was measured to leave mola-cli running for 15
+    # minutes, never saving.
+    pkill -INT -s "$mola" || true
+    start_watchdog 900 "$mola"
+    wait "$mola" || true
+    stop_watchdog
+    test -s "$simplemap" || { echo "no simplemap written" >&2; exit 1; }
+    # Stop the stack, so the recording the provenance reads is complete.
+    # SIGTERM: a background job of a non-interactive shell starts with SIGINT
+    # ignored, so a SIGINT sent to `ros2 launch` does nothing.
+    kill -TERM "$launch" 2>/dev/null || true
+    start_watchdog 120 "$launch"
+    wait "$launch" || true
+    stop_watchdog
+fi
 sm2mm -i "$simplemap" -o "$output.mm" -p config/localization/mola_sm2mm.yaml
 
 # T_map_mola: the pose of the world frame's car at MOLA's first processed
@@ -136,12 +177,12 @@ sm2mm -i "$simplemap" -o "$output.mm" -p config/localization/mola_sm2mm.yaml
 # provenance records it so the grid and the yaml agree. Written to a file for
 # the grid step and the provenance step.
 t_file=$(pwd)/log/mola_mapping_T.txt
-python3 - "$first_stamp" "$t_file" <<'PY'
+python3 - "$first_stamp" "$t_file" "$recording" <<'PY'
 import json, math, sys
 
 first_stamp, out = float(sys.argv[1]), sys.argv[2]
 truth = None
-for line in open("log/mola_mapping.jsonl"):
+for line in open(sys.argv[3]):
     try:
         record = json.loads(line)
     except json.JSONDecodeError:
