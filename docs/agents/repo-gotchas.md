@@ -385,6 +385,14 @@ Traps any task in this repository can hit. Each one cost real time at least once
     the wall clock under AutoDRIVE has the same trap. **On a real car**, run a time sync that slews (chrony,
     with `makestep` limited to start-up), never one that steps the clock mid-run.
 
+46. **Lateral grip on the AutoDRIVE car depends on the corner radius, so one a_y is the limit at one radius
+    only, and nothing errors.** The open-loop peak measured by `limits_peak.yaml` runs from 5.10 m/s^2 at
+    R 1.21 m to 7.33 at R 3.08 m, about 44 % across the bins (the closed-loop values move the same way). A GGV
+    or a planner `mue` that carries one a_y (TUM min-time reads only ggv row 0, `optimize.py:168`) is right at
+    one radius and wrong at every other. Never read one a_y from either file as the car's: read the bin for
+    the radius in question (the ggv rows interpolate by radius, `ggv_from_radius`), and say which radius
+    when quoting one.
+
 ## Track data
 
 44. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
