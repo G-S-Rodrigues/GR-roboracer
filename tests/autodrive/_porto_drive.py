@@ -111,6 +111,36 @@ def _reason_name(value: int) -> str:
     return f"REASON_{value}"
 
 
+def hold_error(reasons: Counter, stale_count: int) -> str | None:
+    """What the hold got wrong, or None; checked before the release.
+
+    The hold must have seen the supervisor's emergency stop latch
+    (`REASON_ESTOP_LATCHED`) and no STALE_INPUT. `clear_emergency_stop`
+    clears a STALE latch too (supervisor.cpp), so a release must never do
+    that silently.
+    """
+    if stale_count:
+        return f"STALE_INPUT x{stale_count} during the hold: {dict(reasons)}"
+    if reasons.get("REASON_STALE_INPUT", 0):
+        return f"REASON_STALE_INPUT seen during the hold: {dict(reasons)}"
+    if not reasons.get("REASON_ESTOP_LATCHED", 0):
+        return (
+            f"REASON_ESTOP_LATCHED never seen during the hold: {dict(reasons)}"
+        )
+    return None
+
+
+def released_reasons(names: list[str]) -> Counter:
+    """The reasons received after the clear response, minus the leading run
+    of `REASON_ESTOP_LATCHED`: statuses published before the clear and still
+    queued, which are not a latch of the drive. A STALE right at the release
+    followed by its latch keeps that latch."""
+    start = 0
+    while start < len(names) and names[start] == "REASON_ESTOP_LATCHED":
+        start += 1
+    return Counter(names[start:])
+
+
 def _subscribe_channels(node, rows: list[dict]) -> None:
     """The lateral channels, one `rows` entry per message. The topics are the
     server's (contract_node.py); `/drive` is the stack's command."""

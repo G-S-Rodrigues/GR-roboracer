@@ -11,6 +11,7 @@ this runs in `dev` with ROS sourced, like `test_scenario_runner_t0.py`.
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -82,3 +83,36 @@ def test_check_2483_wait_for_estimator_uses_one_deadline(monkeypatch) -> None:
     budgets = [c[-1] for c in calls[:2]]
     assert all(0.0 < b <= 5.0 for b in budgets), budgets
     assert budgets[1] <= budgets[0], budgets
+
+
+def test_check_2487_hold_error_names_what_the_hold_saw() -> None:
+    """CHECK-2487 (a)-(c): `hold_error(reasons, stale_count)` is None only
+    when the hold saw the emergency stop latch (REASON_ESTOP_LATCHED), no
+    REASON_STALE_INPUT and `stale_count == 0`: the release clears a STALE
+    latch too (supervisor.cpp), so it must never do so silently. Otherwise it
+    returns a message naming what it saw."""
+    err = _porto_drive.hold_error
+    latched = Counter({"REASON_NONE": 3, "REASON_ESTOP_LATCHED": 40})
+    assert err(latched, 0) is None
+    stale = latched + Counter({"REASON_STALE_INPUT": 1})
+    message = err(stale, 0)
+    assert message is not None and "REASON_STALE_INPUT" in message, message
+    message = err(latched, 2)
+    assert message is not None and "2" in message, message
+    message = err(Counter({"REASON_NONE": 5}), 0)
+    assert message is not None and "REASON_ESTOP_LATCHED" in message, message
+    assert err(Counter(), 0) is not None
+
+
+def test_check_2487_released_reasons_drops_the_leading_latch_only() -> None:
+    """CHECK-2487 (e): `released_reasons(names)` is the reasons received
+    after the clear response, minus the leading run of REASON_ESTOP_LATCHED
+    (statuses queued before the clear took effect). A STALE right at the
+    release, then its latch, is kept; all-latched is empty."""
+    out = _porto_drive.released_reasons
+    n, e, s = "REASON_NONE", "REASON_ESTOP_LATCHED", "REASON_STALE_INPUT"
+    assert out([e, e, n, n]) == Counter({n: 2})
+    assert out([e, s, e]) == Counter({s: 1, e: 1})
+    assert out([e, e]) == Counter()
+    assert out([]) == Counter()
+    assert out([n, e]) == Counter({n: 1, e: 1})
