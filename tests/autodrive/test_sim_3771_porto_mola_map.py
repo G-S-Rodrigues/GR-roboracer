@@ -41,7 +41,10 @@ from racing_evaluation.map_accuracy import (
     map_to_wall,
     scenario_truth_grid,
 )
-from racing_test_keywords.autodrive_live import judge_stale_input
+from racing_test_keywords.autodrive_live import (
+    judge_stale_input,
+    stale_input_timeout_s,
+)
 
 from scripts.compare_localization import poses, read_recording
 
@@ -51,13 +54,14 @@ BUDGET_S = 600.0
 MOLA_READY_S = 180.0
 SAVE_TIMEOUT_S = 900.0
 SEED = 42
+VEHICLE = "config/vehicles/autodrive_roboracer.yaml"
 LAUNCH = [
     "ros2",
     "launch",
     "racing_bringup",
     "sim_pure_pursuit.launch.py",
     "simulator:=autodrive",
-    "vehicle:=config/vehicles/autodrive_roboracer.yaml",
+    f"vehicle:={VEHICLE}",
     "scenario:=config/scenarios/porto.yaml",
     "use_rviz:=false",
     f"laps:={LAPS}",
@@ -192,7 +196,7 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
     print("MOLA_MAP", json.dumps(result))
 
     verdict = judge_stale_input(
-        run.latch, run.stamps, 0.1, run.stale, run.trace, END_LATCH_WAIT_S
+        run.latch, run.stamps, stale_input_timeout_s(VEHICLE), run.stale, run.trace, END_LATCH_WAIT_S
     )
     assert run.hold_error is None, run.hold_error
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"

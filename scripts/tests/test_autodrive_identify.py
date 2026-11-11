@@ -508,7 +508,9 @@ def test_check_2488_stale_input_timeout_is_per_platform() -> None:
         assert node["stale_input_timeout_ms"] == 200, name
         lines = path.read_text().splitlines()
         index = next(
-            i for i, line in enumerate(lines) if "stale_input_timeout_ms" in line
+            i
+            for i, line in enumerate(lines)
+            if "stale_input_timeout_ms" in line
         )
         block = []
         for line in reversed(lines[:index]):

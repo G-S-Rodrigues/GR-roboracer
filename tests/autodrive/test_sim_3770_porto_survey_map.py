@@ -28,7 +28,10 @@ from racing_evaluation.map_accuracy import (
     map_to_wall,
     scenario_truth_grid,
 )
-from racing_test_keywords.autodrive_live import judge_stale_input
+from racing_test_keywords.autodrive_live import (
+    judge_stale_input,
+    stale_input_timeout_s,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 LAPS = 1
@@ -37,13 +40,14 @@ SAVE_TIMEOUT_S = 120.0
 # Q5 (b0-d): AutoDRIVE's /odom drifted 1.727 m over two laps, so the survey
 # reads the truth pose, not the gym's /odom-placed config.
 SLAM_TOOLBOX_CONFIG = "config/localization/slam_toolbox_survey_truth.yaml"
+VEHICLE = "config/vehicles/autodrive_roboracer.yaml"
 LAUNCH = [
     "ros2",
     "launch",
     "racing_bringup",
     "slam_toolbox_mapping.launch.py",
     "simulator:=autodrive",
-    "vehicle:=config/vehicles/autodrive_roboracer.yaml",
+    f"vehicle:={VEHICLE}",
     "scenario:=config/scenarios/porto.yaml",
     "use_rviz:=false",
     f"laps:={LAPS}",
@@ -126,7 +130,7 @@ def test_sim_3770_porto_survey_map(tmp_path: Path) -> None:
     print("SURVEY", json.dumps(result))
 
     verdict = judge_stale_input(
-        run.latch, run.stamps, 0.1, run.stale, run.trace, END_LATCH_WAIT_S
+        run.latch, run.stamps, stale_input_timeout_s(VEHICLE), run.stale, run.trace, END_LATCH_WAIT_S
     )
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"
     assert run.reasons.get("REASON_ESTOP_LATCHED", 0) == 0, (

@@ -32,7 +32,10 @@ import subprocess
 from pathlib import Path
 
 from _porto_drive import SPAWN_MAP, SPAWN_TOL_M, SPAWN_TOL_RAD, drive_porto
-from racing_test_keywords.autodrive_live import judge_stale_input
+from racing_test_keywords.autodrive_live import (
+    judge_stale_input,
+    stale_input_timeout_s,
+)
 
 LAPS = 2
 BUDGET_S = 300.0
@@ -134,7 +137,7 @@ def test_sim_3760_porto_corner_sweep(tmp_path):
     verdict = judge_stale_input(
         run.latch,
         run.stamps,
-        0.1,
+        stale_input_timeout_s(sweep / "autodrive_roboracer_fast.yaml"),
         run.stale,
         run.trace,
         END_LATCH_WAIT_S,

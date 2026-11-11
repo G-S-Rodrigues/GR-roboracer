@@ -12,12 +12,16 @@ from pathlib import Path
 
 import numpy as np
 from _porto_drive import SPAWN_MAP, SPAWN_TOL_M, SPAWN_TOL_RAD, drive_porto
-from racing_test_keywords.autodrive_live import judge_stale_input
+from racing_test_keywords.autodrive_live import (
+    judge_stale_input,
+    stale_input_timeout_s,
+)
 from test_sim_3750_porto_fast_mintime_lap import (
     BUDGET_S,
     END_LATCH_WAIT_S,
     LAPS,
     LAUNCH,
+    VEHICLE,
     RACELINE,
 )
 
@@ -90,7 +94,7 @@ def fast_lap_on_estimator(
     print(case.upper(), json.dumps(result, default=str))
 
     verdict = judge_stale_input(
-        run.latch, run.stamps, 0.1, run.stale, run.trace, END_LATCH_WAIT_S
+        run.latch, run.stamps, stale_input_timeout_s(VEHICLE), run.stale, run.trace, END_LATCH_WAIT_S
     )
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"
     assert run.reasons.get("REASON_ESTOP_LATCHED", 0) == 0, (

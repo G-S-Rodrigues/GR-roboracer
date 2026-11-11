@@ -1,6 +1,24 @@
 """Shared by the live and replayed AutoDRIVE tests (SIM-3610, SIM-3730)."""
 
-from racing_test_keywords.scenario_runner import read_host_load
+from pathlib import Path
+
+import yaml
+from racing_test_keywords.scenario_runner import (
+    REPOSITORY_ROOT,
+    read_host_load,
+)
+
+
+def stale_input_timeout_s(vehicle: str | Path) -> float:
+    """The supervisor's stale-input timeout in seconds, read from a vehicle
+    file (relative paths resolve against the repository root). One reader for
+    every AutoDRIVE test: a literal drifts from the file (owner call #27)."""
+    path = Path(vehicle)
+    if not path.is_absolute():
+        path = REPOSITORY_ROOT / path
+    params = yaml.safe_load(path.read_text())
+    supervisor = params["racing_safety_supervisor"]["ros__parameters"]
+    return supervisor["stale_input_timeout_ms"] / 1000.0
 
 
 def judge_stale_input(
