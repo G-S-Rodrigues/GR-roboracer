@@ -21,6 +21,14 @@ SPIELBERG = REPO_ROOT / "config/scenarios/spielberg.yaml"
 SCRIPT = REPO_ROOT / "scripts/observer_map.py"
 
 
+def _map_base(scenario):
+    """The scenario's own map directory, wherever the repo keeps it."""
+    from racing_sim_gym_jax.scenario import load_scenario
+
+    loaded = load_scenario(scenario)
+    return loaded.map_directory / loaded.map_name, loaded.map_name
+
+
 def _msg(width, height, resolution, origin, frame="map"):
     return SimpleNamespace(
         header=SimpleNamespace(frame_id=frame),
@@ -39,19 +47,12 @@ def test_check_2450_map_yaml_per_pose_source() -> None:
     """CHECK-2450: ground truth serves maps/<M>/<M>.yaml, mola serves
     maps/<M>/mola/<M>_grid.yaml, amcl and slam_toolbox are refused (they
     publish /map), and a missing file raises naming it."""
+    base, name = _map_base(PORTO)
     truth = observer_map.map_yaml(PORTO, "ground_truth")
-    assert (
-        Path(truth)
-        == (REPO_ROOT / "config/scenarios/maps/Porto/Porto.yaml").resolve()
-    )
+    assert Path(truth) == (base / f"{name}.yaml").resolve()
+    base, name = _map_base(SPIELBERG)
     mola = observer_map.map_yaml(SPIELBERG, "mola")
-    assert (
-        Path(mola)
-        == (
-            REPO_ROOT
-            / "config/scenarios/maps/Spielberg/mola/Spielberg_grid.yaml"
-        ).resolve()
-    )
+    assert Path(mola) == (base / "mola" / f"{name}_grid.yaml").resolve()
     for source in ("amcl", "slam_toolbox"):
         with pytest.raises(observer_map.Refused, match="publish"):
             observer_map.map_yaml(PORTO, source)
@@ -121,8 +122,10 @@ def test_check_2453_grid_matches_the_yaml() -> None:
     """CHECK-2453: frame, resolution, origin and size are checked against
     the yaml and its image; a Spielberg grid against Porto's yaml fails
     with the reason."""
-    porto = REPO_ROOT / "config/scenarios/maps/Porto/Porto.yaml"
-    spielberg = REPO_ROOT / "config/scenarios/maps/Spielberg/Spielberg.yaml"
+    base, name = _map_base(PORTO)
+    porto = base / f"{name}.yaml"
+    base, name = _map_base(SPIELBERG)
+    spielberg = base / f"{name}.yaml"
     from racing_evaluation.map_accuracy import load_grid
 
     grid = load_grid(porto)
@@ -151,3 +154,4 @@ def test_check_2454_either_child_exiting_stops_the_other() -> None:
     assert time.monotonic() - start < 10
     code = observer_map.supervise([["sleep", "30"], ["sh", "-c", "exit 0"]])
     assert code != 0
+
