@@ -1,4 +1,4 @@
-"""What SIM-3770..3781 share (not a test): the fast lap on an estimator.
+"""What SIM-3780 and SIM-3781 share (not a test): the fast lap on an estimator.
 
 Imports SIM-3750's launch list and RACELINE rather than copying them, so the
 estimator lap and the ground-truth lap cannot drift apart.

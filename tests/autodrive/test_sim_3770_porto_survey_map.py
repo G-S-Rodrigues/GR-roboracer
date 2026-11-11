@@ -95,6 +95,16 @@ def test_sim_3770_porto_survey_map(tmp_path: Path) -> None:
     out = Path(os.environ.get("AUTODRIVE_OUT", tmp_path))
     out.mkdir(parents=True, exist_ok=True)
     stem = out / "Porto"
+    save_error: list[str] = []
+
+    def after_laps() -> None:
+        # A failed save is recorded and asserted below, so survey.json is
+        # still written (a run that fails still writes its JSON).
+        try:
+            save_map(stem)
+        except (subprocess.SubprocessError, OSError) as error:
+            save_error.append(repr(error))
+
     run = drive_porto(
         LAUNCH,
         LAPS,
@@ -102,7 +112,7 @@ def test_sim_3770_porto_survey_map(tmp_path: Path) -> None:
         budget_s=BUDGET_S,
         host_command=HOST_COMMAND,
         node_name="sim_3770_driver",
-        after_laps=lambda: save_map(stem),
+        after_laps=after_laps,
     )
     m = run.metrics
     accuracy = None
@@ -125,6 +135,7 @@ def test_sim_3770_porto_survey_map(tmp_path: Path) -> None:
         "wall_s": run.wall_s,
         "map_to_wall": accuracy,
         "grid": str(stem),
+        "map_saver_error": save_error[0] if save_error else None,
     }
     (out / "survey.json").write_text(json.dumps(result, indent=2))
     print("SURVEY", json.dumps(result))
@@ -137,6 +148,7 @@ def test_sim_3770_porto_survey_map(tmp_path: Path) -> None:
         run.trace,
         END_LATCH_WAIT_S,
     )
+    assert not save_error, f"map_saver_cli failed: {save_error[0]}"
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"
     assert run.reasons.get("REASON_ESTOP_LATCHED", 0) == 0, (
         f"emergency stop latched: {dict(run.reasons)}"

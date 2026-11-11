@@ -152,7 +152,9 @@ Three places hold its tests, by what each needs:
   `stale_input_timeout_ms` to 200 (the gym's stay 100). The sim runs on wall time and its frame gaps are delivery
   delays, not sim stalls; the car keeps moving on the last command through them. Measured max gaps: 97.6 ms for the
   sim alone at load 6.4 (395 s, none at 100 ms or more); 127 and 132 ms with the full stack plus MOLA (both latched at
-  100 ms); 144.5 ms in the recorded fixture. 200 ms is 0.6 m blind at 3.0 m/s and 0.9 m at 4.5 m/s. Gaps over 200 ms
+  100 ms); 144.5 ms in the recorded fixture; 169 ms on the headless container with the stack at load 3.45 (b5 re-run); and, on the
+  Windows GUI route (`--sim windows`), the supervisor latched twice on apparent 204 and 246 ms gaps that coincide with
+  periodic dev clock steps (under investigation, open topic 2026-11-11-b6-respawn-kidnap-and-clock-steps). 200 ms is 0.6 m blind at 3.0 m/s and 0.9 m at 4.5 m/s. Gaps over 200 ms
   (0.3 s bursts at load 4-6, the Windows route's 1.1 s) still latch. Until a lane wrapper covers live runs, run one by
   hand under the host lane (`flock -x /tmp/gr-roboracer-lane/heavy.lock`) with nothing else heavy beside it and report
   load1 at start and end. Priority for the server, controller and supervisor is not set (dev has no `CAP_SYS_NICE`; a
@@ -165,6 +167,12 @@ Three places hold its tests, by what each needs:
   only (spawn, no latch, a non-empty IMU channel); a collision is recorded, not failed, because it is the ladder's stop point.
 - `tests/autodrive/test_sim_3730_porto_qualification.py` is the live check, run by `scripts/autodrive_qualify.sh`. It is in
   no gate (no gate has a sim), fails rather than skips, and the simulator container serves one run.
+- `scripts/autodrive_qualify.sh --case survey|mola_map|fast_lap_amcl|fast_lap_mola` runs SIM-3770 (slam_toolbox survey map),
+  SIM-3771 (MOLA map), SIM-3780 (fast lap on amcl) and SIM-3781 (fast lap on MOLA). `--sim container` (default) recreates the
+  headless sim container; `--sim windows` drives the GUI build on the Windows host: it starts `scripts/autodrive_route.sh`,
+  runs the test in dev, then runs `scripts/windows/autodrive.ps1` (needs `AUTODRIVE_SIM_EXE`, the Windows path of
+  `Simulator.exe`; `AUTODRIVE_WSL_IP` overrides the address; the Windows culture must be en-US, gotcha #38). It refuses a
+  running headless container (exit 5), needs `powershell.exe` (6), and the sim window stays open: close it yourself.
 - `/racing_sim/autodrive_counters` is debug-only (league rules restrict the counters at race time).
 - Published stamps never go backwards (the wall clock steps); the clamps are on `/racing_sim/stamp_status`, see gotcha #45.
 - Known problems: `racing_metrics`' collision threshold (0.01 m) is below the AutoDRIVE lidar's 0.06 m `range_min`, so its count

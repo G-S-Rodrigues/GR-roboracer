@@ -174,8 +174,8 @@ def test_sim_3610_autodrive_launch_replay_runs_on_wall_time_without_a_latch(
         timeout_ms = _param(
             "racing_safety_supervisor", "stale_input_timeout_ms"
         )
-        assert timeout_ms.endswith(
-            str(round(stale_input_timeout_s(VEHICLE) * 1000))
+        assert timeout_ms.split()[-1] == str(
+            round(stale_input_timeout_s(VEHICLE) * 1000)
         ), f"stale_input_timeout_ms {timeout_ms!r} is not the file's"
 
         replay = subprocess.Popen(
