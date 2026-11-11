@@ -26,11 +26,13 @@ LIB_ROOT = Path(__file__).resolve().parents[2] / "tests" / "lib"
 if str(LIB_ROOT) not in sys.path:
     sys.path.insert(0, str(LIB_ROOT))
 
-from racing_interfaces.msg import SafetyStatus  # noqa: E402
+from racing_interfaces.msg import SafetyStatus, TrackRelativeState  # noqa: E402
 from racing_test_keywords import scenario_runner  # noqa: E402
 
 # Literal on purpose: the tests must fail on behaviour, not on a missing name.
 CLOCK_RECEIVED_TOPIC = "/racing_safety_supervisor/clock_received"
+METRICS_STARTED_TOPIC = "/racing_metrics/started"
+CONTROLLER_DRIVE_TOPIC = "/controller/drive"
 
 
 class _FakeNode:
@@ -168,6 +170,106 @@ def test_check_1990_an_unheard_clock_raises_and_never_releases(
     assert "racing_safety_supervisor" in text
     assert "/clock" in text
     assert "supervisor-clock-unheard" in text
+    assert "create_client" not in released
+
+
+# ---------------------------------------------------------------------------
+# F-T0: t=0 waits for the metrics start and the controller's first command
+# (CHECK-2560..2563)
+# ---------------------------------------------------------------------------
+
+
+def _record_waits(monkeypatch, released, unheard_topic=None):
+    calls = []
+
+    def fake_wait_for_message(node, message_type, topic, qos, timeout):
+        calls.append((message_type, topic, qos, timeout))
+        released.append(f"wait:{topic}")
+        if topic == unheard_topic:
+            raise TimeoutError("no message")
+
+    monkeypatch.setattr(
+        scenario_runner, "wait_for_message", fake_wait_for_message
+    )
+    return calls
+
+
+def test_check_2560_t0_waits_for_metrics_started_before_the_client(
+    monkeypatch, released
+):
+    calls = _record_waits(monkeypatch, released)
+    scenario_runner._reset_at_deterministic_t0(_FakeNode(released), 42, 5.0)
+    started = [c for c in calls if c[1] == METRICS_STARTED_TOPIC]
+    assert started, "no wait_for_message on /racing_metrics/started"
+    message_type, _, qos, timeout = started[0]
+    assert message_type is TrackRelativeState
+    assert qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
+    assert qos.reliability == ReliabilityPolicy.RELIABLE
+    assert timeout <= 5.0
+    assert released.index(f"wait:{CLOCK_RECEIVED_TOPIC}") < released.index(
+        f"wait:{METRICS_STARTED_TOPIC}"
+    )
+    assert released.index(f"wait:{METRICS_STARTED_TOPIC}") < released.index(
+        "create_client"
+    )
+
+
+def test_check_2561_an_unheard_metrics_start_raises_and_never_releases(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released, METRICS_STARTED_TOPIC)
+    with pytest.raises(TimeoutError) as raised:
+        scenario_runner._reset_at_deterministic_t0(_FakeNode(released), 42, 5.0)
+    text = str(raised.value)
+    assert "racing_metrics" in text
+    assert "metrics-start-unheard" in text
+    assert "create_client" not in released
+
+
+@pytest.mark.parametrize(
+    ("pose_source", "drive_on_estimate", "waits"),
+    [
+        ("ground_truth", True, True),
+        ("amcl", True, True),
+        ("slam_toolbox", False, True),
+        ("mola", False, True),
+        ("slam_toolbox", True, False),
+        ("mola", True, False),
+    ],
+)
+def test_check_2562_t0_waits_for_a_controller_command_where_it_can_exist(
+    monkeypatch, released, pose_source, drive_on_estimate, waits
+):
+    calls = _record_waits(monkeypatch, released)
+    scenario_runner._reset_at_deterministic_t0(
+        _FakeNode(released),
+        42,
+        5.0,
+        pose_source,
+        drive_on_estimate=drive_on_estimate,
+    )
+    drive = [c for c in calls if c[1] == CONTROLLER_DRIVE_TOPIC]
+    if not waits:
+        assert drive == [], "waited for a command that cannot exist yet"
+        return
+    assert drive, "no wait on /controller/drive"
+    message_type, _, qos, _ = drive[0]
+    assert message_type is AckermannDriveStamped
+    assert qos.reliability == ReliabilityPolicy.RELIABLE
+    assert released.index(f"wait:{CONTROLLER_DRIVE_TOPIC}") < released.index(
+        "create_client"
+    )
+
+
+def test_check_2563_an_unheard_controller_command_raises_and_never_releases(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released, CONTROLLER_DRIVE_TOPIC)
+    with pytest.raises(TimeoutError) as raised:
+        scenario_runner._reset_at_deterministic_t0(_FakeNode(released), 42, 5.0)
+    text = str(raised.value)
+    assert "controller" in text
+    assert "controller-drive-unheard" in text
     assert "create_client" not in released
 
 

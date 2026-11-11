@@ -36,7 +36,11 @@ import launch.launch_description_sources
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
-from racing_interfaces.msg import SafetyStatus, ScenarioMetrics
+from racing_interfaces.msg import (
+    SafetyStatus,
+    ScenarioMetrics,
+    TrackRelativeState,
+)
 from racing_interfaces.srv import Reset
 from rclpy.qos import (
     DurabilityPolicy,
@@ -112,6 +116,9 @@ CLOCK_QOS = QoSProfile(
 # and a held sim's /clock = 0 leaves now() at 0, so an endpoint wait cannot
 # say it is in step. F1 Step 1 and Step A; repo-gotchas #19, #32.
 SUPERVISOR_CLOCK_TOPIC = "/racing_safety_supervisor/clock_received"
+# racing_metrics' latched report of its first accepted sample (a scan and a
+# state both delivered; only under use_sim_time). F-T0, repo-gotchas #19.
+METRICS_STARTED_TOPIC = "/racing_metrics/started"
 
 RESET_SERVICE = "/racing_sim/reset"
 # Where an active pose source puts the pose the controller may drive on:
@@ -550,8 +557,12 @@ class _HangObserver:
 
 
 def _reset_at_deterministic_t0(
-    node, seed: int, timeout: float, pose_source: str = "ground_truth"
-) -> None:
+    node,
+    seed: int,
+    timeout: float,
+    pose_source: str = "ground_truth",
+    drive_on_estimate: bool = True,
+) -> dict[str, float]:
     """Wait for every participant, then release the held sim with a reset.
 
     t=0 is otherwise wherever the DDS discovery race happens to land, and
@@ -561,25 +572,31 @@ def _reset_at_deterministic_t0(
     /clock every consumer has followed, and racing_metrics aborts on the
     non-monotonic stamp.
 
-    `wait_for_node` only proves a node with the right name exists and that
-    *some* publisher/subscriber of the right topic name exists somewhere in
-    the graph - not that racing_metrics' own subscriptions, or the sim's
-    own publishers, have actually matched in DDS. A reset released before
-    that matching finishes can still slip past whatever `wait_for_node`
-    checked. `wait_for_endpoints` checks the endpoint list instead, which is
-    as close to "matched" as a third node can observe.
+    `wait_for_node` and `wait_for_endpoints` prove discovery in this node's
+    own graph view, which is not delivery: in 21 of 72 launches the sim's
+    new endpoints took 0.15-1.07 s to match after they were created
+    (findings 2026-11-11). Delivery is proven link by link, below, each wait
+    on the shared deadline (never a fresh `timeout`, never a retry):
 
-    One monotonic deadline is shared across every wait below - not a fresh
-    `timeout` per participant or per topic - so one slow participant cannot
-    hand every later wait a full fresh budget on top of the time already
-    spent.
+    - L4, sim /clock -> supervisor: the supervisor's latched
+      ``~/clock_received``.
+    - L2, sim scan and state -> racing_metrics: its latched ``~/started``,
+      the first sample it accepted (both topics delivered).
+    - L1, sim odometry -> controller: one ``/controller/drive``. A held sim
+      republishes its stamp-0 snapshot, so one command proves the link (and
+      /trajectory with it). Only where the controller's input exists while
+      held: ground_truth, amcl, or ``drive_on_estimate=False``.
 
-    The last wait is different in kind: the supervisor's own latched
-    ``~/clock_received``, the first /clock message its reader delivered. The
-    waits above prove discovery; this one proves delivery, and only the
-    supervisor can see its own reader.
+    L3, supervisor /drive -> sim, is not proven: nothing is published on
+    /drive while the sim is held, so no delivery crosses it.
+
+    Held-sim only. A free-running backend (AutoDRIVE, a car) has no held t=0
+    and must not call this function (gotcha #19, ADR 0006).
+
+    Returns the seconds each of the three delivery waits took, by name.
     """
     deadline = time.monotonic() + timeout
+    waits: dict[str, float] = {}
 
     def _remaining() -> float:
         return max(deadline - time.monotonic(), 0.0)
@@ -631,6 +648,7 @@ def _reset_at_deterministic_t0(
     # supervisor released before that stamps its first evaluation past the
     # stale window (gotcha #19). The wait shares the deadline; it is not a
     # retry and not a longer timeout.
+    began = time.monotonic()
     try:
         wait_for_message(
             node, Clock, SUPERVISOR_CLOCK_TOPIC, LATCHED_QOS, _remaining()
@@ -640,6 +658,43 @@ def _reset_at_deterministic_t0(
             "racing_safety_supervisor heard no /clock before t=0 "
             f"(verdict=supervisor-clock-unheard): {error}"
         ) from error
+    waits["supervisor_clock"] = time.monotonic() - began
+
+    # The same shape for the metrics link: racing_metrics emits nothing until
+    # a lap ends, so its own latched report of the first accepted sample is
+    # the only proof its scan and state readers are matched.
+    began = time.monotonic()
+    try:
+        wait_for_message(
+            node,
+            TrackRelativeState,
+            METRICS_STARTED_TOPIC,
+            LATCHED_QOS,
+            _remaining(),
+        )
+    except TimeoutError as error:
+        raise TimeoutError(
+            "racing_metrics accepted no sample before t=0 "
+            f"(verdict=metrics-start-unheard): {error}"
+        ) from error
+    waits["metrics_started"] = time.monotonic() - began
+
+    if pose_source in ("ground_truth", "amcl") or not drive_on_estimate:
+        began = time.monotonic()
+        try:
+            wait_for_message(
+                node,
+                AckermannDriveStamped,
+                CONTROLLER_DRIVE_TOPIC,
+                RELIABLE_QOS,
+                _remaining(),
+            )
+        except TimeoutError as error:
+            raise TimeoutError(
+                "racing_controller_baseline published no /controller/drive "
+                f"before t=0 (verdict=controller-drive-unheard): {error}"
+            ) from error
+        waits["controller_drive"] = time.monotonic() - began
 
     client = node.create_client(Reset, RESET_SERVICE)
     if not client.wait_for_service(timeout_sec=_remaining()):
@@ -652,6 +707,7 @@ def _reset_at_deterministic_t0(
     if not response.success:
         raise RuntimeError(f"{RESET_SERVICE} failed: {response.message}")
     node.destroy_client(client)
+    return waits
 
 
 FINALIZE_SERVICE = "/racing_metrics/finalize"
@@ -689,7 +745,6 @@ def _wait_for_metrics_or_frozen_pose(
     """
     if str(REPOSITORY_ROOT) not in sys.path:
         sys.path.insert(0, str(REPOSITORY_ROOT))
-    from racing_interfaces.msg import TrackRelativeState
     from std_srvs.srv import Trigger
 
     from scripts.frozen_pose import FrozenPose
@@ -825,7 +880,13 @@ def run_scenario(
             for probe in probes:
                 probe.attach(node)
             try:
-                _reset_at_deterministic_t0(node, seed, timeout, pose_source)
+                _reset_at_deterministic_t0(
+                    node,
+                    seed,
+                    timeout,
+                    pose_source,
+                    drive_on_estimate=drive_on_estimate,
+                )
             except TimeoutError as stall:
                 # A stall names what launch saw: which process exited (and
                 # with what code) and which nodes the driver could see.

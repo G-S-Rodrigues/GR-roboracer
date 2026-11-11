@@ -197,7 +197,7 @@ def real_launch_run(tmp_path, monkeypatch):
     """The real ``run_scenario`` and ``LaunchService`` on a stand-in launch
     file, with rclpy, the t=0 reset and the metrics wait faked."""
     ready = tmp_path / "stubborn.ready"
-    state = {"wait": None, "reset": None, "ledger": None}
+    state = {"wait": None, "reset": None, "ledger": None, "reset_kwargs": None}
 
     class RecordingLedger(scenario_runner._ProcessLedger):
         def __init__(self) -> None:
@@ -218,6 +218,7 @@ def real_launch_run(tmp_path, monkeypatch):
         return _metrics_message()
 
     def reset(node, seed, timeout, *args, **kwargs):
+        state["reset_kwargs"] = kwargs
         if state["reset"] is not None:
             state["reset"]()
 
@@ -243,6 +244,13 @@ def test_check_2371_a_passing_run_reports_its_escalations(real_launch_run):
     assert [e["signal"] for e in outcome.shutdown_escalations] == ["SIGKILL"]
     assert outcome.shutdown_escalations[0]["name"].startswith("stubborn")
     assert set(outcome) == set(scenario_runner._METRICS_FIELDS)
+
+
+def test_check_2564_run_scenario_hands_drive_on_estimate_to_t0(
+    real_launch_run,
+):
+    scenario_runner.run_scenario(seed=1, timeout=30.0, drive_on_estimate=False)
+    assert real_launch_run.state["reset_kwargs"]["drive_on_estimate"] is False
 
 
 def test_check_2371_a_failure_carries_the_escalations(real_launch_run):
