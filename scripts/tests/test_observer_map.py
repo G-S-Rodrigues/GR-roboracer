@@ -1,4 +1,4 @@
-"""Tests for scripts/observer_map.py (CHECK-2450..2454): the helper that
+"""Tests for scripts/observer_map.py (CHECK-2450..2455): the helper that
 serves the scenario's map on /map for a video whose run publishes none."""
 
 from __future__ import annotations
@@ -155,3 +155,23 @@ def test_check_2454_either_child_exiting_stops_the_other() -> None:
     code = observer_map.supervise([["sleep", "30"], ["sh", "-c", "exit 0"]])
     assert code != 0
 
+
+def test_check_2455_unknown_pose_source_is_a_usage_error() -> None:
+    """CHECK-2455: an unknown --pose-source exits 2 with a usage message,
+    not a ValueError traceback."""
+    done = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--scenario",
+            str(PORTO),
+            "--pose-source",
+            "bogus",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 2
+    assert "usage" in done.stderr and "invalid choice" in done.stderr
+    assert "Traceback" not in done.stderr

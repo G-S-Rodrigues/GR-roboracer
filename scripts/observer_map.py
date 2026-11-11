@@ -218,7 +218,11 @@ def _own_map(yaml_path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--scenario", required=True, type=Path)
-    parser.add_argument("--pose-source", required=True)
+    parser.add_argument(
+        "--pose-source",
+        required=True,
+        choices=("ground_truth", "mola", "amcl", "slam_toolbox"),
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:

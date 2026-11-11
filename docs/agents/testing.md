@@ -178,7 +178,7 @@ Where a test is not where you would look:
   `path_planning_mintime`, `control`, `shared`, and the implicit `static`). CHECK-1510/1520 hold it to
   the suite.
 - `scripts/tests/test_docs_check.py` (CHECK-2460..2462) and `scripts/tests/test_observer_map.py`
-  (CHECK-2450..2454) test tooling that is not a ROS package: the `gr-roboracer-docs` skill's
+  (CHECK-2450..2455) test tooling that is not a ROS package: the `gr-roboracer-docs` skill's
   `docs_check.py`, and `scripts/observer_map.py`, which needs the sourced overlay. Both sit under
   `scripts/tests/*`, so no lap is selected for them.
 - SIM-5060 solves only on a night the optimizer code changed. On any other night it records that it
