@@ -170,6 +170,7 @@ class TestMetricsStarted(unittest.TestCase):
         # 1b. Flush: every step-1 state is now taken (rejected) or evicted, so
         # a step-1 s can only be latched by a node that accepts without a scan.
         self._drain_states()
+        self._spin(0.2)
         self.assertEqual(received, [])
 
         # 2. A scan (best effort, so keep sending it), then stamp-0 state.
