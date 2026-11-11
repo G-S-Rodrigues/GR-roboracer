@@ -32,6 +32,10 @@ services:
       # WSLg / X11 passthrough for RViz.
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /mnt/wslg:/mnt/wslg
+      # The heavy-run lock (scripts/heavy_lane.sh). One host directory seen at
+      # /lane by every container, so a lock taken here excludes one taken on
+      # the host or in another container; a /tmp lock inside a container does not.
+      - /tmp/gr-roboracer-lane:/lane
     environment:
       # Fixed so two developers on one network do not cross-talk.
       ROS_DOMAIN_ID: "42"
@@ -67,6 +71,7 @@ services:
       # read-only rather than growing a second Python Frenet implementation.
       - ws-build:/ws/build:ro
       - ws-install:/ws/install:ro
+      - /tmp/gr-roboracer-lane:/lane
     environment:
       PYTHONPATH: /ws/install/racing_common/lib/python3.12/site-packages:/ws/install/racing_controller_baseline/lib/python3.12/site-packages
       LD_LIBRARY_PATH: /ws/install/racing_common/lib:/ws/install/racing_controller_baseline/lib

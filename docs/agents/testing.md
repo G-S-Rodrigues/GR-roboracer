@@ -93,6 +93,11 @@ justified a bound stays beside the report, as its baseline.
 ./scripts/check.sh --nightly-region <static|slam|path_planning|path_planning_mintime|control|shared>  # one nightly job (NIGHTLY_TIER5=1 adds its tier 5)
 ```
 
+Heavy runs (a ready gate, a live qualification, a recording) take one lock so they do not overlap and
+starve each other: `scripts/heavy_lane.sh -- ./scripts/check.sh --ready` (on the host or in `dev` /
+`fast-sim`, which mount `/lane`; `gpu` and the autodrive services do not, so wrap them from the host; it
+waits for the lane, then for load under 8, `--max-load`). See gotcha #48.
+
 `--fast` diffs the branch against `main` (plus index, worktree and untracked files) and lints and tests
 only what that touches: `clang-format` and `clang-tidy` run only when a C/C++ file changed, and then
 only over the changed packages; `ruff` runs over the changed Python files; `colcon test` runs
@@ -181,6 +186,8 @@ Where a test is not where you would look:
   (CHECK-2450..2455) test tooling that is not a ROS package: the `gr-roboracer-docs` skill's
   `docs_check.py`, and `scripts/observer_map.py`, which needs the sourced overlay. Both sit under
   `scripts/tests/*`, so no lap is selected for them.
+- `scripts/tests/test_heavy_lane.py`: CHECK-2441/2442/2444 drop to uid 65534 with `setpriv` when run as
+  root (`dev` and CI are root), and CHECK-2443 asserts root instead of skipping and `fs.protected_regular` >= 1 (`ci.yaml` sets it on the runner).
 - SIM-5060 solves only on a night the optimizer code changed. On any other night it records that it
   did not run.
 - The conformance tests select by the backend's declared capabilities
@@ -248,3 +255,5 @@ The AutoDRIVE part-9.2 fix added tier 2 `SIMAD-2290` (TF the positive control wr
 The D1 data-repo migration added tier 1 `CHECK-2320`, `CHECK-2330`, `CHECK-2340`, `CHECK-2350`, `CHECK-2360`, `SIMJAX-1600`, `BRINGUP-1960`, `BRINGUP-1970` and `RACELINE-1530` (nine IDs, counted by ID, on the counts above; the counting topic is still open). `CHECK-1420` keeps its ID and loses its `--ready` scope half to `CHECK-2320` (owner ruling E6). The track data is read from the `third_party/GR-roboracer-data` submodule, so every tier needs it initialised (repo-gotchas #44).
 
 The F-T0 fix added tier 1 `CHECK-2560`..`CHECK-2564` and `CHECK-2570`..`CHECK-2573`, and tier 2 `METRICS-2020` and `METRICS-2030`.
+
+The heavy-lane work added tier 1 `CHECK-2400` to `CHECK-2440` and `CHECK-2441` to `CHECK-2445` (`scripts/tests/test_heavy_lane.py`).

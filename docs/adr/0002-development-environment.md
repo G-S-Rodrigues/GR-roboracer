@@ -130,3 +130,7 @@ These are the corrections the plan did not anticipate; each is also recorded as 
   `docker/dev-tools-requirements.txt` beside the dev tools and guarded by SIMAD-1150. The rebuild of
   the shared image follows the part's merge; until then its gate runs with the closure in a worktree
   `PYTHONPATH`.
+- **2026-11-11 (heavy lane): `dev` and `fast-sim` bind the host's `/tmp/gr-roboracer-lane` at `/lane`.** It is a host
+  directory, not a named volume, because the host must `flock` the same inode and a named volume lives in
+  Docker Desktop's VM. Compose creates a missing source `root` 0755, which `scripts/heavy_lane.sh` repairs
+  (repo-gotchas #48). No decision above changes.
