@@ -170,6 +170,9 @@ if [ "$sim_mode" = windows ]; then
     route="$root/scripts/autodrive_route.sh"
     ps_file="$(wslpath -w "$root/scripts/windows/autodrive.ps1" 2>/dev/null ||
         echo "$root/scripts/windows/autodrive.ps1")"
+    # The helper is run through eval, which would collapse the UNC path's
+    # leading \\ to one backslash: double every backslash first.
+    ps_file="${ps_file//\\/\\\\}"
     helper="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \". '$ps_file'; autodrive -SimPath '$sim_exe' -Ip $wsl_ip\""
     # dev has no ss: read the listening sockets (state 0A) of port 4567
     # (hex 11D7) from /proc/net/tcp and tcp6.
