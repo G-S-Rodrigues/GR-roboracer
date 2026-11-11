@@ -67,6 +67,9 @@ lock="$lane/heavy.lock"
 # An unwritable lane (compose made it root 0755) still works when heavy.lock
 # is readable: flock needs a read-only fd, not a writable directory.
 [ -e "$lock" ] || (umask 0 && : >>"$lock") 2>/dev/null || true
+# Whoever owns the lock may open it to every user (effective for its owner or
+# root); the host and a root container then share one file.
+chmod 0666 "$lock" 2>/dev/null || true
 if [ ! -d "$lane" ] || [ ! -r "$lock" ]; then
     echo "no usable lane at $lane (owner $(stat -c %U "$lane" 2>/dev/null || echo none), mode $(stat -c %a "$lane" 2>/dev/null || echo none)): heavy.lock cannot be opened; if root owns the lane, run: docker exec gr-roboracer-dev chmod 1777 /lane (or sudo chmod 1777 $lane)" >&2
     exit 4
@@ -80,8 +83,19 @@ if ! flock "${flock_args[@]}" 9; then
 fi
 
 # Only the holder writes this, so it names the run that is on the machine.
+stamped=yes
 stamp="$(date -u +%FT%TZ) pid $$ $* "
-if ! (umask 0 && printf '%s\n' "$stamp" >"$lane/owner") 2>/dev/null; then
+# An existing owner is written in place with no O_CREAT: in a sticky lane,
+# fs.protected_regular refuses an O_CREAT open (root included) of a file that
+# another user owns, which would leave a stale stamp naming the wrong holder.
+if [ -e "$lane/owner" ]; then
+    printf '%s\n' "$stamp" | dd of="$lane/owner" conv=nocreat status=none \
+        2>/dev/null || stamped=no
+else
+    (umask 0 && printf '%s\n' "$stamp" >"$lane/owner") 2>/dev/null || stamped=no
+fi
+chmod 0666 "$lane/owner" 2>/dev/null || true
+if [ "${stamped:-}" = no ]; then
     echo "lane taken; cannot write $lane/owner ($(stat -c '%U %a' "$lane/owner" 2>/dev/null || echo none)): waiters will see \"owner unknown\"; one wrapper run in dev opens the lane" >&2
 fi
 
