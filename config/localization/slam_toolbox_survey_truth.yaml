@@ -1,0 +1,39 @@
+# The AutoDRIVE track survey: slam_toolbox's async mapper laying /scan at the
+# true pose. It sits beside slam_toolbox_survey.yaml (the gym's), which is
+# unchanged (ADR 0005).
+#
+# Why a second file: the gym survey places every node by /odom, which is
+# exact there. AutoDRIVE's /odom is dead-reckoned from the wheel encoders
+# and steering: replayed against /ground_truth/odom over two Porto laps
+# (1V-fix-b spike b0-d, 69.4 m of path) it ended 1.727 m off and was at most
+# 2.487 m off. A grid laid on that is bent, and nothing errors. So the
+# mapper reads the pose from the support node's map -> base_link, which is
+# the simulator's own truth (`odom_frame: map`), and keeps its own grid frame
+# apart (`map_frame: survey_map`) so it never claims the stack's `map`.
+#
+# Everything else is the gym survey's reasoning: scan matching and loop
+# closure off (they could only move nodes off the truth), no transform
+# published (transform_publish_period: 0; the support node owns map ->
+# odom), nodes thinned by slam_toolbox's own travel thresholds, never a
+# throttle node (repo-gotchas #19). use_sim_time is false: AutoDRIVE has no
+# /clock (ADR 0006).
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: false
+    mode: mapping
+    odom_frame: map
+    map_frame: survey_map
+    base_frame: base_link
+    scan_topic: /scan
+    transform_publish_period: 0.0
+    resolution: 0.05
+    # No return is inf (or the range maximum): a reading at the maximum is
+    # not a wall.
+    max_laser_range: 9.5
+    use_scan_matching: false
+    do_loop_closing: false
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.1
+    minimum_time_interval: 0.0
+    map_update_interval: 5.0
+    stack_size_to_use: 40000000

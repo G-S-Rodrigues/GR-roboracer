@@ -34,9 +34,9 @@ REPO = Path(__file__).resolve().parents[2]
 LAPS = 1
 BUDGET_S = 600.0
 SAVE_TIMEOUT_S = 120.0
-# Q5 (b0-d): the existing survey config unless the odometry drift says
-# otherwise.
-SLAM_TOOLBOX_CONFIG = "config/localization/slam_toolbox_survey.yaml"
+# Q5 (b0-d): AutoDRIVE's /odom drifted 1.727 m over two laps, so the survey
+# reads the truth pose, not the gym's /odom-placed config.
+SLAM_TOOLBOX_CONFIG = "config/localization/slam_toolbox_survey_truth.yaml"
 LAUNCH = [
     "ros2",
     "launch",
