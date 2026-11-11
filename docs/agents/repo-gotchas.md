@@ -369,6 +369,30 @@ Traps any task in this repository can hit. Each one cost real time at least once
     reference and seeds from the file on disk, and any iteration bound (`MINTIME_MAX_ITER`) is
     measured in `gr-roboracer-dev`, the nightly's image, never copied from the fork's container.
 
+45. **The `dev` container's wall clock steps back, and a node that stamps with it publishes backwards
+    stamps.** Measured 2026-11-10 in `gr-roboracer-dev` under WSL2 over 120 s, `time.time()` against
+    `time.monotonic()`: steps of -18.27, -18.77, -17.05 and -15.31 ms at t = 25.65, 55.65, 85.65 and
+    115.66 s, exactly every 30.0 s, and wall minus monotonic -74 ms over the run. The cause is presumed to be
+    the WSL2 host's time sync, and was not measured. The host and other containers share the kernel clock and
+    are presumed to step with it, also not measured. Under `simulator:=autodrive` every node runs on wall time
+    (ADR 0006), and the AutoDRIVE server stamped each frame with its clock at receipt. A 300 s run's
+    `/ground_truth/track_relative_state` stepped back 10-20 ms 9 times, `racing_metrics` threw `elapsed_time
+    must be monotonic` and died, no `ScenarioMetrics` was published, and the runner drove to its budget.
+    Nothing else errored. The gym is immune: it stamps from `/clock`. The server now publishes
+    `max(now, last + 1 µs)`, one stamp per frame for every topic, and reports the clamps on
+    `/racing_sim/stamp_status` (`racing_sim: stamps`; SIMAD-1490 and SIMAD-2310). Never make a consumer
+    tolerate backwards stamps: that would hide a real ordering bug on the gym. Any other node that stamps from
+    the wall clock under AutoDRIVE has the same trap. **On a real car**, run a time sync that slews (chrony,
+    with `makestep` limited to start-up), never one that steps the clock mid-run.
+
+46. **Lateral grip on the AutoDRIVE car depends on the corner radius, so one a_y is the limit at one radius
+    only, and nothing errors.** The open-loop peak measured by `limits_peak.yaml` runs from 5.10 m/s^2 at
+    R 1.21 m to 7.33 at R 3.08 m, about 44 % across the bins (the closed-loop values move the same way). A GGV
+    or a planner `mue` that carries one a_y (TUM min-time reads only ggv row 0, `optimize.py:168`) is right at
+    one radius and wrong at every other. Never read one a_y from either file as the car's: read the bin for
+    the radius in question (the ggv rows interpolate by radius, `ggv_from_radius`), and say which radius
+    when quoting one.
+
 ## Track data
 
 44. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run

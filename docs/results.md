@@ -77,6 +77,28 @@ accelerates at 5.2 m/s^2 (spread 0.08 % over the repeats), and the throttle gain
 throttle. The file is data about the simulator's car, not a result of the stack. To redo it, see
 [The AutoDRIVE vehicle](configuration.md#the-autodrive-vehicle).
 
+Lateral grip depends on the corner radius, so it is reported by radius bin in two files,
+`limits_sliding.yaml` (what today's full-throttle/zero-throttle controller gets) and `limits_peak.yaml` (the
+goal), each number labelled (`measured`, `inferred` or `guide`) with its source (CHECK-2670 re-derives both from the committed
+recordings). The lines' tables (`ggv.csv`, the caps 4.5 / 4.0 / 1.5) are unchanged. Lateral acceleration in
+m/s^2, open-loop (a scripted constant-steer drive) against closed-loop (a pure-pursuit lap, four rungs of target lateral
+acceleration, 6 to 9 m/s^2, the last one a collision rung kept but not used):
+
+| Radius (m) | Open-loop post-cliff | Open-loop peak | Closed-loop reached (saturated median) | Closed-loop pre-saturation max |
+|---|---|---|---|---|
+| 1.21 | 4.89 | 5.10 | 4.55 (n 10, spread 0.46) | 5.82 (n 2) |
+| 2.05 | 5.35 | 6.46 | none | none |
+| 3.08 | 5.50 | 7.33 | 6.40 (n 3, spread 0.13) | 7.16 (n 3) |
+
+The spreads (0.46 at 1.21 m, 0.13 at 3.08 m) are the widest relative spread among the saturated windows; they were computed during the analysis and are not stored in the yaml files. The radii 0.56 and 0.78 m were not reached. Two differences exceed the spread, and both are findings, not
+faults: at 3.08 m the closed-loop saturated median is 16 % above the open-loop post-cliff value, and at 1.21 m
+the closed-loop pre-saturation maximum, 5.82, is above the open-loop peak, 5.10. The two drives do not measure
+the same thing. Grip also depends on the radius (the open-loop peak runs from 5.10 at 1.21 m to 7.33 at 3.08 m),
+so one a_y in a GGV is the limit at one radius only. In the closed-loop rungs from 7 m/s^2 up, the s 8-11 corner
+was held at a_y <= 6 m/s^2 (owner call #19), so those rungs do not probe it. The sweep ladder was stopped at its fourth
+rung by the simulator's own collision count (2 in the simulator, 0 in the stack); that rung's data is in the
+recording, labelled, and sets no value.
+
 ## AutoDRIVE fast minimum-time lap
 
 The fast AutoDRIVE car (`autodrive_roboracer_fast`) drove the committed minimum-time Porto line for two laps from one standing

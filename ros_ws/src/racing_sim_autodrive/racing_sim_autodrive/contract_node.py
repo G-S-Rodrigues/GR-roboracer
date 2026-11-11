@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 from ackermann_msgs.msg import AckermannDriveStamped
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from racing_common import CartesianPose, Track
@@ -31,6 +32,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
+from rclpy.time import Time
 from sensor_msgs.msg import Imu, JointState, LaserScan
 from tf2_ros import TransformBroadcaster
 
@@ -51,6 +53,14 @@ STATE_QOS = QoSProfile(
 )
 
 SCAN_FRAME_ID = bridge.SCAN_FRAME_ID  # both scans, the contract name
+# The sim's `V1 Linear Acceleration` has no gravity (its z median is 0.001
+# m/s^2 over the committed recording); /imu reports the specific force (REP
+# 145), as the gym's /imu does (racing_sim_gym_jax/imu.py, the same 9.81).
+# Interim: +g on z, unrotated, exact only on the level (the body sits at a
+# constant 1.7-1.8 deg pitch). The 2026-11-05 ruling (SLAM part 5b) rotates g
+# into base_link by the frame's orientation, in core.py and devkit.py, and
+# must replace this line, not add to it (else z reads raw + 2g).
+GRAVITY_M_S2 = 9.81
 
 VEHICLE_PARAMETERS = (
     "lr",
@@ -134,6 +144,20 @@ class ContractNode(Node):
         self._counters_publisher = self.create_publisher(
             SimCounters, "~/autodrive_counters", STATE_QOS
         )
+        # Published stamps never go backwards (gotcha 45); what was clamped is
+        # reported here, private (the name moves with the namespace), latched.
+        self._stamp_clamp = bridge.StampClamp()
+        self._stamp_reported: tuple[int, int] | None = None
+        self._stamp_status_publisher = self.create_publisher(
+            DiagnosticStatus,
+            "~/stamp_status",
+            QoSProfile(
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
         self._tf_broadcaster = TransformBroadcaster(self)
         self.create_subscription(
             AckermannDriveStamped, "/drive", self._on_drive, STATE_QOS
@@ -185,7 +209,43 @@ class ContractNode(Node):
         )
         return response
 
+    def _publish_stamp_status(self) -> None:
+        """On the first frame and whenever a count changed, never on a timer."""
+        clamp = self._stamp_clamp
+        counts = (clamp.clamped_frames, clamp.step_backs)
+        if counts == self._stamp_reported:
+            return
+        new_run = (
+            self._stamp_reported is not None
+            and clamp.step_backs > self._stamp_reported[1]
+        )
+        self._stamp_reported = counts
+        level, values = clamp.status()
+        status = DiagnosticStatus()
+        status.level = bytes([level])
+        status.name = "racing_sim: stamps"
+        status.message = "stamps clamped" if level else "stamps rise"
+        status.values = [
+            KeyValue(
+                key=key,
+                value=f"{value:g}" if isinstance(value, float) else str(value),
+            )
+            for key, value in values.items()
+        ]
+        self._stamp_status_publisher.publish(status)
+        if new_run:
+            self.get_logger().warning(
+                "host clock stepped back; stamps clamped (gotcha 45): "
+                f"clamped_frames={values['clamped_frames']} "
+                f"step_backs={values['step_backs']} "
+                f"largest_behind_ms={values['largest_behind_ms']:g}"
+            )
+
     def _publish(self, stamp, step: bridge.Step) -> None:
+        stamp = Time(
+            nanoseconds=self._stamp_clamp(Time.from_msg(stamp).nanoseconds)
+        ).to_msg()
+        self._publish_stamp_status()
         truth, odom = step.ground_truth, step.odometry
         ranges = step.frame.ranges
         if ranges is not None:
@@ -225,6 +285,10 @@ class ContractNode(Node):
         imu.header.frame_id = "base_link"
         imu.orientation = truth_message.pose.pose.orientation
         imu.angular_velocity.z = truth.wz
+        accel = step.frame.linear_acceleration
+        imu.linear_acceleration.x = accel[0]
+        imu.linear_acceleration.y = accel[1]
+        imu.linear_acceleration.z = accel[2] + GRAVITY_M_S2
         self._imu_publisher.publish(imu)
 
         encoders = JointState()
