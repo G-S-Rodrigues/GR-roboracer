@@ -3,6 +3,7 @@ serves the scenario's map on /map for a video whose run publishes none."""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import time
@@ -29,6 +30,28 @@ def _map_base(scenario):
     return loaded.map_directory / loaded.map_name, loaded.map_name
 
 
+def _porto_without_mola(tmp_path: Path) -> Path:
+    """A copy of porto.yaml whose map directory has no `mola/`, so the check
+    holds whether or not the data repo carries Porto's MOLA map."""
+    real = _map_base(PORTO)[0].parent
+    shutil.copytree(
+        real / "Porto",
+        tmp_path / "maps" / "Porto",
+        ignore=shutil.ignore_patterns("mola"),
+    )
+    text = PORTO.read_text()
+    text = text.replace(
+        "track: ../tracks/porto.yaml",
+        f"track: {REPO_ROOT / 'config/tracks/porto.yaml'}",
+    ).replace(
+        "map_directory: ../../third_party/GR-roboracer-data/tracks/Porto/maps",
+        f"map_directory: {tmp_path / 'maps'}",
+    )
+    scenario = tmp_path / "porto.yaml"
+    scenario.write_text(text)
+    return scenario
+
+
 def _msg(width, height, resolution, origin, frame="map"):
     return SimpleNamespace(
         header=SimpleNamespace(frame_id=frame),
@@ -43,7 +66,7 @@ def _msg(width, height, resolution, origin, frame="map"):
     )
 
 
-def test_check_2450_map_yaml_per_pose_source() -> None:
+def test_check_2450_map_yaml_per_pose_source(tmp_path: Path) -> None:
     """CHECK-2450: ground truth serves maps/<M>/<M>.yaml, mola serves
     maps/<M>/mola/<M>_grid.yaml, amcl and slam_toolbox are refused (they
     publish /map), and a missing file raises naming it."""
@@ -57,17 +80,17 @@ def test_check_2450_map_yaml_per_pose_source() -> None:
         with pytest.raises(observer_map.Refused, match="publish"):
             observer_map.map_yaml(PORTO, source)
     with pytest.raises(FileNotFoundError, match="Porto"):
-        observer_map.map_yaml(PORTO, "mola")
+        observer_map.map_yaml(_porto_without_mola(tmp_path), "mola")
 
 
-def test_check_2450_missing_map_exits_2_naming_it() -> None:
+def test_check_2450_missing_map_exits_2_naming_it(tmp_path: Path) -> None:
     """CHECK-2450: the command line exits 2 and names the missing file."""
     done = subprocess.run(
         [
             sys.executable,
             str(SCRIPT),
             "--scenario",
-            str(PORTO),
+            str(_porto_without_mola(tmp_path)),
             "--pose-source",
             "mola",
             "--dry-run",

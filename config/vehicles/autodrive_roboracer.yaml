@@ -49,9 +49,15 @@ racing_safety_supervisor:
     maximum_acceleration: 2.0
     maximum_steering_rate: 1.5
     vehicle_half_width: 0.135
-    # Never widen this to cure a latch (repo-gotchas #19): a latched stop means
-    # the command stream really stalled, or the estimator was not up yet.
-    stale_input_timeout_ms: 100
+    # 200 ms on AutoDRIVE, 100 on the gym (owner call #27, 2026-11-11). The
+    # sim runs on wall time (no held /clock), and its frame gaps are delivery
+    # delays: the car keeps moving on the last command through them. Measured
+    # here: max 97.6 ms for the sim alone at load 6.4; 127 and 132 ms with the
+    # full stack plus MOLA (both latched at 100); 144.5 ms in the recorded
+    # fixture. 200 is about 2x the sim-alone worst; at 3.0 m/s it is 0.6 m
+    # blind. A latch still means the stream stalled: find the stall (gotchas
+    # 19, 31). Never widen this to cure a latch.
+    stale_input_timeout_ms: 200
     track_path: config/tracks/analytic_circle.yaml
 
 racing_bringup_support:

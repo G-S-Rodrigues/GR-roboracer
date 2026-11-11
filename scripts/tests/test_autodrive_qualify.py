@@ -170,3 +170,274 @@ def test_check_2695_corner_sweep_takes_a_sweep_dir(tmp_path) -> None:
     assert done.returncode == 2
     for name in ("qualification", "fast_lap", "corner_sweep"):
         assert name in done.stderr
+
+
+# --- CHECK-2480..2482: `--sim windows` and the estimator cases (1V-fix-b) ---
+
+ROUTE = """#!/bin/sh
+echo "route $*" >> "$STUB_LOG"
+exit 0
+"""
+
+DOCKER_WINDOWS = """#!/bin/sh
+echo "docker $*" >> "$STUB_LOG"
+case "$1" in
+  ps)
+    case "$*" in
+      *autodrive-sim*) [ -n "$STUB_PS_SIM" ] && echo "$STUB_PS_SIM" ;;
+      *) [ -n "$STUB_PS" ] && echo "$STUB_PS" ;;
+    esac
+    exit 0 ;;
+  exec)
+    case "$*" in
+      *"/proc/net/tcp"*) [ -n "$STUB_LISTEN" ] && exit 0
+                   exit 1 ;;
+    esac
+    exit "${STUB_EXIT:-0}" ;;
+esac
+exit 0
+"""
+
+POWERSHELL = """#!/bin/sh
+echo "powershell.exe $*" >> "$STUB_LOG"
+n=$(cat "$STUB_COUNT" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "$n" > "$STUB_COUNT"
+case "${STUB_PS_MODE:-ok}" in
+  vsock_once)
+    if [ "$n" -eq 1 ]; then
+      echo "UtilAcceptVsock:273: accept4 failed 110"
+      exit 0
+    fi ;;
+  vsock_always)
+    echo "UtilAcceptVsock:273: accept4 failed 110"
+    exit 0 ;;
+  fail) echo "boom" >&2; exit 1 ;;
+esac
+exit 0
+"""
+
+
+def _tree(tmp_path: Path) -> Path:
+    """A copy of the script in a tmp tree beside a fake route script and an
+    empty helper: the copy's `root` is the tree, so the real route script
+    (docker, sockets) is never started."""
+    root = tmp_path / "tree"
+    (root / "scripts" / "windows").mkdir(parents=True, exist_ok=True)
+    script = root / "scripts" / "autodrive_qualify.sh"
+    script.write_text(SCRIPT.read_text())
+    route = root / "scripts" / "autodrive_route.sh"
+    route.write_text(ROUTE)
+    route.chmod(0o755)
+    (root / "scripts" / "windows" / "autodrive.ps1").write_text("")
+    return script
+
+
+def _run_windows(
+    tmp_path: Path, name: str, *args: str, powershell: bool = True, **extra
+):
+    """Run the tmp copy with fake docker (and, by default, a fake
+    powershell.exe). Without `powershell` the PATH carries no powershell.exe
+    at all (WSL puts the real one on it)."""
+    script = _tree(tmp_path)
+    bin_dir = tmp_path / f"bin-{name}"
+    bin_dir.mkdir()
+    docker = bin_dir / "docker"
+    docker.write_text(DOCKER_WINDOWS)
+    docker.chmod(0o755)
+    if powershell:
+        ps = bin_dir / "powershell.exe"
+        ps.write_text(POWERSHELL)
+        ps.chmod(0o755)
+    path = [
+        d
+        for d in os.environ["PATH"].split(":")
+        if not (Path(d) / "powershell.exe").exists()
+    ]
+    log = tmp_path / f"{name}.log"
+    env = {
+        "PATH": ":".join([str(bin_dir), *path]),
+        "STUB_LOG": str(log),
+        "STUB_COUNT": str(tmp_path / f"{name}.count"),
+        "STUB_PS": "gr-roboracer-dev",
+        "STUB_LISTEN": "1",
+        "AUTODRIVE_SIM_EXE": r"C:\dev\Autodrive\sim\AutoDRIVE Simulator.exe",
+        "AUTODRIVE_WSL_IP": "172.20.0.9",
+        **extra,
+    }
+    done = subprocess.run(
+        ["bash", str(script), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    lines = log.read_text().splitlines() if log.exists() else []
+    return done, lines
+
+
+def test_check_2480_sim_windows_dry_run_prints_the_route_not_the_container(
+    tmp_path,
+) -> None:
+    """CHECK-2480: `--sim container` is the default (CHECK-2140 stays as it
+    was); `--sim windows --dry-run` prints, in order, the route start, the
+    test in the background in `dev`, the poll for a listener on 4567 in
+    `dev`, the helper through `powershell.exe -NoProfile -ExecutionPolicy
+    Bypass` with the sim exe and the WSL IP, and the route stop, and NONE of
+    the compose recreate or the stop of the sim container; an unknown `--sim`
+    exits 2. (The unknown-`--sim` half is green before the change, because
+    the script already exits 2 on any unknown argument.)"""
+    done, calls = _run_windows(
+        tmp_path,
+        "dry",
+        "--domain",
+        "64",
+        "--case",
+        "fast_lap",
+        "--sim",
+        "windows",
+        "--dry-run",
+    )
+    assert done.returncode == 0, done.stderr
+    out = done.stdout
+    for part in (
+        "autodrive_route.sh",
+        "docker exec gr-roboracer-dev bash -lc",
+        "tests/autodrive/test_sim_3750_porto_fast_mintime_lap.py",
+        "/proc/net/tcp",
+        ":11D7",
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command",
+        "autodrive.ps1",
+        "autodrive -SimPath",
+        "AutoDRIVE Simulator.exe",
+        "-Ip 172.20.0.9",
+    ):
+        assert part in out, (part, out)
+    for part in ("compose", "--force-recreate", "docker stop"):
+        assert part not in out, (part, out)
+    order = [
+        out.index(p)
+        for p in (
+            "autodrive_route.sh",
+            "test_sim_3750",
+            "/proc/net/tcp",
+            "autodrive -SimPath",
+        )
+    ]
+    assert order == sorted(order), out
+    assert not any("compose" in c or "docker stop" in c for c in calls), calls
+    done, calls = _run_windows(
+        tmp_path, "bad", "--domain", "64", "--sim", "nope", "--dry-run"
+    )
+    assert done.returncode == 2, done.stderr
+    assert "--sim" in done.stderr or "unknown argument" in done.stderr
+    done, _ = _run_windows(
+        tmp_path,
+        "dflt",
+        "--domain",
+        "64",
+        "--dry-run",
+        AUTODRIVE_SIM_EXE="",
+    )
+    assert done.returncode == 0, done.stderr  # container: no exe needed
+    assert "--force-recreate autodrive-sim" in done.stdout
+    assert "powershell.exe" not in done.stdout
+
+
+def test_check_2481_sim_windows_refusals_and_the_vsock_retry(tmp_path) -> None:
+    """CHECK-2481: `--sim windows` refuses a running sim container (exit 5)
+    and a missing `powershell.exe` (exit 6), and a missing
+    AUTODRIVE_SIM_EXE (exit 2), each before it starts the route; a run starts
+    the route, runs the helper once and stops the route; a helper reply
+    carrying `UtilAcceptVsock ... accept4 failed 110` is retried once and
+    then succeeds; the same reply twice (or any helper failure) fails loudly
+    (exit 7) and still stops the route."""
+    args = ("--domain", "64", "--case", "fast_lap", "--sim", "windows")
+    done, calls = _run_windows(
+        tmp_path, "run", *args, STUB_PS_SIM="gr-roboracer-autodrive-sim"
+    )
+    assert done.returncode == 5, (done.returncode, done.stderr)
+    assert not any(c.startswith("route") for c in calls), calls
+    done, calls = _run_windows(tmp_path, "nops", *args, powershell=False)
+    assert done.returncode == 6, (done.returncode, done.stderr)
+    assert not any(c.startswith("route") for c in calls), calls
+    done, calls = _run_windows(tmp_path, "noexe", *args, AUTODRIVE_SIM_EXE="")
+    assert done.returncode == 2, (done.returncode, done.stderr)
+    assert "AUTODRIVE_SIM_EXE" in done.stderr
+    assert not any(c.startswith("route") for c in calls), calls
+
+    done, calls = _run_windows(tmp_path, "ok", *args)
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    routes = [c for c in calls if c.startswith("route")]
+    assert routes[0] == "route " and routes[-1] == "route stop", routes
+    assert sum(c.startswith("powershell.exe") for c in calls) == 1, calls
+
+    done, calls = _run_windows(
+        tmp_path, "once", *args, STUB_PS_MODE="vsock_once"
+    )
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert sum(c.startswith("powershell.exe") for c in calls) == 2, calls
+
+    done, calls = _run_windows(
+        tmp_path, "twice", *args, STUB_PS_MODE="vsock_always"
+    )
+    assert done.returncode == 7, (done.returncode, done.stderr)
+    assert sum(c.startswith("powershell.exe") for c in calls) == 2, calls
+    assert [c for c in calls if c.startswith("route")][-1] == "route stop"
+    done, calls = _run_windows(tmp_path, "fail", *args, STUB_PS_MODE="fail")
+    assert done.returncode == 7, (done.returncode, done.stderr)
+    assert [c for c in calls if c.startswith("route")][-1] == "route stop"
+
+    done, calls = _run_windows(tmp_path, "red", *args, STUB_EXIT="1")
+    assert done.returncode == 1, (done.returncode, done.stderr)  # test failed
+
+
+def test_check_2482_new_cases_select_their_tests(tmp_path) -> None:
+    """CHECK-2482: `--case survey|mola_map|fast_lap_amcl|fast_lap_mola`
+    select SIM-3770 / 3771 / 3780 / 3781 into `autodrive_<case>`, under both
+    `--sim container` and `--sim windows`; the unknown-case message names all
+    seven cases. (`--case survey` exits 2 before the change.)"""
+    for case, test, out_name in (
+        ("survey", "test_sim_3770_porto_survey_map.py", "autodrive_survey"),
+        ("mola_map", "test_sim_3771_porto_mola_map.py", "autodrive_mola_map"),
+        (
+            "fast_lap_amcl",
+            "test_sim_3780_porto_fast_lap_amcl.py",
+            "autodrive_fast_lap_amcl",
+        ),
+        (
+            "fast_lap_mola",
+            "test_sim_3781_porto_fast_lap_mola.py",
+            "autodrive_fast_lap_mola",
+        ),
+    ):
+        for sim in ("container", "windows"):
+            done, _ = _run_windows(
+                tmp_path,
+                f"{case}-{sim}",
+                "--domain",
+                "64",
+                "--case",
+                case,
+                "--sim",
+                sim,
+                "--dry-run",
+            )
+            assert done.returncode == 0, (case, sim, done.stderr)
+            assert f"tests/autodrive/{test}" in done.stdout, done.stdout
+            assert f".scratch-out/{out_name} python3" in done.stdout
+            assert "test_sim_3730" not in done.stdout
+    done, _ = _run_windows(
+        tmp_path, "unk", "--domain", "64", "--case", "nope", "--dry-run"
+    )
+    assert done.returncode == 2
+    for case in (
+        "qualification",
+        "fast_lap",
+        "corner_sweep",
+        "survey",
+        "mola_map",
+        "fast_lap_amcl",
+        "fast_lap_mola",
+    ):
+        assert case in done.stderr, done.stderr

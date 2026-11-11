@@ -28,19 +28,12 @@ from racing_bringup.scenario_parameters import (
     scan_beam_count,
     track_parameters,
 )
+from racing_bringup.simulators import sim_time_for
 from racing_bringup.vehicle_description import description_for
-from racing_sim_autodrive.capabilities import CAPABILITIES as AUTODRIVE_CAPS
-from racing_sim_gym_jax.capabilities import CAPABILITIES as GYM_CAPS
 
 LOGGER = get_logger("sim_pure_pursuit.launch")
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
-# The simulator capability tables, by `simulator:=` value; `capability.clock`
-# decides whether the rest of the graph reads /clock (ADR 0006).
-SIMULATOR_CAPABILITIES = {
-    "f1tenth_gym_jax": GYM_CAPS,
-    "autodrive": AUTODRIVE_CAPS,
-}
 # What `simulator:=autodrive` runs: the only vehicle and the only track the
 # AutoDRIVE build has active, the server's values and the world_to_map it
 # publishes under (config/autodrive/porto_frame.yaml: measured in part 10;
@@ -201,9 +194,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
         _check_autodrive(context, vehicle, autodrive_bridge)
     # Every node but the simulator reads /clock exactly when the simulator
     # owns it (ADR 0006; the capability, not the simulator's name).
-    use_sim_time = (
-        SIMULATOR_CAPABILITIES[simulator]["capability.clock"] == "owns_clock"
-    )
+    use_sim_time = sim_time_for(simulator)
     scenario = LaunchConfiguration("scenario")
     seed = LaunchConfiguration("seed")
     laps = LaunchConfiguration("laps")

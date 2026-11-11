@@ -25,7 +25,10 @@ from pathlib import Path
 
 import numpy as np
 from _porto_drive import SPAWN_MAP, SPAWN_TOL_M, SPAWN_TOL_RAD, drive_porto
-from racing_test_keywords.autodrive_live import judge_stale_input
+from racing_test_keywords.autodrive_live import (
+    judge_stale_input,
+    stale_input_timeout_s,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 LAPS = 2  # owner ruling 2026-11-08: lap 2 is the flying lap
@@ -100,7 +103,7 @@ def test_sim_3750_porto_fast_mintime_lap(tmp_path):
     verdict = judge_stale_input(
         run.latch,
         run.stamps,
-        0.1,
+        stale_input_timeout_s(VEHICLE),
         run.stale,
         run.trace,
         END_LATCH_WAIT_S,

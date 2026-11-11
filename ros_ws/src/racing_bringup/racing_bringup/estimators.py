@@ -224,15 +224,17 @@ def mola(configuration: str, grid_yaml: str, use_sim_time: bool = True) -> list:
     ]
 
 
-def mola_mapping(configuration: str, simplemap_output: str) -> list:
+def mola_mapping(
+    configuration: str, simplemap_output: str, use_sim_time: bool = True
+) -> list:
     """MOLA-LO mapping one lap, saving its simplemap to `simplemap_output`.
 
     `configuration` is config/localization/mola_lidar2d_mapping.yaml. MOLA
     defines the frame here, so there is no alignment publisher and no initial
     map. `MOLA_SIMPLEMAP_OUTPUT` is an environment variable the pipeline reads
     (pipelines/blocks/simplemap.yaml), not a launch argument. The time base
-    (`use_sim_time`) is "True", `mola_launch_arguments`' default, matching the
-    yaml; this function sets no value of its own. Reads committed files only
+    (`use_sim_time`) defaults to True, the gym's and the yaml's; a simulator
+    without /clock passes False. Reads committed files only
     and spawns nothing at description time.
     """
     share = Path(get_package_share_directory("mola_lidar_odometry"))
@@ -242,6 +244,8 @@ def mola_mapping(configuration: str, simplemap_output: str) -> list:
             PythonLaunchDescriptionSource(
                 str(share / "ros2-launchs" / "ros2-lidar-odometry.launch.py")
             ),
-            launch_arguments=mola_launch_arguments(configuration).items(),
+            launch_arguments=mola_launch_arguments(
+                configuration, None, use_sim_time
+            ).items(),
         ),
     ]

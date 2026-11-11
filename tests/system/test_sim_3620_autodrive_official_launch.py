@@ -33,8 +33,8 @@ import time
 from pathlib import Path
 
 import rclpy
-import yaml
 from nav_msgs.msg import Odometry
+from racing_test_keywords.autodrive_live import stale_input_timeout_s
 from racing_test_keywords.ros_helpers import (
     ensure_rclpy_initialized,
     reset_rclpy,
@@ -64,7 +64,7 @@ FRAMES = LAST_FRAME + 1 - START_FRAME
 STARTUP_SECONDS = 120.0
 VEHICLE = "config/vehicles/autodrive_roboracer.yaml"
 # How long the end-of-stream latch may take to arrive after the replay exits:
-# the supervisor's timeout is 100 ms plus one timer tick.
+# the vehicle file's timeout (200 ms on AutoDRIVE) plus one timer tick.
 END_LATCH_WAIT_SECONDS = 1.0
 STACK_DOMAIN = int(os.environ.get("ROS_DOMAIN_ID", "0"))
 DEVKIT_DOMAIN = (
@@ -82,14 +82,6 @@ LAUNCH = [
     "scenario:=config/scenarios/porto.yaml",
     "use_rviz:=false",
 ]
-
-
-def _stale_input_timeout_seconds() -> float:
-    """The supervisor's timeout, read from the vehicle file (gotcha 19: it is
-    never widened to cure a latch)."""
-    params = yaml.safe_load((REPOSITORY_ROOT / VEHICLE).read_text())
-    supervisor = params["racing_safety_supervisor"]["ros__parameters"]
-    return supervisor["stale_input_timeout_ms"] / 1000.0
 
 
 def _judge_stale_input(latch, odom_stamps, timeout_s, stale_count, trace):
@@ -266,7 +258,7 @@ def test_sim_3620_official_bridge_launch_runs_on_wall_time_without_a_latch(
     verdict = _judge_stale_input(
         latch,
         odom_stamps,
-        _stale_input_timeout_seconds(),
+        stale_input_timeout_s(VEHICLE),
         stale,
         trace,
     )

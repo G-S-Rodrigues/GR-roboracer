@@ -12,12 +12,42 @@ sim_pure_pursuit.launch.py passes through.
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
-from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch import LaunchContext, LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    SetLaunchConfiguration,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from racing_bringup.estimators import slam_toolbox
+from racing_bringup.simulators import sim_time_for
 
 SURVEY_CONFIG = "config/localization/slam_toolbox_survey.yaml"
+
+
+def _keep_config(context: LaunchContext) -> list:
+    """Keep the caller's `slam_toolbox_config` under another name: the
+    include below overwrites it (launch arguments are not scoped)."""
+    return [
+        SetLaunchConfiguration(
+            "mapper_config",
+            LaunchConfiguration("slam_toolbox_config").perform(context),
+        )
+    ]
+
+
+def _mapper(context: LaunchContext) -> list:
+    """slam_toolbox on the simulator's time base: /clock exactly when the
+    simulator owns it (the gym), wall time on AutoDRIVE (ADR 0006)."""
+    return slam_toolbox(
+        "mapping",
+        [LaunchConfiguration("mapper_config").perform(context)],
+        use_sim_time=sim_time_for(
+            LaunchConfiguration("simulator").perform(context)
+        ),
+    )
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -28,9 +58,25 @@ def generate_launch_description() -> LaunchDescription:
     )
     return LaunchDescription(
         [
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(str(bringup))
+            DeclareLaunchArgument(
+                "simulator",
+                default_value="f1tenth_gym_jax",
+                description="The simulator, which decides use_sim_time.",
             ),
-            *slam_toolbox("mapping", [SURVEY_CONFIG]),
+            DeclareLaunchArgument(
+                "slam_toolbox_config",
+                default_value=SURVEY_CONFIG,
+                description="slam_toolbox's parameter yaml.",
+            ),
+            OpaqueFunction(function=_keep_config),
+            # sim_pure_pursuit declares an argument of the same name that it
+            # accepts only for pose_source:=slam_toolbox (the driving stack
+            # here is ground truth), so it must see it empty. Launch
+            # arguments are not scoped, hence _keep_config above.
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(str(bringup)),
+                launch_arguments=[("slam_toolbox_config", "")],
+            ),
+            OpaqueFunction(function=_mapper),
         ]
     )

@@ -20,7 +20,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 from _porto_drive import SPAWN_MAP, SPAWN_TOL_M, SPAWN_TOL_RAD, drive_porto
-from racing_test_keywords.autodrive_live import judge_stale_input
+from racing_test_keywords.autodrive_live import (
+    judge_stale_input,
+    stale_input_timeout_s,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "ros_ws/src/racing_evaluation"))
@@ -92,7 +95,7 @@ def test_sim_3730_porto_qualification(tmp_path):
     verdict = judge_stale_input(
         run.latch,
         run.stamps,
-        0.1,
+        stale_input_timeout_s(VEHICLE),
         run.stale,
         run.trace,
         END_LATCH_WAIT_S,

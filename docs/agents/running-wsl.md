@@ -83,8 +83,8 @@ headless fixture (`porto_stream.jsonl.gz`, 617):
 - The camera is real and changing in the GUI build (626 distinct frames, ~6.7 kB) and one constant
   placeholder headless.
 - Period: median 24.5 ms (40.8 Hz), 10-90 % 18.0-30.3 ms, max 43.5 ms, against headless 18.2 ms,
-  11.2-54.5 ms, max 144.5 ms. Neither is 20 Hz; the GUI stream has no gap near the 100 ms stale
-  timeout.
+  11.2-54.5 ms, max 144.5 ms. Neither is 20 Hz; the GUI stream has no gap near 100 ms (the AutoDRIVE files' stale
+  timeout then; 200 ms since owner call #27).
 - Throttle-to-speed gain on the 0.04 straight: 25.02 m/s per unit in both, so the physics agree.
 
 **Traps.**

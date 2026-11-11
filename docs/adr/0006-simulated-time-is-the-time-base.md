@@ -72,7 +72,9 @@ on record is the one that is still true.
 
 - Every node must take time from its ROS clock. A node reading wall time directly will behave
   inconsistently and **will not error** — the supervisor's staleness logic is the most exposed, and
-  `stale_input_timeout_ms: 100` is deliberately unforgiving.
+  `stale_input_timeout_ms: 100` is deliberately unforgiving. (2026-11-11, owner call #27) AutoDRIVE has no
+  held clock; its vehicle files carry 200 ms, sized on measured delivery gaps (the comment there). The latch
+  is unchanged.
 - `tests/golden/baseline.json` does **not** move. It is generated headless by `sim/rollout.py`, whose
   `lap_time` is already simulated time (`sim/rollout.py:179`). What changes is that the live graph
   agrees with it more closely — SIM-3040's tolerances should tighten after re-measurement, never

@@ -206,6 +206,9 @@ Where a test is not where you would look:
   `scripts/autodrive_qualify.sh` or by hand.
 - SIM-3750 is local, run by `autodrive_qualify.sh --case fast_lap`.
 - SIM-3760 is local, run by `autodrive_qualify.sh --case corner_sweep --sweep-dir <dir>`.
+- SIM-3770 (slam_toolbox survey map), SIM-3771 (MOLA map), SIM-3780 (fast lap on amcl) and SIM-3781
+  (fast lap on MOLA) are local, run by `autodrive_qualify.sh --case survey|mola_map|fast_lap_amcl|fast_lap_mola
+  --sim container|windows`. They fail, never skip, without a sim. CHECK-2480..2484, CHECK-2486..2487 (the MOLA map's T stamp and the held start's reasons), CHECK-2488 (the per-platform stale timeout: 200 ms on AutoDRIVE's files, 100 ms on the gym's), CHECK-2490 (one `stale_input_timeout_s` reader for the live tests; CHECK-2489, the lane wrap, lands with A7-4) and BRINGUP-1980..1984 (1983: the mapping launch hands sim_pure_pursuit no mapper config; 1984: the truth survey config) are their CI-able parts.
 
 ## The tests that matter most
 

@@ -37,9 +37,11 @@ import time
 from pathlib import Path
 
 import rclpy
-import yaml
 from nav_msgs.msg import Odometry
-from racing_test_keywords.autodrive_live import judge_stale_input
+from racing_test_keywords.autodrive_live import (
+    judge_stale_input,
+    stale_input_timeout_s,
+)
 from racing_test_keywords.ros_helpers import (
     ensure_rclpy_initialized,
     reset_rclpy,
@@ -68,7 +70,7 @@ FRAMES = LAST_FRAME + 1 - START_FRAME
 STARTUP_SECONDS = 120.0
 VEHICLE = "config/vehicles/autodrive_roboracer.yaml"
 # How long the end-of-stream latch may take to arrive after the replay exits:
-# the supervisor's timeout is 100 ms plus one timer tick.
+# the vehicle file's timeout (200 ms on AutoDRIVE) plus one timer tick.
 END_LATCH_WAIT_SECONDS = 1.0
 LAUNCH = [
     "ros2",
@@ -88,21 +90,17 @@ def _free_port() -> int:
         return probe.getsockname()[1]
 
 
-def _stale_input_timeout_seconds() -> float:
-    """The supervisor's timeout, read from the vehicle file (gotcha 19: it is
-    never widened to cure a latch)."""
-    params = yaml.safe_load((REPOSITORY_ROOT / VEHICLE).read_text())
-    supervisor = params["racing_safety_supervisor"]["ros__parameters"]
-    return supervisor["stale_input_timeout_ms"] / 1000.0
-
-
 def _use_sim_time(node_name: str) -> str:
+    return _param(node_name, "use_sim_time")
+
+
+def _param(node_name: str, name: str) -> str:
     """`ros2 param get`, retried: a node is in the graph a moment before its
     parameter services answer."""
     deadline = time.monotonic() + 30.0
     while True:
         result = subprocess.run(
-            ["ros2", "param", "get", f"/{node_name}", "use_sim_time"],
+            ["ros2", "param", "get", f"/{node_name}", name],
             capture_output=True,
             text=True,
             timeout=30,
@@ -171,6 +169,14 @@ def test_sim_3610_autodrive_launch_replay_runs_on_wall_time_without_a_latch(
             qos_profile_sensor_data,
         )
         clocks = {name: _use_sim_time(name) for name in PARTICIPANT_NODES}
+        # The vehicle file's timeout reaches the running supervisor (200 ms on
+        # AutoDRIVE, owner call #27), so the judge's window is the node's.
+        timeout_ms = _param(
+            "racing_safety_supervisor", "stale_input_timeout_ms"
+        )
+        assert timeout_ms.split()[-1] == str(
+            round(stale_input_timeout_s(VEHICLE) * 1000)
+        ), f"stale_input_timeout_ms {timeout_ms!r} is not the file's"
 
         replay = subprocess.Popen(
             [
@@ -226,7 +232,7 @@ def test_sim_3610_autodrive_launch_replay_runs_on_wall_time_without_a_latch(
     verdict = judge_stale_input(
         latch,
         odom_stamps,
-        _stale_input_timeout_seconds(),
+        stale_input_timeout_s(VEHICLE),
         stale,
         trace,
         END_LATCH_WAIT_SECONDS,

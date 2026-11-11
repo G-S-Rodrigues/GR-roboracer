@@ -76,6 +76,12 @@ steering rate 1.5 rad/s) and its own tables in `config/vehicles/autodrive_robora
 not measurements, and its GGV is a modelling bound (friction 1.0, from the prefab). It runs on `simulator:=autodrive` only; the
 gym refuses it. A committed minimum-time Porto line exists for it, `third_party/GR-roboracer-data/tracks/Porto/racelines/autodrive-roboracer-fast-v1/tum_mintime.csv`.
 
+Both AutoDRIVE files set the supervisor's `stale_input_timeout_ms` to 200 ms, against the gym's 100 ms, because the
+AutoDRIVE sim runs on wall time and its frames have arrived 127-169 ms apart on a busy host (the headless container peaked at 169 ms at load 3.45);
+a gap longer than 200 ms still stops the car (owner ruling 2026-11-11). On the Windows GUI route the supervisor latched twice
+on apparent 204 and 246 ms gaps that coincide with periodic dev clock steps (under investigation, open topic
+2026-11-11-b6-respawn-kidnap-and-clock-steps).
+
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):
 
@@ -181,6 +187,7 @@ starts it beside the held stack and is the supported entry point
 |---|---|---|
 | `simplemap_output` | required | Where MOLA writes the lap's `.simplemap` when it is stopped. |
 | `configuration` | `config/localization/mola_lidar2d_mapping.yaml` | MOLA-LO's launch arguments, as a yaml. |
+| `simulator` | `f1tenth_gym_jax` | Decides `use_sim_time`: simulated time on the gym, wall time on `autodrive`. |
 
 ## Mapping example
 
@@ -282,7 +289,7 @@ looks the same to a scan matcher.
 | `stack.speed_source` | `speed_source:=` | Also settable in the vehicle file's `racing_controller_baseline` block; a given argument wins. |
 | `runtime.seed` | `seed:=` | `map_track.sh` forces `42`. |
 | `runtime.time_scale` | `time_scale:=` | `map_track.sh` passes none, so it runs at the default `1.0`. |
-| `runtime.slam_toolbox_config` | `slam_toolbox_config:=` | Empty by default: the scenario's `num_beams` picks the file. `slam_toolbox` only; an error with any other pose source. The mapping launch declares it too, but it runs `ground_truth`, so a value there is an error. |
+| `runtime.slam_toolbox_config` | `slam_toolbox_config:=` | Empty by default: the scenario's `num_beams` picks the file. `slam_toolbox` only; an error with any other pose source. On `slam_toolbox_mapping.launch.py` it is the mapper's own parameter file (default `config/localization/slam_toolbox_survey.yaml`); the driving stack it starts gets an empty one and runs `ground_truth`. With `simulator:=autodrive` the mapper runs on wall time. |
 | `runtime.drive_on_estimate` | `drive_on_estimate:=` | Ignored with `ground_truth`. |
 | `runtime.recording_path` | `recording_path:=` | `map_track.sh` forces `log/mapping.jsonl`. |
 | `mapping.output` | second argument of `map_track.sh` | No launch argument. |

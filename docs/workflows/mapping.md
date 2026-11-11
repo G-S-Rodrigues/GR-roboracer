@@ -116,6 +116,13 @@ To watch it in RViz, start the stack in one shell with `start_held:=true`, run
 another, then call the simulator's `~/reset`. Its arguments are in
 [Configuration](../configuration.md#mola-mapping-launch).
 
+A lap driven on another simulator can be turned into the map afterwards: run
+`mola_mapping.launch.py simulator:=autodrive ... simplemap_output:=<file>` beside the stack, then
+`./scripts/mola_map_track.sh --from-simplemap <file> <scenario> <stem> <seed>`. The script skips the lap and reads the
+alignment from the recording at `$MOLA_RECORDING` (default `log/mola_mapping.jsonl`); it exits non-zero, naming both stamps,
+if no `/ground_truth/odom` record lies within 1 ms of the first keyframe. `--dry-run` prints the plan and exits before
+anything is read or launched.
+
 Mapping is not reproducible: two runs of the same command give different maps (one lap with no loop
 closure drifts differently each time). The committed map is one such run, reviewed as a diff. Its
 quality against the track's true walls is in [Results](../results.md#mola-map-accuracy).
