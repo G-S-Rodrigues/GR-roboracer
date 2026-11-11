@@ -70,7 +70,9 @@ def test_check_2483_wait_for_estimator_uses_one_deadline(monkeypatch) -> None:
         _porto_drive, "wait_for_endpoints", record("subscription")
     )
     monkeypatch.setattr(
-        _porto_drive, "wait_for_message", lambda *a: calls.append(("message", a))
+        _porto_drive,
+        "wait_for_message",
+        lambda *a: calls.append(("message", a)),
     )
     _porto_drive.wait_for_estimator(object(), "ground_truth", 5.0)
     assert calls == []

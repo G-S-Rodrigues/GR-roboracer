@@ -34,11 +34,14 @@ from racing_test_keywords.ros_helpers import (
     ensure_rclpy_initialized,
     reset_rclpy,
     wait_for_endpoints,
+    wait_for_message,
     wait_for_node,
 )
 from racing_test_keywords.scenario_runner import (
+    ESTIMATE_TOPIC,
     METRICS_QOS,
     PARTICIPANT_NODES,
+    POSE_SOURCE_NODES,
     RELIABLE_QOS,
     _HangObserver,
     host_load_delta,
@@ -56,6 +59,7 @@ from sensor_msgs.msg import Imu, JointState, LaserScan
 REPO = Path(__file__).resolve().parents[2]
 STARTUP_S = 120.0
 FRAME_WAIT_S = 60.0
+ESTIMATOR_WAIT_S = 120.0
 # The fixture's spawn CoG through porto_frame.yaml (its header): the first
 # pose after the reset must be here, within 0.05 m / 0.05 rad. Closes the
 # spawn-y topic (2026-10-30-autodrive-spawn-y-offset).
@@ -219,6 +223,53 @@ class PortoRun:
         return np.diff(self.stamps)
 
 
+def estimator_waits(pose_source: str) -> tuple[tuple[str, str, str], ...]:
+    """What to wait for before the t = 0 reset, in order: ("node", name,
+    topic), ("subscription", name, topic) and ("message", "", topic).
+
+    The table is the gym runner's `POSE_SOURCE_NODES`
+    (`scenario_runner._reset_at_deterministic_t0`, repo-gotcha #19): an
+    estimator that publishes after the drive stream latches the supervisor.
+    Ground truth waits for nothing. Only amcl also waits for its first
+    estimate: the support node withholds MOLA's until MOLA has applied
+    /initialpose, and slam_toolbox emits only after motion; both need the sim
+    clock to advance, which on AutoDRIVE (free-running) it does anyway, so
+    the wait would only ever time out for them.
+    """
+    if pose_source == "ground_truth":
+        return ()
+    if pose_source not in POSE_SOURCE_NODES:
+        raise ValueError(
+            f"unknown pose_source {pose_source!r}; expected ground_truth or"
+            f" one of {sorted(POSE_SOURCE_NODES)}"
+        )
+    estimator, scan_topic = POSE_SOURCE_NODES[pose_source]
+    waits = (
+        ("node", estimator, scan_topic),
+        ("subscription", estimator, scan_topic),
+    )
+    if pose_source == "amcl":
+        waits += (("message", "", ESTIMATE_TOPIC),)
+    return waits
+
+
+def wait_for_estimator(node, pose_source: str, timeout: float) -> None:
+    """Run `estimator_waits` on one shared deadline (not a fresh budget per
+    wait), the `scenario_runner` pattern."""
+    deadline = time.monotonic() + timeout
+
+    def remaining() -> float:
+        return max(deadline - time.monotonic(), 0.0)
+
+    for kind, name, topic in estimator_waits(pose_source):
+        if kind == "node":
+            wait_for_node(node, name, (topic,), remaining())
+        elif kind == "subscription":
+            wait_for_endpoints(node, name, {topic}, "subscription", remaining())
+        else:
+            wait_for_message(node, Odometry, topic, RELIABLE_QOS, remaining())
+
+
 def drive_porto(
     launch: list[str],
     laps: int,
@@ -229,8 +280,19 @@ def drive_porto(
     node_name: str,
     channels: bool = False,
     meta: dict | None = None,
+    pose_source: str = "ground_truth",
+    recording_path: Path | None = None,
 ) -> PortoRun:
     """Drive `launch` for `laps` laps and return what was seen.
+
+    `pose_source` names the estimator `launch` runs on (`ground_truth`, the
+    default, is SIM-3730/3750's unchanged behaviour). Any other waits, after
+    the first frame and before the reset, for the estimator node, its /scan
+    subscription and (amcl) its first estimate on one shared deadline
+    (`estimator_waits`). `recording_path` (None: the launch's default) is
+    appended to `launch` as `recording_path:=`, so the run's recording, which
+    scores the live localization error offline, lands where the caller reads
+    it.
 
     With `channels` (off by default: SIM-3730/3750 never pass it) the lateral
     channels of part 1L's corner sweep are also written to
@@ -244,6 +306,8 @@ def drive_porto(
     if domain is None or domain == "42":
         pytest.fail("ROS_DOMAIN_ID must be set and not 42 (run the wrapper)")
     out.mkdir(parents=True, exist_ok=True)
+    if recording_path is not None:
+        launch = [*launch, f"recording_path:={recording_path}"]
     launch_log = out / "launch.log"
     with launch_log.open("w") as log:
         launched = subprocess.Popen(
@@ -366,6 +430,8 @@ def drive_porto(
                 " --profile autodrive up -d --no-deps --force-recreate"
                 " autodrive-sim, AUTODRIVE_BRIDGE_HOST=gr-roboracer-dev)"
             )
+
+        wait_for_estimator(node, pose_source, ESTIMATOR_WAIT_S)
 
         client = node.create_client(Reset, "/racing_sim/reset")
         assert client.wait_for_service(timeout_sec=30.0)
