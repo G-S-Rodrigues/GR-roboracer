@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "tests" / "lib"))
 
 from racing_test_keywords.scenario_runner import (  # noqa: E402
     DEFAULT_TIMEOUT_SECONDS,
+    StartMissed,
     run_scenario,
 )
 
@@ -66,25 +67,34 @@ def main() -> int:
         if value
     }
 
-    metrics = run_scenario(
-        seed=arguments.seed,
-        scenario=arguments.scenario,
-        timeout=arguments.timeout,
-        time_scale=arguments.time_scale,
-        pose_source=arguments.pose_source,
-        drive_on_estimate=not arguments.score_only,
-        launch_arguments=launch_arguments or None,
-    )
+    failures = []
+    try:
+        metrics = run_scenario(
+            seed=arguments.seed,
+            scenario=arguments.scenario,
+            timeout=arguments.timeout,
+            time_scale=arguments.time_scale,
+            pose_source=arguments.pose_source,
+            drive_on_estimate=not arguments.score_only,
+            launch_arguments=launch_arguments or None,
+        )
+    except StartMissed as missed:
+        # The lap ran and its metrics exist: keep them beside the verdict
+        # (a late start is a finding about the run, not a lost run).
+        outcome = missed.outcome
+        metrics = dict(outcome or {})
+        metrics["start"] = getattr(outcome, "start", None)
+        metrics["start_missed"] = str(missed)
+        failures.append(f"start missed: {missed}")
     record = json.dumps(metrics, indent=2, sort_keys=True, default=str)
     if arguments.output is not None:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(record + "\n", encoding="utf-8")
     print(record)
 
-    failures = []
-    if not metrics["lap_completed"]:
+    if "lap_completed" in metrics and not metrics["lap_completed"]:
         failures.append("lap did not complete")
-    if metrics["collision_count"] != 0:
+    if metrics.get("collision_count", 0) != 0:
         failures.append(f"{metrics['collision_count']} collisions")
     if failures:
         print(f"seed {arguments.seed}: " + "; ".join(failures), file=sys.stderr)

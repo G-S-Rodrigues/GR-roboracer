@@ -153,6 +153,28 @@ def test_check_2780_launch_arguments_committed_line() -> None:
     assert arguments["speed_source"] == "trajectory"
 
 
+def test_check_2574_a_missed_start_keeps_the_partial_metrics(
+    monkeypatch, tmp_path
+) -> None:
+    """CHECK-2574: a run that raises with an ``outcome`` (StartMissed) is
+    filed as infrastructure, with the lap's metrics beside the error."""
+    import types  # noqa: PLC0415
+
+    runs = _runs()
+
+    def missed(*_args, **_keywords):
+        error = RuntimeError("verdict=metrics-start-missed")
+        error.outcome = {"lap_time": 22.5}  # type: ignore[attr-defined]
+        raise error
+
+    module = types.ModuleType("racing_test_keywords.scenario_runner")
+    module.run_scenario = missed  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    run = runs.planning_run("default", "centerline", 42, 100.0, tmp_path)
+    assert run["outcome"] == "infrastructure"
+    assert run["partial_metrics"] == {"lap_time": 22.5}
+
+
 def test_check_2780_lines_of_committed_tree() -> None:
     runs = _runs()
     assert runs.lines_of("f1tenth-default-v1") == [

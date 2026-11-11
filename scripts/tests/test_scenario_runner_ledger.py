@@ -164,6 +164,11 @@ POLITE_ENTITY = '_p("polite", "sleep", "30")'
 
 class _Observer:
     first_latch = None
+    # F-T0's start record (a normal start); tests override on the class.
+    held_seen = True
+    tick = 0.01
+    first_motion = 0.01
+    metrics_start = 0.0
 
     def __init__(self, node) -> None:
         pass
@@ -197,7 +202,7 @@ def real_launch_run(tmp_path, monkeypatch):
     """The real ``run_scenario`` and ``LaunchService`` on a stand-in launch
     file, with rclpy, the t=0 reset and the metrics wait faked."""
     ready = tmp_path / "stubborn.ready"
-    state = {"wait": None, "reset": None, "ledger": None}
+    state = {"wait": None, "reset": None, "ledger": None, "reset_kwargs": None}
 
     class RecordingLedger(scenario_runner._ProcessLedger):
         def __init__(self) -> None:
@@ -218,8 +223,10 @@ def real_launch_run(tmp_path, monkeypatch):
         return _metrics_message()
 
     def reset(node, seed, timeout, *args, **kwargs):
+        state["reset_kwargs"] = kwargs
         if state["reset"] is not None:
             state["reset"]()
+        return state.get("t0_waits")
 
     monkeypatch.setattr(scenario_runner, "ensure_rclpy_initialized", lambda: 0)
     monkeypatch.setattr(scenario_runner, "reset_rclpy", lambda: None)
@@ -243,6 +250,75 @@ def test_check_2371_a_passing_run_reports_its_escalations(real_launch_run):
     assert [e["signal"] for e in outcome.shutdown_escalations] == ["SIGKILL"]
     assert outcome.shutdown_escalations[0]["name"].startswith("stubborn")
     assert set(outcome) == set(scenario_runner._METRICS_FIELDS)
+
+
+def test_check_2564_run_scenario_hands_drive_on_estimate_to_t0(
+    real_launch_run,
+):
+    scenario_runner.run_scenario(seed=1, timeout=30.0, drive_on_estimate=False)
+    kwargs = real_launch_run.state["reset_kwargs"]
+    assert kwargs["drive_on_estimate"] is False
+    assert isinstance(kwargs["observer"], scenario_runner._HangObserver)
+
+
+def test_check_2573_a_late_metrics_start_raises_start_missed(
+    real_launch_run, monkeypatch
+):
+    monkeypatch.setattr(scenario_runner._HangObserver, "metrics_start", 0.43)
+    with pytest.raises(scenario_runner.StartMissed) as raised:
+        scenario_runner.run_scenario(seed=1, timeout=30.0)
+    assert "verdict=metrics-start-missed" in str(raised.value)
+    assert "0.43" in str(raised.value)
+
+
+def test_check_2573_a_late_first_motion_raises_start_missed(
+    real_launch_run, monkeypatch
+):
+    monkeypatch.setattr(scenario_runner._HangObserver, "first_motion", 0.05)
+    with pytest.raises(scenario_runner.StartMissed) as raised:
+        scenario_runner.run_scenario(seed=1, timeout=30.0)
+    assert "verdict=drive-start-missed" in str(raised.value)
+
+
+def test_check_2574_start_missed_carries_the_run_outcome(
+    real_launch_run, monkeypatch
+):
+    """The metrics the lap produced are not thrown away with the verdict:
+    run_scenario.py and the benchmark write them beside it."""
+    monkeypatch.setattr(scenario_runner._HangObserver, "metrics_start", 0.43)
+    with pytest.raises(scenario_runner.StartMissed) as raised:
+        scenario_runner.run_scenario(seed=1, timeout=30.0)
+    outcome = raised.value.outcome
+    assert set(outcome) == set(scenario_runner._METRICS_FIELDS)
+    assert outcome.start["metrics_start"] == 0.43
+    assert outcome.frozen_at is None
+
+
+def test_check_2573_a_normal_start_rides_as_start_and_keeps_the_keys(
+    real_launch_run,
+):
+    real_launch_run.state["t0_waits"] = {"metrics_started": 0.5}
+    outcome = scenario_runner.run_scenario(seed=1, timeout=30.0)
+    assert set(outcome) == set(scenario_runner._METRICS_FIELDS)
+    assert outcome.start == {
+        "metrics_start": 0.0,
+        "first_motion": 0.01,
+        "tick": 0.01,
+        "t0_waits": {"metrics_started": 0.5},
+    }
+
+
+def test_check_2573_a_frozen_stop_with_a_normal_start_raises_nothing(
+    real_launch_run,
+):
+    """lap_completed false and lap_time 0 (a DNF) must not read as a late
+    start: the verdict comes from observer stamps, never lap_time."""
+    message = _metrics_message()
+    assert message.lap_completed is False
+    assert message.lap_time == 0
+    outcome = scenario_runner.run_scenario(seed=1, timeout=30.0)
+    assert outcome["lap_completed"] is False
+    assert outcome.start["metrics_start"] == 0.0
 
 
 def test_check_2371_a_failure_carries_the_escalations(real_launch_run):

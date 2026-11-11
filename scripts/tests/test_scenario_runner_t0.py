@@ -26,11 +26,13 @@ LIB_ROOT = Path(__file__).resolve().parents[2] / "tests" / "lib"
 if str(LIB_ROOT) not in sys.path:
     sys.path.insert(0, str(LIB_ROOT))
 
-from racing_interfaces.msg import SafetyStatus  # noqa: E402
+from racing_interfaces.msg import SafetyStatus, TrackRelativeState  # noqa: E402
 from racing_test_keywords import scenario_runner  # noqa: E402
 
 # Literal on purpose: the tests must fail on behaviour, not on a missing name.
 CLOCK_RECEIVED_TOPIC = "/racing_safety_supervisor/clock_received"
+METRICS_STARTED_TOPIC = "/racing_metrics/started"
+CONTROLLER_DRIVE_TOPIC = "/controller/drive"
 
 
 class _FakeNode:
@@ -169,6 +171,273 @@ def test_check_1990_an_unheard_clock_raises_and_never_releases(
     assert "/clock" in text
     assert "supervisor-clock-unheard" in text
     assert "create_client" not in released
+
+
+# ---------------------------------------------------------------------------
+# F-T0: t=0 waits for the metrics start and the controller's first command
+# (CHECK-2560..2563)
+# ---------------------------------------------------------------------------
+
+
+def _record_waits(monkeypatch, released, unheard_topic=None):
+    calls = []
+
+    def fake_wait_for_message(node, message_type, topic, qos, timeout):
+        calls.append((message_type, topic, qos, timeout))
+        released.append(f"wait:{topic}")
+        if topic == unheard_topic:
+            raise TimeoutError("no message")
+
+    monkeypatch.setattr(
+        scenario_runner, "wait_for_message", fake_wait_for_message
+    )
+    return calls
+
+
+def test_check_2560_t0_waits_for_metrics_started_before_the_client(
+    monkeypatch, released
+):
+    calls = _record_waits(monkeypatch, released)
+    scenario_runner._reset_at_deterministic_t0(_FakeNode(released), 42, 5.0)
+    started = [c for c in calls if c[1] == METRICS_STARTED_TOPIC]
+    assert started, "no wait_for_message on /racing_metrics/started"
+    message_type, _, qos, timeout = started[0]
+    assert message_type is TrackRelativeState
+    assert qos.durability == DurabilityPolicy.TRANSIENT_LOCAL
+    assert qos.reliability == ReliabilityPolicy.RELIABLE
+    assert timeout <= 5.0
+    assert released.index(f"wait:{CLOCK_RECEIVED_TOPIC}") < released.index(
+        f"wait:{METRICS_STARTED_TOPIC}"
+    )
+    assert released.index(f"wait:{METRICS_STARTED_TOPIC}") < released.index(
+        "create_client"
+    )
+
+
+def test_check_2561_an_unheard_metrics_start_raises_and_never_releases(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released, METRICS_STARTED_TOPIC)
+    with pytest.raises(TimeoutError) as raised:
+        scenario_runner._reset_at_deterministic_t0(_FakeNode(released), 42, 5.0)
+    text = str(raised.value)
+    assert "racing_metrics" in text
+    assert "metrics-start-unheard" in text
+    assert "create_client" not in released
+
+
+@pytest.mark.parametrize(
+    ("pose_source", "drive_on_estimate", "waits"),
+    [
+        ("ground_truth", True, True),
+        ("amcl", True, True),
+        ("slam_toolbox", False, True),
+        ("mola", False, True),
+        ("slam_toolbox", True, False),
+        ("mola", True, False),
+    ],
+)
+def test_check_2562_t0_waits_for_a_controller_command_where_it_can_exist(
+    monkeypatch, released, pose_source, drive_on_estimate, waits
+):
+    calls = _record_waits(monkeypatch, released)
+    scenario_runner._reset_at_deterministic_t0(
+        _FakeNode(released),
+        42,
+        5.0,
+        pose_source,
+        drive_on_estimate=drive_on_estimate,
+    )
+    drive = [c for c in calls if c[1] == CONTROLLER_DRIVE_TOPIC]
+    if not waits:
+        assert drive == [], "waited for a command that cannot exist yet"
+        return
+    assert drive, "no wait on /controller/drive"
+    message_type, _, qos, _ = drive[0]
+    assert message_type is AckermannDriveStamped
+    assert qos.reliability == ReliabilityPolicy.RELIABLE
+    assert released.index(f"wait:{CONTROLLER_DRIVE_TOPIC}") < released.index(
+        "create_client"
+    )
+
+
+def test_check_2563_an_unheard_controller_command_raises_and_never_releases(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released, CONTROLLER_DRIVE_TOPIC)
+    with pytest.raises(TimeoutError) as raised:
+        scenario_runner._reset_at_deterministic_t0(_FakeNode(released), 42, 5.0)
+    text = str(raised.value)
+    assert "controller" in text
+    assert "controller-drive-unheard" in text
+    assert "create_client" not in released
+
+
+# ---------------------------------------------------------------------------
+# F-T0: the start record and the named backstop (CHECK-2570..2572)
+# ---------------------------------------------------------------------------
+
+
+def _state(seconds: float, v_s: float = 0.0):
+    return SimpleNamespace(
+        header=SimpleNamespace(stamp=_stamp(seconds)), v_s=v_s
+    )
+
+
+def test_check_2570_observer_records_held_sample_tick_and_first_motion():
+    observer = _observer()
+    assert observer.held_seen is False
+    assert observer.tick is None
+    assert observer.first_motion is None
+    assert observer.metrics_start is None
+    observer._on_state(_state(0.0))
+    assert observer.held_seen is True
+    observer._on_state(_state(0.0))
+    observer._on_state(_state(0.01, 0.0))
+    observer._on_state(_state(0.02, 0.0))
+    assert observer.tick == pytest.approx(0.01)
+    assert observer.first_motion is None
+    observer._on_state(_state(0.03, 0.05))
+    assert observer.first_motion == pytest.approx(0.03)
+    # The state fields stop updating after the first motion.
+    observer._on_state(_state(0.04, 0.09))
+    assert observer.first_motion == pytest.approx(0.03)
+    assert observer.tick == pytest.approx(0.01)
+    # metrics_start is the first ~/started stamp heard, and only that.
+    observer._on_started(_state(0.0))
+    observer._on_started(_state(0.43))
+    assert observer.metrics_start == 0.0
+
+
+def test_check_2570_a_late_started_report_keeps_its_stamp():
+    observer = _observer()
+    observer._on_started(_state(0.43))
+    assert observer.metrics_start == pytest.approx(0.43)
+
+
+def test_check_2575_the_state_reader_is_destroyed_at_first_motion():
+    """After first motion nothing reads the state again: rclpy would still
+    deserialize every sample of the lap, runner CPU where load matters."""
+    destroyed = []
+    topics = {}
+
+    class _Tracking(_FakeNode):
+        def create_subscription(self, message_type, topic, *args, **kwargs):
+            subscription = object()
+            topics[subscription] = topic
+            return subscription
+
+        def destroy_subscription(self, subscription) -> None:
+            destroyed.append(topics[subscription])
+
+    observer = scenario_runner._HangObserver(_Tracking([]))
+    observer._on_state(_state(0.0))
+    observer._on_state(_state(0.01, 0.0))
+    assert "/ground_truth/track_relative_state" not in destroyed
+    observer._on_state(_state(0.02, 0.05))
+    assert destroyed == ["/ground_truth/track_relative_state"]
+    observer.close()
+    assert destroyed.count("/ground_truth/track_relative_state") == 1
+
+
+def test_check_2570_the_observer_listens_to_state_and_started():
+    topics = []
+
+    class _Listening(_FakeNode):
+        def create_subscription(self, message_type, topic, *args, **kwargs):
+            topics.append(topic)
+            return object()
+
+    scenario_runner._HangObserver(_Listening([]))
+    assert "/ground_truth/track_relative_state" in topics
+    assert METRICS_STARTED_TOPIC in topics
+
+
+def test_check_2571_t0_waits_for_the_observer_to_see_the_held_sample(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released)
+    observer = _observer()
+    spins = []
+
+    def fake_spin_once(node, timeout_sec=None):
+        spins.append(1)
+        if len(spins) == 3:
+            observer._on_state(_state(0.0))
+        time.sleep(0.001)
+
+    monkeypatch.setattr(scenario_runner.rclpy, "spin_once", fake_spin_once)
+    scenario_runner._reset_at_deterministic_t0(
+        _FakeNode(released), 42, 5.0, observer=observer
+    )
+    assert len(spins) >= 3
+    assert "create_client" in released
+
+
+def test_check_2571_a_held_sample_never_seen_raises_and_never_releases(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released)
+    monkeypatch.setattr(
+        scenario_runner.rclpy,
+        "spin_once",
+        lambda node, timeout_sec=None: time.sleep(0.01),
+    )
+    with pytest.raises(TimeoutError) as raised:
+        scenario_runner._reset_at_deterministic_t0(
+            _FakeNode(released), 42, 0.2, observer=_observer()
+        )
+    assert "start-unobserved" in str(raised.value)
+    assert "create_client" not in released
+
+
+TICK = 0.01
+
+
+@pytest.mark.parametrize(
+    ("metrics_start", "first_motion", "truth_driven", "expected"),
+    [
+        # N1's failure: racing_metrics started at 0.43 s.
+        (0.43, 0.01, True, "metrics-start-missed"),
+        # b2s5_r3: both late; the metrics start is named, both are in the text.
+        (0.03, 0.05, True, "metrics-start-missed"),
+        # Normal values: the start at the held stamp, first motion at 1 tick.
+        (0.0, 0.01, True, None),
+        # The car's first motion alone is late (L3).
+        (0.0, 0.05, True, "drive-start-missed"),
+        # Exactly 3 ticks is not late; the limit is strictly beyond it.
+        (0.0, 0.03, True, None),
+        # Not truth-driven: first motion is not measured there.
+        (0.0, 0.50, False, None),
+        # Unknown inputs are not checked.
+        (None, 0.01, True, None),
+        (0.0, None, True, None),
+        (None, None, True, None),
+    ],
+)
+def test_check_2572_start_verdict(
+    metrics_start, first_motion, truth_driven, expected
+):
+    tick = None if first_motion is None else TICK
+    text = scenario_runner.start_verdict(
+        metrics_start, first_motion, tick, truth_driven
+    )
+    if expected is None:
+        assert text is None
+    else:
+        assert f"verdict={expected}" in text
+
+
+def test_check_2572_both_late_names_metrics_and_carries_both_numbers():
+    text = scenario_runner.start_verdict(0.03, 0.05, TICK, True)
+    assert "verdict=metrics-start-missed" in text
+    assert "verdict=drive-start-missed" not in text
+    assert "0.03" in text
+    assert "0.05" in text
+
+
+def test_check_2572_no_tick_skips_the_drive_condition():
+    assert scenario_runner.start_verdict(0.0, 0.9, None, True) is None
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ thread, spins its own rclpy node to wait for ``/scenario/metrics``, then calls
 from __future__ import annotations
 
 import contextlib
+import json
 import sys
 import threading
 import time
@@ -36,7 +37,11 @@ import launch.launch_description_sources
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
-from racing_interfaces.msg import SafetyStatus, ScenarioMetrics
+from racing_interfaces.msg import (
+    SafetyStatus,
+    ScenarioMetrics,
+    TrackRelativeState,
+)
 from racing_interfaces.srv import Reset
 from rclpy.qos import (
     DurabilityPolicy,
@@ -112,6 +117,9 @@ CLOCK_QOS = QoSProfile(
 # and a held sim's /clock = 0 leaves now() at 0, so an endpoint wait cannot
 # say it is in step. F1 Step 1 and Step A; repo-gotchas #19, #32.
 SUPERVISOR_CLOCK_TOPIC = "/racing_safety_supervisor/clock_received"
+# racing_metrics' latched report of its first accepted sample (a scan and a
+# state both delivered; only under use_sim_time). F-T0, repo-gotchas #19.
+METRICS_STARTED_TOPIC = "/racing_metrics/started"
 
 RESET_SERVICE = "/racing_sim/reset"
 # Where an active pose source puts the pose the controller may drive on:
@@ -221,18 +229,73 @@ class RunOutcome(dict):
     ``shutdown_escalations``: ``[{"name", "signal"}]`` for each process launch
     had to SIGTERM/SIGKILL at the end. ``frozen_at``: ``(t, s, d)`` where a
     frozen-pose stop saw the pose stop, else ``None``. ``stop_context``: on
-    a frozen stop, ``{"text", "latched"}`` from the hang observer.
+    a frozen stop, ``{"text", "latched"}`` from the hang observer. ``start``:
+    ``{"metrics_start", "first_motion", "tick", "t0_waits"}``, the record
+    ``start_verdict`` judged (F-T0).
     """
 
     shutdown_escalations: list[dict[str, str]]
     frozen_at: tuple[float, float, float] | None
     stop_context: dict[str, Any] | None
+    start: dict[str, Any] | None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.shutdown_escalations = []
         self.frozen_at = None
         self.stop_context = None
+        self.start = None
+
+
+class StartMissed(RuntimeError):
+    """The run's start was late: a link a seeded metric reads was not matched
+    at t=0 (``start_verdict``). Raised after the lap, with the numbers.
+
+    ``outcome``: the run's ``RunOutcome`` (metrics, ``start``, ``frozen_at``,
+    ``stop_context``), so a caller can still write the record beside the
+    verdict instead of losing the lap it paid for."""
+
+    outcome: RunOutcome | None = None
+
+
+def start_verdict(
+    metrics_start: float | None,
+    first_motion: float | None,
+    tick: float | None,
+    truth_driven: bool,
+) -> str | None:
+    """Name a late start, or return ``None``.
+
+    ``metrics-start-missed``: racing_metrics' first accepted sample is later
+    than the held stamp (normal: exactly 0). ``drive-start-missed``: a
+    truth-driven car first moved later than 3 ticks (normal: 1 tick, call
+    #23); it is the only guard on the supervisor -> sim /drive link, which is
+    not provable while held. When both hold, the metrics start is named and
+    both numbers are in the text. A condition whose input is ``None`` is not
+    checked.
+    """
+    late_metrics = metrics_start is not None and metrics_start > 0.0
+    late_drive = (
+        truth_driven
+        and first_motion is not None
+        and tick is not None
+        and first_motion > 3 * tick
+    )
+    numbers = f"metrics_start={metrics_start} s, first_motion={first_motion} s"
+    if tick is not None:
+        numbers += f", tick={tick} s"
+    if late_metrics:
+        also = " (the car's first motion was late too)" if late_drive else ""
+        return (
+            "racing_metrics' first accepted sample was after the held t=0 "
+            f"(verdict=metrics-start-missed): {numbers}{also}"
+        )
+    if late_drive:
+        return (
+            "the car's first motion was later than 3 ticks "
+            f"(verdict=drive-start-missed): {numbers}"
+        )
+    return None
 
 
 _ESCALATION_SIGNALS = {-9: "SIGKILL", -15: "SIGTERM"}
@@ -385,6 +448,23 @@ class _HangObserver:
         self._last_drive: float | None = None
         self._last_status: float | None = None
         self._load_at_start = read_host_load()
+        # F-T0's start record. Subscribed before the sim exists, so it hears
+        # the held sample (stamp 0) and racing_metrics' latched report.
+        # ``tick`` is the smallest positive state stamp (the sim stamps
+        # k * control_period, so there is no literal); ``first_motion`` the
+        # first post-0 stamp with v_s != 0 (normal: 1 tick, measured in
+        # Step 1, call #23); ``metrics_start`` the stamp of the first sample
+        # racing_metrics accepted (normal: exactly 0, the held stamp).
+        self.held_seen = False
+        self.tick: float | None = None
+        self.first_motion: float | None = None
+        self.metrics_start: float | None = None
+        self._state_subscription = node.create_subscription(
+            TrackRelativeState,
+            STATE_TOPIC,
+            self._on_state,
+            OBSERVER_DRIVE_QOS,
+        )
         self._subscriptions = [
             node.create_subscription(
                 SafetyStatus, SAFETY_STATUS_TOPIC, self._on_status, RELIABLE_QOS
@@ -397,6 +477,12 @@ class _HangObserver:
                 CONTROLLER_DRIVE_TOPIC,
                 self._on_drive,
                 OBSERVER_DRIVE_QOS,
+            ),
+            node.create_subscription(
+                TrackRelativeState,
+                METRICS_STARTED_TOPIC,
+                self._on_started,
+                LATCHED_QOS,
             ),
         ]
 
@@ -421,6 +507,29 @@ class _HangObserver:
         self._last_drive = seconds
         self._record(self._drive_stamps, seconds)
 
+    def _on_state(self, message) -> None:
+        if self.first_motion is not None:
+            return
+        seconds = self._seconds(message.header.stamp)
+        if seconds == 0.0:
+            self.held_seen = True
+            return
+        if seconds > 0.0 and (self.tick is None or seconds < self.tick):
+            self.tick = seconds
+        if message.v_s != 0.0:
+            self.first_motion = seconds
+            # Nothing reads the state again; stop deserializing it all lap.
+            self._drop_state_subscription()
+
+    def _drop_state_subscription(self) -> None:
+        subscription, self._state_subscription = self._state_subscription, None
+        if subscription is not None:
+            self._node.destroy_subscription(subscription)
+
+    def _on_started(self, message) -> None:
+        if self.metrics_start is None:
+            self.metrics_start = self._seconds(message.header.stamp)
+
     def _on_status(self, message) -> None:
         self.status = message
         if message.reason == SafetyStatus.REASON_STALE_INPUT:
@@ -443,6 +552,7 @@ class _HangObserver:
         self.clock = message.clock
 
     def close(self) -> None:
+        self._drop_state_subscription()
         for subscription in self._subscriptions:
             self._node.destroy_subscription(subscription)
 
@@ -550,8 +660,13 @@ class _HangObserver:
 
 
 def _reset_at_deterministic_t0(
-    node, seed: int, timeout: float, pose_source: str = "ground_truth"
-) -> None:
+    node,
+    seed: int,
+    timeout: float,
+    pose_source: str = "ground_truth",
+    drive_on_estimate: bool = True,
+    observer=None,
+) -> dict[str, float]:
     """Wait for every participant, then release the held sim with a reset.
 
     t=0 is otherwise wherever the DDS discovery race happens to land, and
@@ -561,25 +676,40 @@ def _reset_at_deterministic_t0(
     /clock every consumer has followed, and racing_metrics aborts on the
     non-monotonic stamp.
 
-    `wait_for_node` only proves a node with the right name exists and that
-    *some* publisher/subscriber of the right topic name exists somewhere in
-    the graph - not that racing_metrics' own subscriptions, or the sim's
-    own publishers, have actually matched in DDS. A reset released before
-    that matching finishes can still slip past whatever `wait_for_node`
-    checked. `wait_for_endpoints` checks the endpoint list instead, which is
-    as close to "matched" as a third node can observe.
+    `wait_for_node` and `wait_for_endpoints` prove discovery in this node's
+    own graph view, which is not delivery: in 21 of 72 launches the sim's
+    new endpoints took 0.15-1.07 s to match after they were created
+    (findings 2026-11-11). Delivery is proven link by link, below, each wait
+    on the shared deadline (never a fresh `timeout`, never a retry):
 
-    One monotonic deadline is shared across every wait below - not a fresh
-    `timeout` per participant or per topic - so one slow participant cannot
-    hand every later wait a full fresh budget on top of the time already
-    spent.
+    - L4, sim /clock -> supervisor: the supervisor's latched
+      ``~/clock_received``.
+    - L2, sim scan and state -> racing_metrics: its latched ``~/started``,
+      the first sample it accepted (both topics delivered).
+    - L1, sim odometry -> controller: one ``/controller/drive``. A held sim
+      republishes its stamp-0 snapshot, so one command proves the link (and
+      /trajectory with it). Only where the controller's input exists while
+      held: ground_truth, amcl, or ``drive_on_estimate=False``.
 
-    The last wait is different in kind: the supervisor's own latched
-    ``~/clock_received``, the first /clock message its reader delivered. The
-    waits above prove discovery; this one proves delivery, and only the
-    supervisor can see its own reader.
+    L3, supervisor /drive -> sim, is not proven by a wait. Whether anything
+    crosses it while the sim is held is not established: first motion is
+    1 tick where the timing model predicted 2, so a command or a non-zero
+    velocity reached the first step, mechanism not established (gotcha
+    #19). ``drive-start-missed`` is its only guard.
+
+    Held-sim only. A free-running backend (AutoDRIVE, a car) has no held t=0
+    and must not call this function (gotcha #19, ADR 0006).
+
+    With an ``observer`` (the hang observer, whose readers are among the
+    links that may be late) the release also waits until it has seen the
+    held, stamp-0 state, else raises ``verdict=start-unobserved``: without
+    that the start record below would be blind in the launches whose links
+    are late.
+
+    Returns the seconds each of the delivery waits took, by name.
     """
     deadline = time.monotonic() + timeout
+    waits: dict[str, float] = {}
 
     def _remaining() -> float:
         return max(deadline - time.monotonic(), 0.0)
@@ -631,6 +761,7 @@ def _reset_at_deterministic_t0(
     # supervisor released before that stamps its first evaluation past the
     # stale window (gotcha #19). The wait shares the deadline; it is not a
     # retry and not a longer timeout.
+    began = time.monotonic()
     try:
         wait_for_message(
             node, Clock, SUPERVISOR_CLOCK_TOPIC, LATCHED_QOS, _remaining()
@@ -640,6 +771,54 @@ def _reset_at_deterministic_t0(
             "racing_safety_supervisor heard no /clock before t=0 "
             f"(verdict=supervisor-clock-unheard): {error}"
         ) from error
+    waits["supervisor_clock"] = time.monotonic() - began
+
+    # The same shape for the metrics link: racing_metrics emits nothing until
+    # a lap ends, so its own latched report of the first accepted sample is
+    # the only proof its scan and state readers are matched.
+    began = time.monotonic()
+    try:
+        wait_for_message(
+            node,
+            TrackRelativeState,
+            METRICS_STARTED_TOPIC,
+            LATCHED_QOS,
+            _remaining(),
+        )
+    except TimeoutError as error:
+        raise TimeoutError(
+            "racing_metrics accepted no sample before t=0 "
+            f"(verdict=metrics-start-unheard): {error}"
+        ) from error
+    waits["metrics_started"] = time.monotonic() - began
+
+    if pose_source in ("ground_truth", "amcl") or not drive_on_estimate:
+        began = time.monotonic()
+        try:
+            wait_for_message(
+                node,
+                AckermannDriveStamped,
+                CONTROLLER_DRIVE_TOPIC,
+                RELIABLE_QOS,
+                _remaining(),
+            )
+        except TimeoutError as error:
+            raise TimeoutError(
+                "racing_controller_baseline published no /controller/drive "
+                f"before t=0 (verdict=controller-drive-unheard): {error}"
+            ) from error
+        waits["controller_drive"] = time.monotonic() - began
+
+    if observer is not None and not observer.held_seen:
+        began = time.monotonic()
+        while not observer.held_seen:
+            if _remaining() <= 0.0:
+                raise TimeoutError(
+                    "the hang observer saw no held (stamp 0) state before "
+                    "t=0 (verdict=start-unobserved)"
+                )
+            rclpy.spin_once(node, timeout_sec=0.01)
+        waits["observer_held"] = time.monotonic() - began
 
     client = node.create_client(Reset, RESET_SERVICE)
     if not client.wait_for_service(timeout_sec=_remaining()):
@@ -652,6 +831,7 @@ def _reset_at_deterministic_t0(
     if not response.success:
         raise RuntimeError(f"{RESET_SERVICE} failed: {response.message}")
     node.destroy_client(client)
+    return waits
 
 
 FINALIZE_SERVICE = "/racing_metrics/finalize"
@@ -689,7 +869,6 @@ def _wait_for_metrics_or_frozen_pose(
     """
     if str(REPOSITORY_ROOT) not in sys.path:
         sys.path.insert(0, str(REPOSITORY_ROOT))
-    from racing_interfaces.msg import TrackRelativeState
     from std_srvs.srv import Trigger
 
     from scripts.frozen_pose import FrozenPose
@@ -817,6 +996,7 @@ def run_scenario(
     outcome: dict[str, Any] = {}
     failure: list[BaseException] = []
     frozen: dict[str, Any] = {}
+    start: dict[str, Any] = {}
 
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
@@ -825,7 +1005,14 @@ def run_scenario(
             for probe in probes:
                 probe.attach(node)
             try:
-                _reset_at_deterministic_t0(node, seed, timeout, pose_source)
+                t0_waits = _reset_at_deterministic_t0(
+                    node,
+                    seed,
+                    timeout,
+                    pose_source,
+                    drive_on_estimate=drive_on_estimate,
+                    observer=observer,
+                )
             except TimeoutError as stall:
                 # A stall names what launch saw: which process exited (and
                 # with what code) and which nodes the driver could see.
@@ -865,6 +1052,23 @@ def run_scenario(
                         "latched": observer.first_latch is not None,
                     }
             outcome.update(metrics_to_dict(message))
+            # The start record, from observer stamps only: never lap_time,
+            # which is 0 on a frozen-pose stop or a DNF and spans laps.
+            start.update(
+                metrics_start=observer.metrics_start,
+                first_motion=observer.first_motion,
+                tick=observer.tick,
+                t0_waits=t0_waits or {},
+            )
+            print(f"t0 start: {json.dumps(start)}", file=sys.stderr, flush=True)
+            verdict = start_verdict(
+                observer.metrics_start,
+                observer.first_motion,
+                observer.tick,
+                pose_source == "ground_truth" or not drive_on_estimate,
+            )
+            if verdict is not None:
+                raise StartMissed(f"{verdict} [{json.dumps(start)}]")
         except TimeoutError as error:
             failure.append(TimeoutError(f"{error} [{observer.describe()}]"))
             failure[0].__cause__ = error
@@ -888,6 +1092,13 @@ def run_scenario(
     escalations = ledger.shutdown_escalations
     if failure:
         error = failure[0]
+        if isinstance(error, StartMissed):
+            missed = RunOutcome(outcome)
+            missed.shutdown_escalations = escalations
+            missed.frozen_at = frozen.get("at")
+            missed.stop_context = frozen.get("context")
+            missed.start = dict(start) or None
+            error.outcome = missed
         if escalations:
             note = "shutdown escalations: " + ", ".join(
                 f"{e['name']} {e['signal']}" for e in escalations
@@ -900,6 +1111,7 @@ def run_scenario(
     result.shutdown_escalations = escalations
     result.frozen_at = frozen.get("at")
     result.stop_context = frozen.get("context")
+    result.start = dict(start) or None
     return result
 
 
