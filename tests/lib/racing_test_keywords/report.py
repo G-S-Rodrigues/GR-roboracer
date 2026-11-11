@@ -191,25 +191,32 @@ def write_report(
     scenario: str,
     implementation: str,
     baseline: Mapping[str, Any] | None = None,
+    diagnostics: Mapping[str, Any] | None = None,
 ) -> Path:
     """Write ``log/reports/<report_id>.json`` and print one REPORT line.
 
     Called right after the run and before the first quality assert, so a red
-    run keeps its record. Nothing here ever fails a test on a number."""
+    run keeps its record. Nothing here ever fails a test on a number.
+
+    ``diagnostics`` is what the run itself learned (shutdown escalations, a
+    frozen pose, when the estimator started). It is a top-level field written
+    only when given, never part of ``numbers``, so a report without it is
+    byte-identical to what it always was."""
     if not _ID_PATTERN.match(report_id):
         raise ValueError(f"not a path-safe report id: {report_id!r}")
-    record = _strict(
-        {
-            "id": report_id,
-            "numbers": numbers,
-            "baseline": baseline,
-            "seed": seed,
-            "scenario": scenario,
-            "implementation": implementation,
-            "revision": revision(),
-            "host_load": _host_load(),
-        }
-    )
+    fields = {
+        "id": report_id,
+        "numbers": numbers,
+        "baseline": baseline,
+        "seed": seed,
+        "scenario": scenario,
+        "implementation": implementation,
+        "revision": revision(),
+        "host_load": _host_load(),
+    }
+    if diagnostics is not None:
+        fields["diagnostics"] = diagnostics
+    record = _strict(fields)
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     path = REPORT_ROOT / f"{report_id}.json"
     path.write_text(json.dumps(record, indent=2, allow_nan=False) + "\n")
