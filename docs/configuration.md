@@ -88,6 +88,23 @@ env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
     --out config/vehicles/autodrive_roboracer/identified.yaml
 ```
 
+The lateral limits (`limits_sliding.yaml`, `limits_peak.yaml`) come from a second recording and a corner sweep.
+Record the lateral schedule the same way, with `record --schedule lateral`, run the closed-loop sweep with
+`scripts/autodrive_qualify.sh --domain 64 --case corner_sweep --sweep-dir <dir>`, and write the two files.
+The sweep directory (scenario copy, vehicle copy, `sweep.json`) and the combined `sweep.jsonl.gz` with its
+`meta.rungs` came from a ladder driver that is not committed, so the committed recording cannot be
+re-produced from the repo alone, and a fresh ladder for a new edition is its own plan.
+`analyse --sweep` works on the committed `2026-iros-practice-corner-sweep.jsonl.gz` as it is:
+
+```
+env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py record \
+    --config config/autodrive/simulator.yaml --schedule lateral --out rec.jsonl.gz
+env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
+    --recording rec.jsonl.gz --sweep sweep.jsonl.gz \
+    --source config/vehicles/autodrive_roboracer/source.yaml \
+    --out-dir config/vehicles/autodrive_roboracer
+```
+
 ## The AutoDRIVE simulator
 
 `simulator:=autodrive` (racing launch only) starts `racing_sim_autodrive_server` in place of the
@@ -117,6 +134,10 @@ false), because AutoDRIVE publishes no clock. `seed` is accepted; a reset return
 - `/racing_sim/autodrive_counters` (`racing_interfaces/SimCounters`) carries the simulator's own lap and collision
   counters. It is for debugging and cross-checks only (the league restricts these counters at race time), and no
   stack node reads it.
+- `/racing_sim/stamp_status` (`diagnostic_msgs/DiagnosticStatus`, latched: reliable, transient_local) carries the
+  server's `racing_sim: stamps` status. Published stamps never go backwards; `clamped_frames`, `step_backs` and
+  `largest_behind_ms` say how often the host clock stepped back under them, and the level is WARN once any frame
+  was clamped.
 
 Status: the launch is tested against a recorded AutoDRIVE stream, through either bridge (with a
 stand-in for the devkit under `official`), and live through `ours` on Porto by `scripts/autodrive_qualify.sh`

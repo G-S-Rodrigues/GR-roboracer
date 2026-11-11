@@ -117,3 +117,56 @@ def test_check_2160_case_selects_the_fast_lap_test(tmp_path) -> None:
     assert done.returncode == 2
     assert "qualification" in done.stderr and "fast_lap" in done.stderr
     assert not calls
+
+
+def test_check_2695_corner_sweep_takes_a_sweep_dir(tmp_path) -> None:
+    """CHECK-2695: `--case corner_sweep --sweep-dir D --dry-run` prints the
+    SIM-3760 test with `AUTODRIVE_SWEEP_DIR=D` into `autodrive_corner_sweep`;
+    `corner_sweep` without `--sweep-dir` exits 2, and so does `--sweep-dir`
+    with any other case; the two existing cases print without the variable;
+    the unknown-case message names all three cases."""
+    done, calls = _run(
+        tmp_path,
+        "sweep",
+        "--domain",
+        "64",
+        "--case",
+        "corner_sweep",
+        "--sweep-dir",
+        "/ws/sweep/a9",
+        "--dry-run",
+    )
+    assert done.returncode == 0, done.stderr
+    assert "test_sim_3760_porto_corner_sweep.py" in done.stdout
+    assert "autodrive_corner_sweep" in done.stdout
+    assert "AUTODRIVE_SWEEP_DIR=/ws/sweep/a9" in done.stdout
+    assert "test_sim_3730" not in done.stdout
+    done, calls = _run(
+        tmp_path, "nodir", "--domain", "64", "--case", "corner_sweep"
+    )
+    assert done.returncode == 2
+    assert "--sweep-dir" in done.stderr
+    assert not calls
+    for case in ("qualification", "fast_lap"):
+        done, calls = _run(
+            tmp_path,
+            "other",
+            "--domain",
+            "64",
+            "--case",
+            case,
+            "--sweep-dir",
+            "/x",
+        )
+        assert done.returncode == 2, case
+        assert not calls
+    for case in ("qualification", "fast_lap"):
+        done, _ = _run(
+            tmp_path, "keep", "--domain", "64", "--case", case, "--dry-run"
+        )
+        assert done.returncode == 0, done.stderr
+        assert "AUTODRIVE_SWEEP_DIR" not in done.stdout
+    done, _ = _run(tmp_path, "bad", "--domain", "64", "--case", "nope")
+    assert done.returncode == 2
+    for name in ("qualification", "fast_lap", "corner_sweep"):
+        assert name in done.stderr

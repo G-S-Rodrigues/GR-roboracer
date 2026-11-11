@@ -151,9 +151,13 @@ Three places hold its tests, by what each needs:
 - `tests/autodrive/test_sim_3750_porto_fast_mintime_lap.py` (`scripts/autodrive_qualify.sh --case fast_lap`) drives the fast
   car's min-time line for two laps through the shared driver `tests/autodrive/_porto_drive.py`; it gates on completion,
   collisions and latch, not lap time.
+- `tests/autodrive/test_sim_3760_porto_corner_sweep.py` (`scripts/autodrive_qualify.sh --case corner_sweep --sweep-dir <dir>`)
+  drives one rung of the corner sweep through the same driver and records the lateral channels. It asserts run validity
+  only (spawn, no latch, a non-empty IMU channel); a collision is recorded, not failed, because it is the ladder's stop point.
 - `tests/autodrive/test_sim_3730_porto_qualification.py` is the live check, run by `scripts/autodrive_qualify.sh`. It is in
   no gate (no gate has a sim), fails rather than skips, and the simulator container serves one run.
 - `/racing_sim/autodrive_counters` is debug-only (league rules restrict the counters at race time).
+- Published stamps never go backwards (the wall clock steps); the clamps are on `/racing_sim/stamp_status`, see gotcha #45.
 - Known problems: `racing_metrics`' collision threshold (0.01 m) is below the AutoDRIVE lidar's 0.06 m `range_min`, so its count
   cannot see a contact and the sim's counter is the collision truth here; stack lap 1 is longer than the sim's (the stack
   times from the reset, the sim from the line) and is not compared; lap times are wall-clock in the stack and Unity time in the

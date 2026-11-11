@@ -1,8 +1,8 @@
 """Tier 2: the Socket.IO server node against the replayed recording.
 
-SIMAD-2010..2040, 2270. The server listens on an ephemeral port (never 4567) and
-`racing_sim_autodrive.replay` stands in for the sim. Needs the pip closure
-(plan D2) and ROS_DOMAIN_ID set by the caller.
+SIMAD-2010..2040, 2270, 2300, 2310. The server listens on an ephemeral port
+(never 4567) and `racing_sim_autodrive.replay` stands in for the sim. Needs
+the pip closure (plan D2) and ROS_DOMAIN_ID set by the caller.
 """
 
 import json
@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
+from diagnostic_msgs.msg import DiagnosticStatus
 from nav_msgs.msg import Odometry
 from racing_interfaces.msg import SimCounters
 from racing_interfaces.srv import Reset
@@ -26,7 +27,7 @@ from rclpy.qos import (
     QoSProfile,
     ReliabilityPolicy,
 )
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Imu, LaserScan
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -37,8 +38,10 @@ SCAN = launch_support.topic("/scan")
 DRIVE = launch_support.topic("/drive")
 ODOM = launch_support.topic("/odom")
 TRUTH = launch_support.topic("/ground_truth/odom")
+IMU = launch_support.topic("/imu")
 COUNTERS = f"{launch_support.PREFIX}/racing_sim/autodrive_counters"
 RESET = f"{launch_support.PREFIX}/racing_sim/reset"
+STAMP_STATUS = f"{launch_support.PREFIX}/racing_sim/stamp_status"
 FRAMES = 300
 SENSOR = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
@@ -51,6 +54,14 @@ STATE = QoSProfile(
     depth=2000,
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.VOLATILE,
+)
+# Latched (transient_local): the launch test's one server serves every method,
+# and this one runs last, so the first-frame status went out long before.
+STATUS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
 
 
@@ -365,4 +376,112 @@ class TestServerNode(unittest.TestCase):
         self.assertAlmostEqual(counters[82].lap_time, 5.6838, places=3)
         self.assertTrue(
             all(m.header.stamp.sec or m.header.stamp.nanosec for m in counters)
+        )
+
+    def test_simad_2300_imu_carries_the_frames_acceleration(self):
+        """SIMAD-2300: `/imu` carries the frame's `V1 Linear Acceleration`:
+        x and y equal to it, z the frame's plus g (the raw value has no
+        gravity, its z median is 0.001 m/s^2 over the committed recording;
+        a REP 145 IMU reports the specific force, as the gym's `/imu`
+        does). In turns a_y has the sign of v_x w_z (the axes are the
+        car's): on the fixture 258 of the 259 raw frames with |v_x w_z| > 0.2
+        agree, the odd one a steering-snap spike, so the share is asserted,
+        at 95 %, not every frame. Best effort, like /scan, so a message may
+        be lost: each one is matched, in order, to the next frame it
+        equals."""
+        import gzip
+        import tempfile
+
+        frames_wanted = 460
+        with gzip.open(launch_support.FIXTURE, "rt", encoding="utf-8") as f:
+            events = [json.loads(line) for line in f if line.strip()][1:]
+        frames = []
+        for event in events:
+            if event["dir"] != "sim":
+                continue
+            data = event["data"]
+            ax, ay, az = (
+                float(v) for v in data["V1 Linear Acceleration"].split()
+            )
+            vx = float(data["V1 Linear Velocity"].split()[0])
+            wz = float(data["V1 Angular Velocity"].split()[2])
+            frames.append((ax, ay, az, vx * wz))
+        frames = frames[:frames_wanted]
+        with tempfile.TemporaryDirectory() as tmp:
+            _, got = self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                str(frames_wanted),
+                collect=[(Imu, IMU, SENSOR)],
+            )
+        messages = got[IMU]
+        self.assertGreaterEqual(len(messages), int(0.98 * frames_wanted))
+        matched = []
+        index = 0
+        for message in messages:
+            a = message.linear_acceleration
+            while index < len(frames) and not (
+                abs(a.x - frames[index][0]) < 1e-9
+                and abs(a.y - frames[index][1]) < 1e-9
+            ):
+                index += 1
+            self.assertLess(index, len(frames), "an /imu with no frame")
+            self.assertAlmostEqual(a.z, frames[index][2] + 9.81, places=6)
+            matched.append((a.y, frames[index][3]))
+            index += 1
+        turning = [(ay, lat) for ay, lat in matched if abs(lat) > 0.2]
+        self.assertGreater(len(turning), 100)
+        agree = sum(1 for ay, lat in turning if ay * lat > 0.0)
+        self.assertGreaterEqual(agree / len(turning), 0.95)
+        # The test is not satisfied by zeros.
+        peak = max(abs(m.linear_acceleration.y) for m in messages)
+        self.assertGreater(peak, 0.4)
+
+    def test_simad_2310_stamp_status_reports_the_clamp_counts(self):
+        """SIMAD-2310: `~/stamp_status` (private, latched) carries one
+        `racing_sim: stamps` DiagnosticStatus with `clamped_frames`,
+        `step_backs` and `largest_behind_ms`, published on the first frame
+        and whenever a count changes (never on a timer). Whether the host
+        clock steps during the replay is not ours to command, so the counts
+        are only bounded: non-negative, step_backs <= clamped_frames, never
+        falling between messages, the level WARN exactly when a frame was
+        clamped. Every `/odom` stamp rises strictly whether or not it did."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _, got = self._replay(
+                Path(tmp) / "replies.jsonl",
+                "--count",
+                "100",
+                collect=[
+                    (DiagnosticStatus, STAMP_STATUS, STATUS),
+                    (Odometry, ODOM, STATE),
+                ],
+            )
+        statuses = got[STAMP_STATUS]
+        self.assertTrue(
+            statuses,
+            f"no 'racing_sim: stamps' status on {STAMP_STATUS}",
+        )
+        previous = (0, 0)
+        for message in statuses:
+            self.assertEqual(message.name, "racing_sim: stamps")
+            values = {kv.key: kv.value for kv in message.values}
+            self.assertEqual(
+                set(values),
+                {"clamped_frames", "step_backs", "largest_behind_ms"},
+            )
+            clamped = int(values["clamped_frames"])
+            steps = int(values["step_backs"])
+            self.assertGreaterEqual(float(values["largest_behind_ms"]), 0.0)
+            self.assertLessEqual(steps, clamped)
+            self.assertGreaterEqual((clamped, steps), previous)
+            self.assertEqual(
+                message.level,
+                DiagnosticStatus.WARN if clamped else DiagnosticStatus.OK,
+            )
+            previous = (clamped, steps)
+        odom = [_stamp(m) for m in got[ODOM]]
+        self.assertTrue(
+            all(b > a for a, b in zip(odom, odom[1:], strict=False))
         )

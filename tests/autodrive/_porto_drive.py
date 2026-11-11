@@ -6,6 +6,8 @@ judges it and writes its own JSON. Extracted from SIM-3730 unchanged in
 behaviour (its asserts and `qualification.json` keys stay the same).
 """
 
+import gzip
+import json
 import math
 import os
 import subprocess
@@ -17,9 +19,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rclpy
+from ackermann_msgs.msg import AckermannDriveStamped
 from conftest import stop
+from diagnostic_msgs.msg import DiagnosticStatus
 from nav_msgs.msg import Odometry
-from racing_interfaces.msg import SafetyStatus, ScenarioMetrics, SimCounters
+from racing_interfaces.msg import (
+    SafetyStatus,
+    ScenarioMetrics,
+    SimCounters,
+    TrackRelativeState,
+)
 from racing_interfaces.srv import Reset
 from racing_test_keywords.ros_helpers import (
     ensure_rclpy_initialized,
@@ -35,8 +44,14 @@ from racing_test_keywords.scenario_runner import (
     host_load_delta,
     read_host_load,
 )
-from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import LaserScan
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
+from sensor_msgs.msg import Imu, JointState, LaserScan
 
 REPO = Path(__file__).resolve().parents[2]
 STARTUP_S = 120.0
@@ -48,6 +63,26 @@ SPAWN_MAP = (-5.8454, 1.9713, 0.0028)
 SPAWN_WINDOW = 100  # frames, 0.6 s
 SPAWN_TOL_M = 0.05
 SPAWN_TOL_RAD = 0.05
+
+
+# The channels arrive at the sim's frame rate (about 200 Hz on an idle host),
+# several topics per frame, and `spin_once` handles one message per call, so a
+# keep-last queue of 10 would drop rows silently. Deep queues, the endpoints'
+# own reliability (a reliable subscriber never hears a best-effort publisher,
+# gotcha 6).
+_DEPTH = 5000
+DEEP_SENSOR_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=_DEPTH,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
+DEEP_STATE_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=_DEPTH,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
 
 
 def _seconds(stamp) -> float:
@@ -71,6 +106,93 @@ def _reason_name(value: int) -> str:
     return f"REASON_{value}"
 
 
+def _subscribe_channels(node, rows: list[dict]) -> None:
+    """The lateral channels, one `rows` entry per message. The topics are the
+    server's (contract_node.py); `/drive` is the stack's command."""
+
+    def on_imu(m):
+        a = m.linear_acceleration
+        rows.append(
+            {
+                "stream": "imu",
+                "t": _seconds(m.header.stamp),
+                "ax": a.x,
+                "ay": a.y,
+                "az": a.z,
+                "wz": m.angular_velocity.z,
+            }
+        )
+
+    def on_drive(m):
+        rows.append(
+            {
+                "stream": "drive",
+                "t": _seconds(m.header.stamp),
+                "steer": m.drive.steering_angle,
+                "speed": m.drive.speed,
+            }
+        )
+
+    def on_encoders(m):
+        rows.append(
+            {
+                "stream": "enc",
+                "t": _seconds(m.header.stamp),
+                "left": m.position[0],
+                "right": m.position[1],
+            }
+        )
+
+    def on_track(m):
+        rows.append(
+            {
+                "stream": "track",
+                "t": _seconds(m.header.stamp),
+                "s": m.s,
+                "d": m.d,
+                "heading_error": m.heading_error,
+            }
+        )
+
+    node.create_subscription(Imu, "/imu", on_imu, DEEP_SENSOR_QOS)
+    node.create_subscription(
+        AckermannDriveStamped, "/drive", on_drive, DEEP_STATE_QOS
+    )
+    node.create_subscription(
+        JointState,
+        "/racing_sim/wheel_encoders",
+        on_encoders,
+        DEEP_SENSOR_QOS,
+    )
+    node.create_subscription(
+        TrackRelativeState,
+        "/ground_truth/track_relative_state",
+        on_track,
+        DEEP_STATE_QOS,
+    )
+
+
+def _write_channels(
+    path: Path, meta: dict, rows: list[dict], counters: list
+) -> None:
+    """The header, the streams of `_subscribe_channels`, and the sim's own
+    counters (every message `drive_porto` kept since the reset)."""
+    lines = [{"meta": meta}, *rows]
+    for c in counters:
+        lines.append(
+            {
+                "stream": "counters",
+                "t": _seconds(c.header.stamp),
+                "lap_count": c.lap_count,
+                "lap_time": c.lap_time,
+                "collisions": c.collisions,
+            }
+        )
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(json.dumps(line) + "\n")
+
+
 @dataclass
 class PortoRun:
     stamps: list[float]
@@ -88,6 +210,9 @@ class PortoRun:
     spawn_error: tuple[float, float] | None  # None: no frame after reset
     first_pose: tuple | None
     reasons: Counter = field(default_factory=Counter)
+    # The server's last `racing_sim: stamps` status (Step 5.0), only with
+    # `channels`; None with channels off, or from a server before 5.0.
+    stamp_status: dict | None = None
 
     @property
     def periods(self) -> np.ndarray:
@@ -102,7 +227,19 @@ def drive_porto(
     budget_s: float,
     host_command: str,
     node_name: str,
+    channels: bool = False,
+    meta: dict | None = None,
 ) -> PortoRun:
+    """Drive `launch` for `laps` laps and return what was seen.
+
+    With `channels` (off by default: SIM-3730/3750 never pass it) the lateral
+    channels of part 1L's corner sweep are also written to
+    `out/channels.jsonl.gz`, beside `porto_run.npz`, which is the same in
+    both modes: a header line `{"meta": ...}` (`meta` as given), then one
+    line per message, `{"stream": ..., "t": ..., ...}`. `t` is the message's
+    own `header.stamp` (the server's receive time, one value per sim frame,
+    which joins a frame's streams; never the subscriber's receive time).
+    """
     domain = os.environ.get("ROS_DOMAIN_ID")
     if domain is None or domain == "42":
         pytest.fail("ROS_DOMAIN_ID must be set and not 42 (run the wrapper)")
@@ -140,11 +277,21 @@ def drive_porto(
         metrics: list[ScenarioMetrics] = []
         scans: list[tuple[LaserScan, tuple]] = []
         scan_count = [0]
+        rows: list[dict] = []  # the channels, in arrival order
 
         def on_odom(m):
             p = m.pose.pose
             tw = m.twist.twist.linear
             speeds.append(math.hypot(tw.x, tw.y))
+            if channels:
+                rows.append(
+                    {
+                        "stream": "truth",
+                        "t": _seconds(m.header.stamp),
+                        "vx": tw.x,
+                        "vy": tw.y,
+                    }
+                )
             odoms.append(
                 (
                     _seconds(m.header.stamp),
@@ -160,7 +307,10 @@ def drive_porto(
                 scans.append((m, odoms[-1]))
 
         node.create_subscription(
-            Odometry, "/ground_truth/odom", on_odom, qos_profile_sensor_data
+            Odometry,
+            "/ground_truth/odom",
+            on_odom,
+            DEEP_SENSOR_QOS if channels else qos_profile_sensor_data,
         )
         node.create_subscription(
             LaserScan,
@@ -178,11 +328,30 @@ def drive_porto(
             SimCounters,
             "/racing_sim/autodrive_counters",
             counters.append,
-            RELIABLE_QOS,
+            DEEP_STATE_QOS if channels else RELIABLE_QOS,
         )
         node.create_subscription(
             ScenarioMetrics, "/scenario/metrics", metrics.append, METRICS_QOS
         )
+        stamp_status: list[dict] = []
+        if channels:
+            _subscribe_channels(node, rows)
+
+            def on_stamp_status(m):
+                if m.name == "racing_sim: stamps":
+                    stamp_status[:] = [{v.key: v.value for v in m.values}]
+
+            node.create_subscription(
+                DiagnosticStatus,
+                "/racing_sim/stamp_status",
+                on_stamp_status,
+                QoSProfile(
+                    history=HistoryPolicy.KEEP_LAST,
+                    depth=1,
+                    reliability=ReliabilityPolicy.RELIABLE,
+                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                ),
+            )
 
         # The sim's first frame: with no sim container, fail here, telling
         # the human what to run.
@@ -233,6 +402,16 @@ def drive_porto(
         reset_rclpy()
         stop(launched, 60.0)
     wall_s = time.monotonic() - began
+    if channels:
+        _write_channels(
+            out / "channels.jsonl.gz",
+            {
+                **(meta or {}),
+                "stamp_status": stamp_status[0] if stamp_status else None,
+            },
+            rows,
+            counters,
+        )
     stamps = [o[0] for o in odoms]
     rows = np.array([s[1] for s in scans])
     np.savez(
@@ -277,4 +456,7 @@ def drive_porto(
         spawn_error=spawn_error,
         first_pose=first_pose,
         reasons=reasons,
+        stamp_status=(stamp_status[0] if stamp_status else None)
+        if channels
+        else None,
     )
