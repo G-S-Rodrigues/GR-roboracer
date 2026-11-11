@@ -60,6 +60,16 @@ Traps any task in this repository can hit. Each one cost real time at least once
     follows the same rule (`docker/gpu-apt-pins.txt`, CHECK-1910/1920), and the trap was measured:
     unversioned `cuda-toolkit-config-common` resolved to 13.4.92 on 2026-10-25.
 
+48. **A lock file in `/tmp` is not shared between the host and a container.** Each has its own `/tmp`, so
+    the host's `/tmp/x.lock` and `gr-roboracer-dev`'s `/tmp/x.lock` are two files, and three sessions each
+    taking "the heavy lock" excluded nobody: a ready gate overran another's, load hit 12, the sim ran at
+    1.9x instead of 5x and SIM-3080/3510 failed on a branch whose diff could not reach them. Symptom: a
+    tier-3 failure with a latch or a drifting pose, and `uptime` high at the time. Remedy: every heavy run
+    goes through `scripts/heavy_lane.sh -- <command>`, which takes `flock` on `/lane/heavy.lock`, the host's
+    `/tmp/gr-roboracer-lane` mounted into `dev` and `fast-sim` (CHECK-2400; `gpu` and the autodrive services
+    have no mount: wrap them from the host). A container made before the mount lacks `/lane` and the script
+    exits 4 there (CHECK-2440); recreate it. Compose creates a missing `/tmp/gr-roboracer-lane` as `root` 0755: the host then takes the lock through the readable `heavy.lock` but cannot stamp `owner`, and one wrapper run in `dev` opens the lane (CHECK-2441..2443); with neither a lock nor write access it exits 4 and names `chmod 1777` (CHECK-2444). `fs.protected_regular` also refuses an `O_CREAT` open, root included, of another user's file in a sticky directory, so `owner` is stamped in place (`dd conv=nocreat`): a plain `>` would leave a stamp that is permanently stale and names the wrong holder, with no error (CHECK-2443).
+
 ## ROS
 
 6. **QoS mismatch looks like absent data, not an error.** A reliable subscriber never hears a
@@ -165,16 +175,6 @@ Traps any task in this repository can hit. Each one cost real time at least once
     (`_remove_folds`; SIM-1040/1050/1060/1070 guard it) and raises "self-intersect" past half the
     corridor. The yaml's curvature column is the *upstream raceline's* (it integrates to -394.4 deg
     per lap), so never rebuild a centerline from it.
-
-45. **A lock file in `/tmp` is not shared between the host and a container.** Each has its own `/tmp`, so
-    the host's `/tmp/x.lock` and `gr-roboracer-dev`'s `/tmp/x.lock` are two files, and three sessions each
-    taking "the heavy lock" excluded nobody: a ready gate overran another's, load hit 12, the sim ran at
-    1.9x instead of 5x and SIM-3080/3510 failed on a branch whose diff could not reach them. Symptom: a
-    tier-3 failure with a latch or a drifting pose, and `uptime` high at the time. Remedy: every heavy run
-    goes through `scripts/heavy_lane.sh -- <command>`, which takes `flock` on `/lane/heavy.lock`, the host's
-    `/tmp/gr-roboracer-lane` mounted into `dev` and `fast-sim` (CHECK-2400; `gpu` and the autodrive services
-    have no mount: wrap them from the host). A container made before the mount lacks `/lane` and the script
-    exits 4 there (CHECK-2440); recreate it.
 
 ## Visualization
 

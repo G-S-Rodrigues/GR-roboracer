@@ -28,7 +28,7 @@ improves nothing). `VIDEO.md` has the encoding, label and placement.
 
 - Windows ffmpeg 8.1.3 (`BtbN.FFmpeg.GPL.8.1`, installed 2026-11-10):
   `C:\Users\guilh\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe`. WSL's ffmpeg cannot see Windows windows.
-- Run the whole job (stack and recording) inside the heavy lane (`scripts/heavy_lane.sh -- <recorder>` where it exists, otherwise `flock -x` on the lane lock file).
+- Run the whole job (stack and recording) inside the heavy lane (`scripts/heavy_lane.sh -- <recorder>`; run from the host it covers the stack and the recorder).
 - Start ffmpeg Windows-native so its lifetime does not depend on any WSL process:
   `powershell.exe -NoProfile -Command "(Start-Process ffmpeg -ArgumentList '<args>' -WindowStyle Hidden -PassThru).Id"`,
   with `-filter_complex "gfxcapture=window_exe=AutoDRIVE Simulator:max_framerate=60:capture_cursor=0,hwdownload,format=bgra,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p,fps=60"`
