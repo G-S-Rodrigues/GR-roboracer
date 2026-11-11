@@ -309,7 +309,14 @@ def test_check_2443_a_container_run_opens_the_lane_for_the_host(
     heavy.lock and owner 0666, so a uid-65534 run stamps its own owner. Then
     the reverse order: with fs.protected_regular a plain `>` by root on a
     65534-owned owner in the sticky dir is refused, so the stamp is written in
-    place and still names the root run."""
+    place and still names the root run. That reverse case is only a guard where
+    the kernel sets fs.protected_regular >= 1 (2 here): at 0 a plain `>` would
+    pass it vacuously, so the test fails, not skips, when it is below 1."""
+    protected = int(Path("/proc/sys/fs/protected_regular").read_text())
+    assert protected >= 1, (
+        f"fs.protected_regular is {protected}: CHECK-2443's reverse order "
+        "would pass without guarding the in-place stamp; set it to >= 1"
+    )
     assert os.geteuid() == 0, (
         "CHECK-2443 needs root to make a second uid: run it in dev"
     )
@@ -354,6 +361,56 @@ def test_check_2443_a_container_run_opens_the_lane_for_the_host(
     again = go(None, "fourth-root")
     assert again.returncode == 0 and "cannot write" not in again.stderr
     assert "fourth-root" in (lane / "owner").read_text()
+
+
+def test_check_2445_a_deleted_lane_mount_exits_4_not_a_private_lock(
+    tmp_path: Path,
+) -> None:
+    """CHECK-2445: a container's /lane whose host directory was removed (for
+    example by systemd-tmpfiles' 30-day /tmp clean) still opens but has link
+    count 0; the host wrapper then makes a new lane, so a lock taken here
+    excludes nobody. The wrapper exits 4, does not run the command, and names
+    the cause. A `stat` shim stands in for the deleted directory, because a
+    real one needs a bind mount, which a test cannot make unprivileged."""
+    lane = tmp_path / "lane"
+    lane.mkdir()
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    real = shutil.which("stat")
+    (shim / "stat").write_text(
+        "#!/usr/bin/env bash\n"
+        'if [ "$1" = -c ] && [ "$2" = %h ]; then echo 0; exit 0; fi\n'
+        f'exec {real} "$@"\n'
+    )
+    (shim / "stat").chmod(0o755)
+    env = {
+        **os.environ,
+        "GR_LANE_MOUNT": str(lane),
+        "PATH": f"{shim}:{os.environ['PATH']}",
+    }
+    env.pop("GR_LANE_DIR", None)
+    env.pop("HEAVY_LANE_HELD", None)
+    out = subprocess.run(
+        [
+            "bash",
+            str(SCRIPT),
+            "--wait",
+            "1",
+            "--max-load",
+            "1000",
+            "--",
+            "echo",
+            "ran",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert out.returncode == 4, out.stderr
+    assert "ran" not in out.stdout
+    assert "removed" in out.stderr and "tmpfiles" in out.stderr
+    assert not (lane / "heavy.lock").exists()
 
 
 def test_check_2444_an_unwritable_lane_with_no_lock_is_the_one_exit_4(
