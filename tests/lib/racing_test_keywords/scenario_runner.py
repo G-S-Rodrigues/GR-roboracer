@@ -683,8 +683,11 @@ def _reset_at_deterministic_t0(
       /trajectory with it). Only where the controller's input exists while
       held: ground_truth, amcl, or ``drive_on_estimate=False``.
 
-    L3, supervisor /drive -> sim, is not proven: nothing is published on
-    /drive while the sim is held, so no delivery crosses it.
+    L3, supervisor /drive -> sim, is not proven by a wait. Whether anything
+    crosses it while the sim is held is not established: first motion is
+    1 tick where the timing model predicted 2, so a command or a non-zero
+    velocity reached the first step, mechanism not established (gotcha
+    #19). ``drive-start-missed`` is its only guard.
 
     Held-sim only. A free-running backend (AutoDRIVE, a car) has no held t=0
     and must not call this function (gotcha #19, ADR 0006).
