@@ -89,7 +89,7 @@ def amcl(parameters: list, map_yaml: str, use_sim_time: bool = True) -> list:
     """nav2_amcl localizing against `map_yaml`, served by nav2_map_server.
 
     The grid is the track's committed survey
-    (config/scenarios/maps/<map>/slam/), named by the caller from the
+    (<data>/tracks/<Map>/maps/<Map>/slam/), named by the caller from the
     scenario, so a run can only ever be localized against its own track.
     `use_sim_time` is appended after the yaml (which says true), so it wins.
     """
@@ -123,8 +123,8 @@ def mola_map_files(grid_yaml: str) -> tuple[str, str]:
     """(.mm, provenance yaml) of the MOLA map that belongs to `grid_yaml`.
 
     `grid_yaml` is the scenario's occupancy grid,
-    config/scenarios/maps/<map>/slam/<map>.yaml; MOLA's own map lives beside
-    it in maps/<map>/mola/<map>.{mm,yaml}. Derived from the scenario, as
+    <data>/tracks/<Map>/maps/<Map>/slam/<Map>.yaml; MOLA's own map lives beside
+    it in maps/<Map>/mola/<Map>.{mm,yaml}. Derived from the scenario, as
     amcl's grid is, so a run can only be localized on its own track. Raises
     FileNotFoundError, naming the script that builds it, when it is absent.
     """

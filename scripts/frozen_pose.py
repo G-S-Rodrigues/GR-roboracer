@@ -1,4 +1,4 @@
-"""One definition of a frozen pose, shared by a live lap and the report.
+"""One definition of what stopped a lap: a frozen pose and a supervisor latch.
 
 Stdlib-only. ``scenario_runner`` (every tier-3/4 lap) and
 ``scripts.raceline_report`` (tier 5) both import it, so "frozen" means one
@@ -12,6 +12,27 @@ from __future__ import annotations
 # A pose that moved less than this over the whole window is frozen. The gym
 # keeps the old state on a collision, so a frozen pose repeats exactly.
 FROZEN_EPSILON_M = 1e-3
+
+# SafetyStatus.msg: REASON_STALE_INPUT 3, REASON_ESTOP_LATCHED 4; the
+# supervisor's CLAMP_ESTOP bit. COMMAND_LIMIT (2) and TRACK_LIMIT (1) are
+# *not* latches: any clamp sets COMMAND_LIMIT (supervisor.cpp:39-62,80-82).
+LATCH_REASONS = frozenset({3, 4})
+CLAMP_ESTOP = 64
+
+
+def is_supervisor_latch(reason: int, active_clamps: int) -> bool:
+    """True for a status that sets or holds the supervisor's emergency stop."""
+    return reason in LATCH_REASONS or bool(active_clamps & CLAMP_ESTOP)
+
+
+# Sim seconds over which s and d must not move for a pose to be frozen.
+# Measured (part 7 step 2, gym-limits, seed 42, 100 Hz recordings): the car is
+# frozen from sim 2.98 s (centerline) and 2.53 s (min-curv) to the end, while
+# before that the longest stretch with s and d still is 0.02 s. 1.0 s is 50x
+# that, and a creeping car moves more than the 1 mm threshold in it. Here, not
+# in scripts/benchmark_runs.py, because a lap may not import a neutral path
+# (ADR 0007): the pose-source keyword uses it too (N1.3).
+FROZEN_WINDOW_SECONDS = 1.0
 
 
 def _wrap(delta: float, length: float) -> float:
@@ -43,3 +64,9 @@ class FrozenPose:
             self._anchor = anchor = (t, s, d)
         self.frozen = t - anchor[0] >= self.window_s
         return self.frozen
+
+    @property
+    def frozen_at(self) -> tuple[float, float, float] | None:
+        """``(t, s, d)`` where the still stretch began once frozen, else
+        ``None``: the time and place the car stopped, for a verdict."""
+        return self._anchor if self.frozen else None

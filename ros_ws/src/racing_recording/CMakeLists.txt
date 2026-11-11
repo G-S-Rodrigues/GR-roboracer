@@ -38,6 +38,12 @@ if(BUILD_TESTING)
   )
   target_link_libraries(event_recorder_test ${PROJECT_NAME})
   set_tests_properties(event_recorder_test PROPERTIES LABELS "tier1")
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_recorder_sigkill.py
+    TIMEOUT 60
+    LABELS "tier2"
+  )
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

@@ -33,6 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The maps and racelines live in the data repo (ADR 0009); every job
+      # that runs check.sh reads them. --depth 1 works because the pinned
+      # commit is on the data repo's main.
+      - name: Initialise the track data submodule
+        run: git submodule update --init --depth 1 third_party/GR-roboracer-data
+
       - uses: docker/setup-buildx-action@v3
 
       # Loaded into the local daemon rather than pushed: nothing outside this
@@ -109,11 +115,13 @@ jobs:
       - name: Start the build/setup clock
         run: echo "NIGHTLY_T0=$(date +%s)" >> "$GITHUB_ENV"
 
-      # The submodule is read only by SIM-5050's upstream reference row, so
-      # only the path_planning legs fetch it (third_party/NOTICE.md).
+      # No nightly test reads the f1tenth_racetracks submodule: only the
+      # planning benchmark does (.github/workflows/benchmark.yaml).
       - uses: actions/checkout@v4
-        with:
-          submodules: ${{ matrix.region == 'path_planning' }}
+
+      # The track data (ADR 0009) is read by every region.
+      - name: Initialise the track data submodule
+        run: git submodule update --init --depth 1 third_party/GR-roboracer-data
 
       - uses: docker/setup-buildx-action@v3
 
@@ -144,7 +152,18 @@ jobs:
             --env ROS_DOMAIN_ID=42 \
             --env ROS_LOG_DIR=/ws/log/ros \
             --env NIGHTLY_TIER5=${{ matrix.seed == 42 && '1' || '0' }} \
+            --env GITHUB_SHA=${{ github.sha }} \
             gr-roboracer:dev ./scripts/check.sh --nightly-region ${{ matrix.region }}
+
+      # The quality reports (ADR 0008): the nightly reports and never ranks;
+      # the trend is read from these. Every job uploads its own.
+      - name: Upload the quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.region }}-seed-${{ matrix.seed }}
+          path: log/reports/
+          if-no-files-found: ignore
 
       - name: Upload SIM-5030's sample
         if: always() && matrix.region == 'slam' && matrix.seed == 42
@@ -156,14 +175,14 @@ jobs:
             log/sim-5030-max.jsonl
           if-no-files-found: ignore
 
-      # Tier 5 runs on seed 42 only (NIGHTLY_TIER5 above), so SIM-5040/5050
-      # write the report on path_planning/42 alone.
-      - name: Upload the raceline comparison report
+      # Tier 5 runs on seed 42 only (NIGHTLY_TIER5 above), so SIM-5040 writes
+      # its regeneration record on path_planning/42 alone.
+      - name: Upload the raceline regeneration record
         if: always() && matrix.region == 'path_planning' && matrix.seed == 42
         uses: actions/upload-artifact@v4
         with:
-          name: raceline-report
-          path: log/raceline-report/
+          name: raceline-regeneration
+          path: log/raceline-report/regeneration.json
           if-no-files-found: ignore
 
       # SIM-5060's record: regenerated or not, and why (it runs only when the
@@ -174,15 +193,6 @@ jobs:
         with:
           name: raceline-mintime-regeneration
           path: log/raceline-report/regeneration-mintime.json
-          if-no-files-found: ignore
-
-      # SIM-5510 is tier 5, so it runs on slam/42 alone and writes there.
-      - name: Upload the pose-source report
-        if: always() && matrix.region == 'slam' && matrix.seed == 42
-        uses: actions/upload-artifact@v4
-        with:
-          name: pose-source-report
-          path: log/pose-source-report/
           if-no-files-found: ignore
 
       # After check.sh, whose build produced the overlay the lap needs (the

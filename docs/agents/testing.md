@@ -15,7 +15,7 @@ Corollary: **never add a ROS dependency to `racing_common`.**
 | Tier | What it proves | Runner | Cost |
 |---|---|---|---|
 | 0 | It builds and lints | `colcon build`, `clang-format`, `clang-tidy`, `ruff` | seconds |
-| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s total, of which raceline ~8 s warm (the map extractor added ~2.5 s); measured idle 2026-10-21: raceline suite ~37 s (109 tests, measured 2026-10-25 on a loaded host, load ~20, `pytest raceline/tests`; ~29 s with part 4 at 101 tests; three real-TUM tests ~5 s each, RACELINE-1395 ~5 s; ~17 s on main, ~20 s with part 2.3), already over that target before 2.3 (a cold uv sync downloads CPython 3.8 and both envs: minutes) |
+| 1 | Pure logic, no graph | `colcon test` (gtest), `pytest sim/tests`, `pytest scripts/tests`, `env -u PYTHONPATH uv run --project raceline --locked pytest raceline/tests` | < 10 s for the colcon and `sim/`/`scripts/` suites; the raceline suite ~37 s on a loaded host (2026-10-25), and a cold uv sync downloads CPython 3.8 and both envs (minutes) |
 | 2 | One node honours its contract | `launch_testing` | ~5 s |
 | 3 | The composed system laps | `pytest tests/system` (real `racing_bringup` launch) | ~352 s (`==> system tests` section of `--full`) |
 | 4 | Black-box acceptance | `robot --pythonpath tests/lib tests/acceptance` | ~201 s |
@@ -31,12 +31,56 @@ belongs there when its cost is laps rather than seconds and what it catches is a
 combination shows.
 
 A red nightly leaves evidence: node logs and Robot output (`logs-<region>-seed-<n>`, failed jobs only), SIM-5030's sample
-(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when an assert fails), the raceline comparison report (`raceline-report`: `log/raceline-report/{report.md,report.json,regeneration.json}`, from `path_planning`/seed 42, uploaded always), the pose-source data report (`pose-source-report`: `log/pose-source-report/{report.md,report.json}`, from `slam`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop[-<planner>].jsonl`, whose stamps locate a lost stretch of availability), and, when a
+(`sim-5030`: `log/sim-5030.json`, plus the worst run's recording when a tracking flag is raised), the quality reports of every job (`reports-<region>-seed-<n>`: `log/reports/<ID>.json`), the raceline regeneration record (`raceline-regeneration`: `log/raceline-report/regeneration.json`, from `path_planning`/seed 42, uploaded always), the localization recordings of tier 4 (ACC-4030/4040: `logs-slam-seed-<n>/robot/localization/<source>-<open|closed>-loop[-<planner>].jsonl`, whose stamps locate a lost stretch of availability), and, when a
 `run_scenario` lap times out (tier 3 or 4) after a latch, a `verdict=` in the `TimeoutError` text
-(`supervisor-lag`, `supervisor-clock-late` (the first status ever is already STALE), `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`); a t=0 wait that never hears the supervisor's `~/clock_received` raises with `verdict=supervisor-clock-unheard`. An ACC-4020 failure message carries the same record (`safety_record`: the first non-NONE `/safety/status` and its verdict). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
-prints nothing, so SIM-5030's JSON is the only record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and bounds the pooled median and
-the maximum of those runs (`log/sim-5030.json` also carries `by_seed`, evidence only), not their max-min spread (one tail run sets the spread; the samples behind the
-bound are in the test).
+(`supervisor-lag`, `supervisor-clock-late` (the first status ever is already STALE), `controller-silent` or `unclassified`, scenario_runner's `_HangObserver`); a t=0 wait that never hears the supervisor's `~/clock_received` raises with `verdict=supervisor-clock-unheard`. The other t=0 waits raise `metrics-start-unheard` (racing_metrics' `~/started`), `controller-drive-unheard` (a `/controller/drive`) and `start-unobserved` (the hang observer never saw the held state); after the lap `run_scenario` raises `StartMissed` with `metrics-start-missed` (racing_metrics' first accepted sample after t=0) or `drive-start-missed` (a truth-driven car's first motion later than 3 ticks). An ACC-4020 failure message carries the same record (`safety_record`: the first non-NONE `/safety/status`, and the verdict of the first latching one). A pose-source case whose ground truth freezes (the gym holds its state on a collision) no longer waits out the 400 s timeout: it fails on `lap_completed` about 2 sim s after the crash with `ground truth frozen at <t> s, s <s>, d <d>: ...` and the estimate's lon/lat at the freeze, and the text names a latch (STALE_INPUT, ESTOP_LATCHED) stamped at or before the freeze instead of a collision; a non-latching clamp or TRACK_LIMIT is named and said not to latch. The red run still writes its metrics or localization report (`lap_completed: false`, `lap_time: 0.0`). Processes that `launch` had to SIGKILL or SIGTERM at shutdown are listed as `shutdown escalations` in the failure text and in every report's `diagnostics`; a t=0 timeout carries `t0 stall: ...; nodes: ...`; localization reports carry `first_estimate_stamp` and `travel_before_first_estimate` in `diagnostics`, never in `numbers`. racing_recording's own tests are REC-1010 (gtest) and REC-2010 (`launch_test` on the file; `colcon test --packages-select racing_recording` runs it, but a launch test has no per-case filter). CHECK-2378 replays trimmed real nightly recordings (`scripts/tests/fixtures/nightly/`). Tier 4's localization cases (ACC-4030/4040) run seed 42 on every matrix seed (the matrix seed reaches only the seeded lap and tier 5), so a failure there on the "seed 2026" leg is not a seed-2026 draw. A passing run
+prints nothing to the job log, so SIM-5030's JSON and the reports are the record of its distribution. SIM-5030 runs a fixed seed list (`SEEDS`, 7 seeds x 5 runs) and reports the pooled median, the maximum
+and `by_seed` in `log/sim-5030.json`. It is regression tracking: it fails on a gate (a lap that does not
+complete, a collision, a `StartMissed` verdict) and never on the spread.
+
+## Gates and reports (ADR 0008)
+
+A tier-3, -4 or -5 test fails only on a gate:
+
+- the lap completes within the run's timeout;
+- 0 collisions;
+- no supervisor latch or intervention;
+- the instrument recorded data (`sample_count`, `scored_count`, metrics published, a map with wall
+  cells);
+- two runs or pipelines of the same code agree (the goldens through `scripts/compare_metrics.py`,
+  SIM-3060's identity, SIM-3100's drift floor, the regeneration tests);
+- one catastrophic bound per quality metric.
+
+The catastrophic bounds are shared by every implementation:
+
+| Metric | Bound |
+|---|---|
+| ATE RMSE | <= 5.0 m |
+| availability | >= 0.90 |
+| lap time | the run's timeout |
+| minimum wall clearance | > 0.08 m |
+| p95 tracking error | < 1.0 m |
+| map median wall error | <= 1.0 m |
+| map wall cells | >= 21 800 |
+
+ADR 0008 gives the reason for each value. None is a measurement, so none is re-tuned when a method
+improves or the host is loaded.
+
+Every quality number is reported, not asserted. The test that measured it prints `REPORT <ID> {json}`
+and writes `log/reports/<ID>.json` (seed, scenario, implementation, revision, host load) through
+`tests/lib/racing_test_keywords/report.py`, which also holds the catastrophic values. A passing pytest
+prints nothing, so `check.sh --ready`, `--full` and `--nightly` print the reports a run wrote when it
+ends, red or green. The nightly uploads `log/reports/` on every job. The measurement comment that once
+justified a bound stays beside the report, as its baseline.
+
+- **Do not add a pass/fail quality bound.** "Is it better than X" is a benchmark.
+- **Benchmarks** compare implementations of one role. They run on demand, or in CI as a non-required
+  job on a PR that adds an implementation. They never run nightly and never block. The command is `python3 scripts/benchmark.py run|render|history` (Running); the Benchmark workflow runs it on a PR whose diff adds an implementation, bumps the data submodule (any change to its maps or racelines runs the planning benchmark) or edits the runner, uploads `benchmark-<role>` artifacts, and is never waited on.
+- **Regression tracking** of one method over time (SIM-5030) runs in the nightly, reports, and is
+  never red on a number.
+- **An experimental implementation** (`status: experimental` in `config/reference_stack.yaml`) is
+  gated by tiers 0-2 and a launch test that its argument selects it. It owns no tier-3 test until its
+  promotion.
 
 ## Running them
 
@@ -126,85 +170,39 @@ Invented for this repo, because it had no scheme: `<PKG>-<T>NNN`, where `T` is t
 `COMMON-1010`, `ADAPT-2040`, `SIM-3020`, `ACC-4010`. Every test's docstring or name carries its ID;
 the tier tables in the plan map ID to behaviour.
 
-Current counts: **376 tier-1, 53 tier-2, 16 tier-3, 5 tier-4, 8 tier-5**, plus 3 local tests in `tests/autodrive` (not counted by any gate).
+Find a test by its ID with `git grep -n -i '<pkg>.<t>nnn'` (names use `sim_3080`, docstrings `SIM-3080`).
+`git log -S'<ID>'` says which work added it. No count is kept here: a hand-kept count is stale by the
+next part.
 
-The gate-scope work added tier 1 `CHECK-1010` to `CHECK-1130` (thirteen IDs, `scripts/tests`).
+Where a test is not where you would look:
 
-The SLAM/localization phase added: tier 1 `SIMJAX-1070/1080/1090/1100/1110`,
-`BRINGUP-1040/1050/1060/1070`, `EVAL-1050`; tier 2 `EVAL-2020`, `BRINGUP-2010/2020`, `ADAPT-2120`;
-tier 3 `SIM-3070` (slam_toolbox) and `SIM-3080` (amcl); tier 4 `ACC-4030` (one case per pose source)
-and `ACC-4040` (two cases: the centerline, and the min-curvature line on the amcl estimate, which asserts lap, collisions and clearance only); tier 5 `SIM-5010/5020/5030`.
-
-The URDF work added tier 1 `DESC-1010` (the URDF's wheel axles are `wheelbase` apart).
-The nightly-flake work added tier 1 `EVAL-1060`.
-The ready-gate work added tier 1 `CHECK-1140` to `CHECK-1280` and `BRINGUP-1080`.
-The MOLA pose-source work added tier 1 `BRINGUP-1520` to `BRINGUP-1570` and `BRINGUP-2500` (estimate held until the start pose is applied), tier 3 `SIM-3510`, nightly `SIM-5520`, and tier 4 `ACC-4510`.
-The raceline project work added tier 1 `RACELINE-1010/1020/1030/1040/1050`, `CHECK-1290`, `CHECK-1300`.
-The map-extractor work added tier 1 `RACELINE-1060` to `RACELINE-1130` (nine IDs, 1085 among them).
-`raceline/bench/` holds measurements, not tests: pytest does not collect it, the gate does not run it, and it needs the network.
-The vehicle-limits work added tier 1 `RACELINE-1210..1250`, `SIMJAX-1120/1130`, `BRINGUP-1090/1100`,
-`CHECK-1310/1320`.
-The importer-convention work added tier 1 `SIM-1030`.
-The image-pin work added tier 1 `CHECK-1330/1340`.
-The base-link work (part 3.1b) added tier 1 `SIMJAX-1140`, `DESC-1020`; tier 2 `ADAPT-2130`.
-The worktree-scope work added tier 1 `CHECK-1350` to `CHECK-1390`.
-The observed-walls work (part 2.3) added tier 1 `RACELINE-1140/1150/1155/1160/1170`.
-The hairpin-fold work (part 2.4) added tier 1 `SIM-1040/1050/1060/1070`.
-The optimized-raceline runner work (part 4) added tier 1 `RACELINE-1310` to `RACELINE-1395` (23 IDs).
-
-The nightly-split work (part 7.0) added tier 1 `CHECK-1510/1520` (`scripts/tests/test_nightly_regions.py`; `tests/nightly_regions.yaml` assigns each nightly test to a region, `slam`, `path_planning`, `control` or `shared`, plus the implicit `static`).
-The trajectory-speed work (part 5) added tier 1 `PP-1040` to `PP-1150`.
-
-The evaluation-harness work (SLAM part 7) added tier 1 `SIMJAX-1500/1510` (and amended `SIMJAX-1060`: `spielberg_1080.yaml` may differ in `num_beams` and `fov`, by file name), `EVAL-1500..1540` (`racing_evaluation.map_accuracy`), `CHECK-1820..1870` and `CHECK-1851` (`scripts/pose_source_report.py`); tier 5 `SIM-5510`, assigned to `slam`. `run_scenario` takes optional `probes` (`tests/lib/racing_test_keywords/probes.py`); the wiring has no tier-1 test.
-
-The availability work (N5) added tier 1 `CHECK-1400/1410` (`scripts/tests/test_localization_keywords.py`).
-
-The planner-selection work (part 6) added tier 1 `BRINGUP-1150/1160/1170`, `CHECK-1420/1430`, `SIM-1080`; tier 2 `PP-2010`; tier 3 `SIM-3110`.
-
-The comparison-report work (part 7) added tier 1 `CHECK-1440` to `CHECK-1500` (`scripts/tests/test_raceline_report.py`); tier 5 `SIM-5040/5050`.
-
-The Porto work (#44 part 3) added tier 1 `RACELINE-1180/1185/1190/1195/1200/1205/1207` (`raceline/tests/test_extract_porto.py`, ~3 s).
-
-The AutoDRIVE part-10 work added tier 1 `SIMAD-1350/1360`, `METRICS-1060..1080`, `BRINGUP-1910`, `EVAL-1610..1650` and `CHECK-2140/2150`, tier 2 `SIMAD-2270` and `METRICS-2010`, and the local `tests/autodrive` `SIM-3730` (run by `scripts/autodrive_qualify.sh`).
-
-The frame-rename work (autodrive R1) added tier 1 `CHECK-2010/2020`.
-The part-8 addendum added no test ID: `RACELINE-1410`'s dynamics checks now cover every committed
-vehicle's `tum_mintime.yaml`, and `CHECK-2010`'s allowlist is empty.
-
-The gpu-stage work (#47 part 3) added tier 1 `CHECK-1900` to `CHECK-1940` and the manual `GPU-3010`.
-
-The t=0 clock work (F1) added tier 1 `CHECK-1950` to `CHECK-1990` (`scripts/tests/test_scenario_runner_t0.py`) and tier 2 `SAFE-2010`, `SAFE-2020` (`racing_safety_supervisor/test/test_supervisor_clock_received.py`).
-
-The ACC-4020 t=0 work (F2) added tier 1 `CHECK-2200` to `CHECK-2250` (`scripts/tests/test_scenario_runner_t0.py`).
-
-The simulator-capabilities work (autodrive-sim part 6) added tier 1 `ADAPT-1010/1020/1030` (1030 also pins the exact guard shape, with a negative case), `SIMJAX-1150`; tier 2 `ADAPT-2140/2145/2150/2160`. Conformance tests select by the backend's declared capabilities (`racing_sim_adapter/test/conformance.py`); a not-applicable test prints `NOT APPLICABLE <id>: ...` and returns (no skip marker), and ADAPT-2150 pins the set.
-The nightly-cleanup work (part C1) added tier 1 `CHECK-1530/1540/1550` (`scripts/tests/test_changed_scope.py`, `test_frozen_pose.py`, `test_raceline_report.py`) and `RACELINE-1500`, `METRICS-1040` (`sim/tests/test_compare.py`: a difference equal to, and one beyond, its tolerance), and tier 2 `METRICS-1030` (`~/finalize`).
-
-The AutoDRIVE part-1 work added tier 1 `CHECK-1610` to `CHECK-1660` (`scripts/tests/test_autodrive_compose.py`, `test_autodrive_record.py`).
-The AutoDRIVE part-4 work added tier 1 `CHECK-1710` to `CHECK-1790` (thirteen IDs, `scripts/tests/test_autodrive_identify.py`, 1715 in `test_autodrive_record.py`) and `BRINGUP-1055` (BRINGUP-1050 now skips the vehicle files in `NOT_GYM_CAST`; 1055 keeps that list to committed, non-gym files).
-
-The AutoDRIVE part-5 work added tier 1 `SIMAD-1010` to `SIMAD-1140` (`ros_ws/src/racing_sim_autodrive/test/test_core.py`).
-
-The AutoDRIVE visual-model work (V1) added tier 1 `DESC-1030` to `DESC-1090` (`racing_vehicle_description/test/test_description.py`, `test_autodrive_description.py`; 1030 parametrises the structure tests over `urdf/descriptions.yaml`), `BRINGUP-1056/1057`, `CHECK-2030` (`scripts/tests/test_autodrive_meshes.py`); tier 2 `DESC-2010`. `CHECK-2020` now loops over every mapped URDF.
-
-The AutoDRIVE part-7 work (our Socket.IO server) added tier 1 `SIMAD-1150` to `SIMAD-1270` (thirteen IDs: the Socket.IO pins, the ROS-free bridge session, the replay schedule, the comma-decimal locale error) `ADAPT-1040` and `ADAPT-1050` (every launch registration carries its own `RACING_SIM_BACKEND`; SIMAD-1150 also checks the running image has the pinned closure, so a stale image fails by name), and tier 2 `SIMAD-2010` to `SIMAD-2050` (the server node against `racing_sim_autodrive.replay`, on an ephemeral port, never the sim's 4567; it runs under the `/test_simad` namespace with every absolute topic remapped, and `SIMAD-2100` fails on any name outside it, so it cannot reach another package's tests on a shared domain). The four `racing_sim_adapter` launch files are registered a second time (`test_adapter_<name>_autodrive`) with `RACING_SIM_BACKEND=autodrive`; `conformance.BACKENDS` holds each backend's launch, its expected not-applicable set and its per-backend expectations (ADAPT-2030 rate, 2130 h, 2145 clock), and the variable defaults to the gym. The tier-1 and tier-2 AutoDRIVE tests need the Socket.IO closure (`docker/dev-tools-requirements.txt`), which the `dev` image carries (SIMAD-1150 fails by name on an older image). The live sim run (port 4567) is a recorded manual step, not a gate.
-
-The AutoDRIVE fix part 7.1 added tier 1 `SIMAD-1310` and `SIMAD-1320` (`ros_ws/src/racing_sim_autodrive/test/test_replay.py`): the replay's loop end frame, and that the loop the conformance launch configures (frames 132 to 337, `test/_replay_loop.py`) moves the car in every 2 s window at recorded pace.
-
-The AutoDRIVE stall work (part 7.2) added tier 1 `SIMAD-1330/1340` (`StallWatch`) and tier 2 `SIMAD-2080` (300 frames at recorded pace under a `/drive` flood, every one answered: red 9/40 before the executor fix, green 40/40 after) and `SIMAD-2090` (the stall WARNING and stack dump). Select one with `colcon test --packages-select racing_sim_autodrive --pytest-args -k test_server_node`: `-k simad_2080` selects nothing, because pytest names a launch test by its file.
-
-The AutoDRIVE part-8 rate work added tier 1 `SIMAD-1280` (`replay.latency_summary`, exact on a known list), `CHECK-2100`, `CHECK-2110`, `CHECK-2120` and `CHECK-2130` (`scripts/tests/test_autodrive_route.py`: socat nodelay and a start that returns at once, a taken port or missing `dev` refused with the probed port checked, stop and the failed-socat cleanup, the relay's TCP_NODELAY on both legs) and tier 2 `SIMAD-2060` (`racing_sim_autodrive.replay --timings-out` writes one `{frame, sent_ns, reply_ns}` row per frame). The offline timing showed the handler is not the bound (docs/agents/autodrive.md), so no handler fix and no test for one was added.
-
-The AutoDRIVE window work (part 2) added tier 1 `CHECK-1670`, `CHECK-1675`, `CHECK-1680` and `CHECK-1685` (`scripts/tests/test_autodrive_gui.py`); the window itself is a manual check recorded in `docs/agents/running-wsl.md`.
-
-The evaluation-isolation work (E1) added tier 2 `EVAL-2030` (one case in each of `test_evaluation_node.py` and `test_evaluation_node_pose.py`: neither the evaluator nor the test node has a topic outside the file's prefix; `test/graph_isolation.py`), and moved EVAL-2010/2020 under `/test_eval2010/`, `/test_eval2020/`.
-The AutoDRIVE isolation work (part 7.3b) added tier 1 `ADAPT-1060` (no `test_adapter_*.py` names a global topic or service; a negative case keeps the scan honest) and tier 2 `ADAPT-2170` (in `test_adapter_contract.py`, so it runs on both rows: the backend has no topic outside its row prefix, via `racing_evaluation/test/graph_isolation.py`). The conformance servers now run under `/test_adapt_gym` and `/test_adapt_autodrive` with every absolute name remapped, and the gym row also remaps `/clock`, so ADAPT-2075's `use_sim_time` consumer remaps `/clock` to match. The tests name topics through `conformance.topic()`.
-
-The min-time work (part 8) added tier 1 `RACELINE-1410/1415/1420/1425/1430/1435/1440/1445/1450/1465/1470` (`raceline/tests`; 1435 is the real chain on the oval, a few seconds), `CHECK-1560/1570`, `BRINGUP-1180` and an extension of `CHECK-1510/1520` for the `path_planning_mintime` region; tier 3 `SIM-3120`; tier 5 `SIM-5060`, which runs a solve only on a night the optimizer code changed (it records that it did not otherwise).
-
-The MOLA mapping work (SLAM part 2) added tier 1 `BRINGUP-1700/1710/1720/1730/1740/1750/1760/1770/1780` (`test_mola_map.py`; 1560 now pins three differing values, including the localization `icp_prior_weight` 5), `EVAL-1550`, `EVAL-1560` (`racing_evaluation`) and `RACELINE-1510`; tier 3 `SIM-3530`; nightly `SIM-5520` gained the grid comparison and `test_sim_5520_rotated_grid_is_named`.
-
-The test-audit work (TA, owner ruling 2026-11-01) removed tier 1 `RACELINE-1500` and `RACELINE-1450`, and one test each from `RACELINE-1410` (`committed_dynamics_and_tyres_load`: the F1TENTH dynamics and tyre values), `RACELINE-1465` (`the_default_out_is_never_under_config_racelines`) and `CHECK-1520` (`path_planning_mintime_region_is_accepted`). They were one-off checks (the 2026-10-28 test audit). The surviving 1410 tests still cover every vehicle's `tum_mintime.yaml`. Counts by ID: 362 - 2 = 360 tier-1.
+- `raceline/bench/` holds measurements, not tests. pytest does not collect it, no gate runs it, and it
+  needs the network.
+- `tests/nightly_regions.yaml` assigns every nightly test to a region (`slam`, `path_planning`,
+  `path_planning_mintime`, `control`, `shared`, and the implicit `static`). CHECK-1510/1520 hold it to
+  the suite.
+- `scripts/tests/test_docs_check.py` (CHECK-2460..2462) and `scripts/tests/test_observer_map.py`
+  (CHECK-2450..2455) test tooling that is not a ROS package: the `gr-roboracer-docs` skill's
+  `docs_check.py`, and `scripts/observer_map.py`, which needs the sourced overlay. Both sit under
+  `scripts/tests/*`, so no lap is selected for them.
+- SIM-5060 solves only on a night the optimizer code changed. On any other night it records that it
+  did not run.
+- The conformance tests select by the backend's declared capabilities
+  (`racing_sim_adapter/test/conformance.py`). A not-applicable test prints `NOT APPLICABLE <id>: ...`
+  and returns, with no skip marker; ADAPT-2150 pins the set. `RACING_SIM_BACKEND` picks the backend
+  (default the gym). The servers run under `/test_adapt_gym` and `/test_adapt_autodrive`, and tests
+  name topics through `conformance.topic()`.
+- A launch test is selected by its file, not its ID: `colcon test --packages-select
+  racing_sim_autodrive --pytest-args -k test_server_node` (`-k simad_2080` selects nothing), and the
+  same for `racing_sim_gym_jax`'s `test_imu_node` (SIMJAX-1540).
+- The tier-1 and tier-2 AutoDRIVE tests need the Socket.IO closure from
+  `docker/dev-tools-requirements.txt`. SIMAD-1150 fails by name on an older image.
+- `run_scenario` takes optional `probes` (`tests/lib/racing_test_keywords/probes.py`); the wiring has
+  no tier-1 test.
+- The live sim (port 4567) and `tests/autodrive/` are outside every gate (ADR 0007), run by
+  `scripts/autodrive_qualify.sh` or by hand.
+- SIM-3750 is local, run by `autodrive_qualify.sh --case fast_lap`.
+- SIM-3760 is local, run by `autodrive_qualify.sh --case corner_sweep --sweep-dir <dir>`.
 
 ## The tests that matter most
 
@@ -221,6 +219,8 @@ The test-audit work (TA, owner ruling 2026-11-01) removed tier 1 `RACELINE-1500`
   samples is zero, so without it a dead estimator looks perfect.
 - **SIM-3100** — dead reckoning must drift past a stated floor over a lap. It is the only test that
   notices noise silently disabled, which would make every localization test vacuous and green.
+- **The catastrophic bounds** (ADR 0008) — loose on purpose. A green localization test means the
+  estimate did not diverge, not that it is good; how good is in `log/reports/` and the benchmark.
 
 ## What stays unverified, deliberately
 
@@ -239,8 +239,18 @@ The test-audit work (TA, owner ruling 2026-11-01) removed tier 1 `RACELINE-1500`
 
 The AutoDRIVE part-8b work (launch switch) added tier 1 `BRINGUP-1580` (a track with no raceline file is driven on its centerline; `track_parameters`) and `BRINGUP-1600` to `BRINGUP-1670` and `BRINGUP-1680` (`test_launch_simulator_arg.py`: `speed_source:=trajectory` refused on a map with no raceline; the `simulator` and `autodrive_bridge` arguments, the autodrive Node, `use_sim_time` following `capability.clock` on every node and estimator, the gym's refusal of `autodrive_roboracer`, autodrive's refusals, `server.yaml` pinned to `source.yaml`/`identified.yaml`), tier 2 `BRINGUP-2030` (the support node's centerline `/trajectory`) and tier 3 `SIM-3610` (`simulator:=autodrive` against the recorded stream, no simulator: `ROS_DOMAIN_ID=<n> python3 -m pytest tests/system/test_sim_3610_autodrive_launch_replay.py`). Counts by ID: 298 + 10 = 308 tier-1, 39 + 1 = 40 tier-2, 12 + 1 = 13 tier-3. The shutdown fix then added tier 2 `SIMAD-2110` and `SIMAD-2111` (`test_server_node_signals.py`: the server exits 0 on one SIGINT, on two a gap apart, and with a client replaying; a plain pytest that starts the server itself), so 40 + 2 = 42 tier-2. `test_launch_runs_on_simulated_time` (no ID) was replaced by `BRINGUP-1630`, which launches both values instead of reading a literal `True`, and keeps its `time_scale` declaration assert; `BRINGUP-1056` now launches `autodrive_roboracer` on `simulator:=autodrive`. `reference_stack.yaml` lists autodrive as a simulator alternative (CHECK-1150: 11 implementations).
 
+The sim-`/imu` work (SLAM part 5a) added tier 1 `SIMJAX-1520/1530` (`test_imu.py`: `/imu` linear acceleration is (Δv/dt, v·ω, +g); none on the first step after a reset), `SIMJAX-1550` (`noise.imu` parses, zero default, negative rejected; no committed scenario sets it), `SIMJAX-1560/1570` (`test_noise.py`: IMU noise seeded and restarted by a reseed; scan and odometry streams bit-identical with it on) and tier 2 `SIMJAX-1540` (`test_imu_node.py`, a launch test selected by file: `colcon test --packages-select racing_sim_gym_jax --pytest-args -k test_imu_node`). Counts by ID: 308 + 5 = 313 tier-1, 42 + 1 = 43 tier-2. SIM-3510 is the proof that MOLA is unmoved (it reads `/imu`'s gyro only).
+
 The AutoDRIVE part-9 work (official devkit bridge) added tier 1 `SIMAD-1400` to `SIMAD-1470` (eight IDs;
 with `BRINGUP-1690`, which replaces `BRINGUP-1610`'s refusal, nine IDs, counted by ID), tier 2 `SIMAD-2200` to `SIMAD-2260`, tier 3
 `SIM-3620`, and the local `tests/autodrive` `SIM-3710/3720`.
+
+The AutoDRIVE part-9.1 fix added tier 2 `SIMAD-2280` (a positive control killed without a goodbye is waited out within one DDS lease, `Listener.wait_until_gone`, or the wait fails naming its topics; two cases, one ID) and tier 1 `SIMAD-1480` (the devkit domain is S+1, or S-1 past 101). Counts by ID: +1 tier-1, +1 tier-2 on the counts above. `SIMAD-2220` now waits for the observer's reset reader to match B's writer first (the `ready=` hook `SIMAD-2200` uses): harness hardening, no new ID and no red (the flake is load-dependent).
+
+The AutoDRIVE part-9.2 fix added tier 2 `SIMAD-2290` (TF the positive control wrote before it stopped, still queued in the listener after the graph emptied, is set aside by `Listener.mark()` on its DDS `source_timestamp` and never counted in SIMAD-2250's window; 9.1's `wait_until_gone` had removed the 1 s spin that used to drain it). Counts by ID: +1 tier-2.
+
+The D1 data-repo migration added tier 1 `CHECK-2320`, `CHECK-2330`, `CHECK-2340`, `CHECK-2350`, `CHECK-2360`, `SIMJAX-1600`, `BRINGUP-1960`, `BRINGUP-1970` and `RACELINE-1530` (nine IDs, counted by ID, on the counts above; the counting topic is still open). `CHECK-1420` keeps its ID and loses its `--ready` scope half to `CHECK-2320` (owner ruling E6). The track data is read from the `third_party/GR-roboracer-data` submodule, so every tier needs it initialised (repo-gotchas #44).
+
+The F-T0 fix added tier 1 `CHECK-2560`..`CHECK-2564` and `CHECK-2570`..`CHECK-2573`, and tier 2 `METRICS-2020` and `METRICS-2030`.
 
 The heavy-lane work added tier 1 `CHECK-2400` to `CHECK-2430` (`scripts/tests/test_heavy_lane.py`).

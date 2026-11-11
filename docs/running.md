@@ -57,7 +57,11 @@ simulator's lap times, collisions and the qualification score (ten middle laps p
 container. Artifacts (`qualification.json`, `porto_run.npz`, `launch.log`) land in `.scratch-out/autodrive_qualify/`.
 `--workdir` selects a checkout inside `dev` and `--dry-run` prints the three commands without running them.
 
-The minimum-curvature line from `config/racelines/`, raced at its own speed:
+`scripts/autodrive_qualify.sh --domain 64 --case fast_lap` runs the fast car on its committed minimum-time Porto line for two
+laps (the drive is about 20 s; the command also recreates the simulator container and starts the stack, as qualification does) and prints the stack's and the simulator's lap times, collisions and peak speed; it writes `fast_lap.json`
+to `.scratch-out/autodrive_fast_lap/`.
+
+The minimum-curvature line from `third_party/GR-roboracer-data/tracks/<Map>/racelines/`, raced at its own speed:
 
 ```bash
 ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios/spielberg.yaml planner:=optimized_raceline raceline_optimizer:=tum_mincurv_iqp speed_source:=trajectory
@@ -95,15 +99,35 @@ docker compose -f docker/docker-compose.yaml run --rm -T fast-sim python -m sim.
   --output tests/golden/baseline.json
 
 # tests/golden/spielberg_baseline.json (SIM-3090): the same flags with
-#   --track config/tracks/spielberg.yaml --scenario spielberg --max-steps 30000
+#   --track config/tracks/spielberg.yaml --scenario spielberg --max-steps 30000 \
+#   --maps-root third_party/GR-roboracer-data/tracks/Spielberg/maps
+# (otherwise it writes an untracked config/scenarios/maps/Spielberg/)
 ```
 
 The controller flags are `config/vehicles/f1tenth_default.yaml`'s values; `python sim/rollout.py`
 fails with `ModuleNotFoundError: sim`, so run it as a module. It regenerates the gym map assets
-under `config/scenarios/maps` from the canonical track, byte-identically. The live scenario must
+under its `--maps-root` (`config/scenarios/maps` for analytic_circle, the track's `maps` folder in the data repo for a real track) from the canonical track, byte-identically. The live scenario must
 not set physics parameters the rollout does not (SIMJAX-1060).
 
 ## When a run misbehaves
 
 Symptoms and fixes (latched stop, silent topics, stale launches) are in
 [Setup](setup.md#troubleshooting).
+
+## Comparing implementations
+
+`python3 scripts/benchmark.py run` drives every implementation of a role side by side and prints
+implementation-by-seed tables. Roles: `localization` (every pose source on `spielberg` and
+`spielberg_1080`, open loop) and `planning` (every committed Spielberg line on the default and
+gym-limits vehicles). Default seeds are 42, 1030, 7 and 2026; `--role`, `--seeds` and `--scenarios`
+narrow a run. Output goes to `log/benchmark/<role>/report.md` and `report.json`.
+`benchmark.py render <report.json>` reprints a saved report and `benchmark.py history <dirs>` tabulates
+saved ones.
+
+The benchmark ranks nothing and gates nothing: a gym-limits run that does not finish is data. It
+exits 1 on a structural failure: a default-vehicle run that does not finish, a latched, over-budget or
+infrastructure-failed run on any row, a method it cannot run, or a missing record. Errors are scored against
+simulator ground truth. A full run takes about 34 minutes (localization) and 15 minutes (planning) on a
+CI runner; run it on a private `ROS_DOMAIN_ID`. The Benchmark workflow runs it on a PR that adds an
+implementation to the reference stack, bumps the data submodule (any change to its maps or racelines; it then runs the planning benchmark), or edits
+`scripts/benchmark_runs.py`, and by hand with `gh workflow run benchmark.yaml -f role=all`.

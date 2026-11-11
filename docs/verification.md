@@ -3,7 +3,10 @@
 The measurements on [Results](results.md) and the behaviour of each Available implementation in the
 README's capability matrix are backed by tests that run on every pull request or every night. Two
 things are not. The Mapping demonstration on Results is a recording, not a test. GPU runs are not tested in CI: the GPU image's structure is checked on every pull request, but
-building and running it is a manual check on a GPU machine. Rows marked Planned or Exploratory are
+building and running it is a manual check on a GPU machine. Rows marked Experimental are selectable and compared by the [benchmark command](running.md#comparing-implementations) where the role has one, but not yet verified. A test here proves an
+implementation works (it laps, does not collide, does not latch, and its error stays inside a loose
+catastrophic bound); how well it works is on [Results](results.md) and in the [benchmark command](running.md#comparing-implementations), not a pass
+condition. Rows marked Planned or Exploratory are
 not claims of working code. This page says what each of five layers proves, then how to run the checks.
 
 ## 1. Unit tests
@@ -37,18 +40,20 @@ the contract holds without a full lap.
 
 ## 3. System tests
 
-These tests launch the real stack and run a seeded lap, then compare it to a committed record or
-bound it against ground truth.
+These tests launch the real stack and run a seeded lap, then compare it to a committed record or check
+it against ground truth for divergence. Error and lap time are reported, not bounded, past the
+catastrophic bounds of ADR 0008: ATE RMSE 5 m, availability 0.90, map median 1 m.
 
 - SIM-3020: a seeded lap through the real launch completes.
 - SIM-3040: live metrics match `tests/golden/baseline.json` within tolerance.
 - SIM-3090: the Spielberg lap matches `tests/golden/spielberg_baseline.json`.
-- SIM-3110: the Spielberg lap on the committed minimum-curvature line (`planner:=optimized_raceline speed_source:=trajectory`, default vehicle, seed 42) completes with 0 collisions and 0 saturation events, at its own measured lap time of 113.08 s (tolerance 0.05 s).
-- SIM-3120: the same lap on the committed minimum-time line (`raceline_optimizer:=tum_mintime`), at its own measured lap time of 112.12 s (tolerance 0.05 s).
-- SIM-3070: with the car driving on ground truth, `slam_toolbox` publishes an estimate whose RMSE against ground truth is within 4.0 m. The test is open loop and does not claim the estimate is good.
-- SIM-3510: with the car driving on ground truth (open loop), `mola` localizes on the map MOLA built itself (1080 beams, 1x, seed 42): position RMSE within 2.5 m, maximum within 4.5 m, available in at least 0.99 of samples (five laps measured 0.704-2.131 m, 1.414-4.149 m, 0.9975 or better); the offline score must agree.
-- SIM-3530: one MOLA mapping lap at 1x (seed 42) produces a grid whose wall 95th-percentile deviation from the track's true walls is within 1.96 m (median 0.52 m, mean offset 0.21 m, at least 34 900 wall cells; ten laps measured 0.79-1.57 m, 0.20-0.41 m, +0.077..+0.160 m, 43 631 or more cells), and `nav2_map_server` serves the committed grid. The 5 cm target is reported, not gated.
-- SIM-3080: with the car driving on ground truth (open loop), `amcl` publishes an estimate on the saved Spielberg map over a full lap with 0 collisions; the estimate is available in at least 0.99 of samples and its position RMSE is within 0.65 m (the seed-42 bound).
+- SIM-3110: the Spielberg lap on the committed minimum-curvature line (`planner:=optimized_raceline speed_source:=trajectory`, default vehicle, seed 42) completes with 0 collisions and 0 saturation events. Its lap time is reported (measured 113.08 s).
+- SIM-3120: the same lap on the committed minimum-time line (`raceline_optimizer:=tum_mintime`). Its lap time is reported (measured 112.12 s).
+- SIM-3070: with the car driving on ground truth (open loop), `slam_toolbox` publishes an estimate over a full lap that stays inside the catastrophic bounds. RMSE and availability are reported (three runs measured 2.43-2.88 m). The test does not claim the estimate is good.
+- SIM-3550: the same on `spielberg_1080` with the scenario-selected 1080-beam file, and the map it builds has a median wall error within 1 m. RMSE, maximum and map p95 are reported (six laps measured 0.81-1.25 m, 1.53-2.24 m, 0.92-1.93 m). The offline score must agree on the gates.
+- SIM-3510: `mola` localizes on the map MOLA built itself (1080 beams, 1x, seed 42) inside the catastrophic bounds; RMSE, maximum and availability are reported (five laps measured 0.704-2.131 m).
+- SIM-3530: one MOLA mapping lap (1x, seed 42) produces a grid with at least 21 800 wall cells and a median wall error within 1 m, and `nav2_map_server` serves the committed grid. The p95, mean offset and the 5 cm target are reported (ten laps measured p95 0.79-1.57 m).
+- SIM-3080: `amcl` on the saved Spielberg map (open loop) completes a lap with 0 collisions inside the catastrophic bounds; RMSE and availability are reported (seed-42 runs measured 0.14-0.44 m).
 - SIM-3610: `simulator:=autodrive` launches the whole stack against the recorded AutoDRIVE stream (no simulator): every node on wall time, the controller's speed reaches the replies, and the supervisor raises no stale-input stop while the frames last. It cannot see the simulator image or its real rate.
 
 ## 4. Acceptance tests (Robot Framework)
@@ -57,8 +62,8 @@ Black-box cases on the composed stack, one per behaviour a user can name:
 
 - `Vehicle Completes Baseline Lap Safely` (ACC-4010)
 - `Vehicle Stops When Track Limits Violated` (ACC-4020)
-- `Localization Estimate Tracks Ground Truth: slam_toolbox` and `Localization Estimate Tracks Ground Truth: amcl` (ACC-4030)
-- `Localization Estimate Tracks Ground Truth: mola` (ACC-4510), the same case as ACC-4030 on MOLA's own map at 2.5 m RMSE
+- `Localization Estimate Tracks Ground Truth: slam_toolbox` and `Localization Estimate Tracks Ground Truth: amcl` (ACC-4030): the estimate stays inside the catastrophic bounds; its error is reported
+- `Localization Estimate Tracks Ground Truth: mola` (ACC-4510), the same case on MOLA's own map
 - `Vehicle Completes A Lap Driving On Its Own Estimate` (ACC-4040)
 - `Vehicle Laps The Raceline Driving On Its Own Estimate` (ACC-4040), the min-curvature line on amcl's estimate: a completed lap, 0 collisions and clearance above 0.08 m; estimate accuracy is left to SIM-3080 and ACC-4030
 
@@ -76,13 +81,12 @@ cross-product of tracks, implementations and seeds, runs on the seed-42 job of e
 layer 5 test. Its track dimension is Spielberg alone today.
 
 - SIM-5010: the committed occupancy grid regenerates from the survey.
-- SIM-5020: `slam_toolbox` and `amcl` over seeds 42 and 1030 on Spielberg.
+- SIM-5020: `slam_toolbox` and `amcl` over seeds 42 and 1030 on Spielberg: every lap completes with 0 collisions inside the catastrophic bounds; the error is reported.
 - SIM-5520: the committed MOLA map regenerates from its recorded command. The inputs and the start-pose transform must match exactly and the voxels and the occupancy grid land within a measured nearest-neighbour p95 (1.9 m each); position 0.05 m and yaw 0.2 degrees. A grid rotated 90 degrees is named.
-- SIM-5030: the `amcl` run-to-run spread, over seeds 42, 1030, 1, 7, 99, 123 and 3, with 5 runs per seed.
+- SIM-5030: the `amcl` run-to-run spread over seeds 42, 1030, 1, 7, 99, 123 and 3, 5 runs per seed, reported and tracked night to night; it fails only on a lap that does not complete or collides.
 - SIM-5040: every committed minimum-curvature raceline regenerates from its recorded command. The inputs (survey map, vehicle, TUM pins, parameters) must match exactly and the line must land within a measured tolerance of the committed one.
 - SIM-5060: each committed minimum-time line regenerates from its committed reference line (inputs exact, line within the same tolerance as SIM-5040), but only on a night the optimizer code changed (the fork pin or the wrapper's files); on any other night it records that it did not run and passes.
-- SIM-5050: the raceline comparison report, both vehicles by every committed line by seeds 42, 1030, 7 and 2026. A gym-limits run that does not finish is recorded with the distance it reached; a default-vehicle run that does not finish fails the test. No lap time or ranking is asserted.
-- SIM-5510: every pose source the build has, on `spielberg` (64 beams) and `spielberg_1080` (1080 beams, 270 degrees), by seeds 42, 1030, 7 and 2026, open loop. It records the error, availability, changed-pose rate, scan rate, CPU per scan and the produced map's distance to the true walls, and writes `log/pose-source-report/`. A method the build lacks is recorded as absent. Only structure is asserted (a record per row, no latch, a finite error, probes that heard something); no value is bounded and no method is ranked.
+- Method comparison is not a nightly test: the [benchmark command](running.md#comparing-implementations) runs on demand, or in the non-blocking Benchmark job on a PR that adds an implementation, and never nightly.
 
 ## Running the checks
 

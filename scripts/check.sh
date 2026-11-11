@@ -52,6 +52,25 @@ region="${2:-}"
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# The reports the tier-3/4/5 tests write (ADR 0008) are printed when the run
+# ends, red or green: pytest captures a passing test's output, and a red run
+# is the one whose numbers matter. An EXIT trap, because `set -e` would skip
+# a line after the test sections; it never changes the exit status.
+case "$mode" in
+--ready | --full | --nightly | --nightly-region)
+    report_since="$(date +%s)"
+    print_quality_reports() {
+        local status=$?
+        echo "==> reports"
+        PYTHONPATH="tests/lib${PYTHONPATH:+:$PYTHONPATH}" python3 -m \
+            racing_test_keywords.report --print log/reports \
+            --since "$report_since" || true
+        exit "$status"
+    }
+    trap print_quality_reports EXIT
+    ;;
+esac
+
 # What --fast scopes to. Every array is initialised empty up front (set -u)
 # so the whole-tree branches below never reference an unset scope_* array.
 scope_whole_tree=1

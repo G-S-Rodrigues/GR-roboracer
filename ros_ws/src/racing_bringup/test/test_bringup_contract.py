@@ -7,6 +7,8 @@ import pytest
 
 PACKAGE_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = PACKAGE_ROOT.parents[2]
+DATA = REPOSITORY_ROOT / "third_party" / "GR-roboracer-data"
+TRACKS = DATA / "tracks"
 LAUNCH_FILE = PACKAGE_ROOT / "launch" / "sim_pure_pursuit.launch.py"
 VEHICLE_CONFIG = (
     REPOSITORY_ROOT / "config" / "vehicles" / "f1tenth_default.yaml"
@@ -17,7 +19,7 @@ VEHICLE_FILES = sorted((REPOSITORY_ROOT / "config" / "vehicles").glob("*.yaml"))
 # pinned to its own source (CHECK-1790) and to its own URDF (BRINGUP-1057).
 # A name here must be a committed file, or the exclusion silently outlives
 # the file.
-NOT_GYM_CAST = frozenset({"autodrive_roboracer"})
+NOT_GYM_CAST = frozenset({"autodrive_roboracer", "autodrive_roboracer_fast"})
 GYM_CAST_FILES = [p for p in VEHICLE_FILES if p.stem not in NOT_GYM_CAST]
 
 
@@ -133,12 +135,7 @@ def test_bringup_1010_the_scenario_selects_every_nodes_track() -> None:
     )
     track = str(REPOSITORY_ROOT / "config" / "tracks" / "spielberg.yaml")
     raceline = str(
-        REPOSITORY_ROOT
-        / "config"
-        / "scenarios"
-        / "maps"
-        / "Spielberg"
-        / "Spielberg_raceline.csv"
+        TRACKS / "Spielberg" / "maps" / "Spielberg" / "Spielberg_raceline.csv"
     )
     assert spielberg["racing_safety_supervisor"]["track_path"] == track
     assert spielberg["racing_metrics"]["track_path"] == track
@@ -280,7 +277,11 @@ def test_bringup_1080_every_system_and_acceptance_test_has_an_owner() -> None:
 
     stack = module.load_stack(REPOSITORY_ROOT)
 
-    assert [i.key for i in stack.implementations if not i.verified_by] == []
+    assert [
+        i.key
+        for i in stack.implementations
+        if not i.verified_by and i.status != "experimental"
+    ] == []
     discovered = set(stack.system_tests) | set(stack.acceptance_tags)
     claimed = {t for i in stack.implementations for t in i.verified_by}
     assert sorted(discovered - claimed - {stack.reference_lap}) == []
@@ -520,13 +521,7 @@ def test_bringup_1060_the_scenario_selects_the_occupancy_grid() -> None:
         REPOSITORY_ROOT / "config" / "scenarios" / "spielberg.yaml"
     )
     grid = (
-        REPOSITORY_ROOT
-        / "config"
-        / "scenarios"
-        / "maps"
-        / "Spielberg"
-        / "slam"
-        / "Spielberg.yaml"
+        TRACKS / "Spielberg" / "maps" / "Spielberg" / "slam" / "Spielberg.yaml"
     )
     assert spielberg["map_server"]["yaml_filename"] == str(grid)
     assert grid.is_file(), "the committed occupancy grid is missing"
@@ -552,19 +547,14 @@ def test_bringup_1150_the_planner_selects_the_committed_raceline(
     vehicle: Path, version: str
 ) -> None:
     """BRINGUP-1150: `planner=optimized_raceline` loads
-    `config/racelines/<track>/<vehicle version>/<optimizer>.csv`, whichever
+    `<data>/tracks/<Map>/racelines/<vehicle version>/<optimizer>.csv`, whichever
     vehicle is named; the default planner still loads the scenario's own
     `<map>_raceline.csv`, byte for byte as before.
     """
     from racing_bringup.scenario_parameters import track_parameters
 
     expected = (
-        REPOSITORY_ROOT
-        / "config"
-        / "racelines"
-        / "spielberg"
-        / version
-        / "tum_mincurv_iqp.csv"
+        TRACKS / "Spielberg" / "racelines" / version / "tum_mincurv_iqp.csv"
     )
     optimized = track_parameters(
         SPIELBERG_SCENARIO,
@@ -583,7 +573,9 @@ def test_bringup_1150_the_planner_selects_the_committed_raceline(
 
 def _raceline_world(tmp_path: Path) -> tuple[Path, Path]:
     """A copy of the Spielberg config tree small enough to corrupt one field
-    of: scenario, track, vehicle and the default vehicle's raceline."""
+    of: scenario, track, vehicle and the default vehicle's raceline. It
+    mirrors the repository: the scenario's relative `map_directory` reaches
+    `<tmp>/third_party/GR-roboracer-data/tracks/Spielberg/maps`."""
     import shutil
 
     config = tmp_path / "config"
@@ -595,15 +587,11 @@ def _raceline_world(tmp_path: Path) -> tuple[Path, Path]:
         config / "tracks",
     )
     shutil.copy(DEFAULT_VEHICLE, config / "vehicles")
-    target = config / "racelines" / "spielberg" / "f1tenth-default-v1"
+    tracks = tmp_path / "third_party" / "GR-roboracer-data" / "tracks"
+    (tracks / "Spielberg" / "maps" / "Spielberg").mkdir(parents=True)
+    target = tracks / "Spielberg" / "racelines" / "f1tenth-default-v1"
     target.mkdir(parents=True)
-    source = (
-        REPOSITORY_ROOT
-        / "config"
-        / "racelines"
-        / "spielberg"
-        / "f1tenth-default-v1"
-    )
+    source = TRACKS / "Spielberg" / "racelines" / "f1tenth-default-v1"
     for suffix in (".csv", ".yaml"):
         shutil.copy(source / f"tum_mincurv_iqp{suffix}", target)
     return config / "scenarios" / "spielberg.yaml", config / "vehicles" / (
@@ -631,10 +619,14 @@ def test_bringup_1160_the_resolver_fails_closed(tmp_path: Path) -> None:
 
     scenario, vehicle = _raceline_world(tmp_path)
     sidecar = (
-        scenario.parents[1]
+        scenario.parents[2]
+        / "third_party"
+        / "GR-roboracer-data"
+        / "tracks"
+        / "Spielberg"
         / "racelines"
-        / "spielberg"
-        / ("f1tenth-default-v1/tum_mincurv_iqp.yaml")
+        / "f1tenth-default-v1"
+        / "tum_mincurv_iqp.yaml"
     )
     # The unmodified copy resolves, so every raise below is the one change.
     assert _resolve(scenario, vehicle)
@@ -691,6 +683,64 @@ def test_bringup_1160_the_resolver_fails_closed(tmp_path: Path) -> None:
     contract = REPOSITORY_ROOT / "config" / "scenarios" / "contract_test.yaml"
     with pytest.raises(FileNotFoundError, match="analytic_circle"):
         _resolve(contract, DEFAULT_VEHICLE)
+
+
+def test_bringup_1960_the_raceline_is_found_by_the_scenarios_map_name(
+    tmp_path: Path,
+) -> None:
+    """BRINGUP-1960: the committed raceline is
+    `tracks/<Map>/racelines/<vehicle version>/<optimizer>.csv`, the folder
+    named by the scenario's `environment.map` (case kept) and found from its
+    `map_directory`. A line under the lower-case track-file stem is not it."""
+    import shutil
+
+    scenario, vehicle = _raceline_world(tmp_path)
+    tracks = tmp_path / "third_party" / "GR-roboracer-data" / "tracks"
+    folder = tracks / "Spielberg" / "racelines" / "f1tenth-default-v1"
+    # A decoy under the track stem, so only the map name can pick the line.
+    decoy = tracks / "spielberg" / "racelines" / "f1tenth-default-v1"
+    shutil.copytree(folder, decoy)
+
+    resolved = _resolve(scenario, vehicle)
+    assert resolved["racing_bringup_support"]["raceline_path"] == str(
+        folder / "tum_mincurv_iqp.csv"
+    )
+
+    (folder / "tum_mincurv_iqp.csv").unlink()
+    with pytest.raises(FileNotFoundError, match="no committed raceline"):
+        _resolve(scenario, vehicle)
+
+
+def test_bringup_1970_the_init_hint_names_the_submodule_only_if_it_is_absent(
+    tmp_path: Path,
+) -> None:
+    """BRINGUP-1970: a missing raceline names `git submodule update --init
+    third_party/GR-roboracer-data` only when the scenario's map directory is
+    absent (an uninitialised submodule). A present map with no line, and a
+    scenario with no committed raceline at all (contract_test), do not."""
+    import shutil
+
+    hint = "git submodule update --init"
+    scenario, vehicle = _raceline_world(tmp_path)
+    tracks = tmp_path / "third_party" / "GR-roboracer-data" / "tracks"
+
+    (tracks / "Spielberg" / "racelines" / "f1tenth-default-v1").joinpath(
+        "tum_mincurv_iqp.csv"
+    ).unlink()
+    with pytest.raises(FileNotFoundError) as present:
+        _resolve(scenario, vehicle)
+    assert hint not in str(present.value)
+
+    shutil.rmtree(tracks / "Spielberg" / "maps")
+    with pytest.raises(FileNotFoundError) as absent:
+        _resolve(scenario, vehicle)
+    assert hint in str(absent.value)
+    assert "third_party/GR-roboracer-data" in str(absent.value)
+
+    contract = REPOSITORY_ROOT / "config" / "scenarios" / "contract_test.yaml"
+    with pytest.raises(FileNotFoundError) as circle:
+        _resolve(contract, DEFAULT_VEHICLE)
+    assert hint not in str(circle.value)
 
 
 def _node_parameters(context, node) -> list:
@@ -802,10 +852,9 @@ def test_bringup_1170_the_launch_selects_the_planner_and_speed_source(
     support = _launched(context, module, "racing_bringup")
     controller = _launched(context, module, "racing_controller_baseline")
     assert support["raceline_path"] == str(
-        REPOSITORY_ROOT
-        / "config"
+        TRACKS
+        / "Spielberg"
         / "racelines"
-        / "spielberg"
         / "f1tenth-default-v1"
         / "tum_mincurv_iqp.csv"
     )
@@ -828,13 +877,14 @@ def test_bringup_1180_every_raceline_optimizer_resolves_per_vehicle(
 ) -> None:
     """BRINGUP-1180: `raceline_optimizer:=` offers exactly the optimizers
     whose lines are committed (the stems of
-    `config/racelines/spielberg/*/*.csv`), and each value resolves to its
-    own existing line for both vehicles. A committed line the tuple omits,
-    or a value with no line, fails here rather than at launch time.
+    `tracks/Spielberg/racelines/*/*.csv` in the data repo), and each value
+    resolves to its own existing line for both vehicles. A committed line
+    the tuple omits, or a value with no line, fails here rather than at
+    launch time.
     """
     from racing_bringup.scenario_parameters import RACELINE_OPTIMIZERS
 
-    committed = REPOSITORY_ROOT / "config" / "racelines" / "spielberg"
+    committed = TRACKS / "Spielberg" / "racelines"
     assert set(RACELINE_OPTIMIZERS) == {
         line.stem for line in committed.glob("*/*.csv")
     }
@@ -950,6 +1000,143 @@ def test_bringup_1570_warns_when_mola_is_driven_on_its_own_estimate(
     assert len(closed) == 1 and "drive_on_estimate" in closed[0]
     assert warnings_for(pose_source="mola", drive_on_estimate="false") == []
     assert warnings_for(pose_source="amcl", drive_on_estimate="true") == []
+
+
+SLAM_TOOLBOX_64 = (
+    REPOSITORY_ROOT / "config" / "localization" / "slam_toolbox_online.yaml"
+)
+SLAM_TOOLBOX_1080 = (
+    REPOSITORY_ROOT
+    / "config"
+    / "localization"
+    / "slam_toolbox_online_1080.yaml"
+)
+
+
+def _slam_toolbox_configuration(module, context) -> Path:
+    """The parameter file the launch hands slam_toolbox.
+
+    `_launched` keeps dict entries only, so a file path is invisible to it:
+    read it from the node's own parameter list instead.
+    """
+    from launch.utilities import perform_substitutions
+
+    nodes = [
+        node
+        for node in module._launch_nodes(context, "", "")
+        if getattr(node, "_Node__package", None) == "slam_toolbox"
+    ]
+    assert len(nodes) == 1
+    files = []
+    for entry in _node_parameters(context, nodes[0]):
+        if isinstance(entry, dict):
+            continue
+        if hasattr(entry, "evaluate"):
+            entry = entry.evaluate(context)
+        elif isinstance(entry, tuple):
+            entry = perform_substitutions(context, list(entry))
+        files.append(Path(entry).resolve())
+    assert len(files) == 1, files
+    return files[0]
+
+
+def test_bringup_1800_slam_toolbox_config_is_a_launch_argument(
+    monkeypatch, tmp_path
+) -> None:
+    """BRINGUP-1800: `slam_toolbox_config:=<file>` is the parameter file
+    slam_toolbox loads, empty means the one the launch chooses, and a wrong
+    value is an error rather than a fallback.
+
+    The argument exists so the 64-beam file stays runnable on any scenario
+    (ADR 0005), so a car with no scenario can name its own, and so a variant
+    can be measured without editing a tracked file. It is resolved only for
+    `pose_source:=slam_toolbox`: given to another source it would be ignored
+    without a word.
+    """
+    import shutil
+
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    scenario = "config/scenarios/spielberg.yaml"
+
+    module, context = _launch_context(
+        scenario=scenario, pose_source="slam_toolbox"
+    )
+    assert _slam_toolbox_configuration(module, context) == SLAM_TOOLBOX_64
+
+    copy = tmp_path / "variant.yaml"
+    shutil.copy(SLAM_TOOLBOX_64, copy)
+    module, context = _launch_context(
+        scenario=scenario,
+        pose_source="slam_toolbox",
+        slam_toolbox_config=str(copy),
+    )
+    assert _slam_toolbox_configuration(module, context) == copy.resolve()
+
+    missing = tmp_path / "no_such_file.yaml"
+    module, context = _launch_context(
+        scenario=scenario,
+        pose_source="slam_toolbox",
+        slam_toolbox_config=str(missing),
+    )
+    with pytest.raises(RuntimeError, match="no_such_file.yaml"):
+        module._launch_nodes(context, "", "")
+
+    module, context = _launch_context(
+        scenario=scenario,
+        pose_source="amcl",
+        slam_toolbox_config=str(copy),
+    )
+    with pytest.raises(RuntimeError, match="slam_toolbox_config"):
+        module._launch_nodes(context, "", "")
+
+
+def test_bringup_1810_the_scenario_selects_the_slam_toolbox_file(
+    monkeypatch, tmp_path
+) -> None:
+    """BRINGUP-1810: with no `slam_toolbox_config`, the launch hands
+    slam_toolbox the file made for the scenario's lidar - 64 beams the
+    original, 1080 beams the 1080 file - and a beam count it has no file for
+    is an error naming the known counts and the override, never the nearest
+    file (a silent mismatch is what part 8 measured at 7-9 m).
+
+    Every committed scenario is covered, so a new one must declare a count
+    this table knows or fail here rather than in a lap.
+    """
+    import yaml
+
+    monkeypatch.chdir(REPOSITORY_ROOT)
+    expected = {64: SLAM_TOOLBOX_64, 1080: SLAM_TOOLBOX_1080}
+    scenarios = sorted(
+        (REPOSITORY_ROOT / "config" / "scenarios").glob("*.yaml")
+    )
+    assert scenarios
+    for scenario in scenarios:
+        beams = yaml.safe_load(scenario.read_text())["parameters"]["num_beams"]
+        module, context = _launch_context(
+            scenario=str(scenario), pose_source="slam_toolbox"
+        )
+        assert (
+            _slam_toolbox_configuration(module, context) == expected[beams]
+        ), scenario.name
+
+    document = yaml.safe_load(
+        (REPOSITORY_ROOT / "config/scenarios/spielberg.yaml").read_text()
+    )
+    document["parameters"]["num_beams"] = 720
+    base = REPOSITORY_ROOT / "config" / "scenarios"
+    document["track"] = str((base / document["track"]).resolve())
+    document["map_directory"] = str(
+        (base / document["map_directory"]).resolve()
+    )
+    odd = tmp_path / "odd.yaml"
+    odd.write_text(yaml.safe_dump(document))
+    module, context = _launch_context(
+        scenario=str(odd), pose_source="slam_toolbox"
+    )
+    with pytest.raises(
+        RuntimeError, match=r"(?s)64.*1080.*slam_toolbox_config"
+    ):
+        module._launch_nodes(context, "", "")
 
 
 def _description_share():

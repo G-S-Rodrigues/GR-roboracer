@@ -15,6 +15,7 @@ import time
 import tomllib
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 from raceline import diagnose, verify
@@ -34,9 +35,12 @@ from raceline.optimize import (
     MINTIME_THREADS,
     MINTIME_TYRE_SET,
     OPTIMIZERS,
+    REPROFILE_LIMIT_SCALE,
     Raceline,
+    _lap_time,
     mintime_chain,
     optimize,
+    reprofile_speed,
     tum_ini,
     tum_mintime_ini,
     write_raceline_csv,
@@ -45,7 +49,9 @@ from raceline.track import load_track
 from raceline.vehicle import VehicleLimits, load_tyres, load_vehicle
 
 PACKAGE = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = PACKAGE.parent / "config" / "racelines"
+# The data repo's tracks root: a record goes to
+# `<out-dir>/<Map>/racelines/<vehicle version>/` (ADR 0009).
+DEFAULT_OUT = PACKAGE.parent / "third_party" / "GR-roboracer-data" / "tracks"
 CODE_FILES = (
     "raceline/__main__.py",
     "raceline/extract.py",
@@ -126,7 +132,14 @@ def _parser() -> argparse.ArgumentParser:
         "--plots",
         type=Path,
         help="where the diagnostic plots go (default log/raceline/<track>/"
-        "<vehicle>/<optimizer>/, never config/racelines/)",
+        "<vehicle>/<optimizer>/, never the data repo)",
+    )
+    p.add_argument(
+        "--reprofile-speed",
+        action="store_true",
+        help="tum_mintime only: re-profile the solved speed on the exported "
+        "path to 0.995 x the GGV a_y and 0.995 x the GGV / machines a_x "
+        "(optimize.reprofile_speed)",
     )
     p.add_argument("--no-plots", action="store_true")
     p.add_argument("--name")
@@ -251,6 +264,8 @@ def _provenance(
         params["ini"] = tum_ini(vehicle)
     else:
         params.update(_mintime_parameters(args, vehicle, mintime["reference"]))
+        if args.reprofile_speed:
+            params["speed_reprofile"] = {"limit_scale": REPROFILE_LIMIT_SCALE}
         vehicle_doc["dynamics_sha256"] = _sha256(vehicle.dynamics_path)
         vehicle_doc["tyres_sha256"] = _sha256(
             load_tyres(vehicle, MINTIME_TYRE_SET).path
@@ -297,12 +312,20 @@ def main(argv: list[str] | None = None) -> int:
             f"--reference goes with --optimizer tum_mintime, not "
             f"{args.optimizer}"
         )
+    if args.reprofile_speed and not mintime:
+        sys.exit(
+            f"--reprofile-speed goes with --optimizer tum_mintime, not "
+            f"{args.optimizer}"
+        )
     if args.margin is None:
         args.margin = DEFAULT_MARGINS[args.optimizer]
     if args.passes is None:
         args.passes = DEFAULT_PASSES[args.optimizer]
     stem = (args.map or args.track).stem.lower()
     name = args.name or stem
+    # The folder is keyed by the map file's stem with its case kept (the
+    # scenario's `environment.map`); `name` is only the record's `track`.
+    map_key = (args.map or args.track).stem
     vehicle: VehicleLimits = load_vehicle(args.vehicle)
 
     try:
@@ -332,7 +355,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    folder = Path(args.out_dir) / name / vehicle.version
+    folder = Path(args.out_dir) / map_key / "racelines" / vehicle.version
     scratch = tempfile.TemporaryDirectory()
     solver = None
     reference_csv = args.reference
@@ -350,6 +373,18 @@ def main(argv: list[str] | None = None) -> int:
                 reference_csv=args.reference,
                 reference_out=reference_csv,
             )
+            if args.reprofile_speed:
+                raw = line
+                line = reprofile_speed(raw, vehicle)
+                raw_r = verify._limit_ratios(raw, vehicle)
+                print(
+                    f"speed reprofile: lap estimate {_lap_time(raw):.3f} -> "
+                    f"{_lap_time(line):.3f} s, "
+                    f"{int(np.sum(line.v < raw.v))} points lowered, raw max "
+                    f"a_y ratio {raw_r['ay_ratio'].max():.4f}, a_x ratio "
+                    f"{raw_r['ax_ratio'].max():.4f}",
+                    file=sys.stderr,
+                )
             solver = {
                 "status": status["status"],
                 "iterations": status["iterations"],

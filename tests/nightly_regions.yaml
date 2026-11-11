@@ -6,6 +6,7 @@
 # 2026-10-24).
 slam:
   - SIM-3070
+  - SIM-3550
   - SIM-3080
   - SIM-3100
   - SIM-3510
@@ -17,11 +18,9 @@ slam:
   - SIM-5010
   - SIM-5020
   - SIM-5030
-  - SIM-5510
 path_planning:
   - SIM-3110
   - SIM-5040
-  - SIM-5050
 path_planning_mintime:
   - SIM-3120
   - SIM-5060

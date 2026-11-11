@@ -82,11 +82,20 @@ Traps any task in this repository can hit. Each one cost real time at least once
     unrecoverable stop during startup, on a graph that is otherwise perfectly healthy. Symptom: an
     emergency stop already latched at t=0, with no fault anywhere in the logs. The fix is a
     deterministic t=0 — wait for every participant, then call the sim node's `~/reset` — never a
-    longer timeout. That wait also covers the supervisor's `~/clock_received` (its first `/clock`
-    delivery). The working explanation, which the owner ruled on and nobody measured, is that a
+    longer timeout. The working explanation, which the owner ruled on and nobody measured, is that a
     best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
     STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
     latch (Step 1) and 1 of 48 lag runs (Step A).
+    The runner proves t=0 by delivery on each link a seeded metric reads, not by discovery (in 21 of
+    72 launches the sim's endpoints took 0.15-1.07 s to match). The links: the supervisor's
+    `~/clock_received` (its first `/clock` delivery), racing_metrics' `~/started` (its first
+    accepted sample) and one `/controller/drive` (where the controller's input exists while held).
+    The supervisor's `/drive` into the sim is not proven by a wait. `drive-start-missed` (a
+    truth-driven car's first motion later than 3 ticks) is its only guard. Normal first motion is 1
+    tick, measured in 55 of 55 launches; the model expected 2, and the mechanism that gets a
+    non-zero velocity into the first step is not established (a `/drive` reaching the sim before
+    its first step, or a non-zero velocity independent of `/drive`; a probe that stamps `/drive`
+    writes around `~/reset` would tell them apart).
     Every gym runner in `tests/lib/racing_test_keywords/scenario_runner.py` takes this t=0 (SIM-3610/3620
     on AutoDRIVE launch free-running by design, ADR 0006). ACC-4020's injector ran free until F2 and
     latched in 4 of 15 runs on main, against 0 of 15 on the fix; CHECK-2250 fails a gym runner that
@@ -97,6 +106,18 @@ Traps any task in this repository can hit. Each one cost real time at least once
     contaminate the next run with a *second* supervisor and controller. Symptom: impossible message
     rates, or an emergency stop latched before your run began. Kill `install/racing_` too, `lib/mola_launcher`, `mola-cli` (measured outliving `ros2 launch` by 15 minutes, `test_mola_map.py`) and `racing_mola_map_alignment` (`pose_source:=mola`'s `map -> mola_map` static_transform_publisher lives under `/opt/ros`, so the first pattern never matched it), and note
     that `ros2 node list` shows stale discovery entries for a few seconds after.
+    The same shape in a test: `subprocess.Popen(["ros2", "run", ...]).terminate()` signals the Python
+    `ros2` CLI and orphans the node, still active on the domain, and `subprocess.run(timeout=)` SIGKILLs
+    only its direct child, so a script's EXIT trap never fires and its `setsid` stacks survive. Start it
+    with `start_new_session=True`, signal its group and its children's groups, and check the groups are
+    empty (SIM-3530; a leaked map_server fed amcl a second `/map`).
+
+47. **A process that launch escalates to SIGKILL loses its buffered tail, and the reader fails far from the cause.**
+    In the 2026-11-05 SIM-3510 run the recorder was killed (exit -9) with a partly written line, and
+    `read_recording` died with `JSONDecodeError` at char 271: one Odometry record less its closing `}`.
+    Symptom: a parse error in a test far from the node that hung. Remedy: write and flush each record whole
+    (REC-1010/2010); `read_recording` stays strict on purpose. `run_scenario` lists the escalations (CHECK-2370/2371).
+    Any other buffered writer a launch can kill has the same trap.
 
 ## Simulation
 
@@ -168,8 +189,14 @@ Traps any task in this repository can hit. Each one cost real time at least once
 ## Metrics
 
 14. **Golden baselines are regenerated as a reviewed diff, never to make a run pass.** The same goes
-    for tolerances in `scripts/compare_metrics.py`: widening one to green a run silently removes the
-    guard. Every tolerance there carries the measurement that justifies it.
+    for tolerances in `scripts/compare_metrics.py` and for the catastrophic bounds (ADR 0008):
+    widening one to green a run silently removes the guard. Every tolerance there carries the
+    measurement that justifies it; every catastrophic bound carries the geometric argument. A golden
+    compares two pipelines running the same code (`sim/rollout.py` imports the controller core), so a
+    change to that code regenerates the golden in the same PR, as its reviewed diff. ADR 0008 moved the
+    tier-3/4/5 *quality* bounds (ATE, availability, lap time, map accuracy) to reported, once, from one
+    inventory. That was a reclassification, not a widening, and it is never repeated test by test to
+    green a run.
 
 17. **Noise on `/scan` silently rewrites two metrics.** `racing_metrics` subscribes `/scan` and
     uses it for `minimum_wall_clearance` *and* for `collision_count`
@@ -367,3 +394,39 @@ Traps any task in this repository can hit. Each one cost real time at least once
     the count. Hence the chain always writes the
     reference and seeds from the file on disk, and any iteration bound (`MINTIME_MAX_ITER`) is
     measured in `gr-roboracer-dev`, the nightly's image, never copied from the fork's container.
+
+45. **The `dev` container's wall clock steps back, and a node that stamps with it publishes backwards
+    stamps.** Measured 2026-11-10 in `gr-roboracer-dev` under WSL2 over 120 s, `time.time()` against
+    `time.monotonic()`: steps of -18.27, -18.77, -17.05 and -15.31 ms at t = 25.65, 55.65, 85.65 and
+    115.66 s, exactly every 30.0 s, and wall minus monotonic -74 ms over the run. The cause is presumed to be
+    the WSL2 host's time sync, and was not measured. The host and other containers share the kernel clock and
+    are presumed to step with it, also not measured. Under `simulator:=autodrive` every node runs on wall time
+    (ADR 0006), and the AutoDRIVE server stamped each frame with its clock at receipt. A 300 s run's
+    `/ground_truth/track_relative_state` stepped back 10-20 ms 9 times, `racing_metrics` threw `elapsed_time
+    must be monotonic` and died, no `ScenarioMetrics` was published, and the runner drove to its budget.
+    Nothing else errored. The gym is immune: it stamps from `/clock`. The server now publishes
+    `max(now, last + 1 µs)`, one stamp per frame for every topic, and reports the clamps on
+    `/racing_sim/stamp_status` (`racing_sim: stamps`; SIMAD-1490 and SIMAD-2310). Never make a consumer
+    tolerate backwards stamps: that would hide a real ordering bug on the gym. Any other node that stamps from
+    the wall clock under AutoDRIVE has the same trap. **On a real car**, run a time sync that slews (chrony,
+    with `makestep` limited to start-up), never one that steps the clock mid-run.
+
+46. **Lateral grip on the AutoDRIVE car depends on the corner radius, so one a_y is the limit at one radius
+    only, and nothing errors.** The open-loop peak measured by `limits_peak.yaml` runs from 5.10 m/s^2 at
+    R 1.21 m to 7.33 at R 3.08 m, about 44 % across the bins (the closed-loop values move the same way). A GGV
+    or a planner `mue` that carries one a_y (TUM min-time reads only ggv row 0, `optimize.py:168`) is right at
+    one radius and wrong at every other. Never read one a_y from either file as the car's: read the bin for
+    the radius in question (the ggv rows interpolate by radius, `ggv_from_radius`), and say which radius
+    when quoting one.
+
+## Track data
+
+44. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
+    `git submodule update --init third_party/GR-roboracer-data` **on the host**: in `dev` git fails on a
+    host worktree (#23). Do it again in every new worktree and after merging a main that bumped the pin.
+    Without it, real-track scenarios raise at load naming the init command (SIMJAX-1600), where the
+    gym's bundled Spielberg would otherwise have masked the gap silently (G1). analytic_circle and
+    contract_test still run. ADR 0009. Run `python -m raceline` only after the init: its default
+    `--out-dir` is inside the submodule folder, so a run before init fills the empty folder and init
+    then fails with `clone ... failed`. Never push from the submodule checkout: its `origin` is HTTPS
+    and the push prompts forever (#5); push the data repo from a normal clone (`~/gitroot/GR-roboracer-data`).

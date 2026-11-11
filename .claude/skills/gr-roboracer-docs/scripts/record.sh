@@ -8,7 +8,17 @@ set +e
 NAME=$1; D=$2; shift 2; [ "$1" = -- ] && shift
 [ "$#" -gt 0 ] || { echo "no launch command"; exit 2; }
 PAT='install/racing_|ros2 launch|rviz2|ffmpeg|grab_rviz|lib/slam_toolbox/|lib/nav2_|lib/mola_launcher|racing_mola_map_alignment|robot_state_publisher'
-left() { ps -eo pid,stat,args | grep -E "$PAT" | grep -v grep | grep -v defunct; }
+# This script's argv holds the launch command, so it, its forks (same argv)
+# and its callers match $PAT: drop them by PID chain and by argv. ANC and SELF
+# reach awk through its environment; as awk -v arguments they would put the
+# launch command in awk's own argv and the filter would list itself.
+ANC=" $(p=$$; while [ -n "$p" ] && [ "$p" -gt 0 ]; do printf '%s ' "$p"
+  p=$(ps -o ppid= -p "$p" | tr -d ' '); done)"
+SELF=$(ps -ww -o args= -p $$)
+left() { ps -ww -eo pid=,stat=,args= | grep -E "$PAT" | grep -v grep \
+  | grep -v defunct | ANC=$ANC SELF=$SELF awk '{ a = $0
+    sub(/^ *[0-9]+ +[^ ]+ +/, "", a)
+    if (!index(ENVIRON["ANC"], " " $1 " ") && a != ENVIRON["SELF"]) print }'; }
 if [ -n "$(left)" ]; then echo "LEFTOVERS (stale graph):"; left; exit 3; fi
 mkdir -p "$D"; rm -f "$D/$NAME"-*
 echo "CMD: $*" > "$D/$NAME-cmd.txt"
@@ -42,6 +52,6 @@ kill -INT $CLK
 kill -INT -- -$LPID 2>/dev/null; sleep 10
 pkill -f install/racing_; pkill -f lib/slam_toolbox/; pkill -f lib/nav2_; pkill -f lib/mola_launcher; pkill -f racing_mola_map_alignment; pkill -f mola-cli
 pkill -f robot_state_publisher; pkill -f rviz2; sleep 3
-if [ -n "$(left)" ]; then echo "SURVIVORS:"; left; pkill -9 -f "$PAT"; sleep 1; fi
+if [ -n "$(left)" ]; then echo "SURVIVORS:"; left; left | awk '{print $1}' | xargs -r kill -9; sleep 1; fi
 rm -f "$D/$NAME.fifo"
 echo "FINAL LEFT:"; left; echo "(end)"

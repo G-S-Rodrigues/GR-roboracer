@@ -10,7 +10,16 @@ import yaml
 PACKAGE_ROOT = Path(__file__).parents[1]
 REPOSITORY_ROOT = PACKAGE_ROOT.parents[2]
 SCENARIOS = REPOSITORY_ROOT / "config" / "scenarios"
-MOLA_DIR = SCENARIOS / "maps" / "Spielberg" / "mola"
+MOLA_DIR = (
+    REPOSITORY_ROOT
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "maps"
+    / "Spielberg"
+    / "mola"
+)
 MOLA_PREF = REPOSITORY_ROOT / "docker" / "apt-preferences" / "mola.pref"
 # SIM-3510 localizes at this seed; the map must not share its noise draw.
 LOCALIZATION_SEED = 42
@@ -349,9 +358,10 @@ MAP_SERVER_KEYS = {
     "occupied_thresh",
     "free_thresh",
 }
-# FRAME_P95_BOUND is SIM-3530's P95_BOUND copied as a number (this test owns
-# it): ten laps of the final mapping pipeline, wall p95 0.790-1.565 m, worst
-# 1.565 x 1.25 = 1.956 -> 1.96 (2026-10-30, slam-p2; the table is beside
+# FRAME_P95_BOUND is SIM-3530's P95_BASELINE (its former p95 bound) copied as a
+# number (this test owns it): ten laps of the final mapping pipeline, wall
+# p95 0.790-1.565 m, worst 1.565 x 1.25 = 1.956 -> 1.96 (2026-10-30, slam-p2;
+# the table is beside
 # SIM-3530's constants). The baseline pipeline's five laps gave 1.24.
 # GRID_VOXEL_P95_BOUND: grid -> voxel / voxel -> grid nearest-neighbour p95
 # under each run's T (m), five baseline laps and then five final-pipeline laps:

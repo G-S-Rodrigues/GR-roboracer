@@ -111,6 +111,57 @@ def last_live_error(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def estimator_start(
+    events: Iterable[Mapping[str, Any]], estimate_topic: str | None = None
+) -> dict[str, float | None]:
+    """When the estimate stream began and how far the car had driven by then.
+
+    ``first_estimate_stamp`` is the sim time of the first estimate;
+    ``travel_before_first_estimate`` the ground-truth path length (m) up to
+    it. Both are ``None`` when there was no estimate (or no topic to look
+    for), so a dead estimator does not look like a prompt one (EVAL-1030).
+    Never raises. Nightly 2026-11-10: MOLA's first estimate came 1.03 s
+    after the car left, about 2.5 m on, and ATE RMSE was 21.5 m."""
+    events = list(events)
+    none = {"first_estimate_stamp": None, "travel_before_first_estimate": None}
+    try:
+        topic = estimate_topic or recorded_estimate_topic(events)
+    except ValueError:
+        return none
+    estimates = poses(events, topic)
+    if not estimates:
+        return none
+    first = min(pose.stamp for pose in estimates)
+    travel = 0.0
+    previous = None
+    for pose in poses(events, GROUND_TRUTH_TOPIC):
+        if pose.stamp > first:
+            break
+        if previous is not None:
+            travel += math.hypot(pose.x - previous.x, pose.y - previous.y)
+        previous = pose
+    return {
+        "first_estimate_stamp": first,
+        "travel_before_first_estimate": travel,
+    }
+
+
+def error_at(
+    events: Iterable[Mapping[str, Any]], t: float
+) -> dict[str, Any] | None:
+    """The live evaluator's last error at or before sim time ``t`` (NaN
+    restored from null), or ``None`` when it had published none by then."""
+    last = None
+    for event in events:
+        if event["topic"] == ERROR_TOPIC and _stamp(event) <= t:
+            last = event["payload"]
+    if last is None:
+        return None
+    return {
+        key: math.nan if value is None else value for key, value in last.items()
+    }
+
+
 def score(
     estimates: list[Pose],
     truth: list[Pose],

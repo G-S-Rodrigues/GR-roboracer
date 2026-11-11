@@ -7,7 +7,7 @@ import json
 import shutil
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -280,6 +280,87 @@ def _raceline_from_tum(traj: np.ndarray) -> Raceline:
         traj[:, 5],
         traj[:, 6],
     )
+
+
+# The min-time solver's exported path is more curved than its own states
+# (Porto cw, autodrive_roboracer_fast, margin 0.40: kappa -0.663 against the
+# model's -0.357 at s 26.5 m), so v^2 |kappa| on it reached 1.052 x the GGV
+# a_y. Re-profiled at 0.995 x a_y, the line verified with max a_y ratio 0.995
+# and a lap estimate of 7.303 -> 7.306 s. The base car (a_x 1.044) verified
+# at 10.004 -> 10.004 s, and margin 0.30 at 7.127 -> 7.128 s (throwaway,
+# findings 2026-11-08-part1-step2-ggv-overshoot). That throwaway scaled
+# a_y only; the same factor also scales a_x, braking and accelerating, so no
+# point sits at ratio 1.0 within CSV rounding (ledger 2026-11-09 00:20). Its
+# effect on the lap estimate is the Porto record's (raceline/README.md). It
+# is a conservative factor on the limits the line is built to, not a
+# verifier tolerance (ledger 2026-11-08 23:55).
+REPROFILE_LIMIT_SCALE = 0.995
+
+
+def _table_min(v_col, y_col, lo: float, hi: float) -> float:
+    """Minimum of the piecewise-linear interpolant of ``y_col`` over ``v_col``
+    on [lo, hi] (either order): both ends and every knot strictly inside."""
+    lo, hi = min(lo, hi), max(lo, hi)
+    inside = [x for x in v_col if lo < x < hi]
+    return float(np.min(np.interp([lo, hi, *inside], v_col, y_col)))
+
+
+def reprofile_speed(
+    line: Raceline,
+    vehicle: VehicleLimits,
+    *,
+    limit_scale: float = REPROFILE_LIMIT_SCALE,
+) -> Raceline:
+    """The line's speed re-profiled on its own path; geometry untouched.
+
+    Speed is capped to ``limit_scale`` x the GGV a_y where ``v^2 |kappa|``
+    would exceed it, then braked backward and accelerated forward around the
+    closed loop (a_x from the GGV, and the machines table when accelerating,
+    all x ``limit_scale``), the limits read as ``verify._limit_ratios`` reads
+    them. Never faster than the input; ``a`` is the closed forward difference.
+    """
+    xy = line.xy
+    n = len(xy)
+    ds = np.empty(n)
+    ds[:-1] = line.s[1:] - line.s[:-1]
+    ds[-1] = np.hypot(*(xy[0] - xy[-1]))
+    ggv_v, ggv_ax, ggv_ay = (
+        vehicle.ggv[:, 0],
+        vehicle.ggv[:, 1],
+        vehicle.ggv[:, 2],
+    )
+    mach_v, mach_ax = (
+        vehicle.ax_max_machines[:, 0],
+        vehicle.ax_max_machines[:, 1],
+    )
+    k_abs = np.abs(line.kappa)
+    v = line.v.astype(float).copy()
+    for i in range(n):
+        if k_abs[i] > 0.0:
+            ay = _table_min(ggv_v, ggv_ay, 0.0, v[i])
+            v[i] = min(v[i], np.sqrt(limit_scale * ay / k_abs[i]))
+    start = int(np.argmin(v))
+    for t in range(n):  # braking, backward from the slowest point
+        i = (start - 1 - t) % n
+        j = (i + 1) % n
+        ax = limit_scale * _table_min(ggv_v, ggv_ax, v[j], v[i])
+        v[i] = min(v[i], np.sqrt(v[j] ** 2 + 2.0 * ds[i] * ax))
+    for t in range(n):  # accelerating, forward from the slowest point
+        i = (start + t) % n
+        j = (i + 1) % n
+        ax = limit_scale * min(
+            float(np.interp(v[i], ggv_v, ggv_ax)),
+            float(np.interp(v[i], mach_v, mach_ax)),
+        )
+        v[j] = min(v[j], np.sqrt(v[i] ** 2 + 2.0 * ds[i] * ax))
+    a = (np.roll(v, -1) ** 2 - v**2) / (2.0 * ds)
+    return replace(line, v=v, a=a)
+
+
+def _lap_time(line: Raceline) -> float:
+    xy = line.xy
+    ds = np.hypot(*(np.roll(xy, -1, 0) - xy).T)
+    return float(np.sum(2.0 * ds / (line.v + np.roll(line.v, -1))))
 
 
 def _tum_mincurv_iqp(

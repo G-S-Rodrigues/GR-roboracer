@@ -33,8 +33,12 @@ gotcha 31).
 from __future__ import annotations
 
 import argparse
+import bisect
 import dataclasses
+import gzip
+import hashlib
 import importlib.util
+import json
 import math
 import os
 import statistics
@@ -112,10 +116,10 @@ MANOEUVRES = (
 )
 
 
-def build_schedule(repeats: int) -> list[Segment]:
+def build_schedule(repeats: int, manoeuvres=MANOEUVRES) -> list[Segment]:
     segments: list[Segment] = []
     for _ in range(repeats):
-        for manoeuvre in MANOEUVRES:
+        for manoeuvre in manoeuvres:
             segments += _pre() + manoeuvre()
     return segments
 
@@ -133,14 +137,117 @@ def _command(throttle: float, steering: float, reset: bool) -> dict[str, str]:
     }
 
 
-def identify_schedule(t: float) -> dict[str, str]:
+def identify_schedule(t: float, segments=_SEGMENTS) -> dict[str, str]:
     """The command for `t` seconds after the first sim message."""
     end = 0.0
-    for seg in _SEGMENTS:
+    for seg in segments:
         end += seg.duration
         if t < end:
             return _command(seg.throttle, seg.steering, seg.reset)
     return _command(0.0, 0.0, False)
+
+
+# --- the lateral schedule (part 1L increment 1) -------------------------------
+# Step-steer doublets on Porto's spawn straight: bring the wheels to v, settle
+# the slip, steer +A then -A, centre, brake with locked wheels. The rungs are
+# the corridor table of the plan (A, v, hold); each is heading-balanced (the
+# second lobe is held s longer, s the slew time) and its planned path stays
+# inside CORRIDOR_OFFSET_M (CHECK-2650). Step 2a's live probe ran all ten
+# rungs twice with no collision (max |dx| 0.11-0.22 m).
+LATERAL_SCHEDULE_ID = "porto-lateral-v1"
+LATERAL_REPEATS = 3
+# 0.52 m is free on the narrowest side of the spawn straight; slew and drift
+# take the rest (Step 2a's measured offsets were 0.11-0.22 m).
+CORRIDOR_OFFSET_M = 0.35
+# The part-4 probe's clear straight (Porto spawn, heading -y).
+STRAIGHT_CLEAR_M = 7.9
+MAX_FINAL_HEADING_DEG = 3.0
+STEER_SLEW = 3.2  # rad/s, the identified actuator slew
+STEER_LIMIT = 0.5236  # rad, the steering command 1.0
+WHEEL_SETPOINT_GAIN = 24.86  # wheel rad/s per throttle (F1)
+DRIVE_A0, DRIVE_C = 5.38, 0.273  # full throttle: a = 5.38 - 0.273 v (F2)
+BRAKE_A0 = 5.40  # throttle 0 locks the wheels: a = 5.40 + 0.273 v (F2)
+# (steering fraction A, speed v, hold T of the first lobe)
+LATERAL_RUNGS = (
+    (0.3, 3.5, 0.170),
+    (0.3, 4.0, 0.140),
+    (0.3, 4.5, 0.115),
+    (0.3, 4.8, 0.100),
+    (0.4, 2.8, 0.165),
+    (0.4, 3.2, 0.130),
+    (0.4, 3.5, 0.110),
+    (0.5, 2.4, 0.150),
+    (0.5, 2.8, 0.115),
+    (0.6, 2.4, 0.105),
+)
+
+
+def _drive_time(v: float) -> float:
+    """Seconds of full throttle from rest to v: v' = 5.38 - 0.273 v."""
+    return -math.log(1.0 - v * DRIVE_C / DRIVE_A0) / DRIVE_C
+
+
+def lateral_rung(
+    a: float, v: float, hold: float, balanced: bool = True
+) -> list[Segment]:
+    """One doublet. `balanced` holds the second lobe `s` longer, so the
+    steering's net area, and with it the heading, returns to ~zero."""
+    slew = a * STEER_LIMIT / STEER_SLEW
+    throttle = v / WHEEL_SETPOINT_GAIN
+    return [
+        Segment(_drive_time(v), 1.0, 0.0, False, "accel"),
+        Segment(0.3, throttle, 0.0, False, "settle"),
+        Segment(hold, throttle, a, False, "lobe1"),
+        Segment(
+            hold + (slew if balanced else 0.0), throttle, -a, False, "lobe2"
+        ),
+        Segment(slew + 0.02, throttle, 0.0, False, "return"),
+        Segment(1.7, 0.0, 0.0, False, "stop"),
+    ]
+
+
+LATERAL_MANOEUVRES = tuple(
+    (lambda rung=rung: lateral_rung(*rung)) for rung in LATERAL_RUNGS
+)
+_LATERAL_SEGMENTS = build_schedule(LATERAL_REPEATS, LATERAL_MANOEUVRES)
+LATERAL_END = sum(seg.duration for seg in _LATERAL_SEGMENTS) + TAIL
+
+
+def lateral_schedule(t: float) -> dict[str, str]:
+    """The lateral drive's command `t` seconds after the first sim message."""
+    return identify_schedule(t, _LATERAL_SEGMENTS)
+
+
+def planned_path(
+    manoeuvre: list[Segment], v: float, wheelbase: float, dt: float = 0.001
+) -> dict[str, float]:
+    """A kinematic bicycle driven through `manoeuvre` (the segments of one
+    rung, `lateral_rung`): full throttle follows the drive law to v, a
+    throttle holds v, throttle 0 is the locked-wheel stop, and the steering
+    slews at STEER_SLEW. An upper bound on the path below the limit and in
+    understeer, not in oversteer. Returns the largest |y|, the final heading
+    (deg), the distance travelled (m)."""
+    x = y = psi = delta = speed = 0.0
+    max_y = 0.0
+    for seg in manoeuvre:
+        for _ in range(int(round(seg.duration / dt))):
+            if seg.throttle >= 1.0:
+                speed = min(v, speed + (DRIVE_A0 - DRIVE_C * speed) * dt)
+            elif seg.throttle > 0.0:
+                speed = v
+            else:
+                speed = max(0.0, speed - (BRAKE_A0 + DRIVE_C * speed) * dt)
+            target = seg.steering * STEER_LIMIT
+            delta += max(-STEER_SLEW * dt, min(STEER_SLEW * dt, target - delta))
+            psi += speed * math.tan(delta) / wheelbase * dt
+            x += speed * math.cos(psi) * dt
+            y += speed * math.sin(psi) * dt
+            max_y = max(max_y, abs(y))
+    return {
+        "max_y": max_y,
+        "heading_deg": math.degrees(psi),
+        "distance": x,
+    }
 
 
 DROPPED_KEYS = ("V1 Front Camera Image", "V1 LIDAR Range Array")
@@ -198,6 +305,12 @@ class Sample:
     collisions: int
     cmd_steering: float | None = None
     wall: float = math.nan  # arrival time: only for the clock-ratio check
+    # IMU linear acceleration in the car frame, gravity not included (its z
+    # median is 0.001 m/s^2 over the committed recording), and the left and
+    # right encoder angles, rad, accumulated (zeroed by a reset).
+    ax: float = math.nan
+    ay: float = math.nan
+    wheel_angles: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -241,6 +354,13 @@ def parse_frame(
 ) -> Sample:
     x, y, z = _floats(data["V1 Position"])
     vx, vy, _ = _floats(data["V1 Linear Velocity"])
+    ax = ay = math.nan
+    if "V1 Linear Acceleration" in data:
+        ax, ay, _ = _floats(data["V1 Linear Acceleration"])
+    angles = None
+    if "V1 Encoder Angles" in data:
+        left, right = _floats(data["V1 Encoder Angles"])
+        angles = (left, right)
     return Sample(
         lap_time=float(data["V1 Lap Time"]),
         throttle=float(data["V1 Throttle"]),
@@ -255,6 +375,87 @@ def parse_frame(
         collisions=int(float(data["V1 Collisions"])),
         cmd_steering=cmd_steering,
         wall=wall,
+        ax=ax,
+        ay=ay,
+        wheel_angles=angles,
+    )
+
+
+def wheel_speed(prev: Sample, cur: Sample, wheel_radius: float) -> float | None:
+    """Mean wheel speed from the encoder angle deltas, m/s, over the lap-time
+    delta (gotcha 35: the sim's clock, never the arrival time).
+
+    None when either frame has no angles, when the lap-time delta is not
+    positive (a lap-line reset) or when either wheel's angle went backwards
+    (the encoders zero on a reset). Duplicates
+    `racing_sim_autodrive.core.encoder_speed` on purpose: this file is a uv
+    script with no overlay (CHECK-2605 holds the two equal).
+    """
+    if prev.wheel_angles is None or cur.wheel_angles is None:
+        return None
+    dt = cur.lap_time - prev.lap_time
+    if not dt > 0.0:
+        return None
+    deltas = [
+        c - p for p, c in zip(prev.wheel_angles, cur.wheel_angles, strict=True)
+    ]
+    if any(d < 0.0 for d in deltas):
+        return None
+    return sum(deltas) / len(deltas) * wheel_radius / dt
+
+
+def slip_ratio(wheel: float, body: float) -> float:
+    """(w - v) / max(w, v): +1 is full spin, -1 locked wheels, 0 when both
+    speeds are below REST_SPEED."""
+    top = max(wheel, body)
+    if max(abs(wheel), abs(body)) < REST_SPEED:
+        return 0.0
+    return (wheel - body) / top
+
+
+@dataclass(frozen=True)
+class SensorChecks:
+    """Median IMU / kinematics ratios and the frames each rests on."""
+
+    ax_ratio: float
+    ax_n: int
+    ay_ratio: float
+    ay_n: int
+
+
+# F5 (plan, 2026-11-08, committed recording): the IMU a_x is the body's
+# acceleration, median ratio to dv_x/dt 1.0012 (n 2199); the IMU a_y is v_x w_z
+# in turns, 1.0027 (n 623). Only frames where the kinematic value is well
+# above the IMU's noise are used, and a central difference over a gap longer
+# than MAX_DIFF_GAP (the frame rate follows host load, gotcha 31) is not.
+AX_MIN = 0.5
+AY_MIN = 0.2
+MAX_DIFF_GAP = 0.2
+
+
+def sensor_checks(segs: list[list[Sample]]) -> SensorChecks:
+    """Median of IMU a_x over the central-difference dv_x/dt, and of IMU a_y
+    over v_x w_z, per frame. Both are 1 when the IMU is the body's
+    acceleration without gravity."""
+    ax_ratios: list[float] = []
+    ay_ratios: list[float] = []
+    for seg in segs:
+        for a, b, c in zip(seg, seg[1:], seg[2:], strict=False):
+            span = c.lap_time - a.lap_time
+            if math.isnan(b.ax) or math.isnan(b.ay):
+                continue
+            if 0.0 < span < MAX_DIFF_GAP:
+                dv = (c.vx - a.vx) / span
+                if abs(dv) > AX_MIN:
+                    ax_ratios.append(b.ax / dv)
+            lateral = b.vx * b.wz
+            if abs(lateral) > AY_MIN:
+                ay_ratios.append(b.ay / lateral)
+    return SensorChecks(
+        statistics.median(ax_ratios) if ax_ratios else math.nan,
+        len(ax_ratios),
+        statistics.median(ay_ratios) if ay_ratios else math.nan,
+        len(ay_ratios),
     )
 
 
@@ -269,6 +470,77 @@ def samples_from_events(events: list[dict]) -> list[Sample]:
         elif event["dir"] == "sim":
             samples.append(parse_frame(event["data"], command, event["t"]))
     return samples
+
+
+SWEEP_CHANNELS = ("imu", "enc", "truth", "track", "counters", "drive")
+
+
+@dataclass(frozen=True)
+class SweepSamples:
+    samples: list[Sample]
+    dropped: int  # frames (stamps) with no counters message
+    meta: dict  # the channels header's `meta`
+
+
+def parse_sweep(path: Path) -> SweepSamples:
+    """Sim frames of a corner-sweep `channels.jsonl.gz` (tests/autodrive/
+    _porto_drive.py), one `Sample` per counters message. A frame is one
+    `header.stamp`: the IMU, encoder, truth and track messages with the same
+    stamp are joined to the counters message that carries it, and its
+    `lap_time` is the sim's clock (there is no /clock under AutoDRIVE). The
+    steering is the nearest preceding `/drive` command (the closed loop does
+    not record the actual angle); position and yaw are not recorded. A stamp
+    with no counters message is dropped and counted. A stream with no
+    message at all raises, naming it."""
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        lines = [json.loads(line) for line in handle if line.strip()]
+    meta = lines[0].get("meta", {}) if lines and "meta" in lines[0] else {}
+    by_stream: dict[str, list[dict]] = {name: [] for name in SWEEP_CHANNELS}
+    for line in lines:
+        if "stream" in line and line["stream"] in by_stream:
+            by_stream[line["stream"]].append(line)
+    for name in SWEEP_CHANNELS:
+        if not by_stream[name]:
+            raise ValueError(f"{path}: channel {name!r} has no messages")
+    keyed = {
+        name: {row["t"]: row for row in by_stream[name]}
+        for name in ("imu", "enc", "truth", "track")
+    }
+    drive = sorted(by_stream["drive"], key=lambda row: row["t"])
+    drive_t = [row["t"] for row in drive]
+    counters = {row["t"] for row in by_stream["counters"]}
+    # a stamp seen by any channel but not by the counters: one dropped frame
+    stray = {t for name in keyed for t in keyed[name] if t not in counters}
+    dropped = len(stray)
+    samples: list[Sample] = []
+    for row in by_stream["counters"]:
+        t = row["t"]
+        imu = keyed["imu"].get(t)
+        enc = keyed["enc"].get(t)
+        truth = keyed["truth"].get(t)
+        i = bisect.bisect_right(drive_t, t) - 1
+        steer = drive[i]["steer"] if i >= 0 else None
+        samples.append(
+            Sample(
+                lap_time=row["lap_time"],
+                throttle=math.nan,
+                steering=steer if steer is not None else math.nan,
+                x=math.nan,
+                y=math.nan,
+                z=math.nan,
+                yaw=math.nan,
+                vx=truth["vx"] if truth else math.nan,
+                vy=truth["vy"] if truth else math.nan,
+                wz=imu["wz"] if imu else math.nan,
+                collisions=int(row["collisions"]),
+                cmd_steering=steer,
+                wall=t,
+                ax=imu["ax"] if imu else math.nan,
+                ay=imu["ay"] if imu else math.nan,
+                wheel_angles=(enc["left"], enc["right"]) if enc else None,
+            )
+        )
+    return SweepSamples(samples=samples, dropped=dropped, meta=meta)
 
 
 def segments(samples: list[Sample]) -> list[list[Sample]]:
@@ -612,6 +884,672 @@ def reference_points(segs: list[list[Sample]]) -> PointCheck:
     )
 
 
+# --- lateral windows and radius bins (part 1L increment 1) --------------------
+# A window is the frames of one steering lobe within WINDOW_BAND of its plateau.
+# Constants cite Step 2a's probe (2026-11-10, 10 rungs x 2, load 1-2).
+WINDOW_BAND = 0.9
+MIN_WINDOW_FRAMES = 5
+# Slip beyond this is longitudinal slip in the window, not a lateral limit.
+MAX_WINDOW_SLIP = 0.05
+# Linear-range a_y / a_kin was 0.94 (MAD 0.015, six rungs; P3): 0.94 - 3 MAD.
+SATURATION_RATIO = 0.895
+# The linear-range w_z ratio was 0.91-0.93 (P3): above 1.05 is over the
+# kinematic rate, which an understeering car cannot be.
+OVERSTEER_WZ_RATIO = 1.05
+# Saturated rungs' w_z and a_y ratios differed by at most 0.15 (P1).
+INCONSISTENT_GAP = 0.2
+# a_y lags the steering (the lobes last 0.1-0.17 s): a window whose median is
+# below the linear line but whose last third has reached it was still rising,
+# not saturated (P1: A 0.3 at 4.0 m/s, max 7.9 against a_kin 8.0).
+
+
+@dataclass(frozen=True)
+class LateralWindow:
+    rung: int
+    repeat: int
+    speed: float  # median wheel speed, m/s
+    steering: float  # median |actual steering|, rad
+    a_kin: float  # v^2 tan(d) / L, median over the frames
+    r_kin: float  # L / tan(d), median
+    ay: float  # IMU |a_y| window median
+    ay_ratio: float  # ay / a_kin
+    wz_ratio: float  # median |w_z| / (v tan(d) / L)
+    radius: float  # median path radius v / |w_z|
+    sideslip: float  # max |v_y / v_x|
+    slip: float  # median slip ratio
+    n: int
+    rising: bool  # a_y reached the linear line by the end of the window
+    label: str  # linear | saturated | oversteer | inconsistent
+
+
+def _lobes(seg: list[Sample]) -> list[list[tuple[Sample, Sample]]]:
+    """Runs of (previous, current) frame pairs with one steering sign and
+    |steering| above TURN_MIN_ANGLE."""
+    lobes: list[list[tuple[Sample, Sample]]] = []
+    current: list[tuple[Sample, Sample]] = []
+    sign = 0.0
+    for prev, cur in zip(seg, seg[1:], strict=False):
+        s = math.copysign(1.0, cur.steering)
+        if abs(cur.steering) > TURN_MIN_ANGLE and (not current or s == sign):
+            current.append((prev, cur))
+            sign = s
+        elif current:
+            lobes.append(current)
+            current = []
+    if current:
+        lobes.append(current)
+    return lobes
+
+
+def _window_label(ay_ratio: float, wz_ratio: float, rising: bool) -> str:
+    if ay_ratio >= SATURATION_RATIO:
+        return "linear"
+    if wz_ratio > OVERSTEER_WZ_RATIO:
+        return "oversteer"
+    if rising:
+        return "linear"  # understeer gradient: a_y has not settled
+    if abs(ay_ratio - wz_ratio) > INCONSISTENT_GAP:
+        return "inconsistent"
+    return "saturated"
+
+
+def lateral_windows(
+    segs: list[list[Sample]],
+    wheelbase: float,
+    wheel_radius: float,
+    rungs: int,
+) -> list[LateralWindow]:
+    """One window per steering lobe, in segment order. Segment i is rung
+    i % rungs of repeat i // rungs (the layout `_by_repeat` assumes). Speed
+    is the wheel speed, slip the wheel against the body; a window of fewer
+    than MIN_WINDOW_FRAMES frames, or with |slip| >= MAX_WINDOW_SLIP, is not
+    used. The sensors are read as F5 found them: a_y is the body's, so
+    |a_y| / a_kin is 1 in the linear range (0.94 measured)."""
+    out: list[LateralWindow] = []
+    for index, seg in enumerate(segs):
+        for lobe in _lobes(seg):
+            peak = max(abs(cur.steering) for _, cur in lobe)
+            frames = []
+            for prev, cur in lobe:
+                w = wheel_speed(prev, cur, wheel_radius)
+                if w is None or abs(cur.steering) < WINDOW_BAND * peak:
+                    continue
+                frames.append((cur, w))
+            if len(frames) < MIN_WINDOW_FRAMES:
+                continue
+            tans = [math.tan(abs(c.steering)) for c, _ in frames]
+            a_kin = [
+                w * w * t / wheelbase
+                for (_, w), t in zip(frames, tans, strict=True)
+            ]
+            r_kin = [wheelbase / t for t in tans]
+            wz_kin = [
+                w * t / wheelbase
+                for (_, w), t in zip(frames, tans, strict=True)
+            ]
+            slip = statistics.median(slip_ratio(w, c.vx) for c, w in frames)
+            if abs(slip) >= MAX_WINDOW_SLIP:
+                continue
+            ay_values = [abs(c.ay) for c, _ in frames]
+            third = max(1, len(ay_values) // 3)
+            last = statistics.median(ay_values[-third:])
+            ay = statistics.median(ay_values)
+            a_kin_m = statistics.median(a_kin)
+            wz_ratio = statistics.median(
+                abs(c.wz) / k for (c, _), k in zip(frames, wz_kin, strict=True)
+            )
+            ay_ratio = ay / a_kin_m
+            rising = last / a_kin_m >= SATURATION_RATIO
+            speeds = [w for _, w in frames]
+            out.append(
+                LateralWindow(
+                    rung=index % rungs,
+                    repeat=index // rungs,
+                    speed=statistics.median(speeds),
+                    steering=statistics.median(
+                        abs(c.steering) for c, _ in frames
+                    ),
+                    a_kin=a_kin_m,
+                    r_kin=statistics.median(r_kin),
+                    ay=ay,
+                    ay_ratio=ay_ratio,
+                    wz_ratio=wz_ratio,
+                    radius=statistics.median(
+                        w / abs(c.wz) for c, w in frames if abs(c.wz) > 1e-9
+                    ),
+                    sideslip=max(abs(c.vy / c.vx) for c, _ in frames if c.vx),
+                    slip=slip,
+                    n=len(frames),
+                    rising=rising,
+                    label=_window_label(ay_ratio, wz_ratio, rising),
+                )
+            )
+    return out
+
+
+@dataclass(frozen=True)
+class SpeedCell:
+    speed: float  # median wheel speed of the cell's windows, m/s
+    plateau: float  # median a_y of its saturated windows
+    n: int
+    spread: float  # (max - min) / mean over repeats
+
+
+@dataclass(frozen=True)
+class RadiusBin:
+    radius: float  # the bin's centre, m
+    n: int  # windows in the bin
+    peak: Estimate | None  # per-repeat peaks: value, repeats, spread
+    bound: str  # exact | lower
+    post_cliff: Estimate | None  # saturated windows' median a_y
+    cells: tuple[SpeedCell, ...]
+    speed_dependent: bool
+
+
+def _bin_index(radius: float, centres: tuple[float, ...]) -> int:
+    """Edges at the geometric means of neighbouring centres, open at both
+    ends."""
+    for i, (a, b) in enumerate(zip(centres, centres[1:], strict=False)):
+        if radius < math.sqrt(a * b):
+            return i
+    return len(centres) - 1
+
+
+def _peak(windows: list[LateralWindow]) -> tuple[float | None, bool]:
+    """(peak a_y, exact): the larger of the highest linear window and the
+    onset window (the lowest-demand saturated one). Exact iff saturation was
+    seen and the onset window is the peak; otherwise a lower bound."""
+    linear = [w.ay for w in windows if w.label == "linear"]
+    saturated = [w for w in windows if w.label == "saturated"]
+    if not linear and not saturated:
+        return None, False
+    if not saturated:
+        return max(linear), False
+    onset = min(saturated, key=lambda w: w.a_kin).ay
+    top = max([*linear, onset])
+    return top, onset >= top
+
+
+def lateral_by_radius(
+    windows: list[LateralWindow], centres: tuple[float, ...]
+) -> list[RadiusBin]:
+    """Windows binned by measured path radius, one `RadiusBin` per centre.
+    `peak` is the median over repeats of each repeat's `_peak`; the bin is
+    `exact` iff every repeat's peak is exact. `speed_dependent` is set when
+    two speed cells' plateaus differ by more than the larger spread."""
+    grouped: list[list[LateralWindow]] = [[] for _ in centres]
+    for w in windows:
+        grouped[_bin_index(w.radius, centres)].append(w)
+    bins = []
+    for centre, members in zip(centres, grouped, strict=True):
+        repeats = sorted({w.repeat for w in members})
+        peaks, exact = [], []
+        for repeat in repeats:
+            value, ok = _peak([w for w in members if w.repeat == repeat])
+            if value is not None:
+                peaks.append(value)
+                exact.append(ok)
+        peak = None
+        if peaks:
+            peak = Estimate(
+                statistics.median(peaks),
+                len(peaks),
+                _spread(peaks) or 0.0,
+            )
+        saturated = [w for w in members if w.label == "saturated"]
+        post = None
+        if saturated:
+            values = [w.ay for w in saturated]
+            post = Estimate(
+                statistics.median(values), len(values), _spread(values) or 0.0
+            )
+        by_speed: dict[float, list[LateralWindow]] = {}
+        for w in saturated:
+            by_speed.setdefault(round(w.speed, 1), []).append(w)
+        cells = []
+        for speed in sorted(by_speed):
+            ws = by_speed[speed]
+            plateaus = [
+                statistics.median(x.ay for x in ws if x.repeat == r)
+                for r in sorted({x.repeat for x in ws})
+            ]
+            cells.append(
+                SpeedCell(
+                    speed=statistics.median(w.speed for w in ws),
+                    plateau=statistics.median(plateaus),
+                    n=len(ws),
+                    spread=_spread(plateaus) or 0.0,
+                )
+            )
+        dependent = any(
+            abs(a.plateau - b.plateau)
+            > max(a.spread, b.spread) * (a.plateau + b.plateau) / 2.0
+            for i, a in enumerate(cells)
+            for b in cells[i + 1 :]
+        )
+        bins.append(
+            RadiusBin(
+                radius=centre,
+                n=len(members),
+                peak=peak,
+                bound="exact" if peaks and all(exact) else "lower",
+                post_cliff=post,
+                cells=tuple(cells),
+                speed_dependent=dependent,
+            )
+        )
+    return bins
+
+
+# -- the two limits files (plan "The two files") ----------------------------
+
+LIMITS_GRID = (*(float(v) for v in range(23)), 22.88)  # existing grid + top
+DRIVE_SLIDING = (5.38, 0.273)  # a_x = c - k v, F2/F4: full throttle spins
+BRAKE_SLIDING = (5.40, 0.273)  # a_x = c + k v, F2: throttle 0 locks
+DRIVE_PEAK = (8.15, 0.273)  # F3: slip 0.15
+SLIDING_RANGE = 18.6  # full throttle still slides (slip >= 0.25), F1
+PEAK_RANGE = 21.1  # the peak needs slip 0.15
+TOP_SPEED_PREDICTED = 22.4
+TPH_MAX = 50.0
+ROOT_SCAN = 4000
+A_X_ASSUMPTION = (
+    "offline 2026-11-08 (plan F2-F4); refitted by committed code in increment 2"
+)
+
+
+@dataclass(frozen=True)
+class GgvRow:
+    v: float
+    ay: float
+    extrapolated: bool
+    multiple_roots: bool
+
+
+def _f_of_radius(table, radius: float) -> tuple[float, bool]:
+    """Linear interpolation by radius, clamped to the end rows."""
+    if radius <= table[0][0]:
+        return table[0][1], radius < table[0][0]
+    if radius >= table[-1][0]:
+        return table[-1][1], radius > table[-1][0]
+    for (r0, f0), (r1, f1) in zip(table, table[1:], strict=False):
+        if r0 <= radius <= r1:
+            return f0 + (f1 - f0) * (radius - r0) / (r1 - r0), False
+    raise AssertionError(radius)
+
+
+def ggv_from_radius(table, v_grid) -> list[GgvRow]:
+    """a_y*(v): the smallest root of a = f(v^2 / a), f the radius-keyed
+    limit `table` of (radius, a_y) sorted by radius. A sign scan of
+    a - f(v^2 / a) over (0, max f], then bisection of the first bracket;
+    more than one upward crossing flags `multiple_roots`. `extrapolated`
+    where v^2 / a is outside the measured radii (v = 0 reads the smallest
+    radius's row and is not flagged)."""
+    table = sorted(table)
+    top = max(f for _, f in table)
+    rows = []
+    for v in v_grid:
+        if v <= 0.0:
+            rows.append(GgvRow(v, table[0][1], False, False))
+            continue
+
+        def gap(a: float, v=v) -> float:
+            return a - _f_of_radius(table, v * v / a)[0]
+
+        grid = [top * (i + 1) / ROOT_SCAN for i in range(ROOT_SCAN)]
+        brackets = [
+            (lo, hi)
+            for lo, hi in zip([0.0, *grid], grid, strict=False)
+            if (gap(lo) < 0.0 if lo > 0.0 else True) and gap(hi) >= 0.0
+        ]
+        lo, hi = brackets[0]
+        for _ in range(80):
+            mid = 0.5 * (lo + hi)
+            if gap(mid) < 0.0:
+                lo = mid
+            else:
+                hi = mid
+        root = 0.5 * (lo + hi)
+        rows.append(
+            GgvRow(
+                v,
+                root,
+                _f_of_radius(table, v * v / root)[1],
+                len(brackets) > 1,
+            )
+        )
+    return rows
+
+
+def _top_speed(source: Path) -> dict:
+    import yaml
+
+    def find(node):
+        if isinstance(node, dict):
+            if "top_speed_m_s" in node:
+                return node["top_speed_m_s"]
+            for value in node.values():
+                found = find(value)
+                if found is not None:
+                    return found
+        return None
+
+    entry = find(yaml.safe_load(source.read_text()))
+    if entry is None:
+        raise ValueError(f"{source}: no top_speed_m_s")
+    return entry
+
+
+def _value(value, label, source, **extra) -> dict:
+    return {"value": value, "label": label, "source": source, **extra}
+
+
+def _law_row(v, law, sign, limit):
+    """(value, extrapolated, clamped) of a_x = c +- k v past `limit`."""
+    c, k = law
+    raw = c + sign * k * v
+    return max(raw, 0.0), v > limit, raw < 0.0
+
+
+def _table_rows(v_grid, drive, drive_limit, brake) -> tuple[list, list]:
+    ggv_rows, machine_rows = [], []
+    for v in v_grid:
+        value, extrap, clamped = _law_row(v, drive, -1.0, drive_limit)
+        row = {"v": v, "values": [round(value, 6)], "label": "inferred"}
+        if extrap:
+            row["extrapolated"] = True
+        if clamped:
+            row["clamped"] = True
+        machine_rows.append(row)
+        brake_value = round(brake[0] + brake[1] * v, 6)
+        ggv_rows.append((v, brake_value, bool(extrap)))
+    return ggv_rows, machine_rows
+
+
+GGV_BIN_RULE = {
+    "peak": "is the larger of the open-loop peak and the closed-loop max "
+    "where a closed-loop value exists (else the open-loop peak); the bin's "
+    "`chosen` field names which",
+    "sliding": "is the open-loop post-cliff value (owner call #22, may be "
+    "overturned to the closed-loop reached value); closed-loop `ay_reached` "
+    "is reported beside it; the bin's `chosen` field names it",
+}
+
+
+def _ggv_bin_choice(
+    sliding: bool,
+    post_cliff: float | None,
+    peak: float | None,
+    closed: float | None,
+) -> tuple[str, float] | None:
+    """The one place a bin's ggv a_y is chosen: (name, value) or None."""
+    if sliding:  # call #22: open-loop post-cliff, closed-loop beside it
+        if post_cliff is None:
+            return None
+        return "open_loop_post_cliff", post_cliff
+    if peak is None and closed is None:
+        return None
+    if closed is not None and (peak is None or closed >= peak):
+        return "closed_loop_max", closed
+    return "open_loop_peak", peak
+
+
+def write_limits(
+    out_dir: Path,
+    bins: list[RadiusBin],
+    *,
+    source: Path,
+    recording_sha256: str,
+    closed_loop: dict | None = None,
+) -> None:
+    """Write limits_sliding.yaml and limits_peak.yaml into `out_dir`.
+    `closed_loop` (Step 5d's sweep) fills ay_reached / ay_closed_loop_max;
+    without it they are null with a `pending:` note."""
+    import yaml
+
+    top = _top_speed(source)
+    measured = {"recording_sha256": recording_sha256}
+    pending = "closed-loop sweep (Step 5)"
+    cl = closed_loop or {}
+    cl_measured = (
+        {"recording_sha256": cl["recording_sha256"]}
+        if cl.get("recording_sha256")
+        else measured
+    )
+    note_min_time = (
+        "# Written by tools/autodrive_identify.py analyse; never edit by hand\n"
+        "# (CHECK-2670 re-derives it from the committed recordings).\n"
+        "# TUM min-time reads only ggv row 0 and its per-axle Pacejka tyres\n"
+        "# (optimize.py:168,202,204): a radius-dependent grip reaches it only\n"
+        "# as that one number. Carrying the dependence needs a tyre set refit\n"
+        "# to the by-radius data or a fork change taking mue(curvature).\n"
+        "# Nothing loads this file until the owner rules.\n"
+    )
+    for kind in ("sliding", "peak"):
+        sliding = kind == "sliding"
+        drive = DRIVE_SLIDING if sliding else DRIVE_PEAK
+        limit = SLIDING_RANGE if sliding else PEAK_RANGE
+        lateral_rows = []
+        picked: dict[float, float] = {}
+        for b in bins:
+            entry = {"radius": b.radius, "n": b.n, "bound": b.bound}
+            if b.post_cliff is not None:
+                entry["ay_post_cliff"] = _value(
+                    round(b.post_cliff.value, 6),
+                    "measured",
+                    "open-loop",
+                    n=b.post_cliff.n,
+                    **measured,
+                )
+            if b.peak is not None:
+                entry["ay_peak"] = _value(
+                    round(b.peak.value, 6),
+                    "measured",
+                    "open-loop",
+                    n=b.peak.n,
+                    **measured,
+                )
+            key = "ay_reached" if sliding else "ay_closed_loop_max"
+            got = (cl.get("bins") or {}).get(b.radius, {})
+            pair = got.get("reached" if sliding else "max")
+            if pair is not None:
+                entry[key] = _value(
+                    round(pair[0], 6),
+                    "measured",
+                    "closed-loop",
+                    n=pair[1],
+                    **cl_measured,
+                )
+            chosen = _ggv_bin_choice(
+                sliding,
+                b.post_cliff.value if b.post_cliff else None,
+                b.peak.value if b.peak else None,
+                pair[0] if pair is not None else None,
+            )
+            if chosen is not None:
+                entry["chosen"], picked[b.radius] = chosen
+            lateral_rows.append(entry)
+        key = "ay_reached" if sliding else "ay_closed_loop_max"
+        n_key = "n_reached" if sliding else "n_max"
+        n_overall = {"n": cl[n_key]} if n_key in cl else {}
+        lateral = {
+            "bins": lateral_rows,
+            key: (
+                _value(
+                    round(cl[key], 6),
+                    "measured",
+                    "closed-loop",
+                    **n_overall,
+                    **cl_measured,
+                )
+                if cl.get(key) is not None
+                else _value(None, "measured", "closed-loop", pending=pending)
+            ),
+        }
+        pick = picked
+        table = [(r, v) for r, v in sorted(pick.items()) if v is not None]
+        ay_rows = ggv_from_radius(table, LIMITS_GRID) if table else []
+        brake = BRAKE_SLIDING
+        brake_rows, machine_rows = _table_rows(LIMITS_GRID, drive, limit, brake)
+        ggv_out = []
+        for (v, ax, extrap), ay in zip(brake_rows, ay_rows, strict=False):
+            row = {
+                "v": v,
+                "values": [ax, round(min(ay.ay, TPH_MAX), 6)],
+                "label": "inferred",
+            }
+            if extrap or ay.extrapolated:
+                row["extrapolated"] = True
+            if ay.multiple_roots:
+                row["multiple_roots"] = True
+            ggv_out.append(row)
+        doc = {
+            "edition": "2026-iros-practice",
+            "kind": kind,
+            "top_speed": {
+                "value": top["value"],
+                "label": "guide",
+                "source": top.get("source", "guide"),
+                "line": top.get("line"),
+            },
+            "top_speed_predicted": _value(
+                TOP_SPEED_PREDICTED,
+                "inferred",
+                "plan facts 2026-11-08",
+                assumption="increment 2's predicted_top_speed recomputes it",
+            ),
+            "lateral": lateral,
+            "drive_ax": {
+                **_value(
+                    None,
+                    "inferred",
+                    "F3" if not sliding else "F2/F4",
+                    assumption=A_X_ASSUMPTION,
+                ),
+                "intercept": drive[0],
+                "slope": -drive[1],
+                "valid_to_mps": limit,
+            },
+            "braking_ax": (
+                {
+                    **_value(None, "inferred", "F2", assumption=A_X_ASSUMPTION),
+                    "intercept": BRAKE_SLIDING[0],
+                    "slope": BRAKE_SLIDING[1],
+                }
+                if sliding
+                else _value(
+                    None,
+                    "inferred",
+                    "needs partial-slip control; increment 2 probes it",
+                )
+            ),
+            "ggv": {
+                "columns": ["v_mps", "ax_max_mps2", "ay_max_mps2"],
+                "rule": "ax: sliding braking law; ay: root of a = f(v^2 / a)"
+                " over the radius bins (ggv_from_radius); each bin's value "
+                + GGV_BIN_RULE[kind],
+                "rows": ggv_out,
+            },
+            "ax_max_machines": {
+                "columns": ["v_mps", "ax_max_machines_mps2"],
+                "rule": "the drive law, clamped at 0, extrapolated past "
+                "its slip range",
+                "rows": machine_rows,
+            },
+        }
+        if not sliding:
+            doc["ggv"]["braking_note"] = (
+                "peak braking not measured; sliding used"
+            )
+        (out_dir / f"limits_{kind}.yaml").write_text(
+            note_min_time + yaml.safe_dump(doc, sort_keys=False)
+        )
+
+
+LATERAL_BIN_CENTRES = (0.56, 0.78, 1.21, 2.05, 3.08)  # R_kin of A 1.0..0.2
+
+
+def lateral_bins(recording: Path, source: Path) -> list[RadiusBin]:
+    """The recording's lateral windows, binned by measured path radius."""
+    import yaml
+
+    values = yaml.safe_load(source.read_text())["values"]
+    header, events = _recorder().read_records(recording)
+    segs = segments(samples_from_events(events))
+    windows = lateral_windows(
+        segs,
+        values["wheelbase_table_m"]["value"],
+        values["wheel_radius_m"]["value"],
+        rungs=len(LATERAL_RUNGS),
+    )
+    return lateral_by_radius(windows, LATERAL_BIN_CENTRES)
+
+
+def sweep_rungs(path: Path) -> list[dict]:
+    """The ladder rungs a corner-sweep recording holds, in order: each one's
+    `rung`, `status` (kept | collision), wall-time span and run facts."""
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        return json.loads(handle.readline())["meta"]["rungs"]
+
+
+def closed_loop_windows(
+    path: Path, source: Path
+) -> list[tuple[dict, LateralWindow]]:
+    """Every steering lobe of the corner sweep as a `LateralWindow` (the
+    closed loop has no commanded repeat; `repeat` is 0 and `rung` is the
+    window's index in the segment), with the rung it came from."""
+    import yaml
+
+    values = yaml.safe_load(source.read_text())["values"]
+    wheelbase = values["wheelbase_table_m"]["value"]
+    radius = values["wheel_radius_m"]["value"]
+    rungs = sweep_rungs(path)
+    out: list[tuple[dict, LateralWindow]] = []
+    for seg in segments(parse_sweep(path).samples):
+        for lobe in _lobes(seg):
+            frames = [lobe[0][0]] + [cur for _, cur in lobe]
+            found = lateral_windows([frames], wheelbase, radius, 1)
+            t = lobe[0][1].wall
+            info = next((r for r in rungs if r["t0"] <= t <= r["t1"]), None)
+            if found and info is not None:
+                out.append((info, found[0]))
+    return out
+
+
+def closed_loop_from_sweep(
+    path: Path, source: Path, recording_sha256: str
+) -> dict:
+    """The closed-loop a_y of the kept rungs: `reached` is the median a_y of
+    the windows labelled saturated, `max` the highest a_y of the windows not
+    (the pre-saturation maximum), per path-radius bin and overall. The
+    collision rung's windows are not used."""
+    kept = [
+        w
+        for info, w in closed_loop_windows(path, source)
+        if info["status"] == "kept"
+    ]
+    saturated = [w.ay for w in kept if w.label == "saturated"]
+    linear = [w.ay for w in kept if w.label == "linear"]
+    bins: dict[float, dict] = {}
+    for i, centre in enumerate(LATERAL_BIN_CENTRES):
+        members = [
+            w for w in kept if _bin_index(w.radius, LATERAL_BIN_CENTRES) == i
+        ]
+        sat = [w.ay for w in members if w.label == "saturated"]
+        lin = [w.ay for w in members if w.label == "linear"]
+        bins[centre] = {
+            "reached": (statistics.median(sat), len(sat)) if sat else None,
+            "max": (max(lin), len(lin)) if lin else None,
+        }
+    return {
+        "ay_reached": statistics.median(saturated) if saturated else None,
+        "ay_closed_loop_max": max(linear) if linear else None,
+        "n_reached": len(saturated),
+        "n_max": len(linear),
+        "bins": bins,
+        "recording_sha256": recording_sha256,
+    }
+
+
 def _recorder():
     """tools/autodrive_record.py, loaded by path (the two share a folder)."""
     path = Path(__file__).resolve().with_name("autodrive_record.py")
@@ -622,16 +1560,29 @@ def _recorder():
     return module
 
 
+def schedule_for(name: str):
+    """(id, command function, end, repeats) of a named recording schedule."""
+    if name == "identify":
+        return SCHEDULE_ID, identify_schedule, SCHEDULE_END, REPEATS
+    if name == "lateral":
+        return (
+            LATERAL_SCHEDULE_ID,
+            lateral_schedule,
+            LATERAL_END,
+            LATERAL_REPEATS,
+        )
+    raise ValueError(f"unknown schedule {name!r}")
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     rec = _recorder()
-    header = rec._header(args.config, SCHEDULE_ID)
+    schedule_id, command, end, repeats = schedule_for(args.schedule)
+    header = rec._header(args.config, schedule_id)
     header["host_load"] = list(os.getloadavg())
-    header["repeats"] = REPEATS
+    header["repeats"] = repeats
     args.out.parent.mkdir(parents=True, exist_ok=True)
     writer = rec.RecordWriter(args.out, header)
-    handler = rec.BridgeHandler(
-        writer, identify_schedule, SCHEDULE_END, strip_frame
-    )
+    handler = rec.BridgeHandler(writer, command, end, strip_frame)
     print(f"recording to {args.out}; start the sim now", flush=True)
     try:
         rec.serve(handler, args.port)
@@ -838,32 +1789,75 @@ def analyse(recording: Path, source: Path) -> dict:
 def cmd_analyse(args: argparse.Namespace) -> int:
     import yaml
 
-    result = analyse(args.recording, args.source)
-    args.out.write_text(
-        "# Written by tools/autodrive_identify.py analyse; never edit by\n"
-        "# hand (CHECK-1780 re-derives it from the committed recording).\n"
-        + yaml.safe_dump(result, sort_keys=False)
-    )
-    print(f"wrote {args.out}", flush=True)
-    return 0
+    rec = _recorder()
+    header, _ = rec.read_records(args.recording)
+    schedule = header.get("schedule")
+    if schedule == SCHEDULE_ID:
+        if args.out is None or args.out_dir is not None:
+            print(f"{SCHEDULE_ID} takes --out, not --out-dir", file=sys.stderr)
+            return 2
+        result = analyse(args.recording, args.source)
+        args.out.write_text(
+            "# Written by tools/autodrive_identify.py analyse; never edit by\n"
+            "# hand (CHECK-1780 re-derives it from the committed recording).\n"
+            + yaml.safe_dump(result, sort_keys=False)
+        )
+        print(f"wrote {args.out}", flush=True)
+        return 0
+    if schedule == LATERAL_SCHEDULE_ID:
+        if args.out_dir is None or args.out is not None:
+            print(
+                f"{LATERAL_SCHEDULE_ID} takes --out-dir, not --out",
+                file=sys.stderr,
+            )
+            return 2
+        write_limits(
+            args.out_dir,
+            lateral_bins(args.recording, args.source),
+            source=args.source,
+            recording_sha256=hashlib.sha256(
+                args.recording.read_bytes()
+            ).hexdigest(),
+            closed_loop=(
+                closed_loop_from_sweep(
+                    args.sweep,
+                    args.source,
+                    hashlib.sha256(args.sweep.read_bytes()).hexdigest(),
+                )
+                if args.sweep
+                else None
+            ),
+        )
+        print(f"wrote limits_*.yaml in {args.out_dir}", flush=True)
+        return 0
+    raise ValueError(f"unknown schedule {schedule!r} in {args.recording}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    record = sub.add_parser("record", help="record the identification drive")
+    record = sub.add_parser("record", help="record a scripted drive")
     record.add_argument("--config", type=Path, required=True)
     record.add_argument("--out", type=Path, required=True)
     record.add_argument("--port", type=int, default=4567)
+    record.add_argument(
+        "--schedule", choices=("identify", "lateral"), default="identify"
+    )
     record.set_defaults(func=cmd_record)
     analyse_parser = sub.add_parser(
-        "analyse", help="analyse a recording into identified.yaml"
+        "analyse", help="analyse a recording (identified.yaml or the limits)"
     )
     analyse_parser.add_argument("--recording", type=Path, required=True)
     analyse_parser.add_argument("--source", type=Path, required=True)
-    analyse_parser.add_argument("--out", type=Path, required=True)
+    analyse_parser.add_argument("--sweep", type=Path)
+    analyse_parser.add_argument("--out", type=Path)
+    analyse_parser.add_argument("--out-dir", type=Path)
     analyse_parser.set_defaults(func=cmd_analyse)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     return args.func(args)
 
 

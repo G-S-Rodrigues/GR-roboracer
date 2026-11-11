@@ -132,6 +132,17 @@ class MetricsNode : public rclcpp::Node {
                 rclcpp::QoS(10).reliable(),
                 [this](const racing_interfaces::msg::TrackRelativeState::
                            ConstSharedPtr &message) { observe(*message); });
+        // The first sample the accumulator accepts needs both a scan and a
+        // state, so this one latched report proves both links by delivery:
+        // the scenario runner waits for it before releasing t=0 (findings
+        // 2026-11-11, sim3030 root cause). Created only under use_sim_time,
+        // as the supervisor's ~/clock_received is: a free-running source
+        // (AutoDRIVE, a car) has no held t=0 to prove, so no endpoint exists.
+        if (get_parameter("use_sim_time").as_bool()) {
+            started_publisher_ =
+                create_publisher<racing_interfaces::msg::TrackRelativeState>(
+                    "~/started", rclcpp::QoS(1).reliable().transient_local());
+        }
         finalize_service_ = create_service<std_srvs::srv::Trigger>(
             "~/finalize",
             [this](
@@ -173,6 +184,10 @@ class MetricsNode : public rclcpp::Node {
                                latest_clearance_, std::abs(message.d),
                                latest_clearance_ <= collision_threshold_,
                                latest_saturated_});
+        if (started_publisher_ && !started_reported_) {
+            started_publisher_->publish(message);
+            started_reported_ = true;
+        }
         if (accumulator_->summary().lap_completed) {
             publish_and_write();
         }
@@ -232,6 +247,9 @@ class MetricsNode : public rclcpp::Node {
     bool has_clearance_{false};
     bool latest_saturated_{false};
     bool published_{false};
+    bool started_reported_{false};
+    rclcpp::Publisher<racing_interfaces::msg::TrackRelativeState>::SharedPtr
+        started_publisher_;
     rclcpp::Publisher<racing_interfaces::msg::ScenarioMetrics>::SharedPtr
         metrics_publisher_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr
