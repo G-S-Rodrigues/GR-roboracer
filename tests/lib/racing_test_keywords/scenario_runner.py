@@ -981,7 +981,6 @@ def run_scenario_with_track_limit_violation(
 
     outcome: dict[str, Any] = {}
     failure: list[BaseException] = []
-    frozen: dict[str, Any] = {}
 
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_track_limit_injector")
@@ -1080,6 +1079,4 @@ def run_scenario_with_track_limit_violation(
         raise error
     result = RunOutcome(outcome)
     result.shutdown_escalations = escalations
-    result.frozen_at = frozen.get("at")
-    result.stop_context = frozen.get("context")
     return result
