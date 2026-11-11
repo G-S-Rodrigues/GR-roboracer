@@ -210,8 +210,8 @@ def test_check_2900_constants_equal_the_message() -> None:
 
     from scripts.frozen_pose import CLAMP_ESTOP, LATCH_REASONS
 
-    assert LATCH_REASONS == {
+    assert {
         SafetyStatus.REASON_STALE_INPUT,
         SafetyStatus.REASON_ESTOP_LATCHED,
-    }
-    assert CLAMP_ESTOP == SafetyStatus.CLAMP_ESTOP
+    } == LATCH_REASONS
+    assert SafetyStatus.CLAMP_ESTOP == CLAMP_ESTOP
