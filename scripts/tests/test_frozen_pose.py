@@ -5,6 +5,8 @@ Tier 1, stdlib only.
 
 from __future__ import annotations
 
+import pytest
+
 from scripts.frozen_pose import FROZEN_EPSILON_M, FrozenPose
 
 LENGTH = 100.0
@@ -178,3 +180,38 @@ def test_check_2374_wait_reports_none_when_metrics_come_unfrozen(
     )
     assert message is metrics
     assert frozen_at is None
+
+
+@pytest.mark.parametrize(
+    ("reason", "clamps", "expected"),
+    [
+        (3, 0, True),
+        (4, 0, True),
+        (0, 64, True),
+        (2, 64, True),
+        (0, 0, False),
+        (1, 1, False),
+        (2, 4, False),
+        (2, 2, False),
+        (2, 8, False),
+        (2, 16, False),
+    ],
+)
+def test_check_2900_only_stale_estop_or_the_estop_bit_latch(
+    reason, clamps, expected
+) -> None:
+    from scripts.frozen_pose import is_supervisor_latch
+
+    assert is_supervisor_latch(reason, clamps) is expected
+
+
+def test_check_2900_constants_equal_the_message() -> None:
+    from racing_interfaces.msg import SafetyStatus
+
+    from scripts.frozen_pose import CLAMP_ESTOP, LATCH_REASONS
+
+    assert LATCH_REASONS == {
+        SafetyStatus.REASON_STALE_INPUT,
+        SafetyStatus.REASON_ESTOP_LATCHED,
+    }
+    assert CLAMP_ESTOP == SafetyStatus.CLAMP_ESTOP

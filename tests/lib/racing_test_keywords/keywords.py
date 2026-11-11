@@ -286,12 +286,25 @@ class RacingTestKeywords:
             where = (
                 f"ground truth frozen at sim {t:.2f} s, s {s:.1f}, d {d:.2f}"
             )
+            non_latching = context.get("non_latching")
             if context.get("latched"):
                 verdict = (
-                    "pose frozen after a safety latch: a latch, not a collision"
+                    "pose frozen after a supervisor latch "
+                    f"({context.get('latch')}): a latch, not a collision"
+                )
+            elif non_latching and "REASON_TRACK_LIMIT" in non_latching:
+                verdict = (
+                    "the supervisor zeroes the command while the car is "
+                    f"outside the track limit ({non_latching}, does not "
+                    "latch): a supervisor stop or a collision"
                 )
             else:
                 verdict = "the gym holds its state on a collision"
+                if non_latching:
+                    verdict += (
+                        "; last non-latching supervisor status before the "
+                        f"freeze: {non_latching} (does not latch)"
+                    )
             note = f"; {where}: {verdict}"
             note += self._estimate_error_at(t)
             if context.get("text"):

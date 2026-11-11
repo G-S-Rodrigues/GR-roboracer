@@ -71,9 +71,11 @@ def _stamp(seconds: float):
     )
 
 
-def _status(seconds: float, reason: int):
+def _status(seconds: float, reason: int, clamps: int = 0):
     return SimpleNamespace(
-        header=SimpleNamespace(stamp=_stamp(seconds)), reason=reason
+        header=SimpleNamespace(stamp=_stamp(seconds)),
+        reason=reason,
+        active_clamps=clamps,
     )
 
 
@@ -112,6 +114,69 @@ def test_check_1970_continuous_status_and_no_commands_is_controller_silent():
         observer._on_status(_status(tick * 0.01, SafetyStatus.REASON_NONE))
     observer._on_status(_status(0.31, SafetyStatus.REASON_STALE_INPUT))
     assert observer.verdict() == "controller-silent"
+
+
+def test_check_2901_a_steering_clamp_is_not_a_latch():
+    observer = _observer()
+    observer._on_status(_status(96.0, SafetyStatus.REASON_NONE))
+    observer._on_status(
+        _status(
+            96.770,
+            SafetyStatus.REASON_COMMAND_LIMIT,
+            SafetyStatus.CLAMP_STEERING,
+        )
+    )
+    observer._on_status(_status(96.78, SafetyStatus.REASON_NONE))
+    context = observer.stop_context(97.03)
+    assert context["latched"] is False
+    assert context["latch"] is None
+    assert "REASON_COMMAND_LIMIT" in context["non_latching"]
+    assert "96.770" in context["non_latching"]
+    assert "CLAMP_STEERING" in context["non_latching"]
+
+
+def test_check_2902_a_clamp_does_not_move_the_stale_anchor():
+    observer = _observer()
+    for tick in range(10):
+        observer._on_status(_status(tick * 0.01, SafetyStatus.REASON_NONE))
+    observer._on_status(
+        _status(
+            0.095,
+            SafetyStatus.REASON_COMMAND_LIMIT,
+            SafetyStatus.CLAMP_STEERING,
+        )
+    )
+    for tick in range(10, 21):
+        observer._on_drive(_drive(tick * 0.01))
+    observer._on_drive(_drive(0.29))
+    observer._on_status(
+        _status(
+            0.30,
+            SafetyStatus.REASON_STALE_INPUT,
+            SafetyStatus.CLAMP_STALE_INPUT | SafetyStatus.CLAMP_ESTOP,
+        )
+    )
+    assert observer.verdict() == "supervisor-lag"
+    assert "0.29" in observer._startup_trace()
+    context = observer.stop_context(0.31)
+    assert context["latched"] is True
+    assert "REASON_STALE_INPUT" in context["latch"]
+
+
+def test_check_2903_a_latch_after_the_freeze_is_not_its_cause():
+    observer = _observer()
+    observer._on_status(
+        _status(
+            5.0,
+            SafetyStatus.REASON_STALE_INPUT,
+            SafetyStatus.CLAMP_STALE_INPUT | SafetyStatus.CLAMP_ESTOP,
+        )
+    )
+    after = observer.stop_context(4.0)
+    assert after["latched"] is False
+    at = observer.stop_context(5.0)
+    assert at["latched"] is True
+    assert "REASON_STALE_INPUT" in at["latch"]
 
 
 @pytest.fixture

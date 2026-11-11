@@ -429,6 +429,63 @@ def test_check_2375_a_latch_is_not_called_a_collision(tmp_path):
     assert "REASON_TRACK_LIMIT" in text
 
 
+def _freeze_text(tmp_path, context) -> str:
+    return _lap_text(
+        _freeze_library(
+            tmp_path, frozen_at=(96.9, 173.8, -0.88), stop_context=context
+        )
+    )
+
+
+def test_check_2904_a_non_latching_clamp_is_named_not_a_latch(tmp_path):
+    text = _freeze_text(
+        tmp_path,
+        {
+            "text": "t",
+            "latched": False,
+            "non_latching": "REASON_COMMAND_LIMIT clamps=['CLAMP_STEERING'] "
+            "stamp=96.770s",
+        },
+    )
+    assert "the gym holds its state on a collision" in text
+    assert (
+        "last non-latching supervisor status before the freeze: "
+        "REASON_COMMAND_LIMIT"
+    ) in text
+    assert "96.770s" in text
+    assert "(does not latch)" in text
+    assert "a latch, not a collision" not in text
+
+
+def test_check_2904_a_latch_names_its_reason(tmp_path):
+    text = _freeze_text(
+        tmp_path,
+        {
+            "text": "t",
+            "latched": True,
+            "latch": "REASON_STALE_INPUT clamps=[] stamp=1.000s",
+        },
+    )
+    assert "pose frozen after a supervisor latch (REASON_STALE_INPUT" in text
+    assert "a latch, not a collision" in text
+
+
+def test_check_2904_track_limit_is_not_a_collision(tmp_path):
+    text = _freeze_text(
+        tmp_path,
+        {
+            "text": "t",
+            "latched": False,
+            "non_latching": "REASON_TRACK_LIMIT clamps=['CLAMP_NONE'] "
+            "stamp=2.000s",
+        },
+    )
+    assert "REASON_TRACK_LIMIT" in text
+    assert "outside the track limit" in text
+    assert "does not latch" in text
+    assert "the gym holds its state on a collision" not in text
+
+
 def test_check_2375_not_frozen_keeps_todays_text(tmp_path):
     library = _freeze_library(tmp_path)
     assert _lap_text(library) == "expected lap_completed=True, was False"
