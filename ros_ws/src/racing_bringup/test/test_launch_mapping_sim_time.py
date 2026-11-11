@@ -14,7 +14,11 @@ from pathlib import Path
 
 import pytest
 from launch import LaunchContext
-from launch.actions import IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    SetLaunchConfiguration,
+)
 from test_bringup_contract import REPOSITORY_ROOT, _merged
 
 LAUNCH_DIR = Path(__file__).parents[1] / "launch"
@@ -51,12 +55,23 @@ def _context(module, **arguments: str) -> LaunchContext:
 
 
 def _slam_nodes(**arguments: str) -> tuple[LaunchContext, list]:
+    """The launch's entities in order, as `ros2 launch` runs them: an
+    OpaqueFunction's SetLaunchConfiguration takes effect, and so does an
+    include's `launch_arguments` (they are not scoped: they overwrite the
+    caller's configuration for everything after)."""
     module = _module("slam_toolbox_mapping")
     context = _context(module, **arguments)
     actions: list = []
     for entity in module.generate_launch_description().entities:
-        if isinstance(entity, OpaqueFunction):
-            actions.extend(entity.execute(context) or [])
+        if isinstance(entity, IncludeLaunchDescription):
+            for name, value in entity.launch_arguments:
+                SetLaunchConfiguration(name, value).execute(context)
+        elif isinstance(entity, OpaqueFunction):
+            for action in entity.execute(context) or []:
+                if isinstance(action, SetLaunchConfiguration):
+                    action.execute(context)
+                else:
+                    actions.append(action)
     nodes = [a for a in actions if hasattr(a, "_Node__package")]
     assert [n._Node__package for n in nodes] == ["slam_toolbox"]
     return context, nodes
@@ -129,3 +144,29 @@ def test_bringup_1981_slam_toolbox_config_argument() -> None:
     assert [Path(f).name for f in _parameter_files(nodes[0], context)] == [
         Path(ONLINE).name
     ]
+
+
+def test_bringup_1983_the_driving_stack_does_not_see_the_mapper_config():
+    """BRINGUP-1983: `sim_pure_pursuit.launch.py` refuses a non-empty
+    `slam_toolbox_config` unless pose_source is slam_toolbox, and the
+    mapping launch's argument of the same name (default: the survey yaml)
+    reaches it through the include. The include therefore hands it an empty
+    value. (Found launching `slam_toolbox_mapping.launch.py` for real: the
+    1981 declaration test cannot see a nested launch refusing the value.)"""
+    module = _module("slam_toolbox_mapping")
+    includes = [
+        e
+        for e in module.generate_launch_description().entities
+        if isinstance(e, IncludeLaunchDescription)
+    ]
+    assert len(includes) == 1
+
+    def text(item) -> str:
+        if isinstance(item, str):
+            return item
+        return "".join(part.text for part in item)
+
+    given = {
+        text(name): text(value) for name, value in includes[0].launch_arguments
+    }
+    assert given.get("slam_toolbox_config") == "", given
