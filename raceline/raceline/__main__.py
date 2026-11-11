@@ -124,6 +124,12 @@ def _recorded_command(argv: list[str]) -> str:
         ):
             skip = True
             continue
+        if (
+            arg.startswith("--out-dir=")
+            and Path(arg.split("=", 1)[1]).resolve()
+            == Path(DEFAULT_OUT).resolve()
+        ):
+            continue
         kept.append(arg)
     return "python -m raceline " + " ".join(kept)
 

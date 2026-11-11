@@ -109,6 +109,11 @@ TRIGGER_PATHS: dict[str, tuple[str, ...]] = {
     "third_party/GR-roboracer-data": ("planning",),
     # the runner's own edits run once, so a harness change cannot bit-rot
     "scripts/benchmark_runs.py": ROLE_ORDER,
+    # what the runner imports to find the survey map and the raceline
+    "ros_ws/src/racing_bringup/racing_bringup/track_data.py": ROLE_ORDER,
+    "ros_ws/src/racing_bringup/racing_bringup/scenario_parameters.py": (
+        ROLE_ORDER
+    ),
 }
 
 

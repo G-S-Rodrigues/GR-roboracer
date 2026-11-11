@@ -261,4 +261,4 @@ The F-T0 fix added tier 1 `CHECK-2560`..`CHECK-2564` and `CHECK-2570`..`CHECK-25
 
 The heavy-lane work added tier 1 `CHECK-2400` to `CHECK-2440` and `CHECK-2441` to `CHECK-2445` (`scripts/tests/test_heavy_lane.py`).
 
-The D2 data layout added tier 1 `CHECK-2950`..`CHECK-2954`, `RACELINE-1600`..`RACELINE-1603`, `RACELINE-1610`..`RACELINE-1612`, `RACELINE-1620` and `BRINGUP-2600`..`BRINGUP-2605` (19 IDs, counted by ID, on the counts above); `BRINGUP-1500` moved into `BRINGUP-2601` with `mola_map_files`.
+The D2 data layout added tier 1 `CHECK-2950`..`CHECK-2954`, `RACELINE-1600`..`RACELINE-1603`, `RACELINE-1610`..`RACELINE-1612`, `RACELINE-1620` and `BRINGUP-2600`..`BRINGUP-2605` (19 IDs, counted by ID, on the counts above); `BRINGUP-1500` stays, rewritten to read `track_data.mola_files` (`mola_map_files` is gone).

@@ -501,7 +501,7 @@ def test_check_1490_normalise_round_trip() -> None:
 
 def test_check_1560_reference_is_dropped_like_out_dir() -> None:
     base = "python -m raceline --map a.yaml --optimizer tum_mintime"
-    with_reference = base + " --reference config/x/reference.csv"
+    with_reference = base + " --reference config/x/reference/tum_mintime.csv"
     assert normalise_command(with_reference) == normalise_command(base)
     assert normalise_command(base + " --out-dir /t --reference r.csv") == (
         normalise_command(base)

@@ -10,7 +10,6 @@ from pathlib import Path
 import yaml
 
 SURVEY = ("slam_toolbox", "res_0050")  # amcl's map; another by code change
-MAP_METHODS = ("slam_toolbox", "mola", "far_lio")
 SUBMODULE_HINT = (
     "; the track data is the GR-roboracer-data submodule, run "
     "`git submodule update --init third_party/GR-roboracer-data` "

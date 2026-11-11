@@ -809,3 +809,14 @@ def test_raceline_1620_limits_md_is_rendered_from_the_record(
     assert "Hand-written: the gym, by elimination." in kept
     assert limits.has_provenance(kept)
     assert not limits.has_provenance(text)  # the stub is not provenance
+
+
+def test_raceline_1612_both_out_dir_forms_are_dropped_when_default(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(runner, "DEFAULT_OUT", tmp_path)
+    for form in (["--out-dir", str(tmp_path)], [f"--out-dir={tmp_path}"]):
+        recorded = runner._recorded_command(["--map", "a.yaml", *form])
+        assert "out-dir" not in recorded, recorded
+    other = runner._recorded_command(["--out-dir=/elsewhere"])
+    assert "--out-dir=/elsewhere" in other
