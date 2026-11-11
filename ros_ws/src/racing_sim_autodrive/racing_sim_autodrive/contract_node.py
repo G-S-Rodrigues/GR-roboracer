@@ -56,6 +56,10 @@ SCAN_FRAME_ID = bridge.SCAN_FRAME_ID  # both scans, the contract name
 # The sim's `V1 Linear Acceleration` has no gravity (its z median is 0.001
 # m/s^2 over the committed recording); /imu reports the specific force (REP
 # 145), as the gym's /imu does (racing_sim_gym_jax/imu.py, the same 9.81).
+# Interim: +g on z, unrotated, exact only on the level (the body sits at a
+# constant 1.7-1.8 deg pitch). The 2026-11-05 ruling (SLAM part 5b) rotates g
+# into base_link by the frame's orientation, in core.py and devkit.py, and
+# must replace this line, not add to it (else z reads raw + 2g).
 GRAVITY_M_S2 = 9.81
 
 VEHICLE_PARAMETERS = (
