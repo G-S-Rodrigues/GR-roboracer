@@ -33,9 +33,12 @@ gotcha 31).
 from __future__ import annotations
 
 import argparse
+import bisect
 import dataclasses
+import gzip
 import hashlib
 import importlib.util
+import json
 import math
 import os
 import statistics
@@ -467,6 +470,77 @@ def samples_from_events(events: list[dict]) -> list[Sample]:
         elif event["dir"] == "sim":
             samples.append(parse_frame(event["data"], command, event["t"]))
     return samples
+
+
+SWEEP_CHANNELS = ("imu", "enc", "truth", "track", "counters", "drive")
+
+
+@dataclass(frozen=True)
+class SweepSamples:
+    samples: list[Sample]
+    dropped: int  # frames (stamps) with no counters message
+    meta: dict  # the channels header's `meta`
+
+
+def parse_sweep(path: Path) -> SweepSamples:
+    """Sim frames of a corner-sweep `channels.jsonl.gz` (tests/autodrive/
+    _porto_drive.py), one `Sample` per counters message. A frame is one
+    `header.stamp`: the IMU, encoder, truth and track messages with the same
+    stamp are joined to the counters message that carries it, and its
+    `lap_time` is the sim's clock (there is no /clock under AutoDRIVE). The
+    steering is the nearest preceding `/drive` command (the closed loop does
+    not record the actual angle); position and yaw are not recorded. A stamp
+    with no counters message is dropped and counted. A stream with no
+    message at all raises, naming it."""
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        lines = [json.loads(line) for line in handle if line.strip()]
+    meta = lines[0].get("meta", {}) if lines and "meta" in lines[0] else {}
+    by_stream: dict[str, list[dict]] = {name: [] for name in SWEEP_CHANNELS}
+    for line in lines:
+        if "stream" in line and line["stream"] in by_stream:
+            by_stream[line["stream"]].append(line)
+    for name in SWEEP_CHANNELS:
+        if not by_stream[name]:
+            raise ValueError(f"{path}: channel {name!r} has no messages")
+    keyed = {
+        name: {row["t"]: row for row in by_stream[name]}
+        for name in ("imu", "enc", "truth", "track")
+    }
+    drive = sorted(by_stream["drive"], key=lambda row: row["t"])
+    drive_t = [row["t"] for row in drive]
+    counters = {row["t"] for row in by_stream["counters"]}
+    # a stamp seen by any channel but not by the counters: one dropped frame
+    stray = {t for name in keyed for t in keyed[name] if t not in counters}
+    dropped = len(stray)
+    samples: list[Sample] = []
+    for row in by_stream["counters"]:
+        t = row["t"]
+        imu = keyed["imu"].get(t)
+        enc = keyed["enc"].get(t)
+        truth = keyed["truth"].get(t)
+        i = bisect.bisect_right(drive_t, t) - 1
+        steer = drive[i]["steer"] if i >= 0 else None
+        samples.append(
+            Sample(
+                lap_time=row["lap_time"],
+                throttle=math.nan,
+                steering=steer if steer is not None else math.nan,
+                x=math.nan,
+                y=math.nan,
+                z=math.nan,
+                yaw=math.nan,
+                vx=truth["vx"] if truth else math.nan,
+                vy=truth["vy"] if truth else math.nan,
+                wz=imu["wz"] if imu else math.nan,
+                collisions=int(row["collisions"]),
+                cmd_steering=steer,
+                wall=t,
+                ax=imu["ax"] if imu else math.nan,
+                ay=imu["ay"] if imu else math.nan,
+                wheel_angles=(enc["left"], enc["right"]) if enc else None,
+            )
+        )
+    return SweepSamples(samples=samples, dropped=dropped, meta=meta)
 
 
 def segments(samples: list[Sample]) -> list[list[Sample]]:

@@ -1137,3 +1137,111 @@ def test_check_2690_write_limits_writes_labelled_files(tmp_path) -> None:
     assert peak["braking_ax"]["value"] is None
     assert "sliding used" in peak["ggv"]["braking_note"]
     assert peak["drive_ax"]["intercept"] > sliding["drive_ax"]["intercept"]
+
+
+def _sweep_file(path: Path, drop: set[str] | None = None) -> None:
+    """A synthetic corner-sweep channels file (the Step 5b schema): a header,
+    four frames, a lap-line reset (lap_time falls, lap_count rises) and a
+    clamped run of three frames 1 microsecond apart. `drop` names a stream to
+    leave out entirely."""
+    import gzip
+    import json
+
+    drop = drop or set()
+    stamps = [100.0, 100.01, 100.02, 100.03, 100.04]
+    stamps += [100.05, 100.05 + 1e-6, 100.05 + 2e-6]
+    lap_time = [1.0, 1.01, 1.02, 0.0, 0.01, 0.02, 0.03, 0.04]
+    lines: list[dict] = [{"meta": {"sweep": {"target_ay": 6.0}}}]
+    for i, t in enumerate(stamps):
+        left = 10.0 * i if i != 3 else 0.0  # encoders zero at the reset
+        lines += [
+            {
+                "stream": "imu",
+                "t": t,
+                "ax": 0.1 * i,
+                "ay": 2.0 + i,
+                "az": 0.0,
+                "wz": 0.5,
+            },
+            {"stream": "enc", "t": t, "left": left, "right": left},
+            {"stream": "truth", "t": t, "vx": 3.0, "vy": 0.1 * i},
+            {
+                "stream": "track",
+                "t": t,
+                "s": float(i),
+                "d": 0.0,
+                "heading_error": 0.0,
+            },
+            {
+                "stream": "counters",
+                "t": t,
+                "lap_count": 1 if i >= 3 else 0,
+                "lap_time": lap_time[i],
+                "collisions": 0,
+            },
+        ]
+    # one /imu frame whose stamp has no counters message is dropped
+    lines.append(
+        {"stream": "imu", "t": 200.0, "ax": 0, "ay": 0, "az": 0, "wz": 0}
+    )
+    lines += [
+        {
+            "stream": "drive",
+            "t": 99.995 + 0.01 * k,
+            "steer": 0.1 * k,
+            "speed": 3.0,
+        }
+        for k in range(8)
+    ]
+    lines = [ln for ln in lines if "meta" in ln or ln["stream"] not in drop]
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        for ln in lines:
+            handle.write(json.dumps(ln) + "\n")
+
+
+def test_check_2685_parse_sweep_joins_one_frame_per_stamp(tmp_path) -> None:
+    """CHECK-2685: `parse_sweep` joins the IMU, encoder, truth, track and
+    counters messages that carry the same stamp into one `Sample` with the
+    counters' `lap_time`; the commanded steering is the nearest preceding
+    `/drive` message; `wheel_speed` across the lap-line reset is None, not a
+    negative speed; a frame without counters is dropped and counted; three
+    frames 1 microsecond apart stay three samples; a missing channel raises
+    naming it."""
+    import math
+
+    import pytest
+
+    tool = _tool()
+    path = tmp_path / "sweep.jsonl.gz"
+    _sweep_file(path)
+    parsed = tool.parse_sweep(path)
+    samples = parsed.samples
+    assert len(samples) == 8, len(samples)
+    assert parsed.dropped == 1
+    assert parsed.meta["sweep"]["target_ay"] == 6.0
+    assert [s.lap_time for s in samples] == [
+        1.0,
+        1.01,
+        1.02,
+        0.0,
+        0.01,
+        0.02,
+        0.03,
+        0.04,
+    ]
+    first = samples[0]
+    assert (first.ax, first.ay, first.wz) == (0.0, 2.0, 0.5)
+    assert (first.vx, first.vy) == (3.0, 0.0)
+    assert first.wheel_angles == (0.0, 0.0)
+    assert first.collisions == 0
+    # the stamp 100.0 follows the /drive message at 99.995 (steer 0.0)
+    assert first.cmd_steering == 0.0
+    assert math.isclose(samples[2].cmd_steering, 0.2)
+    assert samples[3].steering == samples[3].cmd_steering
+    assert tool.wheel_speed(samples[2], samples[3], 0.059) is None
+    assert tool.wheel_speed(samples[0], samples[1], 0.059) is not None
+    assert tool.wheel_speed(samples[0], samples[1], 0.059) > 0.0
+    with pytest.raises(ValueError, match="enc"):
+        broken = tmp_path / "no_enc.jsonl.gz"
+        _sweep_file(broken, drop={"enc"})
+        tool.parse_sweep(broken)
