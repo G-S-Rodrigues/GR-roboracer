@@ -130,7 +130,12 @@ def test_sim_3770_porto_survey_map(tmp_path: Path) -> None:
     print("SURVEY", json.dumps(result))
 
     verdict = judge_stale_input(
-        run.latch, run.stamps, stale_input_timeout_s(VEHICLE), run.stale, run.trace, END_LATCH_WAIT_S
+        run.latch,
+        run.stamps,
+        stale_input_timeout_s(VEHICLE),
+        run.stale,
+        run.trace,
+        END_LATCH_WAIT_S,
     )
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"
     assert run.reasons.get("REASON_ESTOP_LATCHED", 0) == 0, (

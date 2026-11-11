@@ -196,7 +196,12 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
     print("MOLA_MAP", json.dumps(result))
 
     verdict = judge_stale_input(
-        run.latch, run.stamps, stale_input_timeout_s(VEHICLE), run.stale, run.trace, END_LATCH_WAIT_S
+        run.latch,
+        run.stamps,
+        stale_input_timeout_s(VEHICLE),
+        run.stale,
+        run.trace,
+        END_LATCH_WAIT_S,
     )
     assert run.hold_error is None, run.hold_error
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"

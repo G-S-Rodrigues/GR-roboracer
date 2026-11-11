@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import yaml
+
 from racing_test_keywords.scenario_runner import (
     REPOSITORY_ROOT,
     read_host_load,

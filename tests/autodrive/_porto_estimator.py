@@ -21,8 +21,8 @@ from test_sim_3750_porto_fast_mintime_lap import (
     END_LATCH_WAIT_S,
     LAPS,
     LAUNCH,
-    VEHICLE,
     RACELINE,
+    VEHICLE,
 )
 
 from scripts.compare_localization import (
@@ -94,7 +94,12 @@ def fast_lap_on_estimator(
     print(case.upper(), json.dumps(result, default=str))
 
     verdict = judge_stale_input(
-        run.latch, run.stamps, stale_input_timeout_s(VEHICLE), run.stale, run.trace, END_LATCH_WAIT_S
+        run.latch,
+        run.stamps,
+        stale_input_timeout_s(VEHICLE),
+        run.stale,
+        run.trace,
+        END_LATCH_WAIT_S,
     )
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"
     assert run.reasons.get("REASON_ESTOP_LATCHED", 0) == 0, (
