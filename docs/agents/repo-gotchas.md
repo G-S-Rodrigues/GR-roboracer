@@ -82,11 +82,20 @@ Traps any task in this repository can hit. Each one cost real time at least once
     unrecoverable stop during startup, on a graph that is otherwise perfectly healthy. Symptom: an
     emergency stop already latched at t=0, with no fault anywhere in the logs. The fix is a
     deterministic t=0 — wait for every participant, then call the sim node's `~/reset` — never a
-    longer timeout. That wait also covers the supervisor's `~/clock_received` (its first `/clock`
-    delivery). The working explanation, which the owner ruled on and nobody measured, is that a
+    longer timeout. The working explanation, which the owner ruled on and nobody measured, is that a
     best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
     STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
     latch (Step 1) and 1 of 48 lag runs (Step A).
+    The runner proves t=0 by delivery on each link a seeded metric reads, not by discovery (in 21 of
+    72 launches the sim's endpoints took 0.15-1.07 s to match). The links: the supervisor's
+    `~/clock_received` (its first `/clock` delivery), racing_metrics' `~/started` (its first
+    accepted sample) and one `/controller/drive` (where the controller's input exists while held).
+    The supervisor's `/drive` into the sim is not proven by a wait. `drive-start-missed` (a
+    truth-driven car's first motion later than 3 ticks) is its only guard. Normal first motion is 1
+    tick, measured in 55 of 55 launches; the model expected 2, and the mechanism that gets a
+    non-zero velocity into the first step is not established (a `/drive` reaching the sim before
+    its first step, or a non-zero velocity independent of `/drive`; a probe that stamps `/drive`
+    writes around `~/reset` would tell them apart).
     Every gym runner in `tests/lib/racing_test_keywords/scenario_runner.py` takes this t=0 (SIM-3610/3620
     on AutoDRIVE launch free-running by design, ADR 0006). ACC-4020's injector ran free until F2 and
     latched in 4 of 15 runs on main, against 0 of 15 on the fix; CHECK-2250 fails a gym runner that
@@ -102,6 +111,13 @@ Traps any task in this repository can hit. Each one cost real time at least once
     only its direct child, so a script's EXIT trap never fires and its `setsid` stacks survive. Start it
     with `start_new_session=True`, signal its group and its children's groups, and check the groups are
     empty (SIM-3530; a leaked map_server fed amcl a second `/map`).
+
+47. **A process that launch escalates to SIGKILL loses its buffered tail, and the reader fails far from the cause.**
+    In the 2026-11-05 SIM-3510 run the recorder was killed (exit -9) with a partly written line, and
+    `read_recording` died with `JSONDecodeError` at char 271: one Odometry record less its closing `}`.
+    Symptom: a parse error in a test far from the node that hung. Remedy: write and flush each record whole
+    (REC-1010/2010); `read_recording` stays strict on purpose. `run_scenario` lists the escalations (CHECK-2370/2371).
+    Any other buffered writer a launch can kill has the same trap.
 
 ## Simulation
 

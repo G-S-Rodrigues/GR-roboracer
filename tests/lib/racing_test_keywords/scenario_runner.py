@@ -21,6 +21,7 @@ thread, spins its own rclpy node to wait for ``/scenario/metrics``, then calls
 from __future__ import annotations
 
 import contextlib
+import json
 import sys
 import threading
 import time
@@ -31,11 +32,16 @@ from typing import Any
 
 import launch
 import launch.actions
+import launch.event_handlers
 import launch.launch_description_sources
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
 from nav_msgs.msg import Odometry
-from racing_interfaces.msg import SafetyStatus, ScenarioMetrics
+from racing_interfaces.msg import (
+    SafetyStatus,
+    ScenarioMetrics,
+    TrackRelativeState,
+)
 from racing_interfaces.srv import Reset
 from rclpy.qos import (
     DurabilityPolicy,
@@ -111,6 +117,9 @@ CLOCK_QOS = QoSProfile(
 # and a held sim's /clock = 0 leaves now() at 0, so an endpoint wait cannot
 # say it is in step. F1 Step 1 and Step A; repo-gotchas #19, #32.
 SUPERVISOR_CLOCK_TOPIC = "/racing_safety_supervisor/clock_received"
+# racing_metrics' latched report of its first accepted sample (a scan and a
+# state both delivered; only under use_sim_time). F-T0, repo-gotchas #19.
+METRICS_STARTED_TOPIC = "/racing_metrics/started"
 
 RESET_SERVICE = "/racing_sim/reset"
 # Where an active pose source puts the pose the controller may drive on:
@@ -209,6 +218,163 @@ def metrics_to_dict(message: ScenarioMetrics) -> dict[str, Any]:
     return {field: getattr(message, field) for field in _METRICS_FIELDS}
 
 
+class RunOutcome(dict):
+    """``run_scenario``'s metrics, plus what the run itself learned.
+
+    The keys are exactly ``_METRICS_FIELDS``, so ``compare_metrics``, the
+    goldens, the benchmark's run JSON and a report's ``numbers`` are unchanged;
+    the diagnostics ride as attributes. A caller holding a plain ``dict`` (a
+    stub) reads them with ``getattr(outcome, name, default)``.
+
+    ``shutdown_escalations``: ``[{"name", "signal"}]`` for each process launch
+    had to SIGTERM/SIGKILL at the end. ``frozen_at``: ``(t, s, d)`` where a
+    frozen-pose stop saw the pose stop, else ``None``. ``stop_context``: on
+    a frozen stop, ``{"text", "latched", "latch", "non_latching"}`` from the
+    hang observer. ``start``:
+    ``{"metrics_start", "first_motion", "tick", "t0_waits"}``, the record
+    ``start_verdict`` judged (F-T0).
+    """
+
+    shutdown_escalations: list[dict[str, str]]
+    frozen_at: tuple[float, float, float] | None
+    stop_context: dict[str, Any] | None
+    start: dict[str, Any] | None
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.shutdown_escalations = []
+        self.frozen_at = None
+        self.stop_context = None
+        self.start = None
+
+
+class StartMissed(RuntimeError):
+    """The run's start was late: a link a seeded metric reads was not matched
+    at t=0 (``start_verdict``). Raised after the lap, with the numbers.
+
+    ``outcome``: the run's ``RunOutcome`` (metrics, ``start``, ``frozen_at``,
+    ``stop_context``), so a caller can still write the record beside the
+    verdict instead of losing the lap it paid for."""
+
+    outcome: RunOutcome | None = None
+
+
+def start_verdict(
+    metrics_start: float | None,
+    first_motion: float | None,
+    tick: float | None,
+    truth_driven: bool,
+) -> str | None:
+    """Name a late start, or return ``None``.
+
+    ``metrics-start-missed``: racing_metrics' first accepted sample is later
+    than the held stamp (normal: exactly 0). ``drive-start-missed``: a
+    truth-driven car first moved later than 3 ticks (normal: 1 tick, call
+    #23); it is the only guard on the supervisor -> sim /drive link, which is
+    not provable while held. When both hold, the metrics start is named and
+    both numbers are in the text. A condition whose input is ``None`` is not
+    checked.
+    """
+    late_metrics = metrics_start is not None and metrics_start > 0.0
+    late_drive = (
+        truth_driven
+        and first_motion is not None
+        and tick is not None
+        and first_motion > 3 * tick
+    )
+    numbers = f"metrics_start={metrics_start} s, first_motion={first_motion} s"
+    if tick is not None:
+        numbers += f", tick={tick} s"
+    if late_metrics:
+        also = " (the car's first motion was late too)" if late_drive else ""
+        return (
+            "racing_metrics' first accepted sample was after the held t=0 "
+            f"(verdict=metrics-start-missed): {numbers}{also}"
+        )
+    if late_drive:
+        return (
+            "the car's first motion was later than 3 ticks "
+            f"(verdict=drive-start-missed): {numbers}"
+        )
+    return None
+
+
+_ESCALATION_SIGNALS = {-9: "SIGKILL", -15: "SIGTERM"}
+
+
+class _ProcessLedger:
+    """What launch did to each process: started, exited with which code, and
+    which it had to escalate to SIGTERM or SIGKILL at shutdown.
+
+    Launch dispatches a ``ProcessExited`` for every process during
+    ``LaunchService.shutdown()``, before ``run()`` returns, with a return code
+    of -9 for one it had to SIGKILL. A diagnostic never fails a run: each
+    handler catches ``Exception`` (one that raised would make launch shut a
+    green run down) and records it for ``describe()``.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.started: dict[str, float] = {}
+        self.exited: dict[str, tuple[int, bool]] = {}
+        self.errors: list[str] = []
+        self.shutting_down = False
+
+    def actions(self) -> list[Any]:
+        return [
+            launch.actions.RegisterEventHandler(
+                launch.event_handlers.OnProcessStart(on_start=self._on_start)
+            ),
+            launch.actions.RegisterEventHandler(
+                launch.event_handlers.OnProcessExit(on_exit=self._on_exit)
+            ),
+        ]
+
+    def _on_start(self, event: Any, context: Any) -> None:
+        try:
+            with self._lock:
+                self.started[event.process_name] = time.monotonic()
+        except Exception as error:  # noqa: BLE001 - never fail a run
+            self._error(error)
+
+    def _on_exit(self, event: Any, context: Any) -> None:
+        try:
+            with self._lock:
+                self.exited[event.process_name] = (
+                    int(event.returncode),
+                    self.shutting_down,
+                )
+        except Exception as error:  # noqa: BLE001 - never fail a run
+            self._error(error)
+
+    def _error(self, error: Exception) -> None:
+        with contextlib.suppress(Exception), self._lock:
+            self.errors.append(repr(error))
+
+    @property
+    def shutdown_escalations(self) -> list[dict[str, str]]:
+        with self._lock:
+            return [
+                {"name": name, "signal": _ESCALATION_SIGNALS[code]}
+                for name, (code, during_shutdown) in self.exited.items()
+                if during_shutdown and code in _ESCALATION_SIGNALS
+            ]
+
+    def describe(self) -> str:
+        with self._lock:
+            parts = [
+                f"{name} exited rc={code}"
+                for name, (code, _) in self.exited.items()
+            ]
+            parts += [
+                f"{name} alive"
+                for name in self.started
+                if name not in self.exited
+            ]
+            parts += [f"ledger error: {error}" for error in self.errors]
+        return "; ".join(parts) if parts else "no process seen"
+
+
 def read_host_load() -> dict[str, float]:
     """A snapshot of host CPU pressure from ``/proc`` (Linux only).
 
@@ -261,7 +427,7 @@ class _HangObserver:
     side of the controller -> supervisor chain went quiet (``verdict``).
     Drive stamps are the odom stamps the controller answered, so they do not
     move when this observer is late. Every sample is kept to sim t <= 2 s;
-    after that a one-second ring buffer, and nothing once the first non-NONE
+    after that a one-second ring buffer, and nothing once the first latching
     status has arrived, so memory is bounded. The callbacks themselves run
     for the whole lap.
     """
@@ -270,8 +436,25 @@ class _HangObserver:
     RING_SAMPLES = 150  # > 1 s of 100 Hz
 
     def __init__(self, node) -> None:
+        # The latch rule lives in scripts/frozen_pose (stdlib-only, shared
+        # with the tier-5 report). Tier 4 runs with tests/lib on the path, so
+        # the repository root is put on it first (as the frozen-pose wait).
+        if str(REPOSITORY_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPOSITORY_ROOT))
+        from scripts.frozen_pose import is_supervisor_latch
+
+        self._is_latch = is_supervisor_latch
         self.status = None
+        # The first non-NONE status, latching or not. judge_stale_input and
+        # SIM-3620 decide pass/fail from it: set once, never re-anchored.
         self.first_latch = None
+        # The first status that latches (STALE_INPUT, ESTOP_LATCHED, or the
+        # CLAMP_ESTOP bit): what verdict() and the trace anchor on, and what
+        # stops the recording of stamps.
+        self.first_stop = None
+        # Non-NONE statuses that do not latch (a clamp, TRACK_LIMIT), newest
+        # last; ~10 s at 100 Hz, longer than the 2 s freeze window.
+        self._non_latching: deque[Any] = deque(maxlen=1000)
         self.stale_count = 0
         self.clock = None
         self._statuses_before_latch = 0
@@ -283,6 +466,23 @@ class _HangObserver:
         self._last_drive: float | None = None
         self._last_status: float | None = None
         self._load_at_start = read_host_load()
+        # F-T0's start record. Subscribed before the sim exists, so it hears
+        # the held sample (stamp 0) and racing_metrics' latched report.
+        # ``tick`` is the smallest positive state stamp (the sim stamps
+        # k * control_period, so there is no literal); ``first_motion`` the
+        # first post-0 stamp with v_s != 0 (normal: 1 tick, measured in
+        # Step 1, call #23); ``metrics_start`` the stamp of the first sample
+        # racing_metrics accepted (normal: exactly 0, the held stamp).
+        self.held_seen = False
+        self.tick: float | None = None
+        self.first_motion: float | None = None
+        self.metrics_start: float | None = None
+        self._state_subscription = node.create_subscription(
+            TrackRelativeState,
+            STATE_TOPIC,
+            self._on_state,
+            OBSERVER_DRIVE_QOS,
+        )
         self._subscriptions = [
             node.create_subscription(
                 SafetyStatus, SAFETY_STATUS_TOPIC, self._on_status, RELIABLE_QOS
@@ -295,6 +495,12 @@ class _HangObserver:
                 CONTROLLER_DRIVE_TOPIC,
                 self._on_drive,
                 OBSERVER_DRIVE_QOS,
+            ),
+            node.create_subscription(
+                TrackRelativeState,
+                METRICS_STARTED_TOPIC,
+                self._on_started,
+                LATCHED_QOS,
             ),
         ]
 
@@ -309,7 +515,7 @@ class _HangObserver:
                 stamps.popleft()
 
     def _on_drive(self, message) -> None:
-        if self.first_latch is not None:
+        if self.first_stop is not None:
             return
         seconds = self._seconds(message.header.stamp)
         if self._last_drive is not None:
@@ -319,15 +525,44 @@ class _HangObserver:
         self._last_drive = seconds
         self._record(self._drive_stamps, seconds)
 
+    def _on_state(self, message) -> None:
+        if self.first_motion is not None:
+            return
+        seconds = self._seconds(message.header.stamp)
+        if seconds == 0.0:
+            self.held_seen = True
+            return
+        if seconds > 0.0 and (self.tick is None or seconds < self.tick):
+            self.tick = seconds
+        if message.v_s != 0.0:
+            self.first_motion = seconds
+            # Nothing reads the state again; stop deserializing it all lap.
+            self._drop_state_subscription()
+
+    def _drop_state_subscription(self) -> None:
+        subscription, self._state_subscription = self._state_subscription, None
+        if subscription is not None:
+            self._node.destroy_subscription(subscription)
+
+    def _on_started(self, message) -> None:
+        if self.metrics_start is None:
+            self.metrics_start = self._seconds(message.header.stamp)
+
     def _on_status(self, message) -> None:
         self.status = message
         if message.reason == SafetyStatus.REASON_STALE_INPUT:
             self.stale_count += 1
-        if self.first_latch is not None:
+        if self.first_stop is not None:
             return
         seconds = self._seconds(message.header.stamp)
         if message.reason != SafetyStatus.REASON_NONE:
-            self.first_latch = message
+            if self.first_latch is None:
+                self.first_latch = message
+            if self._is_latch(message.reason, message.active_clamps):
+                self.first_stop = message
+            else:
+                self._non_latching.append(message)
+                self._statuses_before_latch += 1
         else:
             self._statuses_before_latch += 1
         if self._last_status is not None:
@@ -341,6 +576,7 @@ class _HangObserver:
         self.clock = message.clock
 
     def close(self) -> None:
+        self._drop_state_subscription()
         for subscription in self._subscriptions:
             self._node.destroy_subscription(subscription)
 
@@ -382,9 +618,9 @@ class _HangObserver:
         subscription can also be late, so it is a verdict about the first
         status seen, not proof. Anything else is ``unclassified``.
         """
-        if self.first_latch is None:
+        if self.first_stop is None:
             return "no-latch"
-        latch = self._seconds(self.first_latch.header.stamp)
+        latch = self._seconds(self.first_stop.header.stamp)
         in_window = [
             stamp
             for stamp in self._drive_stamps
@@ -392,7 +628,7 @@ class _HangObserver:
         ]
         status_skipped = self._max_status_gap >= STALE_INPUT_WINDOW_SECONDS
         if (
-            self.first_latch.reason == SafetyStatus.REASON_STALE_INPUT
+            self.first_stop.reason == SafetyStatus.REASON_STALE_INPUT
             and self._statuses_before_latch == 0
             and latch >= STALE_INPUT_WINDOW_SECONDS - 1e-9
             and in_window
@@ -405,9 +641,9 @@ class _HangObserver:
         return "unclassified"
 
     def _startup_trace(self) -> str:
-        if self.first_latch is None:
+        if self.first_stop is None:
             return ""
-        latch = self._seconds(self.first_latch.header.stamp)
+        latch = self._seconds(self.first_stop.header.stamp)
         recent = [
             f"{stamp:.3f}"
             for stamp in self._drive_stamps
@@ -419,6 +655,27 @@ class _HangObserver:
             f"max drive gap={self._max_drive_gap:.3f}s; "
             f"max status gap={self._max_status_gap:.3f}s"
         )
+
+    def stop_context(self, frozen_t: float) -> dict[str, Any]:
+        """Why the pose froze, from the statuses seen: ``text``; ``latched``
+        (a latching status stamped at or before ``frozen_t``, since a later
+        one cannot have caused the freeze); ``latch``; ``non_latching``, the
+        newest clamp or TRACK_LIMIT stamped at or before it."""
+        stop = self.first_stop
+        latched = (
+            stop is not None and self._seconds(stop.header.stamp) <= frozen_t
+        )
+        earlier = [
+            status
+            for status in self._non_latching
+            if self._seconds(status.header.stamp) <= frozen_t
+        ]
+        return {
+            "text": self.describe(),
+            "latched": latched,
+            "latch": self._describe(stop) if latched else None,
+            "non_latching": self._describe(earlier[-1]) if earlier else None,
+        }
 
     def describe(self) -> str:
         clock = (
@@ -439,17 +696,28 @@ class _HangObserver:
             else "; host load: "
             + ", ".join(f"{key}={value:.4f}" for key, value in load.items())
         )
+        stop = (
+            "none"
+            if self.first_stop is None
+            else self._describe(self.first_stop)
+        )
         return (
             f"last /clock={clock}; last /safety/status={last}; "
             f"first non-NONE status={first}; "
+            f"first latching status={stop}; "
             f"REASON_STALE_INPUT messages={self.stale_count}"
             f"{self._startup_trace()}{load_text}"
         )
 
 
 def _reset_at_deterministic_t0(
-    node, seed: int, timeout: float, pose_source: str = "ground_truth"
-) -> None:
+    node,
+    seed: int,
+    timeout: float,
+    pose_source: str = "ground_truth",
+    drive_on_estimate: bool = True,
+    observer=None,
+) -> dict[str, float]:
     """Wait for every participant, then release the held sim with a reset.
 
     t=0 is otherwise wherever the DDS discovery race happens to land, and
@@ -459,25 +727,40 @@ def _reset_at_deterministic_t0(
     /clock every consumer has followed, and racing_metrics aborts on the
     non-monotonic stamp.
 
-    `wait_for_node` only proves a node with the right name exists and that
-    *some* publisher/subscriber of the right topic name exists somewhere in
-    the graph - not that racing_metrics' own subscriptions, or the sim's
-    own publishers, have actually matched in DDS. A reset released before
-    that matching finishes can still slip past whatever `wait_for_node`
-    checked. `wait_for_endpoints` checks the endpoint list instead, which is
-    as close to "matched" as a third node can observe.
+    `wait_for_node` and `wait_for_endpoints` prove discovery in this node's
+    own graph view, which is not delivery: in 21 of 72 launches the sim's
+    new endpoints took 0.15-1.07 s to match after they were created
+    (findings 2026-11-11). Delivery is proven link by link, below, each wait
+    on the shared deadline (never a fresh `timeout`, never a retry):
 
-    One monotonic deadline is shared across every wait below - not a fresh
-    `timeout` per participant or per topic - so one slow participant cannot
-    hand every later wait a full fresh budget on top of the time already
-    spent.
+    - L4, sim /clock -> supervisor: the supervisor's latched
+      ``~/clock_received``.
+    - L2, sim scan and state -> racing_metrics: its latched ``~/started``,
+      the first sample it accepted (both topics delivered).
+    - L1, sim odometry -> controller: one ``/controller/drive``. A held sim
+      republishes its stamp-0 snapshot, so one command proves the link (and
+      /trajectory with it). Only where the controller's input exists while
+      held: ground_truth, amcl, or ``drive_on_estimate=False``.
 
-    The last wait is different in kind: the supervisor's own latched
-    ``~/clock_received``, the first /clock message its reader delivered. The
-    waits above prove discovery; this one proves delivery, and only the
-    supervisor can see its own reader.
+    L3, supervisor /drive -> sim, is not proven by a wait. Whether anything
+    crosses it while the sim is held is not established: first motion is
+    1 tick where the timing model predicted 2, so a command or a non-zero
+    velocity reached the first step, mechanism not established (gotcha
+    #19). ``drive-start-missed`` is its only guard.
+
+    Held-sim only. A free-running backend (AutoDRIVE, a car) has no held t=0
+    and must not call this function (gotcha #19, ADR 0006).
+
+    With an ``observer`` (the hang observer, whose readers are among the
+    links that may be late) the release also waits until it has seen the
+    held, stamp-0 state, else raises ``verdict=start-unobserved``: without
+    that the start record below would be blind in the launches whose links
+    are late.
+
+    Returns the seconds each of the delivery waits took, by name.
     """
     deadline = time.monotonic() + timeout
+    waits: dict[str, float] = {}
 
     def _remaining() -> float:
         return max(deadline - time.monotonic(), 0.0)
@@ -529,6 +812,7 @@ def _reset_at_deterministic_t0(
     # supervisor released before that stamps its first evaluation past the
     # stale window (gotcha #19). The wait shares the deadline; it is not a
     # retry and not a longer timeout.
+    began = time.monotonic()
     try:
         wait_for_message(
             node, Clock, SUPERVISOR_CLOCK_TOPIC, LATCHED_QOS, _remaining()
@@ -538,6 +822,54 @@ def _reset_at_deterministic_t0(
             "racing_safety_supervisor heard no /clock before t=0 "
             f"(verdict=supervisor-clock-unheard): {error}"
         ) from error
+    waits["supervisor_clock"] = time.monotonic() - began
+
+    # The same shape for the metrics link: racing_metrics emits nothing until
+    # a lap ends, so its own latched report of the first accepted sample is
+    # the only proof its scan and state readers are matched.
+    began = time.monotonic()
+    try:
+        wait_for_message(
+            node,
+            TrackRelativeState,
+            METRICS_STARTED_TOPIC,
+            LATCHED_QOS,
+            _remaining(),
+        )
+    except TimeoutError as error:
+        raise TimeoutError(
+            "racing_metrics accepted no sample before t=0 "
+            f"(verdict=metrics-start-unheard): {error}"
+        ) from error
+    waits["metrics_started"] = time.monotonic() - began
+
+    if pose_source in ("ground_truth", "amcl") or not drive_on_estimate:
+        began = time.monotonic()
+        try:
+            wait_for_message(
+                node,
+                AckermannDriveStamped,
+                CONTROLLER_DRIVE_TOPIC,
+                RELIABLE_QOS,
+                _remaining(),
+            )
+        except TimeoutError as error:
+            raise TimeoutError(
+                "racing_controller_baseline published no /controller/drive "
+                f"before t=0 (verdict=controller-drive-unheard): {error}"
+            ) from error
+        waits["controller_drive"] = time.monotonic() - began
+
+    if observer is not None and not observer.held_seen:
+        began = time.monotonic()
+        while not observer.held_seen:
+            if _remaining() <= 0.0:
+                raise TimeoutError(
+                    "the hang observer saw no held (stamp 0) state before "
+                    "t=0 (verdict=start-unobserved)"
+                )
+            rclpy.spin_once(node, timeout_sec=0.01)
+        waits["observer_held"] = time.monotonic() - began
 
     client = node.create_client(Reset, RESET_SERVICE)
     if not client.wait_for_service(timeout_sec=_remaining()):
@@ -550,29 +882,44 @@ def _reset_at_deterministic_t0(
     if not response.success:
         raise RuntimeError(f"{RESET_SERVICE} failed: {response.message}")
     node.destroy_client(client)
+    return waits
 
 
 FINALIZE_SERVICE = "/racing_metrics/finalize"
 STATE_TOPIC = "/ground_truth/track_relative_state"
 
 
+def scenario_track_length(scenario: str | None) -> float:
+    """Length of the track ``racing_metrics`` laps on for ``scenario``.
+
+    Resolved as the launch does (``Path(scenario)`` against the process's
+    working directory, ``track_parameters``), so a frozen-pose stop wraps s on
+    the same track the lap is counted on (gotcha 15). Raises on ``None``."""
+    import racing_common
+    from racing_bringup.scenario_parameters import track_parameters
+
+    track = track_parameters(Path(scenario))["racing_metrics"]["track_path"]
+    return racing_common.Track.from_yaml(str(track)).length()
+
+
 def _wait_for_metrics_or_frozen_pose(
     node: Any, timeout: float, window_s: float, track_length: float
-) -> Any:
+) -> tuple[Any, tuple[float, float, float] | None]:
     """``wait_for_message`` for ``/scenario/metrics`` that also ends a run
     whose pose froze.
 
     Once the pose (s and d) has stood still for ``window_s`` of sim time, the
     metrics node is asked to publish once (``~/finalize``, ``lap_completed``
     false) and the wait goes on for that message until the original deadline.
-    Raises the same ``TimeoutError`` ``wait_for_message`` does, so a caller
-    that classifies by its text is unchanged. Imported lazily: tier 4 runs
+    Returns ``(message, frozen_at)``: ``frozen_at`` is ``(t, s, d)`` where the
+    pose stopped, ``None`` when the metrics came with no freeze. Raises the
+    same ``TimeoutError`` ``wait_for_message`` does, so a caller that
+    classifies by its text is unchanged. Imported lazily: tier 4 runs
     ``robot --pythonpath tests/lib``, where ``scripts`` is not importable
     until the repository root is put on the path.
     """
     if str(REPOSITORY_ROOT) not in sys.path:
         sys.path.insert(0, str(REPOSITORY_ROOT))
-    from racing_interfaces.msg import TrackRelativeState
     from std_srvs.srv import Trigger
 
     from scripts.frozen_pose import FrozenPose
@@ -607,7 +954,7 @@ def _wait_for_metrics_or_frozen_pose(
         node.destroy_client(client)
     if not messages:
         raise TimeoutError(f"no message on {METRICS_TOPIC} within {timeout}s")
-    return messages[0]
+    return messages[0], pose.frozen_at
 
 
 def run_scenario(
@@ -682,14 +1029,16 @@ def run_scenario(
         raise ValueError(f"launch_arguments may not set {sorted(overlap)}")
     launch_arguments = {**(launch_arguments or {}), **owned}
 
+    ledger = _ProcessLedger()
     description = launch.LaunchDescription(
         [
+            *ledger.actions(),
             launch.actions.IncludeLaunchDescription(
                 launch.launch_description_sources.PythonLaunchDescriptionSource(
                     str(BRINGUP_LAUNCH_FILE)
                 ),
                 launch_arguments=launch_arguments.items(),
-            )
+            ),
         ]
     )
     service = launch.LaunchService()
@@ -697,6 +1046,8 @@ def run_scenario(
 
     outcome: dict[str, Any] = {}
     failure: list[BaseException] = []
+    frozen: dict[str, Any] = {}
+    start: dict[str, Any] = {}
 
     def _drive() -> None:
         node = rclpy.create_node("racing_test_keywords_scenario_runner")
@@ -704,7 +1055,34 @@ def run_scenario(
         try:
             for probe in probes:
                 probe.attach(node)
-            _reset_at_deterministic_t0(node, seed, timeout, pose_source)
+            try:
+                t0_waits = _reset_at_deterministic_t0(
+                    node,
+                    seed,
+                    timeout,
+                    pose_source,
+                    drive_on_estimate=drive_on_estimate,
+                    observer=observer,
+                )
+            except TimeoutError as stall:
+                # A stall names what launch saw: which process exited (and
+                # with what code) and which nodes the driver could see.
+                detail = ledger.describe()
+                try:
+                    names = ", ".join(
+                        sorted(
+                            f"{namespace.rstrip('/')}/{name}"
+                            for name, namespace in (
+                                node.get_node_names_and_namespaces()
+                            )
+                        )
+                    )
+                    names = f"[{names}]"
+                except Exception:  # noqa: BLE001 - never mask the stall
+                    names = "(unavailable)"
+                raise TimeoutError(
+                    f"{stall} [t0 stall: {detail}; nodes: {names}]"
+                ) from stall
             for probe in probes:
                 probe.started()
             if stop_on_frozen_pose is None:
@@ -712,10 +1090,35 @@ def run_scenario(
                     node, ScenarioMetrics, METRICS_TOPIC, METRICS_QOS, timeout
                 )
             else:
-                message = _wait_for_metrics_or_frozen_pose(
+                message, frozen_at = _wait_for_metrics_or_frozen_pose(
                     node, timeout, stop_on_frozen_pose, track_length
                 )
+                if frozen_at is not None:
+                    # A supervisor latch (STALE_INPUT, ESTOP_LATCHED, the
+                    # CLAMP_ESTOP bit) freezes the pose too; the keyword must
+                    # not call it a collision (raceline_report orders `latched`
+                    # before `dnf` for this reason). A clamp or TRACK_LIMIT
+                    # does not latch and is named apart.
+                    frozen["at"] = frozen_at
+                    frozen["context"] = observer.stop_context(frozen_at[0])
             outcome.update(metrics_to_dict(message))
+            # The start record, from observer stamps only: never lap_time,
+            # which is 0 on a frozen-pose stop or a DNF and spans laps.
+            start.update(
+                metrics_start=observer.metrics_start,
+                first_motion=observer.first_motion,
+                tick=observer.tick,
+                t0_waits=t0_waits or {},
+            )
+            print(f"t0 start: {json.dumps(start)}", file=sys.stderr, flush=True)
+            verdict = start_verdict(
+                observer.metrics_start,
+                observer.first_motion,
+                observer.tick,
+                pose_source == "ground_truth" or not drive_on_estimate,
+            )
+            if verdict is not None:
+                raise StartMissed(f"{verdict} [{json.dumps(start)}]")
         except TimeoutError as error:
             failure.append(TimeoutError(f"{error} [{observer.describe()}]"))
             failure[0].__cause__ = error
@@ -727,6 +1130,7 @@ def run_scenario(
                     probe.close()
             observer.close()
             node.destroy_node()
+            ledger.shutting_down = True
             service.shutdown()
 
     driver = threading.Thread(target=_drive, daemon=True)
@@ -735,9 +1139,30 @@ def run_scenario(
     driver.join(timeout=10.0)
     reset_rclpy()
 
+    escalations = ledger.shutdown_escalations
     if failure:
-        raise failure[0]
-    return outcome
+        error = failure[0]
+        if isinstance(error, StartMissed):
+            missed = RunOutcome(outcome)
+            missed.shutdown_escalations = escalations
+            missed.frozen_at = frozen.get("at")
+            missed.stop_context = frozen.get("context")
+            missed.start = dict(start) or None
+            error.outcome = missed
+        if escalations:
+            note = "shutdown escalations: " + ", ".join(
+                f"{e['name']} {e['signal']}" for e in escalations
+            )
+            if isinstance(error, TimeoutError):
+                raise TimeoutError(f"{error} [{note}]") from error
+            error.add_note(note)
+        raise error
+    result = RunOutcome(outcome)
+    result.shutdown_escalations = escalations
+    result.frozen_at = frozen.get("at")
+    result.stop_context = frozen.get("context")
+    result.start = dict(start) or None
+    return result
 
 
 def score_localization(
@@ -754,11 +1179,17 @@ def score_localization(
     """
     if str(REPOSITORY_ROOT) not in sys.path:
         sys.path.insert(0, str(REPOSITORY_ROOT))
-    from scripts.compare_localization import read_recording, score_recording
-
-    return score_recording(
-        read_recording(Path(recording)), estimate_topic=estimate_topic
+    from scripts.compare_localization import (
+        estimator_start,
+        read_recording,
+        score_recording,
     )
+
+    events = read_recording(Path(recording))
+    return {
+        **score_recording(events, estimate_topic=estimate_topic),
+        **estimator_start(events, estimate_topic),
+    }
 
 
 def run_scenario_with_track_limit_violation(
@@ -781,7 +1212,8 @@ def run_scenario_with_track_limit_violation(
     ``_reset_at_deterministic_t0`` has released t=0 (repo-gotchas #19), so
     the supervisor's clock has moved before the first fake odometry. The
     outcome's ``safety_record`` is the first non-NONE ``/safety/status`` the
-    stack reported, for a failure message that names a latch.
+    stack reported and also names the first latching status, for a failure
+    message that names a latch.
     """
     ensure_rclpy_initialized()
 
@@ -795,14 +1227,16 @@ def run_scenario_with_track_limit_violation(
     if scenario is not None:
         launch_arguments["scenario"] = scenario
 
+    ledger = _ProcessLedger()
     description = launch.LaunchDescription(
         [
+            *ledger.actions(),
             launch.actions.IncludeLaunchDescription(
                 launch.launch_description_sources.PythonLaunchDescriptionSource(
                     str(BRINGUP_LAUNCH_FILE)
                 ),
                 launch_arguments=launch_arguments.items(),
-            )
+            ),
         ]
     )
     service = launch.LaunchService()
@@ -886,6 +1320,7 @@ def run_scenario_with_track_limit_violation(
         finally:
             observer.close()
             node.destroy_node()
+            ledger.shutting_down = True
             service.shutdown()
 
     driver = threading.Thread(target=_drive, daemon=True)
@@ -894,6 +1329,17 @@ def run_scenario_with_track_limit_violation(
     driver.join(timeout=10.0)
     reset_rclpy()
 
+    escalations = ledger.shutdown_escalations
     if failure:
-        raise failure[0]
-    return outcome
+        error = failure[0]
+        if escalations:
+            note = "shutdown escalations: " + ", ".join(
+                f"{e['name']} {e['signal']}" for e in escalations
+            )
+            if isinstance(error, TimeoutError):
+                raise TimeoutError(f"{error} [{note}]") from error
+            error.add_note(note)
+        raise error
+    result = RunOutcome(outcome)
+    result.shutdown_escalations = escalations
+    return result

@@ -46,6 +46,10 @@ if(BUILD_TESTING)
     TIMEOUT 30
     LABELS "tier2"
   )
+  add_launch_test(test/test_metrics_started.py
+    TIMEOUT 30
+    LABELS "tier2"
+  )
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

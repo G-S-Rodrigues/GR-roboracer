@@ -73,3 +73,36 @@ def test_check_1430_planner_arguments_are_passed_through_only_when_given(
         "vehicle": VEHICLE,
     }
     assert not absent.get("launch_arguments")
+
+
+def test_check_2574_a_missed_start_still_writes_the_metrics(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    """CHECK-2574: `StartMissed` carries the run's outcome, and the script
+    writes it with the verdict and exits 1 rather than a bare traceback."""
+    import json  # noqa: PLC0415
+
+    spec = importlib.util.spec_from_file_location("run_scenario", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def missed(**_keywords):
+        error = module.StartMissed("verdict=metrics-start-missed")
+        outcome = dict(lap_completed=True, collision_count=0, lap_time=22.5)
+        error.outcome = type("Outcome", (dict,), {"start": {"tick": 0.01}})(
+            outcome
+        )
+        raise error
+
+    output = tmp_path / "out.json"
+    monkeypatch.setattr(module, "run_scenario", missed)
+    monkeypatch.setattr(
+        sys, "argv", ["run_scenario.py", "--seed", "1", "--output", str(output)]
+    )
+    assert module.main() == 1
+    written = json.loads(output.read_text())
+    assert written["lap_time"] == 22.5
+    assert written["start"] == {"tick": 0.01}
+    assert "metrics-start-missed" in written["start_missed"]
+    assert "start missed" in capsys.readouterr().err

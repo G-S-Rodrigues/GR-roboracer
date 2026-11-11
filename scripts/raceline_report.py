@@ -17,16 +17,11 @@ from pathlib import Path
 
 import numpy as np
 
-from scripts.frozen_pose import FrozenPose
+from scripts.frozen_pose import FrozenPose, is_supervisor_latch
 
 STATE_TOPIC = "/ground_truth/track_relative_state"
 STATUS_TOPIC = "/safety/status"
 COMMAND_PREFIX = ["python", "-m", "raceline"]
-# SafetyStatus.msg: REASON_STALE_INPUT 3, REASON_ESTOP_LATCHED 4; the
-# supervisor's CLAMP_ESTOP bit. COMMAND_LIMIT (2) and TRACK_LIMIT (1) are
-# *not* latches: any clamp sets COMMAND_LIMIT (supervisor.cpp:45-81).
-LATCH_REASONS = frozenset({3, 4})
-CLAMP_ESTOP = 64
 METRIC_FIELDS = (
     "lap_time",
     "minimum_wall_clearance",
@@ -201,9 +196,8 @@ def run_outcome(events, observer_text, track_length, frozen_window_s) -> dict:
     latched = any(
         e["topic"] == STATUS_TOPIC
         and _stamp(e) > 0.0
-        and (
-            e["payload"]["reason"] in LATCH_REASONS
-            or e["payload"]["active_clamps"] & CLAMP_ESTOP
+        and is_supervisor_latch(
+            e["payload"]["reason"], e["payload"]["active_clamps"]
         )
         for e in events
     )

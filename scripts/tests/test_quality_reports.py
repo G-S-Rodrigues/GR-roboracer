@@ -466,3 +466,20 @@ def test_check_2360_print_reports_newer_than_since_sorted(tmp_path, capsys):
 def test_check_2360_absent_directory_prints_nothing(tmp_path, capsys):
     report.print_reports(tmp_path / "nowhere", 0)
     assert capsys.readouterr().out == ""
+
+
+def test_check_2372_diagnostics_only_when_given(reports):
+    """CHECK-2372: a report carries `diagnostics` only when a caller gives
+    some, so every existing report is byte-identical to today's."""
+    plain = json.loads(_write().read_text())
+    assert "diagnostics" not in plain
+    given = json.loads(
+        _write(
+            diagnostics={"shutdown_escalations": [], "frozen_at": None}
+        ).read_text()
+    )
+    assert given["diagnostics"] == {
+        "shutdown_escalations": [],
+        "frozen_at": None,
+    }
+    assert given["numbers"] == plain["numbers"]

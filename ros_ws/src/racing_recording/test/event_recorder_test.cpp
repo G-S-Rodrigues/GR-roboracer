@@ -56,5 +56,48 @@ TEST(EventRecorderTest, WritesManifestBeforeReplayableEvents) {
     std::filesystem::remove(output_path);
 }
 
+// REC-1010: a SIGKILLed recorder never runs its destructor, so a record must
+// be on disk, whole, as soon as record() returns (gotcha: buffered tail).
+TEST(EventRecorderTest, Rec1010EveryRecordIsOnDiskBeforeDestruction) {
+    const auto output_path = std::filesystem::temp_directory_path() /
+                             "racing_recording_rec1010_test.jsonl";
+    std::filesystem::remove(output_path);
+    const RecordingManifest manifest{
+        "recording_test",  "synthetic",    42,         4,
+        "revision-abc",    "sha256:image", "track-v1", "vehicle-v2",
+        "pure-pursuit-v1", "linux-x86_64"};
+    constexpr int event_count = 50;
+    const std::string padding(150, 'x');
+
+    EventRecorder recorder{output_path, manifest};
+    for (int index = 0; index < event_count; ++index) {
+        recorder.record("/ground_truth/odom", "nav_msgs/msg/Odometry",
+                        1000000000LL + index,
+                        "{\"index\":" + std::to_string(index) +
+                            ",\"padding\":\"" + padding + "\"}");
+    }
+
+    // The recorder is still alive: nothing may be waiting in its buffer.
+    std::ifstream input{output_path};
+    std::string contents{std::istreambuf_iterator<char>{input},
+                         std::istreambuf_iterator<char>{}};
+    ASSERT_FALSE(contents.empty());
+    EXPECT_EQ('\n', contents.back());
+    int lines = 0;
+    std::size_t start = 0;
+    while (start < contents.size()) {
+        auto end = contents.find('\n', start);
+        if (end == std::string::npos) {
+            end = contents.size();  // an unterminated last line
+        }
+        EXPECT_GT(end, start);
+        EXPECT_EQ('}', contents[end - 1]) << "line " << lines << " is cut";
+        ++lines;
+        start = end + 1;
+    }
+    EXPECT_EQ(event_count + 1, lines);
+    std::filesystem::remove(output_path);
+}
+
 }  // namespace
 }  // namespace racing_recording
