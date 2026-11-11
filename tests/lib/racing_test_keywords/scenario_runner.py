@@ -427,7 +427,7 @@ class _HangObserver:
     side of the controller -> supervisor chain went quiet (``verdict``).
     Drive stamps are the odom stamps the controller answered, so they do not
     move when this observer is late. Every sample is kept to sim t <= 2 s;
-    after that a one-second ring buffer, and nothing once the first non-NONE
+    after that a one-second ring buffer, and nothing once the first latching
     status has arrived, so memory is bounded. The callbacks themselves run
     for the whole lap.
     """
@@ -1212,7 +1212,8 @@ def run_scenario_with_track_limit_violation(
     ``_reset_at_deterministic_t0`` has released t=0 (repo-gotchas #19), so
     the supervisor's clock has moved before the first fake odometry. The
     outcome's ``safety_record`` is the first non-NONE ``/safety/status`` the
-    stack reported, for a failure message that names a latch.
+    stack reported and also names the first latching status, for a failure
+    message that names a latch.
     """
     ensure_rclpy_initialized()
 
