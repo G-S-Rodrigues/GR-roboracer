@@ -23,7 +23,9 @@ def _mapping(context: LaunchContext) -> list:
         LaunchConfiguration("configuration").perform(context),
         LaunchConfiguration("simplemap_output").perform(context),
         use_sim_time=sim_time_for(
-            LaunchConfiguration("simulator").perform(context)
+            LaunchConfiguration("simulator", default="f1tenth_gym_jax").perform(
+                context
+            )
         ),
     )
 
