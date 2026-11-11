@@ -663,8 +663,7 @@ class _HangObserver:
         newest clamp or TRACK_LIMIT stamped at or before it."""
         stop = self.first_stop
         latched = (
-            stop is not None
-            and self._seconds(stop.header.stamp) <= frozen_t
+            stop is not None and self._seconds(stop.header.stamp) <= frozen_t
         )
         earlier = [
             status

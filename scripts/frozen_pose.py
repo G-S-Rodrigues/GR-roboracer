@@ -24,6 +24,7 @@ def is_supervisor_latch(reason: int, active_clamps: int) -> bool:
     """True for a status that sets or holds the supervisor's emergency stop."""
     return reason in LATCH_REASONS or bool(active_clamps & CLAMP_ESTOP)
 
+
 # Sim seconds over which s and d must not move for a pose to be frozen.
 # Measured (part 7 step 2, gym-limits, seed 42, 100 Hz recordings): the car is
 # frozen from sim 2.98 s (centerline) and 2.53 s (min-curv) to the end, while
