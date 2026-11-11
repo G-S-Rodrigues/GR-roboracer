@@ -310,7 +310,7 @@ def test_bringup_1720_the_mapping_launch_starts_only_mola() -> None:
     declared = {
         e.name for e in entities if isinstance(e, DeclareLaunchArgument)
     }
-    assert declared == {"simplemap_output", "configuration"}
+    assert declared == {"simplemap_output", "configuration", "simulator"}
     (opaque,) = [e for e in entities if isinstance(e, OpaqueFunction)]
     context = LaunchContext()
     context.launch_configurations["simplemap_output"] = "/x/out.simplemap"
