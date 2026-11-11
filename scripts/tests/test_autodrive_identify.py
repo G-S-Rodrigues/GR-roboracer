@@ -1252,6 +1252,11 @@ LATERAL_RECORDING = (
 )
 
 
+SWEEP_RECORDING = (
+    VEHICLE_DIR / "identification" / "2026-iros-practice-corner-sweep.jsonl.gz"
+)
+
+
 def test_check_2670_committed_lateral_recording_reanalyses_to_limits(
     tmp_path,
 ) -> None:
@@ -1270,9 +1275,81 @@ def test_check_2670_committed_lateral_recording_reanalyses_to_limits(
             tool.lateral_bins(LATERAL_RECORDING, SOURCE),
             source=SOURCE,
             recording_sha256=digest,
+            closed_loop=tool.closed_loop_from_sweep(
+                SWEEP_RECORDING,
+                SOURCE,
+                hashlib.sha256(SWEEP_RECORDING.read_bytes()).hexdigest(),
+            ),
         )
     for name in ("limits_sliding.yaml", "limits_peak.yaml"):
         committed = VEHICLE_DIR / name
         assert committed.is_file(), f"{name} not committed"
         assert (tmp_path / name).read_text() == committed.read_text(), name
         assert digest in committed.read_text(), name
+
+
+def test_check_2670_sweep_half_closed_loop_fields_rederive(tmp_path) -> None:
+    """CHECK-2670, sweep half: with the committed corner sweep the two files
+    carry the closed-loop a_y (reached / closed-loop max, per radius bin and
+    overall), exactly what `analyse --sweep` computes from the two recordings,
+    and no `pending:` note survives. Only the ladder's kept rungs count; the
+    collision rung is in the file, labelled, and moves no value."""
+    import hashlib
+
+    import yaml
+
+    tool = _tool()
+    assert SWEEP_RECORDING.is_file(), "corner sweep not committed"
+    lateral = hashlib.sha256(LATERAL_RECORDING.read_bytes()).hexdigest()
+    sweep = hashlib.sha256(SWEEP_RECORDING.read_bytes()).hexdigest()
+    closed = tool.closed_loop_from_sweep(SWEEP_RECORDING, SOURCE, sweep)
+    tool.write_limits(
+        tmp_path,
+        tool.lateral_bins(LATERAL_RECORDING, SOURCE),
+        source=SOURCE,
+        recording_sha256=lateral,
+        closed_loop=closed,
+    )
+    for name in ("limits_sliding.yaml", "limits_peak.yaml"):
+        committed = VEHICLE_DIR / name
+        assert (tmp_path / name).read_text() == committed.read_text(), name
+        assert sweep in committed.read_text(), name
+        assert "pending" not in committed.read_text(), name
+    sliding = yaml.safe_load((VEHICLE_DIR / "limits_sliding.yaml").read_text())
+    assert sliding["lateral"]["ay_reached"]["value"] > 0.0
+    kept = tool.sweep_rungs(SWEEP_RECORDING)
+    assert [r["status"] for r in kept] == ["kept"] * 3 + ["collision"]
+
+
+def test_check_2690_writer_closed_loop_fills_both_files(tmp_path) -> None:
+    """CHECK-2690, closed-loop half: `closed_loop` fills the overall field
+    and the per-bin one, in the file that owns it, labelled measured and
+    closed-loop."""
+    import yaml
+
+    tool = _tool()
+    closed = {
+        "ay_reached": 4.5,
+        "ay_closed_loop_max": 6.4,
+        "bins": {2.05: {"reached": (4.4, 3), "max": (6.3, 2)}},
+        "recording_sha256": "abc",
+    }
+    bins = tool.lateral_bins(LATERAL_RECORDING, SOURCE)
+    tool.write_limits(
+        tmp_path,
+        bins,
+        source=SOURCE,
+        recording_sha256="def",
+        closed_loop=closed,
+    )
+    sliding = yaml.safe_load((tmp_path / "limits_sliding.yaml").read_text())
+    peak = yaml.safe_load((tmp_path / "limits_peak.yaml").read_text())
+    top = sliding["lateral"]["ay_reached"]
+    assert top["value"] == 4.5 and top["source"] == "closed-loop"
+    assert top["recording_sha256"] == "abc"
+    row = next(b for b in sliding["lateral"]["bins"] if b["radius"] == 2.05)
+    assert row["ay_reached"]["value"] == 4.4 and row["ay_reached"]["n"] == 3
+    assert peak["lateral"]["ay_closed_loop_max"]["value"] == 6.4
+    prow = next(b for b in peak["lateral"]["bins"] if b["radius"] == 2.05)
+    assert prow["ay_closed_loop_max"]["value"] == 6.3
+    assert "ay_reached" not in prow

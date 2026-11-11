@@ -40,6 +40,12 @@ lateral:
       source: open-loop
       n: 3
       recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+    ay_reached:
+      value: 4.55285
+      label: measured
+      source: closed-loop
+      n: 10
+      recording_sha256: 91f95804e4e6a6b09e8dc8659e475a3af3d2734e9dda1851a23d46c91af8acf9
   - radius: 2.05
     n: 24
     bound: lower
@@ -70,11 +76,17 @@ lateral:
       source: open-loop
       n: 3
       recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+    ay_reached:
+      value: 6.40215
+      label: measured
+      source: closed-loop
+      n: 3
+      recording_sha256: 91f95804e4e6a6b09e8dc8659e475a3af3d2734e9dda1851a23d46c91af8acf9
   ay_reached:
-    value: null
+    value: 4.9607
     label: measured
     source: closed-loop
-    pending: closed-loop sweep (Step 5)
+    recording_sha256: 91f95804e4e6a6b09e8dc8659e475a3af3d2734e9dda1851a23d46c91af8acf9
 drive_ax:
   value: null
   label: inferred

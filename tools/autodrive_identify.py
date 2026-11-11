@@ -1281,6 +1281,12 @@ def write_limits(
     top = _top_speed(source)
     measured = {"recording_sha256": recording_sha256}
     pending = "closed-loop sweep (Step 5)"
+    cl = closed_loop or {}
+    cl_measured = (
+        {"recording_sha256": cl["recording_sha256"]}
+        if cl.get("recording_sha256")
+        else measured
+    )
     note_min_time = (
         "# Written by tools/autodrive_identify.py analyse; never edit by hand\n"
         "# (CHECK-2670 re-derives it from the committed recordings).\n"
@@ -1313,13 +1319,25 @@ def write_limits(
                     n=b.peak.n,
                     **measured,
                 )
+            key = "ay_reached" if sliding else "ay_closed_loop_max"
+            got = (cl.get("bins") or {}).get(b.radius, {})
+            pair = got.get("reached" if sliding else "max")
+            if pair is not None:
+                entry[key] = _value(
+                    round(pair[0], 6),
+                    "measured",
+                    "closed-loop",
+                    n=pair[1],
+                    **cl_measured,
+                )
             lateral_rows.append(entry)
-        cl = closed_loop or {}
         key = "ay_reached" if sliding else "ay_closed_loop_max"
         lateral = {
             "bins": lateral_rows,
             key: (
-                _value(cl[key], "measured", "closed-loop", **measured)
+                _value(
+                    round(cl[key], 6), "measured", "closed-loop", **cl_measured
+                )
                 if cl.get(key) is not None
                 else _value(None, "measured", "closed-loop", pending=pending)
             ),
@@ -1426,6 +1444,70 @@ def lateral_bins(recording: Path, source: Path) -> list[RadiusBin]:
         rungs=len(LATERAL_RUNGS),
     )
     return lateral_by_radius(windows, LATERAL_BIN_CENTRES)
+
+
+def sweep_rungs(path: Path) -> list[dict]:
+    """The ladder rungs a corner-sweep recording holds, in order: each one's
+    `rung`, `status` (kept | collision), wall-time span and run facts."""
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        return json.loads(handle.readline())["meta"]["rungs"]
+
+
+def closed_loop_windows(
+    path: Path, source: Path
+) -> list[tuple[dict, LateralWindow]]:
+    """Every steering lobe of the corner sweep as a `LateralWindow` (the
+    closed loop has no commanded repeat; `repeat` is 0 and `rung` is the
+    window's index in the segment), with the rung it came from."""
+    import yaml
+
+    values = yaml.safe_load(source.read_text())["values"]
+    wheelbase = values["wheelbase_table_m"]["value"]
+    radius = values["wheel_radius_m"]["value"]
+    rungs = sweep_rungs(path)
+    out: list[tuple[dict, LateralWindow]] = []
+    for seg in segments(parse_sweep(path).samples):
+        for lobe in _lobes(seg):
+            frames = [lobe[0][0]] + [cur for _, cur in lobe]
+            found = lateral_windows([frames], wheelbase, radius, 1)
+            t = lobe[0][1].wall
+            info = next((r for r in rungs if r["t0"] <= t <= r["t1"]), None)
+            if found and info is not None:
+                out.append((info, found[0]))
+    return out
+
+
+def closed_loop_from_sweep(
+    path: Path, source: Path, recording_sha256: str
+) -> dict:
+    """The closed-loop a_y of the kept rungs: `reached` is the median a_y of
+    the windows labelled saturated, `max` the highest a_y of the windows not
+    (the pre-saturation maximum), per path-radius bin and overall. The
+    collision rung's windows are not used."""
+    kept = [
+        w
+        for info, w in closed_loop_windows(path, source)
+        if info["status"] == "kept"
+    ]
+    saturated = [w.ay for w in kept if w.label == "saturated"]
+    linear = [w.ay for w in kept if w.label == "linear"]
+    bins: dict[float, dict] = {}
+    for i, centre in enumerate(LATERAL_BIN_CENTRES):
+        members = [
+            w for w in kept if _bin_index(w.radius, LATERAL_BIN_CENTRES) == i
+        ]
+        sat = [w.ay for w in members if w.label == "saturated"]
+        lin = [w.ay for w in members if w.label == "linear"]
+        bins[centre] = {
+            "reached": (statistics.median(sat), len(sat)) if sat else None,
+            "max": (max(lin), len(lin)) if lin else None,
+        }
+    return {
+        "ay_reached": statistics.median(saturated) if saturated else None,
+        "ay_closed_loop_max": max(linear) if linear else None,
+        "bins": bins,
+        "recording_sha256": recording_sha256,
+    }
 
 
 def _recorder():
@@ -1696,6 +1778,15 @@ def cmd_analyse(args: argparse.Namespace) -> int:
             recording_sha256=hashlib.sha256(
                 args.recording.read_bytes()
             ).hexdigest(),
+            closed_loop=(
+                closed_loop_from_sweep(
+                    args.sweep,
+                    args.source,
+                    hashlib.sha256(args.sweep.read_bytes()).hexdigest(),
+                )
+                if args.sweep
+                else None
+            ),
         )
         print(f"wrote limits_*.yaml in {args.out_dir}", flush=True)
         return 0
@@ -1718,6 +1809,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyse_parser.add_argument("--recording", type=Path, required=True)
     analyse_parser.add_argument("--source", type=Path, required=True)
+    analyse_parser.add_argument("--sweep", type=Path)
     analyse_parser.add_argument("--out", type=Path)
     analyse_parser.add_argument("--out-dir", type=Path)
     analyse_parser.set_defaults(func=cmd_analyse)
