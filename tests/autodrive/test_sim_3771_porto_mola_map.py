@@ -80,7 +80,10 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
     mola_log = out / "mola_mapping.log"
     mola: list[subprocess.Popen] = []
 
-    def start_mola() -> None:
+    def start_mola():
+        """Start MOLA on the parked car and return the readiness predicate
+        `drive_porto` polls while it spins the node (A6: never a blocking
+        wait here, the hold must be observed)."""
         with mola_log.open("w") as log:
             mola.append(
                 subprocess.Popen(
@@ -99,13 +102,18 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
                 )
             )
         end = time.monotonic() + MOLA_READY_S
-        while time.monotonic() < end:
+
+        def ready() -> bool:
             if "Initial re-localization done" in mola_log.read_text():
-                return
-            time.sleep(1.0)
-        raise AssertionError(
-            f"MOLA never logged its initial re-localization ({mola_log})"
-        )
+                return True
+            if time.monotonic() > end:
+                raise AssertionError(
+                    "MOLA never logged its initial re-localization"
+                    f" ({mola_log})"
+                )
+            return False
+
+        return ready
 
     def save_simplemap() -> None:
         # SIGINT to the whole mapping session reaches mola-cli itself, which
@@ -125,7 +133,7 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
             host_command=HOST_COMMAND,
             node_name="sim_3771_driver",
             recording_path=recording,
-            before_reset=start_mola,
+            held_start=start_mola,
             after_laps=save_simplemap,
         )
     finally:

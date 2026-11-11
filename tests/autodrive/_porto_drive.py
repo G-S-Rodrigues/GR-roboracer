@@ -56,6 +56,7 @@ from rclpy.qos import (
     qos_profile_sensor_data,
 )
 from sensor_msgs.msg import Imu, JointState, LaserScan
+from std_srvs.srv import Trigger
 
 REPO = Path(__file__).resolve().parents[2]
 STARTUP_S = 120.0
@@ -68,6 +69,13 @@ SPAWN_MAP = (-5.8454, 1.9713, 0.0028)
 SPAWN_WINDOW = 100  # frames, 0.6 s
 SPAWN_TOL_M = 0.05
 SPAWN_TOL_RAD = 0.05
+# The held start (A6): the supervisor's own services, and what the hold waits
+# for. Each wait has a deadline and fails naming the pose, speed and reason.
+ESTOP_SERVICE = "/racing_safety_supervisor/emergency_stop"
+CLEAR_SERVICE = "/racing_safety_supervisor/clear_emergency_stop"
+REST_SPEED = 0.05  # m/s
+HOLD_WAIT_S = 30.0
+RELEASE_WAIT_S = 1.0
 
 
 # The channels arrive at the sim's frame rate (about 200 Hz on an idle host),
@@ -248,6 +256,11 @@ class PortoRun:
     # The server's last `racing_sim: stamps` status (Step 5.0), only with
     # `channels`; None with channels off, or from a server before 5.0.
     stamp_status: dict | None = None
+    # Only with `held_start`: what the hold got wrong (`hold_error`; None is
+    # a clean hold) and the wall seconds from the emergency stop to the
+    # release.
+    hold_error: str | None = None
+    hold_s: float | None = None
 
     @property
     def periods(self) -> np.ndarray:
@@ -313,7 +326,7 @@ def drive_porto(
     meta: dict | None = None,
     pose_source: str = "ground_truth",
     recording_path: Path | None = None,
-    before_reset: Callable[[], None] | None = None,
+    held_start: Callable[[], Callable[[], bool]] | None = None,
     after_laps: Callable[[], None] | None = None,
 ) -> PortoRun:
     """Drive `launch` for `laps` laps and return what was seen.
@@ -335,9 +348,26 @@ def drive_porto(
     own `header.stamp` (the server's receive time, one value per sim frame,
     which joins a frame's streams; never the subscriber's receive time).
 
-    `before_reset` runs after the first frame and the estimator waits, just
-    before the t = 0 reset; `after_laps` runs when the drive ends, with the
-    launch still up (a mapper is saved here). Both default to nothing.
+    `held_start` (None: nothing, SIM-3730/3750/3770/3780/3781's behaviour,
+    byte for byte) is a held start through the supervisor's existing
+    services, the real car's procedure (park, latch the stop, start the
+    mapper, wait for it, release). After the first frame and the estimator
+    waits: `~/emergency_stop`; wait until the truth speed is under
+    `REST_SPEED`; the t = 0 reset; wait until a post-reset frame is at
+    `SPAWN_MAP` and at rest; call `held_start()`, which starts the mapper and
+    RETURNS a readiness predicate (it raises its own AssertionError at its
+    own deadline); spin until that is true, polling it once a second; check
+    `hold_error` (a STALE latch must never be cleared silently);
+    `~/clear_emergency_stop`; drive. The node is spun for the whole hold, on
+    deep queues, so a STALE during the mapper's start-up is seen, not
+    overwritten by the latch's own statuses. `PortoRun.reasons` then counts
+    from the first status after the clear that is not the stop's latch
+    (`released_reasons`); `stale` stays the whole run's count. `budget_s`
+    counts from the release, but the sim's own lap time (`laps_sim_s`)
+    includes the hold (`hold_s`).
+
+    `after_laps` runs when the drive ends, with the launch still up (a mapper
+    is saved here). It defaults to nothing.
     """
     domain = os.environ.get("ROS_DOMAIN_ID")
     if domain is None or domain == "42":
@@ -357,6 +387,7 @@ def drive_porto(
     ensure_rclpy_initialized()
     node = rclpy.create_node(node_name)
     observer = None
+    release_observer = None  # held start: latch/trace from the release
     try:
         deadline = time.monotonic() + STARTUP_S
         for participant in PARTICIPANT_NODES:
@@ -374,6 +405,7 @@ def drive_porto(
         odoms: list[tuple[float, float, float, float]] = []
         speeds: list[float] = []  # twist.linear, parallel to odoms
         reasons: Counter = Counter()
+        names: list[str] = []  # held start: every reason, in arrival order
         counters: list[SimCounters] = []
         metrics: list[ScenarioMetrics] = []
         scans: list[tuple[LaserScan, tuple]] = []
@@ -419,11 +451,20 @@ def drive_porto(
             on_scan,
             qos_profile_sensor_data,
         )
+
+        def on_status(s):
+            name = _reason_name(s.reason)
+            reasons.update([name])
+            if held_start is not None:
+                names.append(name)
+
         node.create_subscription(
             SafetyStatus,
             "/safety/status",
-            lambda s: reasons.update([_reason_name(s.reason)]),
-            RELIABLE_QOS,
+            on_status,
+            # /safety/status is KEEP_LAST 10 at 100 Hz on both ends: a hold
+            # that is not spun on a deep queue loses a STALE to the latch.
+            DEEP_STATE_QOS if held_start is not None else RELIABLE_QOS,
         )
         node.create_subscription(
             SimCounters,
@@ -469,8 +510,37 @@ def drive_porto(
             )
 
         wait_for_estimator(node, pose_source, ESTIMATOR_WAIT_S)
-        if before_reset is not None:
-            before_reset()
+
+        def where() -> str:
+            pose = odoms[-1][1:] if odoms else None
+            speed = speeds[-1] if speeds else None
+            last = names[-1] if names else None
+            return f"pose {pose}, speed {speed}, last reason {last}"
+
+        def spin_until(done: Callable[[], bool], what: str) -> None:
+            end = time.monotonic() + HOLD_WAIT_S
+            while not done():
+                if time.monotonic() > end:
+                    pytest.fail(f"held start: {what} ({where()})")
+                rclpy.spin_once(node, timeout_sec=0.02)
+
+        def call_trigger(name: str):
+            trigger = node.create_client(Trigger, name)
+            assert trigger.wait_for_service(timeout_sec=30.0), name
+            answer = trigger.call_async(Trigger.Request())
+            rclpy.spin_until_future_complete(node, answer, timeout_sec=30.0)
+            assert answer.done() and answer.result().success, name
+            return answer
+
+        if held_start is not None:
+            hold_began = time.monotonic()
+            call_trigger(ESTOP_SERVICE)
+            seen = len(odoms)
+            spin_until(
+                lambda: len(odoms) > seen and speeds[-1] < REST_SPEED,
+                f"the car never came to rest after the emergency stop"
+                f" (under {REST_SPEED} m/s)",
+            )
 
         client = node.create_client(Reset, "/racing_sim/reset")
         assert client.wait_for_service(timeout_sec=30.0)
@@ -481,6 +551,46 @@ def drive_porto(
         metrics.clear()
         scans.clear()
         first_after = len(odoms)
+        released_at = 0
+        hold_s = None
+        hold_problem = None
+        if held_start is not None:
+
+            def parked_at_spawn() -> bool:
+                if len(odoms) <= first_after or speeds[-1] >= REST_SPEED:
+                    return False
+                _, x, y, yaw = odoms[-1]
+                return (
+                    math.hypot(x - SPAWN_MAP[0], y - SPAWN_MAP[1])
+                    <= SPAWN_TOL_M
+                    and abs(_wrap(yaw - SPAWN_MAP[2])) <= SPAWN_TOL_RAD
+                )
+
+            spin_until(
+                parked_at_spawn,
+                f"no post-reset frame at rest at the spawn {SPAWN_MAP}",
+            )
+            ready = held_start()
+            polled = 0.0
+            mapper_ready = False
+            while not mapper_ready:
+                rclpy.spin_once(node, timeout_sec=0.02)
+                if time.monotonic() - polled >= 1.0:
+                    polled = time.monotonic()
+                    mapper_ready = ready()
+            hold_problem = hold_error(Counter(names), observer.stale_count)
+            release_observer = _HangObserver(node)
+            call_trigger(CLEAR_SERVICE)
+            hold_s = time.monotonic() - hold_began
+            released_at = len(names)
+            end = time.monotonic() + RELEASE_WAIT_S
+            while all(n == "REASON_ESTOP_LATCHED" for n in names[released_at:]):
+                if time.monotonic() > end:
+                    pytest.fail(
+                        "held start: no status after the release other than"
+                        f" the stop's latch ({where()})"
+                    )
+                rclpy.spin_once(node, timeout_sec=0.02)
         load_before = read_host_load()
 
         increments: list[tuple[float, float, int]] = []  # wall, last, count
@@ -500,11 +610,16 @@ def drive_porto(
         if after_laps is not None:
             after_laps()
         stale = observer.stale_count
-        latch = observer.first_latch
-        trace = observer._startup_trace()
+        judged = release_observer or observer
+        latch = judged.first_latch
+        trace = judged._startup_trace()
+        if held_start is not None:
+            reasons = released_reasons(names[released_at:])
     finally:
         if observer is not None:
             observer.close()
+        if release_observer is not None:
+            release_observer.close()
         node.destroy_node()
         reset_rclpy()
         stop(launched, 60.0)
@@ -566,4 +681,6 @@ def drive_porto(
         stamp_status=(stamp_status[0] if stamp_status else None)
         if channels
         else None,
+        hold_error=hold_problem,
+        hold_s=hold_s,
     )
