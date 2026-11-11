@@ -88,6 +88,19 @@ env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
     --out config/vehicles/autodrive_roboracer/identified.yaml
 ```
 
+The lateral limits (`limits_sliding.yaml`, `limits_peak.yaml`) come from a second recording and a corner sweep.
+Record the lateral schedule the same way, with `record --schedule lateral`, run the closed-loop sweep with
+`scripts/autodrive_qualify.sh --domain 64 --case corner_sweep --sweep-dir <dir>`, and write the two files:
+
+```
+env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py record \
+    --config config/autodrive/simulator.yaml --schedule lateral --out rec.jsonl.gz
+env -u PYTHONPATH uv run --locked --script tools/autodrive_identify.py analyse \
+    --recording rec.jsonl.gz --sweep sweep.jsonl.gz \
+    --source config/vehicles/autodrive_roboracer/source.yaml \
+    --out-dir config/vehicles/autodrive_roboracer
+```
+
 ## The AutoDRIVE simulator
 
 `simulator:=autodrive` (racing launch only) starts `racing_sim_autodrive_server` in place of the

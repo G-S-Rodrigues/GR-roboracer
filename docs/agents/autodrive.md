@@ -151,6 +151,9 @@ Three places hold its tests, by what each needs:
 - `tests/autodrive/test_sim_3750_porto_fast_mintime_lap.py` (`scripts/autodrive_qualify.sh --case fast_lap`) drives the fast
   car's min-time line for two laps through the shared driver `tests/autodrive/_porto_drive.py`; it gates on completion,
   collisions and latch, not lap time.
+- `tests/autodrive/test_sim_3760_porto_corner_sweep.py` (`scripts/autodrive_qualify.sh --case corner_sweep --sweep-dir <dir>`)
+  drives one rung of the corner sweep through the same driver and records the lateral channels. It asserts run validity
+  only (spawn, no latch, a non-empty IMU channel); a collision is recorded, not failed, because it is the ladder's stop point.
 - `tests/autodrive/test_sim_3730_porto_qualification.py` is the live check, run by `scripts/autodrive_qualify.sh`. It is in
   no gate (no gate has a sim), fails rather than skips, and the simulator container serves one run.
 - `/racing_sim/autodrive_counters` is debug-only (league rules restrict the counters at race time).
