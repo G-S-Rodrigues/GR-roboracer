@@ -150,6 +150,10 @@ def planning_run(
             run.update(outcome="infrastructure", error=text)
     except Exception as error:  # noqa: BLE001 - recorded, never hidden
         run.update(outcome="infrastructure", error=f"{error!r}")
+        # StartMissed carries the lap it paid for: keep it (CHECK-2574).
+        partial = getattr(error, "outcome", None)
+        if partial is not None:
+            run["partial_metrics"] = dict(partial)
     if recording.exists():
         with contextlib.suppress(ValueError, KeyError):
             manifest = read_manifest(recording)
@@ -253,6 +257,10 @@ def localization_run(
             run.update(outcome="infrastructure", error=text)
     except Exception as error:  # noqa: BLE001 - recorded, never hidden
         run.update(outcome="infrastructure", error=f"{error!r}")
+        # StartMissed carries the lap it paid for: keep it (CHECK-2574).
+        partial = getattr(error, "outcome", None)
+        if partial is not None:
+            run["partial_metrics"] = dict(partial)
     run["host_load_delta"] = host_load_delta(load_before, read_host_load())
 
     score = None

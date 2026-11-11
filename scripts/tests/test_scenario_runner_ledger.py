@@ -280,6 +280,20 @@ def test_check_2573_a_late_first_motion_raises_start_missed(
     assert "verdict=drive-start-missed" in str(raised.value)
 
 
+def test_check_2574_start_missed_carries_the_run_outcome(
+    real_launch_run, monkeypatch
+):
+    """The metrics the lap produced are not thrown away with the verdict:
+    run_scenario.py and the benchmark write them beside it."""
+    monkeypatch.setattr(scenario_runner._HangObserver, "metrics_start", 0.43)
+    with pytest.raises(scenario_runner.StartMissed) as raised:
+        scenario_runner.run_scenario(seed=1, timeout=30.0)
+    outcome = raised.value.outcome
+    assert set(outcome) == set(scenario_runner._METRICS_FIELDS)
+    assert outcome.start["metrics_start"] == 0.43
+    assert outcome.frozen_at is None
+
+
 def test_check_2573_a_normal_start_rides_as_start_and_keeps_the_keys(
     real_launch_run,
 ):

@@ -249,7 +249,13 @@ class RunOutcome(dict):
 
 class StartMissed(RuntimeError):
     """The run's start was late: a link a seeded metric reads was not matched
-    at t=0 (``start_verdict``). Raised after the lap, with the numbers."""
+    at t=0 (``start_verdict``). Raised after the lap, with the numbers.
+
+    ``outcome``: the run's ``RunOutcome`` (metrics, ``start``, ``frozen_at``,
+    ``stop_context``), so a caller can still write the record beside the
+    verdict instead of losing the lap it paid for."""
+
+    outcome: RunOutcome | None = None
 
 
 def start_verdict(
@@ -1075,6 +1081,13 @@ def run_scenario(
     escalations = ledger.shutdown_escalations
     if failure:
         error = failure[0]
+        if isinstance(error, StartMissed):
+            missed = RunOutcome(outcome)
+            missed.shutdown_escalations = escalations
+            missed.frozen_at = frozen.get("at")
+            missed.stop_context = frozen.get("context")
+            missed.start = dict(start) or None
+            error.outcome = missed
         if escalations:
             note = "shutdown escalations: " + ", ".join(
                 f"{e['name']} {e['signal']}" for e in escalations
