@@ -488,8 +488,7 @@ def test_sim_1070_a_reencoded_png_is_the_same_asset_a_changed_pixel_is_not(
 ) -> None:
     """SIM-1070 helper: bytes may differ, pixels may not."""
     source = Path(
-        "third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/"
-        "Spielberg.png"
+        "third_party/GR-roboracer-data/tracks/Spielberg/Spielberg.png"
     )
     with Image.open(source) as image:
         image.save(tmp_path / "recompressed.png", compress_level=0)
@@ -508,7 +507,7 @@ def test_sim_1070_a_reencoded_png_is_the_same_asset_a_changed_pixel_is_not(
         (
             "spielberg",
             "Spielberg",
-            "third_party/GR-roboracer-data/tracks/Spielberg/maps",
+            "third_party/GR-roboracer-data/tracks",
         ),
     ],
 )

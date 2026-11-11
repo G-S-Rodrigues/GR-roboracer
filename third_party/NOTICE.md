@@ -15,7 +15,7 @@ installed into the image unmodified.
   geometry for the report's reference row). Nothing else reads it, and the
   report renders "upstream reference: not available" when the submodule is not
   initialised, which is the default in a clone.
-- The pin matches the revision `third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/NOTICE.md`
+- The pin matches the revision `third_party/GR-roboracer-data/tracks/Spielberg/NOTICE.md`
   derives the Spielberg track from.
 - Initialise with `git submodule update --init third_party/f1tenth_racetracks`.
 

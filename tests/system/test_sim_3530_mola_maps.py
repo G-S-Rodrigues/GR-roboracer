@@ -45,7 +45,6 @@ COMMITTED_GRID = (
     / "tracks"
     / "Spielberg"
     / "maps"
-    / "Spielberg"
     / "mola"
     / "Spielberg_grid.yaml"
 )

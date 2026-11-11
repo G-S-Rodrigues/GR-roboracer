@@ -2,8 +2,9 @@
 # against the track's committed occupancy grid, owning map -> odom.
 # Values not set here are nav2_amcl's own defaults (nav2_bringup's
 # nav2_params.yaml). The grid nav2_map_server serves is named by the launch
-# file from the scenario (<data>/tracks/<Map>/maps/<Map>/slam/<Map>.yaml), so
-# one scenario cannot be localized against another's track.
+# file from the scenario
+# (<data>/tracks/<Map>/maps/slam_toolbox/res_0050/<Map>.yaml), so one scenario
+# cannot be localized against another's track.
 #
 # AMCL is the second implementation of the pose-source role, not a
 # replacement for the first (ADR 0005): slam_toolbox stays, and this file

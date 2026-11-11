@@ -1,6 +1,6 @@
 """SIM-3780: SIM-3750's fast min-time lap on Porto driven on amcl's estimate
-over the survey map (`tracks/Porto/maps/Porto/slam/`, read through
-porto.yaml's `map_directory`).
+over the survey map (`tracks/Porto/maps/slam_toolbox/res_0050/`, read
+through porto.yaml's `map_directory`).
 
 LIVE, like SIM-3750 (needs the AutoDRIVE sim; fails, never skips). Run it with
 `scripts/autodrive_qualify.sh --domain <60-69> --case fast_lap_amcl --sim

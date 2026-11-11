@@ -1,7 +1,7 @@
 # Launch arguments of ros-jazzy-mola-lidar-odometry 3.3.0's
 # ros2-launchs/ros2-lidar-odometry.launch.py for `pose_source:=mola`:
 # localization only, on the .mm MOLA built itself in a mapping lap
-# (<data>/tracks/<Map>/maps/<Map>/mola/, scripts/mola_map_track.sh). Read by
+# (<data>/tracks/<Map>/maps/mola/, scripts/mola_map_track.sh). Read by
 # racing_bringup.estimators.mola_launch_arguments, which adds
 # mola_initial_map_mm_file. A relative `mola_lo_pipeline` is relative to this
 # file. MOLA reads /scan and /odom, never /ground_truth/*.

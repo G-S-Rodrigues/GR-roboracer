@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 from _porto_drive import SPAWN_MAP, SPAWN_TOL_M, SPAWN_TOL_RAD, drive_porto
+from racing_bringup import track_data
 from racing_test_keywords.autodrive_live import (
     judge_stale_input,
     stale_input_timeout_s,
@@ -34,10 +35,10 @@ REPO = Path(__file__).resolve().parents[2]
 LAPS = 2  # owner ruling 2026-11-08: lap 2 is the flying lap
 BUDGET_S = 300.0
 VEHICLE = "config/vehicles/autodrive_roboracer_fast.yaml"
-RACELINE = (
-    REPO
-    / "third_party/GR-roboracer-data/tracks/Porto/racelines"
-    / "autodrive-roboracer-fast-v1/tum_mintime.csv"
+RACELINE = track_data.optimized_raceline(
+    REPO / "third_party/GR-roboracer-data/tracks/Porto",
+    "tum_mintime",
+    "autodrive-roboracer-fast-v1",
 )
 LAUNCH = [
     "ros2",

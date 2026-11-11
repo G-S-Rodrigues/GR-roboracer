@@ -2,9 +2,10 @@
 through the real launch, collision-free, inside the run's timeout. Its lap
 time is reported (`log/reports/SIM-3120.json`), not asserted (ADR 0008).
 
-The default vehicle follows `tracks/Spielberg/racelines/f1tenth-default-v1/
-tum_mintime.csv` with `speed_source: trajectory`, so the line's own speed is
-the command. Ground-truth pose only. The 20 m/s gym-limits vehicle is the
+The default vehicle follows `tracks/Spielberg/racelines/tum_mintime/
+gym-nominal-std-const-v1/raceline.csv` with
+`speed_source: trajectory`, so the line's own speed is the command.
+Ground-truth pose only. The 20 m/s gym-limits vehicle is the
 planning benchmark's, not this gate's (owner 2026-10-11).
 
 The reported lap time is *this* line's own measurement, read against the

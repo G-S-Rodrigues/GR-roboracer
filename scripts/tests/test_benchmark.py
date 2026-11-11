@@ -773,7 +773,8 @@ def test_check_2700_a_file_inside_the_data_repo_path_is_not_the_gitlink(
     tmp_path, capsys
 ) -> None:
     changed = [
-        "third_party/GR-roboracer-data/tracks/Spielberg/racelines/x.yaml",
+        "third_party/GR-roboracer-data/tracks/Spielberg/racelines/"
+        "tum_mintime/x/raceline.yaml",
         "config/tracks/spielberg.yaml",
     ]
     roles, _ = _roles(tmp_path, capsys, _stack(), _stack(), changed)
@@ -835,6 +836,11 @@ def test_check_2770_trigger_paths_are_one_list() -> None:
     assert benchmark.STACK_FILE in benchmark.TRIGGER_PATHS
     assert "scripts/benchmark_runs.py" in benchmark.TRIGGER_PATHS
     assert "third_party/GR-roboracer-data" in benchmark.TRIGGER_PATHS
+    for imported in (
+        "ros_ws/src/racing_bringup/racing_bringup/track_data.py",
+        "ros_ws/src/racing_bringup/racing_bringup/scenario_parameters.py",
+    ):
+        assert imported in benchmark.TRIGGER_PATHS, imported
 
 
 def test_check_2770_every_job_name_says_non_blocking() -> None:
@@ -863,3 +869,18 @@ def test_check_2770_no_nightly_test_imports_the_benchmark() -> None:
         if "benchmark" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+def test_check_2956_the_new_regeneration_key_reaches_solve_seconds():
+    from scripts import benchmark_runs
+
+    key = benchmark_runs.regeneration_key("f1tenth-default-v1", "tum_mintime")
+    assert key == (
+        "Spielberg/racelines/tum_mintime/gym-nominal-std-const-v1/raceline.yaml"
+    )
+    assert (
+        benchmark_runs.regeneration_key("f1tenth-default-v1", "centerline")
+        is None
+    )
+    regeneration = {key: {"solve_seconds": 12.5}}
+    assert regeneration[key]["solve_seconds"] == 12.5

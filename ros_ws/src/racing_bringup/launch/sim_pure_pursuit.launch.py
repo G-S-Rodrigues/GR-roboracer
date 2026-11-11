@@ -64,7 +64,7 @@ ESTIMATED_POSE = "/localization/odom"
 # localizes against the track's committed occupancy grid, which the scenario
 # names (scenario_parameters.track_parameters). MOLA-LO localizes on the .mm
 # it built itself in a mapping lap (scripts/mola_map_track.sh), found beside
-# that grid in maps/<map>/mola/.
+# that track in maps/mola/.
 POSE_SOURCE_CONFIGS = {
     "slam_toolbox": "config/localization/slam_toolbox_online.yaml",
     "amcl": "config/localization/amcl.yaml",
@@ -493,10 +493,11 @@ def _pose_source_nodes(
             use_sim_time,
         )
     if pose_source == "mola":
-        # MOLA's map is derived from the same grid, for the same reason.
+        # MOLA's map is derived from the same track folder, for the same
+        # reason.
         return mola(
             configuration,
-            tracks["map_server"]["yaml_filename"],
+            tracks["track_data"]["directory"],
             use_sim_time,
         )
     if slam_toolbox_config:

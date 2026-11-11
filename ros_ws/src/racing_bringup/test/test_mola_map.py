@@ -17,7 +17,6 @@ MOLA_DIR = (
     / "tracks"
     / "Spielberg"
     / "maps"
-    / "Spielberg"
     / "mola"
 )
 MOLA_PREF = REPOSITORY_ROOT / "docker" / "apt-preferences" / "mola.pref"
@@ -48,23 +47,24 @@ def _pinned_version(package: str) -> str:
 
 
 def test_bringup_1500_the_scenario_selects_its_mola_map() -> None:
-    """BRINGUP-1500: the MOLA map is derived from the scenario's own grid
-    (maps/<map>/slam/<map>.yaml -> maps/<map>/mola/<map>.{mm,yaml}), so a
-    run can only be localized on its own track, and both files exist. A map
-    that was never built says which script builds it."""
-    from racing_bringup.estimators import mola_map_files
+    """BRINGUP-1500: the MOLA map is derived from the scenario's own track
+    folder (tracks/<map>/maps/mola/<map>.{mm,yaml}), so a run can only be
+    localized on its own track, and both files exist. A map that was never
+    built says which script builds it (BRINGUP-2601 holds that on a tmp
+    tree)."""
     from racing_bringup.scenario_parameters import track_parameters
+    from racing_bringup.track_data import mola_files
 
-    grid = track_parameters(SCENARIOS / "spielberg.yaml")["map_server"][
-        "yaml_filename"
+    track = track_parameters(SCENARIOS / "spielberg.yaml")["track_data"][
+        "directory"
     ]
-    mm, provenance = mola_map_files(grid)
+    mm, provenance = mola_files(Path(track))
     assert Path(mm) == MOLA_DIR / "Spielberg.mm"
     assert Path(provenance) == MOLA_DIR / "Spielberg.yaml"
     assert Path(mm).is_file() and Path(provenance).is_file()
 
     with pytest.raises(FileNotFoundError, match="mola_map_track.sh"):
-        mola_map_files(str(SCENARIOS / "maps" / "Nowhere" / "slam" / "x.yaml"))
+        mola_files(SCENARIOS / "maps" / "Nowhere")
 
 
 def test_bringup_1510_the_provenance_is_complete_and_true_to_the_files() -> (
@@ -165,9 +165,9 @@ def test_bringup_1550_the_alignment_publisher_dies_with_its_session() -> None:
     from racing_bringup.scenario_parameters import track_parameters
 
     scenario = REPOSITORY_ROOT / "config/scenarios/spielberg.yaml"
-    grid = track_parameters(str(scenario))["map_server"]["yaml_filename"]
+    track = track_parameters(str(scenario))["track_data"]["directory"]
     configuration = REPOSITORY_ROOT / "config/localization/mola_lidar2d.yaml"
-    static, _ = mola(str(configuration), grid)
+    static, _ = mola(str(configuration), track)
     name = static._Node__node_name  # not expanded before launch
     assert name == "racing_mola_map_alignment"
     script = (REPOSITORY_ROOT / "scripts" / "mola_map_track.sh").read_text()

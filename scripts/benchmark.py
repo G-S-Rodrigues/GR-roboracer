@@ -109,6 +109,11 @@ TRIGGER_PATHS: dict[str, tuple[str, ...]] = {
     "third_party/GR-roboracer-data": ("planning",),
     # the runner's own edits run once, so a harness change cannot bit-rot
     "scripts/benchmark_runs.py": ROLE_ORDER,
+    # what the runner imports to find the survey map and the raceline
+    "ros_ws/src/racing_bringup/racing_bringup/track_data.py": ROLE_ORDER,
+    "ros_ws/src/racing_bringup/racing_bringup/scenario_parameters.py": (
+        ROLE_ORDER
+    ),
 }
 
 
@@ -390,11 +395,7 @@ def _run_planning(seeds, out, started, tmp, session_start) -> list[str]:
             for line in expected["rows"][vehicle]:
                 fields = benchmark_runs.static_fields(version, line)
                 # SIM-5040's key: the record's path under the tracks root
-                key = (
-                    (benchmark_runs.RACELINES / version / f"{line}.yaml")
-                    .relative_to(benchmark_runs.TRACKS)
-                    .as_posix()
-                )
+                key = benchmark_runs.regeneration_key(version, line)
                 if key in regeneration:
                     fields["solve_seconds"] = regeneration[key]["solve_seconds"]
                 statics[(vehicle, line)] = fields

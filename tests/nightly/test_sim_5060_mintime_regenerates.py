@@ -35,6 +35,7 @@ from scripts.raceline_report import (
     compare_lines,
     mintime_code_changed,
     provenance_diff,
+    regenerated_paths,
     regeneration_argv,
 )
 
@@ -43,7 +44,7 @@ REPORT_DIR = REPO / "log" / "raceline-report"
 TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
 RACELINES = sorted(
     path
-    for path in TRACKS.glob("*/racelines/*/*.yaml")
+    for path in TRACKS.glob("*/racelines/*/*/raceline.yaml")
     if yaml.safe_load(path.read_text())["optimizer"] == "tum_mintime"
 )
 # MINTIME_MAX_WALL_S (1200) for the solve plus the min-curv stages that make
@@ -132,16 +133,8 @@ def regenerate(doc: dict, out_dir: Path) -> tuple[Path, dict, float]:
         f"regeneration exited {done.returncode} (the CLI's verifier rejected "
         f"the line or the solve failed):\n{done.stderr[-2000:]}"
     )
-    folder = (
-        out_dir
-        / Path(doc["source"]["path"]).stem
-        / "racelines"
-        / doc["vehicle_version"]
-    )
-    fresh_csv = folder / f"{doc['optimizer']}.csv"
-    fresh_doc = yaml.safe_load(
-        (folder / f"{doc['optimizer']}.yaml").read_text(encoding="utf-8")
-    )
+    fresh_csv, fresh_yaml = regenerated_paths(doc, out_dir)
+    fresh_doc = yaml.safe_load(fresh_yaml.read_text(encoding="utf-8"))
     return fresh_csv, fresh_doc, seconds
 
 

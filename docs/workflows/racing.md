@@ -84,7 +84,7 @@ ros2 launch racing_bringup sim_pure_pursuit.launch.py scenario:=config/scenarios
 
 **Drives on:** ground truth; MOLA-LO's estimate is published on `/localization/odom` and scored.
 MOLA localizes on the map it built itself in one mapping lap, committed in
-`third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/mola/` (`Spielberg.mm` and the provenance `Spielberg.yaml`), not on
+`third_party/GR-roboracer-data/tracks/Spielberg/maps/mola/` (`Spielberg.mm` and the provenance `Spielberg.yaml`), not on
 the survey grid, so its error includes that map's own error.
 **Selected by:** `pose_source:=mola drive_on_estimate:=false`.
 
@@ -105,7 +105,7 @@ Selected by `planner:=`, which is `track_centerline` by default.
 - `track_centerline` publishes the scenario's `<map>_raceline.csv` on `/trajectory`, which is the
   centerline at constant speed. (It was called `track_raceline` before part 6 of issue #12.)
 - `optimized_raceline` publishes the committed line
-  `third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle_version>/<raceline_optimizer>.csv`, with
+  `third_party/GR-roboracer-data/tracks/<Map>/racelines/<raceline_optimizer>/<limit set>/raceline.csv`, with
   `raceline_optimizer:=tum_mincurv_iqp` (minimum curvature, the default) or `raceline_optimizer:=tum_mintime` (minimum time). A missing line, an unknown name or a
   line whose sidecar `.yaml` disagrees is an error; the launch never falls back to the centerline.
 
@@ -130,21 +130,21 @@ The gym-limits vehicle's lines resolve, but no gate lap drives them.
 Available, offline: map centerline extraction and the TUM minimum-curvature and minimum-time
 wrappers in `raceline/` (minimum time runs on the owner's TUM fork, pinned by commit). `env -u PYTHONPATH uv run --project raceline --locked python -m raceline` optimizes a
 line from a map or track, verifies it and writes
-`third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle_version>/<optimizer>.{csv,yaml}`; racelines of both optimizers for
+`third_party/GR-roboracer-data/tracks/<Map>/racelines/<optimizer>/<limit set>/{raceline.csv,raceline.yaml,limits.md}`; racelines of both optimizers for
 Spielberg are committed under `third_party/GR-roboracer-data/tracks/Spielberg/racelines/`. See the
 [raceline README](../../raceline/README.md#racelines-part-4) and [Path planning](../path-planning.md).
 
 The minimum-time line takes one command, end to end: it extracts the track, makes the
 minimum-curvature reference at the same margin (0.40 m), then solves once, seeded from that line.
 Run from the repo root in `dev`, one TUM process at a time, for each vehicle file (`$v` is
-`f1tenth_default` or `f1tenth_gym_limits`):
+`f1tenth_default` or `f1tenth_gym_limits`, with `$set` `gym-nominal-std-const-v1` or `gym-model-std-const-v1`):
 
 ```bash
-env -u PYTHONPATH uv run --project raceline --locked python -m raceline --map third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg.yaml --walls observed --start-pose 0 0 -2.879 --direction cw --ground-truth-track config/tracks/spielberg.yaml --ground-truth-map third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/Spielberg.yaml --vehicle config/vehicles/$v.yaml --optimizer tum_mintime --timeout 3000
+env -u PYTHONPATH uv run --project raceline --locked python -m raceline --map third_party/GR-roboracer-data/tracks/Spielberg/maps/slam_toolbox/res_0050/Spielberg.yaml --walls observed --start-pose 0 0 -2.879 --direction cw --ground-truth-track config/tracks/spielberg.yaml --ground-truth-map third_party/GR-roboracer-data/tracks/Spielberg/Spielberg.yaml --vehicle config/vehicles/$v.yaml --limit-set $set --optimizer tum_mintime --timeout 3000
 ```
 
-It saves `tum_mintime.csv` and `tum_mintime.yaml` beside the other lines and the minimum-curvature
-reference it was seeded from in `reference/tum_mintime.csv`. On the default vehicle IPOPT converges
+It saves `raceline.csv`, `raceline.yaml` and `limits.md` in the `<optimizer>/<limit set>/` folder and the
+minimum-curvature reference it was seeded from there as `reference.csv`. `--limit-set` names the folder (required). On the default vehicle IPOPT converges
 in 170 iterations (42 s of solve, about 16 minutes for the whole command); on the gym-limits vehicle
 in 1518 iterations (328 s of solve, about 20 minutes). To look at a line, `python -m raceline.diagnose`
 plots where it is bound by a wall, the tyres or the speed cap (see the

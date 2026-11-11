@@ -24,9 +24,20 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-for _path in (REPO, REPO / "tests" / "lib"):
+# racing_bringup is imported for track_data and RACELINE_OPTIMIZERS only, both
+# ROS-free (the CI detect job has no overlay).
+for _path in (
+    REPO,
+    REPO / "tests" / "lib",
+    REPO / "ros_ws" / "src" / "racing_bringup",
+):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
+
+from racing_bringup import track_data  # noqa: E402
+from racing_bringup.scenario_parameters import (  # noqa: E402
+    RACELINE_OPTIMIZERS,
+)
 
 from scripts.frozen_pose import FROZEN_WINDOW_SECONDS  # noqa: E402,F401
 from scripts.pose_source_report import (  # noqa: E402
@@ -46,11 +57,9 @@ SCENARIO = str(REPO / "config" / "scenarios" / "spielberg.yaml")
 TRACK = REPO / "config" / "tracks" / "spielberg.yaml"
 REPORT_DIR = REPO / "log" / "raceline-report"
 TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
-RACELINES = TRACKS / "Spielberg" / "racelines"
+SPIELBERG = TRACKS / "Spielberg"
 UPSTREAM = REPO / "third_party" / "f1tenth_racetracks"
-SURVEY = (
-    TRACKS / "Spielberg" / "maps" / "Spielberg" / "slam" / "Spielberg.yaml"
-)  # amcl's prior
+SURVEY = track_data.survey_grid(SPIELBERG)  # amcl's prior
 
 # vehicle name -> (vehicle file, vehicle_parameter_version)
 VEHICLES = {
@@ -75,9 +84,35 @@ LOCALIZATION_TIMEOUT_SECONDS = 400.0
 NO_METRICS = "no message on /scenario/metrics"
 
 
+def committed_line(version: str, line: str) -> Path:
+    """The committed csv of `line` for the vehicle version (its sidecar is
+    beside it); FileNotFoundError or NoRacelineForVersion when none."""
+    return track_data.optimized_raceline(SPIELBERG, line, version)
+
+
+def regeneration_key(version: str, line: str) -> str | None:
+    """SIM-5040's key for a line's record: the sidecar's path under the
+    tracks root (`Spielberg/racelines/<opt>/<set>/raceline.yaml`); None for
+    the centerline, which has no record."""
+    if line == "centerline":
+        return None
+    return (
+        committed_line(version, line)
+        .with_suffix(".yaml")
+        .relative_to(TRACKS)
+        .as_posix()
+    )
+
+
 def lines_of(version: str) -> list[str]:
-    stems = sorted(p.stem for p in (RACELINES / version).glob("*.csv"))
-    return ["centerline", *stems]
+    present = []
+    for line in sorted(RACELINE_OPTIMIZERS):
+        try:
+            committed_line(version, line)
+        except (FileNotFoundError, track_data.NoRacelineForVersion):
+            continue
+        present.append(line)
+    return ["centerline", *present]
 
 
 def launch_arguments(vehicle_file: str, line: str, recording: Path) -> dict:
@@ -167,10 +202,9 @@ def static_fields(version: str, line: str) -> dict:
 
     if line == "centerline":
         return {"length_m": racing_common.Track.from_yaml(str(TRACK)).length()}
-    geometry = raceline_geometry(RACELINES / version / f"{line}.csv")
-    document = yaml.safe_load(
-        (RACELINES / version / f"{line}.yaml").read_text(encoding="utf-8")
-    )
+    csv = committed_line(version, line)
+    geometry = raceline_geometry(csv)
+    document = yaml.safe_load(csv.with_suffix(".yaml").read_text("utf-8"))
     clearance = document["verdict"]["min_clearance"]
     fields = dict(geometry)
     fields["verifier_min_clearance"] = clearance.get("ground_truth_judged")

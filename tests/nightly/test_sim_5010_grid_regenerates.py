@@ -1,6 +1,6 @@
 """SIM-5010: the committed occupancy grid regenerates from the survey.
 
-`tracks/Spielberg/maps/Spielberg/slam/Spielberg.{png,yaml}` (data repo)
+`tracks/Spielberg/maps/slam_toolbox/res_0050/Spielberg.{png,yaml}` (data repo)
 is a committed
 artifact - the map nav2_map_server serves to nav2_amcl - produced by
 `scripts/map_track.sh` from an exact-sensor survey lap. A committed binary
@@ -35,8 +35,8 @@ COMMITTED = (
     / "tracks"
     / "Spielberg"
     / "maps"
-    / "Spielberg"
-    / "slam"
+    / "slam_toolbox"
+    / "res_0050"
     / "Spielberg.yaml"
 )
 # A survey lap at 1x plus the mapper's last update and the save.

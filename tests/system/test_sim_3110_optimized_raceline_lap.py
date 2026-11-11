@@ -3,12 +3,12 @@ completes through the real launch, collision-free, inside the run's
 timeout. Its lap time is reported (`log/reports/SIM-3110.json`), not asserted
 (ADR 0008).
 
-The default vehicle follows `tracks/Spielberg/racelines/f1tenth-default-v1/
-tum_mincurv_iqp.csv` (data repo) with `speed_source: trajectory`, so the
-line's own speed
-(a flat 3.0 m/s) is the command, not the curvature schedule. Ground-truth
-pose only. The 20 m/s gym-limits vehicle is the planning benchmark's, not this
-gate's.
+The default vehicle follows `tracks/Spielberg/racelines/tum_mincurv_iqp/
+gym-nominal-std-const-v1/raceline.csv` (data repo) with
+`speed_source: trajectory`, so the line's own speed (a flat 3.0 m/s) is the
+command, not the curvature schedule. Ground-truth pose only. The 20 m/s
+gym-limits vehicle is the
+planning benchmark's, not this gate's.
 
 The reported lap time is *this* line's own measurement, read against the
 baseline below; it is not a comparison with the centerline (ADR 0005 leaves

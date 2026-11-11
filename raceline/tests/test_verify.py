@@ -556,11 +556,11 @@ def test_raceline_1367h_a_point_past_the_polygon_gets_no_relief():
 REPO = Path(__file__).resolve().parents[2]
 TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
 COMMITTED_RACELINES = {
-    "Spielberg/racelines/f1tenth-default-v1/tum_mincurv_iqp",
-    "Spielberg/racelines/f1tenth-gym-limits-v1/tum_mincurv_iqp",
-    "Spielberg/racelines/f1tenth-default-v1/tum_mintime",
-    "Spielberg/racelines/f1tenth-gym-limits-v1/tum_mintime",
-    "Porto/racelines/autodrive-roboracer-fast-v1/tum_mintime",
+    "Spielberg/racelines/tum_mincurv_iqp/gym-nominal-std-const-v1",
+    "Spielberg/racelines/tum_mincurv_iqp/gym-model-std-const-v1",
+    "Spielberg/racelines/tum_mintime/gym-nominal-std-const-v1",
+    "Spielberg/racelines/tum_mintime/gym-model-std-const-v1",
+    "Porto/racelines/tum_mintime/autodrive-nominal-fast-const-gymfit-v1",
 }
 # The ground-truth tip records each track's offset walls produce, pinned as
 # measured (xy, observed): a property of the track, so the vacuity guard is
@@ -610,8 +610,8 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
 
     root = TRACKS
     found = {
-        p.relative_to(root).with_suffix("").as_posix()
-        for p in root.glob("*/racelines/*/*.csv")
+        p.parent.relative_to(root).as_posix()
+        for p in root.glob("*/racelines/*/*/raceline.csv")
     }
     assert found == COMMITTED_RACELINES
 
@@ -623,7 +623,7 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         # The record's `track` is the lower-case track-file stem; only the
         # folder is keyed by the map's name.
         name = map_folder.lower()
-        doc = yaml.safe_load((root / f"{rel}.yaml").read_text())
+        doc = yaml.safe_load((root / rel / "raceline.yaml").read_text())
         assert doc["track"] == name
         src = doc["source"]
         src_yaml = REPO / src["path"]
@@ -633,7 +633,9 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         veh = doc["vehicle"]
         assert sha(REPO / veh["path"]) == veh["sha256"]
         vehicle = load_vehicle(REPO / veh["path"])
-        assert vehicle.version == doc["vehicle_version"] == rel.split("/")[2]
+        assert doc["limit_set"] == rel.split("/")[3]
+        assert doc["optimizer"] == rel.split("/")[2]
+        assert vehicle.version == doc["vehicle_version"]
         assert sha(vehicle.ggv_path) == veh["ggv_sha256"]
         assert (
             sha(vehicle.ax_max_machines_path) == veh["ax_max_machines_sha256"]
@@ -644,10 +646,8 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
             assert sha(tyres.path) == veh["tyres_sha256"]
             ref = doc["parameters"]["reference"]
             assert sha(REPO / ref["path"]) == ref["sha256"]
-            folder = rel.rsplit("/", 1)[0]
             assert ref["path"] == (
-                f"third_party/GR-roboracer-data/tracks/{folder}/reference/"
-                "tum_mintime.csv"
+                f"third_party/GR-roboracer-data/tracks/{rel}/reference.csv"
             )
         gt = doc["ground_truth"]
         assert gt["path"] == f"config/tracks/{name}.yaml"
@@ -655,9 +655,7 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         ground_truth = load_track(REPO / gt["path"])
 
         gm = doc["ground_truth_map"]
-        gym_yaml = (
-            TRACKS / map_folder / "maps" / map_folder / (f"{map_folder}.yaml")
-        )
+        gym_yaml = TRACKS / map_folder / f"{map_folder}.yaml"
         assert gm["path"] == gym_yaml.relative_to(REPO).as_posix()
         assert sha(gym_yaml) == gm["sha256"]
         gym_image = yaml.safe_load(gym_yaml.read_text())["image"]
@@ -675,7 +673,7 @@ def test_raceline_1395_every_committed_raceline_is_current_and_verifies():
         track, input_walls = runner._input_map(args, name)
         truth = verify.track_walls(ground_truth, "ground_truth", cells)
         required = verify.required_clearances(vehicle, params["margin"])
-        line = load_raceline_csv(root / f"{rel}.csv")
+        line = load_raceline_csv(root / rel / "raceline.csv")
         verdict = verify.verify(
             line,
             vehicle,
