@@ -274,6 +274,148 @@ def test_check_2563_an_unheard_controller_command_raises_and_never_releases(
 
 
 # ---------------------------------------------------------------------------
+# F-T0: the start record and the named backstop (CHECK-2570..2572)
+# ---------------------------------------------------------------------------
+
+
+def _state(seconds: float, v_s: float = 0.0):
+    return SimpleNamespace(
+        header=SimpleNamespace(stamp=_stamp(seconds)), v_s=v_s
+    )
+
+
+def test_check_2570_observer_records_held_sample_tick_and_first_motion():
+    observer = _observer()
+    assert observer.held_seen is False
+    assert observer.tick is None
+    assert observer.first_motion is None
+    assert observer.metrics_start is None
+    observer._on_state(_state(0.0))
+    assert observer.held_seen is True
+    observer._on_state(_state(0.0))
+    observer._on_state(_state(0.01, 0.0))
+    observer._on_state(_state(0.02, 0.0))
+    assert observer.tick == pytest.approx(0.01)
+    assert observer.first_motion is None
+    observer._on_state(_state(0.03, 0.05))
+    assert observer.first_motion == pytest.approx(0.03)
+    # The state fields stop updating after the first motion.
+    observer._on_state(_state(0.04, 0.09))
+    assert observer.first_motion == pytest.approx(0.03)
+    assert observer.tick == pytest.approx(0.01)
+    # metrics_start is the first ~/started stamp heard, and only that.
+    observer._on_started(_state(0.0))
+    observer._on_started(_state(0.43))
+    assert observer.metrics_start == 0.0
+
+
+def test_check_2570_a_late_started_report_keeps_its_stamp():
+    observer = _observer()
+    observer._on_started(_state(0.43))
+    assert observer.metrics_start == pytest.approx(0.43)
+
+
+def test_check_2570_the_observer_listens_to_state_and_started():
+    topics = []
+
+    class _Listening(_FakeNode):
+        def create_subscription(self, message_type, topic, *args, **kwargs):
+            topics.append(topic)
+            return object()
+
+    scenario_runner._HangObserver(_Listening([]))
+    assert "/ground_truth/track_relative_state" in topics
+    assert METRICS_STARTED_TOPIC in topics
+
+
+def test_check_2571_t0_waits_for_the_observer_to_see_the_held_sample(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released)
+    observer = _observer()
+    spins = []
+
+    def fake_spin_once(node, timeout_sec=None):
+        spins.append(1)
+        if len(spins) == 3:
+            observer._on_state(_state(0.0))
+        time.sleep(0.001)
+
+    monkeypatch.setattr(scenario_runner.rclpy, "spin_once", fake_spin_once)
+    scenario_runner._reset_at_deterministic_t0(
+        _FakeNode(released), 42, 5.0, observer=observer
+    )
+    assert len(spins) >= 3
+    assert "create_client" in released
+
+
+def test_check_2571_a_held_sample_never_seen_raises_and_never_releases(
+    monkeypatch, released
+):
+    _record_waits(monkeypatch, released)
+    monkeypatch.setattr(
+        scenario_runner.rclpy,
+        "spin_once",
+        lambda node, timeout_sec=None: time.sleep(0.01),
+    )
+    with pytest.raises(TimeoutError) as raised:
+        scenario_runner._reset_at_deterministic_t0(
+            _FakeNode(released), 42, 0.2, observer=_observer()
+        )
+    assert "start-unobserved" in str(raised.value)
+    assert "create_client" not in released
+
+
+TICK = 0.01
+
+
+@pytest.mark.parametrize(
+    ("metrics_start", "first_motion", "truth_driven", "expected"),
+    [
+        # N1's failure: racing_metrics started at 0.43 s.
+        (0.43, 0.01, True, "metrics-start-missed"),
+        # b2s5_r3: both late; the metrics start is named, both are in the text.
+        (0.03, 0.05, True, "metrics-start-missed"),
+        # Normal values: the start at the held stamp, first motion at 1 tick.
+        (0.0, 0.01, True, None),
+        # The car's first motion alone is late (L3).
+        (0.0, 0.05, True, "drive-start-missed"),
+        # Exactly 3 ticks is not late; the limit is strictly beyond it.
+        (0.0, 0.03, True, None),
+        # Not truth-driven: first motion is not measured there.
+        (0.0, 0.50, False, None),
+        # Unknown inputs are not checked.
+        (None, 0.01, True, None),
+        (0.0, None, True, None),
+        (None, None, True, None),
+    ],
+)
+def test_check_2572_start_verdict(
+    metrics_start, first_motion, truth_driven, expected
+):
+    tick = None if first_motion is None else TICK
+    text = scenario_runner.start_verdict(
+        metrics_start, first_motion, tick, truth_driven
+    )
+    if expected is None:
+        assert text is None
+    else:
+        assert f"verdict={expected}" in text
+
+
+def test_check_2572_both_late_names_metrics_and_carries_both_numbers():
+    text = scenario_runner.start_verdict(0.03, 0.05, TICK, True)
+    assert "verdict=metrics-start-missed" in text
+    assert "verdict=drive-start-missed" not in text
+    assert "0.03" in text
+    assert "0.05" in text
+
+
+def test_check_2572_no_tick_skips_the_drive_condition():
+    assert scenario_runner.start_verdict(0.0, 0.9, None, True) is None
+
+
+# ---------------------------------------------------------------------------
 # F2: the track-limit runner (CHECK-2200..2250)
 # ---------------------------------------------------------------------------
 
