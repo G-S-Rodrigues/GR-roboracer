@@ -65,7 +65,7 @@ Stop the launch with Ctrl+C afterwards. Save after the lap: the last `/map` cove
 It fixes the seed at 42, runs at 1x, and gives up if no lap completes within 240 s (the
 `LAP_WAIT` environment variable changes that). Give it
 `third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg` as the stem only to replace the committed grid,
-which is a reviewed change: a new or re-surveyed map is a data-repo PR plus a gitlink bump here (ADR 0008).
+which is a reviewed change: a new or re-surveyed map is a data-repo PR plus a gitlink bump here (ADR 0009).
 
 ## Saved artifacts
 

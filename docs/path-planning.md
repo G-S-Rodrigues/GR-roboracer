@@ -68,11 +68,10 @@ raceline_optimizer:=tum_mintime speed_source:=trajectory`. Measured in the sim (
 takes 112.12 s (seeds 42 and 7 differ by 0.01 s), against 113.08 s on the minimum-curvature line
 and 120.41 s for the centerline lap. The default vehicle is limited to 3.0 m/s, so both lines run
 at that speed and the 0.96 s is the shorter line. The optimizer's own estimate for the default
-vehicle is 111.88 s, an estimate, not a measured lap. The nightly's four-seed comparison measured 112.07 to 112.19 s on the default vehicle, all
+vehicle is 111.88 s, an estimate, not a measured lap. SIM-5050's four-seed nightly comparison (retired; it is now the planning benchmark) measured 112.07 to 112.19 s on the default vehicle, all
 four laps completed. The gym-limits minimum-time line, like every gym-limits line, does not
 finish a lap in the simulator (it leaves the track after 52 to 105 m), so no gate lap drives it.
 
-The nightly drives every committed line on both vehicles and publishes the comparison as the
-`raceline-report` artifact (see [Verification](verification.md)).
+The [planning benchmark](running.md#comparing-implementations) drives every committed line on both vehicles and writes the comparison under `log/benchmark/planning/`.
 
 The figure was produced at a61e5fa (2026-10-22).

@@ -46,7 +46,7 @@ SIMULATOR_CAPABILITIES = {
 # publishes under (config/autodrive/porto_frame.yaml: measured in part 10;
 # plan D3). Paths are repository-relative,
 # like the rest of this file.
-AUTODRIVE_VEHICLE = "autodrive_roboracer"
+AUTODRIVE_VEHICLES = ("autodrive_roboracer", "autodrive_roboracer_fast")
 AUTODRIVE_SCENARIO = "porto"
 AUTODRIVE_SERVER_CONFIG = "config/vehicles/autodrive_roboracer/server.yaml"
 AUTODRIVE_FRAME = "config/autodrive/porto_frame.yaml"
@@ -144,14 +144,15 @@ def _check_autodrive(context, vehicle: str, bridge: str) -> None:
 
     The capabilities it lacks (time scaling, a held start) are refused, not
     ignored: a run that quietly drops `time_scale:=2` measures something else.
-    The build has one car and one active track, so no other is offered.
+    The build has two car files (the base and the fast caps) and one active
+    track, so no other is offered.
     """
     if bridge == "official":
         _devkit_domain(context)
-    if Path(vehicle).stem != AUTODRIVE_VEHICLE:
+    if Path(vehicle).stem not in AUTODRIVE_VEHICLES:
         raise RuntimeError(
-            f"simulator:=autodrive runs vehicle {AUTODRIVE_VEHICLE} only, "
-            f"not {vehicle}"
+            "simulator:=autodrive runs vehicle "
+            f"{' or '.join(AUTODRIVE_VEHICLES)} only, not {vehicle}"
         )
     scenario = LaunchConfiguration("scenario").perform(context)
     if Path(scenario).stem != AUTODRIVE_SCENARIO:

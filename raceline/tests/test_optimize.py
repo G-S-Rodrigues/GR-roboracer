@@ -1,12 +1,14 @@
 """Tier 1: the optimizer orchestration (stubbed TUM) and one real TUM run."""
 
 import configparser
+import dataclasses
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 import test_smoke
+import test_verify
 from raceline.track import Track
 from raceline.vehicle import load_vehicle
 
@@ -602,3 +604,102 @@ def test_raceline_1435_real_chain_on_the_oval_passes_the_verifier(tmp_path):
     print(f"max nearest-point gap {nearest.max():.4f} m")
     print(f"v: seed {reference.v.mean():.3f}, line {line.v.mean():.3f}")
     assert nearest.max() > MIN_DEPARTURE
+
+
+# -- the speed re-profile (RACELINE-1560) -------------------------------------
+
+FAST = VEHICLES / "autodrive_roboracer_fast.yaml"
+
+
+def _closed_a(line):
+    """`line` with `a` the closed forward difference of its `v`."""
+    xy = line.xy
+    ds = np.hypot(*(np.roll(xy, -1, 0) - xy).T)
+    v = line.v
+    return dataclasses.replace(line, a=(np.roll(v, -1) ** 2 - v**2) / (2 * ds))
+
+
+def _spiked(line, indices, kappa=1.0):
+    k = line.kappa.copy()
+    k[list(indices)] = kappa
+    return _closed_a(dataclasses.replace(line, kappa=k))
+
+
+def _dropped(line, index, speed=1.0):
+    v = line.v.copy()
+    v[index] = speed
+    return _closed_a(dataclasses.replace(line, v=v))
+
+
+def _cases():
+    """(name, line, which ratio the vacuity guard reads, at which index)."""
+    base = _closed_a(test_verify._circle(5.0, v=4.5))
+    n = len(base.v)
+    return [
+        ("ay", _spiked(base, [10, 11, 12, 13]), "ay_ratio", None),
+        ("brake", _dropped(base, 50), "ax_ratio", None),
+        (
+            "wrap",
+            _dropped(_spiked(base, [n - 1, 0]), 0),
+            "ax_ratio",
+            n - 1,
+        ),
+    ]
+
+
+def _check(line, out, vehicle):
+    scale = optimize.REPROFILE_LIMIT_SCALE
+    ratios = verify._limit_ratios(out, vehicle)
+    assert ratios["ay_ratio"].max() <= scale + 1e-12
+    assert ratios["ax_ratio"].max() <= scale + 1e-12
+    for name in ("s", "x", "y", "psi", "kappa"):
+        assert np.array_equal(getattr(out, name), getattr(line, name))
+    assert (out.v > 0).all() and (out.v <= line.v).all()
+    xy = out.xy
+    ds = np.hypot(*(np.roll(xy, -1, 0) - xy).T)
+    forward = (np.roll(out.v, -1) ** 2 - out.v**2) / (2 * ds)
+    assert np.abs(out.a - forward).max() < 1e-12  # a[-1] included
+
+
+def test_raceline_1560_reprofile_keeps_the_ggv_limits_on_the_exported_path():
+    vehicle = load_vehicle(FAST)
+    for name, line, which, index in _cases():
+        before = verify._limit_ratios(line, vehicle)[which]
+        assert (before[index] if index is not None else before.max()) > 1, name
+        out = optimize.reprofile_speed(line, vehicle)
+        _check(line, out, vehicle)
+        again = optimize.reprofile_speed(out, vehicle)
+        assert np.array_equal(again.v, out.v) and np.array_equal(
+            again.a, out.a
+        ), name
+
+
+def test_raceline_1560_reprofile_holds_under_tables_that_slope():
+    """A falling ay/ax table fails if the brake limit is read at the lower
+    speed; a rising ax table fails if it is read at the cap speed."""
+    vehicle = load_vehicle(FAST)
+    tables = [
+        (
+            np.array([[0.0, 4.0, 9.81], [10.0, 2.0, 5.0]]),
+            np.array([[0.0, 4.0], [10.0, 2.0]]),
+        ),
+        (
+            np.array([[0.0, 2.0, 9.81], [10.0, 4.0, 9.81]]),
+            np.array([[0.0, 5.0], [10.0, 5.0]]),
+        ),
+    ]
+    for ggv, machines in tables:
+        sloped = dataclasses.replace(vehicle, ggv=ggv, ax_max_machines=machines)
+        for _name, line, _, _ in _cases():
+            out = optimize.reprofile_speed(line, sloped)
+            _check(line, out, sloped)
+
+
+def test_raceline_1560_table_min_takes_the_interior_knots():
+    v = np.array([0.0, 3.0, 10.0])
+    y = np.array([4.0, 2.0, 4.0])
+    assert optimize._table_min(v, y, 1.0, 4.5) == pytest.approx(2.0)
+    assert optimize._table_min(v, y, 4.5, 1.0) == pytest.approx(2.0)
+    assert optimize._table_min(v, y, 3.5, 4.5) == pytest.approx(
+        2.0 + (3.5 - 3.0) * 2.0 / 7.0
+    )

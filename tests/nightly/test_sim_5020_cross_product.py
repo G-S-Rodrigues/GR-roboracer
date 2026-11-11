@@ -4,7 +4,9 @@ The cross-product ADR 0005 keeps out of the gate. Tiers 3 and 4 verify each
 implementation once, at one seed, inside the reference stack current when
 it landed; this is the test that notices the combination - an estimator
 that only converges from the start pose seed 42 draws, or a lap that only
-completes for the seed its bound was measured at.
+completes for the seed its baseline was measured at. Each row reports its
+numbers (`log/reports/SIM-5020-<pose_source>-seed-<n>.json`) and asserts only
+the catastrophic bounds (ADR 0008).
 
 The track dimension is Spielberg alone, and deliberately: it is the only
 track with a committed occupancy grid for nav2_amcl, and the only one where
@@ -40,9 +42,15 @@ Every row completed its lap with no collision, so seed 1030 on Spielberg
 from pathlib import Path
 
 import pytest
+from racing_test_keywords.report import catastrophic, write_report
 from racing_test_keywords.scenario_runner import run_scenario
 
-from scripts.compare_localization import read_recording, score_recording
+from scripts.compare_localization import (
+    compare_localization,
+    format_report,
+    read_recording,
+    score_recording,
+)
 
 SCENARIO = "config/scenarios/spielberg.yaml"
 ESTIMATE_TOPIC = "/localization/odom"
@@ -52,19 +60,18 @@ TIMEOUT_SECONDS = 400.0
 # other seed the suite already pins, and a second start pose is the whole
 # point of this row - f110_env.reset draws the start arc length from it.
 SEEDS = (42, 1030)
-# (ate_rmse below, availability above). Each is the bound its own tier-3
-# case already carries - SIM-3080's 0.65 (a seed-42 bound, from
-# SIM-5030's seed-42 slice), SIM-3070's 4.0 from three - which is the
-# point: this test asks whether the bound measured at seed 42 survives a
-# second start pose, so it must be the same number and never a looser one.
-BOUNDS = {
+# (ate_rmse, availability) the bound each row's own tier-3 case carried -
+# SIM-3080's 0.65 (a seed-42 bound, from SIM-5030's seed-42 slice), SIM-3070's
+# 4.0 from three runs. Kept as the baseline each report is read against
+# (ADR 0008); no assert reads them.
+BOUNDS_BASELINE = {
     "slam_toolbox": (4.0, 0.99),
     "amcl": (0.65, 0.99),
 }
 
 
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.parametrize("pose_source", sorted(BOUNDS))
+@pytest.mark.parametrize("pose_source", sorted(BOUNDS_BASELINE))
 def test_sim_5020_pose_source_across_seeds(
     pose_source: str, seed: int, tmp_path: Path
 ) -> None:
@@ -87,8 +94,23 @@ def test_sim_5020_pose_source_across_seeds(
     )
     print(f"SIM-5020 {pose_source} seed {seed}: {scored}")
 
-    rmse_maximum, availability_minimum = BOUNDS[pose_source]
+    rmse_baseline, availability_baseline = BOUNDS_BASELINE[pose_source]
+    # Reported before anything is asserted, so a red run keeps its record
+    # (ADR 0008).
+    write_report(
+        f"SIM-5020-{pose_source}-seed-{seed}",
+        scored,
+        seed=seed,
+        scenario=SCENARIO,
+        implementation=pose_source,
+        baseline={
+            "ate_rmse": rmse_baseline,
+            "availability": availability_baseline,
+        },
+    )
     # A stalled estimator scores as unavailable, never as zero error
-    # (EVAL-1030), so availability comes first.
-    assert scored["availability"] >= availability_minimum, scored
-    assert scored["ate_rmse"] <= rmse_maximum, scored
+    # (EVAL-1030): the availability bound is part of this one.
+    violations = compare_localization(
+        catastrophic("ate_rmse") | catastrophic("availability"), scored
+    )
+    assert violations == [], format_report(scored, violations)

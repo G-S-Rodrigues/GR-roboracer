@@ -163,8 +163,14 @@ Traps any task in this repository can hit. Each one cost real time at least once
 ## Metrics
 
 14. **Golden baselines are regenerated as a reviewed diff, never to make a run pass.** The same goes
-    for tolerances in `scripts/compare_metrics.py`: widening one to green a run silently removes the
-    guard. Every tolerance there carries the measurement that justifies it.
+    for tolerances in `scripts/compare_metrics.py` and for the catastrophic bounds (ADR 0008):
+    widening one to green a run silently removes the guard. Every tolerance there carries the
+    measurement that justifies it; every catastrophic bound carries the geometric argument. A golden
+    compares two pipelines running the same code (`sim/rollout.py` imports the controller core), so a
+    change to that code regenerates the golden in the same PR, as its reviewed diff. ADR 0008 moved the
+    tier-3/4/5 *quality* bounds (ATE, availability, lap time, map accuracy) to reported, once, from one
+    inventory. That was a reclassification, not a widening, and it is never repeated test by test to
+    green a run.
 
 17. **Noise on `/scan` silently rewrites two metrics.** `racing_metrics` subscribes `/scan` and
     uses it for `minimum_wall_clearance` *and* for `collision_count`
@@ -365,12 +371,12 @@ Traps any task in this repository can hit. Each one cost real time at least once
 
 ## Track data
 
-44. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
+47. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
     `git submodule update --init third_party/GR-roboracer-data` **on the host**: in `dev` git fails on a
     host worktree (#23). Do it again in every new worktree and after merging a main that bumped the pin.
     Without it, real-track scenarios raise at load naming the init command (SIMJAX-1600), where the
     gym's bundled Spielberg would otherwise have masked the gap silently (G1). analytic_circle and
-    contract_test still run. ADR 0008. Run `python -m raceline` only after the init: its default
+    contract_test still run. ADR 0009. Run `python -m raceline` only after the init: its default
     `--out-dir` is inside the submodule folder, so a run before init fills the empty folder and init
     then fails with `clone ... failed`. Never push from the submodule checkout: its `origin` is HTTPS
     and the push prompts forever (#5); push the data repo from a normal clone (`~/gitroot/GR-roboracer-data`).

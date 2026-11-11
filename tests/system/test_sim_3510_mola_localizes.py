@@ -1,6 +1,7 @@
 """SIM-3510: `pose_source:=mola` - MOLA-LO owns `map -> odom` for a real
 Spielberg lap against the map it built itself, and the pose it puts under
-the stack stays available and bounded, scored live by racing_evaluation and
+the stack stays inside the catastrophic bounds (ADR 0008; how well it tracks is
+reported, `log/reports/SIM-3510.json`), scored live by racing_evaluation and
 again offline by `scripts/compare_localization.py`.
 
 This measures localization **on MOLA's own map** (owner ruling 2026-10-25):
@@ -19,6 +20,11 @@ a simulated-time run). Spielberg, never analytic_circle (repo-gotchas #18).
 
 from pathlib import Path
 
+from racing_test_keywords.report import (
+    catastrophic,
+    catastrophic_violations,
+    write_report,
+)
 from racing_test_keywords.scenario_runner import run_scenario
 
 from scripts.compare_localization import (
@@ -45,23 +51,22 @@ MEASUREMENT = (
     "the T alignment, so a regenerated map is a reason to re-measure "
     "(SIM-5520 flags drift)"
 )
-# Headroom: rmse 1.17x and maximum 1.08x of the worst run, availability's
-# floor 0.99 (worst 0.9975). The bounds were set on the previous map
-# (rmse 1.547-1.556 m, maximum 3.076-3.097 m, five laps at load 1.9-4.2) and
-# are unchanged. On this map the outcome is not near-deterministic: at host
-# load under 4 the same configuration gave rmse 0.742-0.752 m (3 runs), at
-# load near 8 it gave 0.70 once and 1.94-2.13 four times, so the margin to the
-# bound is thin under load. At icp_prior_weight 1.0 (the default) this map
-# passed 2 of 5 and diverged (37.7 m) in 3.
-POSITION_RMSE_MAXIMUM = 2.5
-POSITION_MAXIMUM = 4.5
-AVAILABILITY_MINIMUM = 0.99
-OFFLINE_BOUNDS = {
-    "ate_maximum": {"maximum": POSITION_MAXIMUM, "measurement": MEASUREMENT},
-    "availability": {
-        "minimum": AVAILABILITY_MINIMUM,
-        "measurement": MEASUREMENT,
-    },
+# The old bounds had headroom rmse 1.17x and maximum 1.08x of the worst run,
+# availability's floor 0.99 (worst 0.9975); they were set on the previous map
+# (rmse 1.547-1.556 m, maximum 3.076-3.097 m, five laps at load 1.9-4.2). On
+# this map the outcome is not near-deterministic: at host load under 4 the
+# same configuration gave rmse 0.742-0.752 m (3 runs), at load near 8 it gave
+# 0.70 once and 1.94-2.13 four times. At icp_prior_weight 1.0 (the default)
+# this map passed 2 of 5 and diverged (37.7 m) in 3. Kept as the baseline a
+# report is read against (ADR 0008); no assert reads them.
+POSITION_RMSE_BASELINE = 2.5
+POSITION_MAXIMUM_BASELINE = 4.5
+AVAILABILITY_BASELINE = 0.99
+BASELINE = {
+    "position_rmse": POSITION_RMSE_BASELINE,
+    "position_maximum": POSITION_MAXIMUM_BASELINE,
+    "availability": AVAILABILITY_BASELINE,
+    "measurement": MEASUREMENT,
 }
 
 
@@ -86,10 +91,22 @@ def test_sim_3510_mola_tracks_ground_truth(tmp_path: Path) -> None:
     # A lap of 100 Hz truth at 1x: ~12 000 samples.
     assert live["sample_count"] > 10000, live
     availability = live["available_count"] / live["sample_count"]
-    assert availability >= AVAILABILITY_MINIMUM, live
-    assert live["position_rmse"] <= POSITION_RMSE_MAXIMUM, live
-    assert live["position_maximum"] <= POSITION_MAXIMUM, live
-
     offline = score_recording(events, estimate_topic=ESTIMATE_TOPIC)
-    violations = compare_localization(OFFLINE_BOUNDS, offline)
+    # Reported before anything quality-related is asserted, so a red run
+    # keeps its record (ADR 0008).
+    write_report(
+        "SIM-3510",
+        {"live": {**live, "availability": availability}, "offline": offline},
+        seed=SEED,
+        scenario=SCENARIO,
+        implementation="mola",
+        baseline=BASELINE,
+    )
+    live_violations = catastrophic_violations(
+        {**live, "availability": availability},
+        {"availability": "availability", "position_rmse": "ate_rmse"},
+    )
+    assert live_violations == [], (live_violations, live)
+
+    violations = compare_localization(catastrophic("availability"), offline)
     assert violations == [], format_report(offline, violations)

@@ -2,7 +2,7 @@
 
 A probe is a thin rclpy subscriber around pure logic that lives in
 ``scripts.pose_source_report`` and ``racing_evaluation.map_accuracy`` (both
-tier-1 tested). The wiring here has no tier-1 test; SIM-5510's structural
+tier-1 tested). The wiring here has no tier-1 test; the benchmark's structural
 check fails a completed row whose probe heard nothing.
 
 Lifecycle, driven by ``run_scenario``: ``attach(node)`` once the driver node

@@ -18,7 +18,7 @@ line, and RACELINE-1395 already guards the committed line itself.
 
 It prints the measured deltas on every run, passing or not, and writes
 `log/raceline-report/regeneration.json` (overwritten, never appended) for
-SIM-5050's report. The TUM solve is deterministic only up to the CPU's
+the planning report. The TUM solve is deterministic only up to the CPU's
 OpenBLAS kernel, which is why the line is compared within a tolerance and
 the inputs are compared exactly.
 """
@@ -129,7 +129,7 @@ def regenerate(doc: dict, out_dir: Path) -> tuple[Path, dict, float]:
         f"the line or the solve failed):\n{done.stderr[-2000:]}"
     )
     # The CLI keys the folder by the map file's stem (case kept), which
-    # check_source guarantees is the map's name (ADR 0008).
+    # check_source guarantees is the map's name (ADR 0009).
     folder = (
         out_dir
         / Path(doc["source"]["path"]).stem

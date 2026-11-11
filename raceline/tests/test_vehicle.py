@@ -121,6 +121,52 @@ def test_raceline_1220_every_committed_vehicle_loads():
     assert len(set(versions)) == len(versions)
 
 
+def test_raceline_1540_fast_file_is_the_base_file_but_four_values():
+    """The fast car differs from the base car in exactly four values."""
+    base = yaml.safe_load((VEHICLES / "autodrive_roboracer.yaml").read_text())
+    fast = yaml.safe_load(
+        (VEHICLES / "autodrive_roboracer_fast.yaml").read_text()
+    )
+    base["racing_controller_baseline"]["ros__parameters"]["maximum_speed"] = 4.5
+    sup = base["racing_safety_supervisor"]["ros__parameters"]
+    sup["maximum_speed"] = 4.5
+    sup["maximum_acceleration"] = 4.0
+    for section in ("racing_metrics", "racing_recording"):
+        base[section]["ros__parameters"]["vehicle_parameter_version"] = (
+            "autodrive-roboracer-fast-v1"
+        )
+    assert fast == base
+    assert sup["maximum_steering_rate"] == 1.5
+
+
+def _table_rows(path):
+    rows = [
+        line.split(",")
+        for line in path.read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    return [[float(x) for x in row] for row in rows]
+
+
+def test_raceline_1550_fast_tables_track_the_base():
+    """Dynamics and tyre files are byte-equal; ax is the fast cap."""
+    base_dir = VEHICLES / "autodrive_roboracer"
+    fast_dir = VEHICLES / "autodrive_roboracer_fast"
+    for name in ("tum_mintime.yaml", "tum_mintime_tyres_gym_fit.yaml"):
+        assert (fast_dir / name).read_bytes() == (base_dir / name).read_bytes()
+    cap = yaml.safe_load(
+        (VEHICLES / "autodrive_roboracer_fast.yaml").read_text()
+    )["racing_safety_supervisor"]["ros__parameters"]["maximum_acceleration"]
+    for name in ("ggv.csv", "ax_max_machines.csv"):
+        base = _table_rows(base_dir / name)
+        fast = _table_rows(fast_dir / name)
+        assert len(base) == len(fast)
+        for b, f in zip(base, fast, strict=True):
+            assert f[0] == b[0]
+            assert f[1] == cap
+            assert f[2:] == b[2:]  # ay column, where present
+
+
 @pytest.mark.parametrize(
     ("edit", "field", "value"),
     [

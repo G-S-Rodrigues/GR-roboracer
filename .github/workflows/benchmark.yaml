@@ -1,0 +1,158 @@
+# The benchmark: implementations of one role, side by side (ADR 0008 section 5).
+#
+# It reports and never blocks. Every job name below carries "(non-blocking)",
+# which is how a lander (and CLAUDE.md "The rule") knows not to wait on it or
+# stop a merge for it; CHECK-2770 pins that. It is never scheduled: a PR runs
+# it only when its diff adds an implementation to the reference stack, adds or
+# changes a committed Spielberg raceline, or edits the runner. Anyone can run
+# it by hand (`gh workflow run benchmark.yaml -f role=all`).
+#
+# The trigger list is scripts/benchmark.py TRIGGER_PATHS; `paths` below must
+# equal it (CHECK-2770). A change to one line needs the other.
+#
+# Measured on GitHub's runners (nightly 42604815271): localization 34 min,
+# planning 15.5 min, plus about a minute to build the image.
+
+name: Benchmark (non-blocking)
+
+on:
+  pull_request:
+    paths:
+      - config/reference_stack.yaml
+      - third_party/GR-roboracer-data
+      - scripts/benchmark_runs.py
+  workflow_dispatch:
+    inputs:
+      role:
+        description: Which benchmark to run
+        type: choice
+        options: [localization, planning, all]
+        default: all
+
+concurrency:
+  group: benchmark-${{ github.ref }}-${{ inputs.role || 'pr' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: "Benchmark (non-blocking): detect"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      roles: ${{ steps.roles.outputs.roles }}
+    steps:
+      # The default pull_request ref is the merge commit, so diffing it against
+      # the base gives exactly the PR's additions.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # No image: `roles` reads the stack file and a path list, so plain
+      # Python with the two packages the scripts import is enough, and a PR
+      # that edits docker/ cannot time this job out on an image build.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the script dependencies
+        run: pip install numpy pyyaml
+
+      - name: Which benchmarks
+        id: roles
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DISPATCH_ROLE: ${{ inputs.role }}
+        run: |
+          # On the runner, not in a container: no gotcha-23 git problem.
+          if [ "$EVENT" = workflow_dispatch ]; then
+            args="--dispatch $DISPATCH_ROLE"
+          else
+            git show "$BASE_SHA:config/reference_stack.yaml" > base_stack.yaml
+            git diff --name-only "$BASE_SHA" HEAD > changed_paths.txt
+            args="--base-stack base_stack.yaml --changed changed_paths.txt"
+          fi
+          python3 scripts/benchmark.py roles $args \
+            > roles.json 2> roles.err
+          cat roles.err
+          # An implementation in a role with no benchmark is a gap to name,
+          # not a failure (ADR 0008 section 5).
+          while read -r line; do
+            echo "::warning::$line"
+            echo "- $line" >> "$GITHUB_STEP_SUMMARY"
+          done < roles.err
+          echo "roles=$(cat roles.json)" | tee -a "$GITHUB_OUTPUT"
+
+  benchmark:
+    name: "Benchmark (non-blocking): ${{ matrix.role }}"
+    needs: detect
+    if: needs.detect.outputs.roles != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.role == 'localization' && 90 || 45 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        role: ${{ fromJSON(needs.detect.outputs.roles) }}
+    steps:
+      # The submodule is read only by the planning benchmark's upstream row
+      # (third_party/NOTICE.md).
+      - uses: actions/checkout@v4
+        with:
+          submodules: ${{ matrix.role == 'planning' }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the dev image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: dev
+          tags: gr-roboracer:dev
+          load: true
+          cache-from: type=gha,scope=dev
+
+      # Built as check.sh does, underlay included: without
+      # /opt/racing_underlay a pose source can go missing and its rows read
+      # "absent" with no error. RACING_REVISION is the merge commit on a PR,
+      # which is what was built and run.
+      - name: benchmark.py run --role ${{ matrix.role }}
+        run: |
+          docker run --rm \
+            --volume "$PWD:/ws" \
+            --workdir /ws \
+            --env ROS_DOMAIN_ID=42 \
+            --env ROS_LOG_DIR=/ws/log/ros \
+            --env RACING_REVISION=${{ github.sha }} \
+            gr-roboracer:dev bash -c 'source /opt/ros/jazzy/setup.bash &&
+              { [ ! -f /opt/racing_underlay/setup.bash ] ||
+                source /opt/racing_underlay/setup.bash; } &&
+              colcon build --base-paths ros_ws/src --symlink-install \
+                --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON &&
+              source install/setup.bash &&
+              python3 scripts/benchmark.py run --role ${{ matrix.role }}'
+
+      - name: Job summary
+        if: always()
+        run: |
+          f=log/benchmark/${{ matrix.role }}/report.md
+          [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload the benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.role }}
+          path: log/benchmark/${{ matrix.role }}/
+          if-no-files-found: ignore
+
+      - name: Upload the node logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-logs-${{ matrix.role }}
+          path: log/ros/
+          if-no-files-found: warn

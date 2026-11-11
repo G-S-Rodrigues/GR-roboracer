@@ -949,7 +949,7 @@ def test_check_2350_a_data_bump_is_a_whole_tree_trigger_for_fast(
 ) -> None:
     """CHECK-2350 / CHECK-2360: the data submodule's gitlink and
     `.gitmodules` make `--fast` whole tree. A bump is one path whose contents
-    the diff does not show (ADR 0007, ADR 0008)."""
+    the diff does not show (ADR 0007, ADR 0009)."""
     scope = scope_for([path])
 
     assert scope.whole_tree is True
@@ -1532,3 +1532,79 @@ def test_check_1390_ready_line_appends_the_base() -> None:
     assert line(scoped) == line(replace(scoped, base=""))
     assert "base" not in line(scoped).split("because")[-1]
     assert "base" not in line(whole)
+
+
+# --- CHECK-2340 / CHECK-2350: experimental status (ADR 0008) ---------------
+
+EXPERIMENTAL_ALTERNATIVE = {
+    "implementation": "x",
+    "package": "pkg_x",
+    "status": "experimental",
+    "paths": ["ros_ws/src/pkg_x/*"],
+    "verified_by": [],
+}
+
+
+def _with_alternative(alternative: dict) -> dict:
+    import copy
+
+    data = copy.deepcopy(SELECT_MAP)
+    data["roles"]["pose_source"]["alternatives"].append(alternative)
+    return data
+
+
+def test_check_2340_an_experimental_alternative_loads_and_places_its_paths(
+    tmp_path: Path,
+) -> None:
+    """CHECK-2340: an experimental alternative with no verified_by loads
+    through load_stack, its paths are placed (not "unmapped") and select only
+    the reference lap, and `--owners` still works."""
+    import yaml
+
+    root = _layout(tmp_path)
+    path = root / "config" / "reference_stack.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["roles"]["controller"]["alternatives"] = [
+        {**EXPERIMENTAL_ALTERNATIVE, "implementation": "x"}
+    ]
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    stack = load_stack(root)
+
+    (experimental,) = [i for i in stack.implementations if i.name == "x"]
+    assert experimental.status == "experimental"
+    assert owners_of("SIM-3020", stack) == ["controller=pp"]
+
+    full = _with_alternative(EXPERIMENTAL_ALTERNATIVE)
+    scope = _select(["ros_ws/src/pkg_x/node.py"], data=full)
+    assert scope.whole_tree is False
+    assert scope.implementations == ("pose_source=x",)
+    assert scope.tests == ("SIM-3020",)
+
+
+@pytest.mark.parametrize(
+    "change, needle",
+    [
+        ({"status": "bogus"}, "pose_source=x"),
+        ({"verified_by": ["SIM-3080"]}, "pose_source=x"),
+    ],
+)
+def test_check_2350_status_is_validated(change: dict, needle: str) -> None:
+    """CHECK-2350: an unknown status, and experimental with a verified_by,
+    each raise naming the implementation."""
+    with pytest.raises(ValueError, match=needle):
+        _select(
+            ["x"],
+            data=_with_alternative({**EXPERIMENTAL_ALTERNATIVE, **change}),
+        )
+
+
+def test_check_2350_a_default_cannot_be_experimental() -> None:
+    """CHECK-2350: a role's default is never experimental."""
+    import copy
+
+    data = copy.deepcopy(SELECT_MAP)
+    data["roles"]["controller"]["status"] = "experimental"
+    data["roles"]["controller"]["verified_by"] = []
+    with pytest.raises(ValueError, match="controller=pp"):
+        _select(["x"], data=data)

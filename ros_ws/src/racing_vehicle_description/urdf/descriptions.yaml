@@ -4,3 +4,4 @@
 f1tenth_default: f1tenth.urdf
 f1tenth_gym_limits: f1tenth.urdf
 autodrive_roboracer: autodrive_roboracer.urdf
+autodrive_roboracer_fast: autodrive_roboracer.urdf

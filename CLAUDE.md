@@ -7,7 +7,7 @@ An autonomous racing stack for F1TENTH / RoboRacer on ROS 2 Jazzy, plus a headle
 ## The rule
 
 **`./scripts/check.sh --ready` must pass once at the end of an implementation (and again after a
-failure), and CI must be green on the PR head, before any change is described as done.** Not "the tests
+failure), and CI must be green on the PR head, before any change is described as done.** CI means the `CI` workflow; a check whose name contains `(non-blocking)` (the Benchmark workflow) is never waited on and never stops a merge (ADR 0008 section 5). Not "the tests
 I touched" — the gate. It runs in the `dev` container:
 
 ```bash
@@ -25,10 +25,21 @@ that means and what it runs instead.
 **Nor is a change done while a user-facing doc it made untrue is unfixed.** The docs change in the
 same PR as the code; the `gr-roboracer-docs` skill says which pages and when a video is due.
 
+**Tests decide whether it works; how well it works is reported.** A tier-3, -4 or -5 test fails only on
+a gate: it builds, the lap completes, 0 collisions, no supervisor latch, the instrument recorded data,
+two runs or pipelines of the same code agree, or one loose catastrophic bound per quality metric
+(localization RMSE 5 m, availability 0.90; the table is in ADR 0008). ATE, availability, lap time,
+clearance and map accuracy are printed and written to `log/reports/`, never asserted against a measured
+number. Do not add a pass/fail quality bound: a comparison belongs in a benchmark. Benchmarks never
+block. They run on demand, or as a non-required CI job on a PR that adds an implementation, never
+nightly.
+
 **A red nightly does not block development.** The nightly is watched, not waited on: a PR merges on
 its ready gate and green PR CI, never on a nightly run, and a red nightly halts no branch in flight. A
-fix can always land afterwards. The fix for a nightly failure is carried into the next plan written,
-as one of its steps or as a fix part at the head of the queue.
+nightly is red only on a gate. A quality regression ("amcl got worse") is a trend in its reports, which
+is read, not fixed in the next plan. The fix for a red nightly is carried into the next plan written, as
+one of its steps or as a fix part at the head of the queue. A fix part for a broken or flaky gate may be
+light: a short plan, review, fix, gate, PR. It is still reviewed.
 
 ## Algorithms are added, never replaced
 
@@ -38,11 +49,15 @@ welcome; substitution is not. Selecting between implementations is a launch argu
 never a code deletion.
 
 The rule that keeps this affordable: **every implementation is verified once, against ground truth,
-inside the reference stack current when it lands** — never against every peer, and never against its
-predecessors. Combinations are not tested. Test count grows linearly with implementations, not
-quadratically. ADR 0005 has the reasoning and what it gives up; the reference stack is named in
+inside the reference stack current when it lands.** It passes the gates there, and its quality numbers
+are reported, not bounded. It is never verified against every peer, and never against its predecessors.
+Combinations are not tested. Test count grows linearly with implementations, not quadratically.
+ADR 0005 has the reasoning and what it gives up. The reference stack is named in
 `config/reference_stack.yaml` and composed by `racing_bringup/launch/sim_pure_pursuit.launch.py`
-(BRINGUP-1030 fails if they disagree). Changing what it names is a reviewed decision.
+(BRINGUP-1030 fails if they disagree). Changing what it names is a reviewed decision. An implementation
+may land **experimental** first: selectable and benchmarked, gated by tiers 0-2, never a default
+(`status: experimental` in the map). It is promoted to verified by a reviewed PR that adds its tier-3
+test (ADR 0008).
 
 ## Built for the real car
 
@@ -72,10 +87,11 @@ nodes run in `gpu` (`dev` + CUDA), on the owner's machine only.
 | touching the gym action mapping | `docs/adr/0001-simulator-action-contract.md` |
 | working in any `ros_ws/src/<package>/` | that package's own `CLAUDE.md` |
 | adding a second implementation of anything, or wondering whether to delete the old one | `docs/adr/0005-algorithms-are-added-not-replaced.md` |
+| adding or changing an assert in a tier-3/4/5 test, a catastrophic bound, a benchmark, or an experimental implementation | `docs/adr/0008-gates-decide-quality-is-reported.md` |
 | touching message stamps, timers, `use_sim_time`, or anything that reads the clock | `docs/adr/0006-simulated-time-is-the-time-base.md` |
 | changing `check.sh --ready`'s selection, or a `paths` / `verified_by` in `config/reference_stack.yaml` | `docs/adr/0007-ready-is-a-scoped-local-run.md` |
 | changing anything a user can see or run (a launch argument, an implementation, a command, a capability status, a result) | the `gr-roboracer-docs` skill (`.claude/skills/gr-roboracer-docs/`) |
-| adding or changing a map or raceline | `docs/adr/0008-track-data-lives-in-gr-roboracer-data.md`, `third_party/NOTICE.md` and the data repo's README |
+| adding or changing a map or raceline | `docs/adr/0009-track-data-lives-in-gr-roboracer-data.md`, `third_party/NOTICE.md` and the data repo's README |
 | launching, connecting or recording the AutoDRIVE simulator | `docs/agents/autodrive.md` |
 | regenerating `tests/golden/baseline.json` | `docs/agents/repo-gotchas.md` #14 — it is a reviewed diff, never a way to green a run |
 

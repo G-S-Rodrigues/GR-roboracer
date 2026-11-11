@@ -2,6 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-10-12
+**Amended by:** ADR 0008 (§2 experimental entries, §5 what the nightly reports)
 **Amends:** ADR 0005 §4's "`--full` stays the definition of done", and §3's row wording ("a fourth
 method adds a data row, not a test case"). ADR 0005 §1 (algorithms are added, never replaced) and §2
 (verified once, in the reference stack) are untouched.
@@ -30,6 +31,10 @@ an unrelated one: each implementation is verified once, in the reference stack (
    holds paths that select no implementation, only the reference lap. Packages that depend on a changed,
    owned package select their implementations too (the dependency graph is parsed from `package.xml`
    and pinned to `colcon --packages-above` by CHECK-1140).
+
+   Amended by ADR 0008: an `alternatives` entry may carry `status: experimental` with its `paths` and an
+   empty `verified_by`. Its paths place a change, so the map still fails closed, and they select tiers
+   0-2 and the reference lap only. Promotion fills `verified_by`.
 3. **It fails closed.** A changed path no glob places, a whole-tree trigger, the map itself, the
    composition code every lap runs (`sim_pure_pursuit.launch.py`, `support_node.py`,
    `scenario_parameters.py`, bringup `setup.py`), a test no implementation claims, a claim with no test,
@@ -42,6 +47,9 @@ an unrelated one: each implementation is verified once, in the reference stack (
    nothing else.
 5. **Earlier implementations are covered by the nightly `--full`,** which stays tiers 0-4 and runs on a
    schedule. The full run is local and nightly, not a CI job on the PR (owner ruling in the grill).
+
+   Amended by ADR 0008: the nightly's tier-3/4 tests run with gates and catastrophic bounds. A quality
+   regression there is reported, never red.
 6. **Tiers 0-2 keep every `config/` change whole tree.** CHECK-1040 is unchanged. Only the tier-3/4
    selection refines `config/` through the map. The spec expected CHECK-1040 to change; it does not,
    because tier-1/2 consumers of `config/` (`racing_bringup` tests, `racing_sim_gym_jax` installing it,

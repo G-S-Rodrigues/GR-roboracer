@@ -369,13 +369,24 @@ done
   `tum_mintime_tyres_gym_fit.yaml`: a stand-in copied from the F1TENTH gym fit,
   not identified from AutoDRIVE (its provenance and AutoDRIVE's WheelCollider
   friction curves are in `reference.yaml`), so `--optimizer tum_mintime` runs
-  on it; no minimum-time line is committed for it. Its min-curv ini
+  on it; no minimum-time line is committed for it. `autodrive_roboracer_fast` (higher caps, its own tables) has one for Porto. Its min-curv ini
   records mass 3.47 and length 0.50 (inert there, as the comment above
   `tum_ini` says).
   The solver's outcome is the yaml's top-level `solver:` (status, iterations,
   wall time), outside the inputs a regeneration must reproduce. The solve is
   bounded at 3036 iterations and 1200 s. A width extra of 0.01 m per side is
   added to the corridor so the line passes the verifier's input-wall check.
+  `--reprofile-speed` (opt-in) re-profiles the speed on the exported path to
+  0.995 x the GGV a_y and 0.995 x the GGV / machines a_x (geometry unchanged).
+  The exported path is more curved than the solver's own states (Porto cw, fast
+  car, margin 0.40: kappa -0.663 against the model's -0.357 at s 26.5 m), so the
+  solver's speed on it reached 1.052 x the GGV a_y and the verifier rejected it;
+  the cause of that gap is not pinned down. The flag is recorded in `command`
+  and `parameters.speed_reprofile`. The Porto fast line uses it; the Spielberg
+  lines do not.
+  Porto, clockwise, `autodrive_roboracer_fast`, margin 0.40, `--reprofile-speed`:
+  143 iterations, 1.6 s of solve, TUM's lap estimate 7.303 s re-profiled to
+  7.306 s (the line's `command` is the exact invocation).
   Spielberg: default vehicle 170 iterations, 42 s of solve, ~16 min for the
   command, TUM's lap estimate 111.88 s (measured in the sim: 112.12 s, SIM-3120);
   gym-limits 1518 iterations, 328 s of solve, ~20 min, estimate 32.37 s.

@@ -1,15 +1,16 @@
 """SIM-3550: `pose_source:=slam_toolbox` on the 1080-beam lidar - slam_toolbox,
 with the parameter file made for that lidar, owns `map -> odom` for a real
-Spielberg lap, and the pose and the map it builds stay within bounds measured
-on that file.
+Spielberg lap, and the pose and the map it builds stay inside the
+catastrophic bounds (ADR 0008); how well they track and match is reported
+(`log/reports/SIM-3550.json`), against the baseline measured on that file.
 
 What this claims: on `spielberg_1080`, the launch's default slam_toolbox
-configuration tracks ground truth within the bounds below and builds a map
-within them of the gym's walls. What it does not claim: closed loop (the run
+configuration tracks ground truth and builds a map of the gym's walls, neither
+catastrophically wrong. What it does not claim: closed loop (the run
 is open loop, as SIM-3070's, because the controller keeps ground truth);
-other tracks; the 64-beam configuration (SIM-3070 covers it); or that these
-bounds are a target - they are the worst of six measured laps times 1.25
-(owner rule), a guard against getting worse.
+other tracks; the 64-beam configuration (SIM-3070 covers it); or that
+the baseline is a target - it is the worst of six measured laps times 1.25
+(owner rule), read against the report, not asserted.
 
 Spielberg, never analytic_circle: a rotationally symmetric track makes
 position along the centerline unobservable to any scan matcher (gotcha #18).
@@ -21,6 +22,11 @@ from pathlib import Path
 import yaml
 from racing_evaluation.map_accuracy import load_grid, map_to_wall
 from racing_test_keywords.probes import LastMapProbe
+from racing_test_keywords.report import (
+    catastrophic,
+    catastrophic_violations,
+    write_report,
+)
 from racing_test_keywords.scenario_runner import run_scenario
 
 from scripts.compare_localization import (
@@ -51,23 +57,23 @@ TIMEOUT_SECONDS = 400.0
 #            map median 0.284 / 0.504 / 0.303 m, p95 0.916 / 1.358 / 1.039 m
 #   availability >= 0.99959 on all six; every lap complete, 0 collisions.
 # The 64 file on the same scenario gave 6.93-8.17 m (seeds 7 and 42); the
-# bounds are the worst of the six times 1.25, loose enough for Ceres' and
-# Karto's unseeded multithreading, and deliberately the looser of the two
-# seeds because this test runs seed 42 only. Wall times 77.2-87.1 s.
-POSITION_RMSE_MAXIMUM = 1.57
-POSITION_MAXIMUM = 2.80
-MAP_MEDIAN_MAXIMUM = 0.71
-MAP_P95_MAXIMUM = 2.42
-AVAILABILITY_MINIMUM = 0.99
-OFFLINE_BOUNDS = {
-    "ate_maximum": {
-        "maximum": POSITION_MAXIMUM,
-        "measurement": "6 laps at 5x, seeds 42 and 7: maximum 1.529-2.239 m",
-    },
-    "availability": {
-        "minimum": AVAILABILITY_MINIMUM,
-        "measurement": "6 laps at 5x, seeds 42 and 7: >= 0.99959",
-    },
+# old bounds, kept as the baseline a report is read against (ADR 0008) and
+# read by no assert, are the worst of the six times 1.25, loose enough for
+# Ceres' and Karto's unseeded multithreading, and deliberately the looser of
+# the two seeds because this test runs seed 42 only. Wall times 77.2-87.1 s.
+POSITION_RMSE_BASELINE = 1.57
+POSITION_MAXIMUM_BASELINE = 2.80
+MAP_MEDIAN_BASELINE = 0.71
+MAP_P95_BASELINE = 2.42
+AVAILABILITY_BASELINE = 0.99
+BASELINE = {
+    "position_rmse": POSITION_RMSE_BASELINE,
+    "position_maximum": POSITION_MAXIMUM_BASELINE,
+    "map_median": MAP_MEDIAN_BASELINE,
+    "map_p95": MAP_P95_BASELINE,
+    "availability": AVAILABILITY_BASELINE,
+    "measurement": "6 laps at 5x, seeds 42 and 7: maximum 1.529-2.239 m, "
+    "availability >= 0.99959",
 }
 
 
@@ -104,20 +110,36 @@ def test_sim_3550_slam_toolbox_1080_tracks_ground_truth(
     assert live["estimate_topic"] == ESTIMATE_TOPIC
     # A lap of 100 Hz truth: ~12 000 samples.
     assert live["sample_count"] > 10000, live
-    # An estimator that stalls scores as unavailable, never as zero error
-    # (EVAL-1030): availability is asserted first.
     availability = live["available_count"] / live["sample_count"]
-    assert availability >= AVAILABILITY_MINIMUM, live
 
     grid = last_map.grid()
     assert grid is not None and grid.occupied.any(), "slam_toolbox built no map"
     accuracy = dataclasses.asdict(map_to_wall(grid, truth_grid()))
-    assert accuracy["median"] <= MAP_MEDIAN_MAXIMUM, accuracy
-    assert accuracy["p95"] <= MAP_P95_MAXIMUM, accuracy
-
-    assert live["position_rmse"] <= POSITION_RMSE_MAXIMUM, live
-    assert live["position_maximum"] <= POSITION_MAXIMUM, live
 
     offline = score_recording(events, estimate_topic=ESTIMATE_TOPIC)
-    violations = compare_localization(OFFLINE_BOUNDS, offline)
+    # Reported before anything quality-related is asserted, so a red run
+    # keeps its record (ADR 0008).
+    write_report(
+        "SIM-3550",
+        {
+            "live": {**live, "availability": availability},
+            "offline": offline,
+            "map": accuracy,
+        },
+        seed=SEED,
+        scenario=SCENARIO,
+        implementation="slam_toolbox",
+        baseline=BASELINE,
+    )
+    # An estimator that stalls scores as unavailable, never as zero error
+    # (EVAL-1030): the availability bound is part of this one.
+    live_violations = catastrophic_violations(
+        {**live, "availability": availability},
+        {"availability": "availability", "position_rmse": "ate_rmse"},
+    )
+    assert live_violations == [], (live_violations, live)
+    map_violations = catastrophic_violations(accuracy, {"median": "map_median"})
+    assert map_violations == [], (map_violations, accuracy)
+
+    violations = compare_localization(catastrophic("availability"), offline)
     assert violations == [], format_report(offline, violations)

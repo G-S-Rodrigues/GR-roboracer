@@ -36,7 +36,7 @@ def test_check_2340_every_check_job_initialises_the_data_submodule(
     job: str,
 ) -> None:
     """CHECK-2340: a job that runs `check.sh` reads the maps and racelines in
-    third_party/GR-roboracer-data (ADR 0008), so it must initialise that
+    third_party/GR-roboracer-data (ADR 0009), so it must initialise that
     submodule after checkout and before `check.sh`. Without the step the job
     fails closed at the first scenario load, naming the init command; the
     guard is that the step exists, not that GitHub serves the pinned SHA."""

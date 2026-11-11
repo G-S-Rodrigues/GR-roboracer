@@ -180,7 +180,7 @@ def load_scenario(path: Path) -> Scenario:
     ).resolve()
     map_name = str(_required(environment, "map"))
     # Fail closed: a missing map would otherwise fall back to the gym's
-    # bundled Spielberg, or try to download one (SIMJAX-1600, ADR 0008).
+    # bundled Spielberg, or try to download one (SIMJAX-1600, ADR 0009).
     map_file = map_directory / map_name / f"{map_name}.yaml"
     if not map_file.is_file():
         raise FileNotFoundError(

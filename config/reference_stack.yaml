@@ -19,6 +19,12 @@
 # `verified_by` is who answers for a test; measuring-instrument couplings
 # (the simulator feeding every estimator, the evaluator scoring them) are
 # `paths` instead, so `--owners SIM-3080` names the claimant only.
+#
+# An alternative may be `status: experimental` (ADR 0008): selectable and
+# benchmarked, gated by tiers 0-2 only, with its `paths` (so the map still
+# fails closed) and an empty `verified_by`. It is never a role's default.
+# Promotion is a reviewed PR that adds its tier-3/4 test to `verified_by`
+# and drops `status`.
 schema_version: 1
 # The one lap `--ready` always runs: it exercises every default below.
 reference_lap: SIM-3020
@@ -32,16 +38,23 @@ neutral_paths:
   - scripts/tests/*
   # raceline/ is offline: its output reaches a lap only through files committed
   # in the data submodule (third_party/GR-roboracer-data/tracks/<Map>/racelines/),
-  # whose bump is whole tree (CHECK-2320, ADR 0008).
+  # whose bump is whole tree (CHECK-2320, ADR 0009).
   - raceline/*
-  # read only by tier 5 (SIM-5040/5050) and its tier-1 test; no lap imports it
+  # read only by tier 5 (SIM-5040), the benchmark and their tier-1 tests; no lap imports it
   # (C8, owner 2026-10-24). Keep it lap-free: the frozen-pose rule a lap uses
   # lives in scripts/frozen_pose.py, which stays whole tree.
   - scripts/raceline_report.py
-  # No gate test launches the gym-limits vehicle (owner ruling 2026-10-11: it
-  # runs nightly only) and only raceline/ reads the GGV tables. The default
-  # vehicle's yaml is not matched (the patterns need the "/" or "_limits"),
-  # so editing it stays whole tree.
+  # the benchmark command and its runners: launched on demand or by the
+  # Benchmark workflow, never by a lap (scripts/pose_source_report.py is not
+  # listed: probes.py imports it, and SIM-3550 uses the probes).
+  - scripts/benchmark.py
+  - scripts/benchmark_runs.py
+  - .github/workflows/benchmark.yaml
+  # No gate test launches the gym-limits vehicle (it runs in the planning
+  # benchmark, never on a schedule: owner ruling 2026-10-11, superseded for
+  # the nightly by Q8, approved 2026-11-09) and only raceline/ reads the GGV
+  # tables. The default vehicle's yaml is not matched (the patterns need the
+  # "/" or "_limits"), so editing it stays whole tree.
   - config/vehicles/f1tenth_gym_limits*
   - config/vehicles/f1tenth_default/*
   # the min-time parameter files and their reference: raceline/ reads them
@@ -71,6 +84,8 @@ roles:
           - config/autodrive/*
           - config/vehicles/autodrive_roboracer.yaml
           - config/vehicles/autodrive_roboracer/*
+          - config/vehicles/autodrive_roboracer_fast.yaml
+          - config/vehicles/autodrive_roboracer_fast/*
           - config/tracks/porto.yaml
           - config/scenarios/porto.yaml
           - scripts/autodrive_gui.sh
@@ -113,7 +128,7 @@ roles:
         package: nav2_amcl
         # Localizes against the track's committed occupancy grid,
         # tracks/<Map>/maps/<Map>/slam/ in the data submodule (a bump is whole
-        # tree, ADR 0008), served by nav2_map_server.
+        # tree, ADR 0009), served by nav2_map_server.
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
           - config/localization/amcl.yaml
@@ -127,7 +142,7 @@ roles:
         # itself, and the mapping workflow that builds it
         # (mola_mapping.launch.py, mola_map_track.sh). The .mm and the
         # _grid land in the data submodule, tracks/<Map>/maps/<Map>/mola/, with
-        # provenance (owner ruling 2026-10-25; a bump is whole tree, ADR 0008).
+        # provenance (owner ruling 2026-10-25; a bump is whole tree, ADR 0009).
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
           - ros_ws/src/racing_bringup/racing_bringup/support_node.py  # BRINGUP-2500 hold
@@ -153,7 +168,7 @@ roles:
         package: racing_bringup
         # The committed raceline in the data submodule,
         # tracks/<Map>/racelines/<vehicle version>/<raceline_optimizer>.csv,
-        # selected by planner:=optimized_raceline (a bump is whole tree, ADR 0008).
+        # selected by planner:=optimized_raceline (a bump is whole tree, ADR 0009).
         paths:
           - ros_ws/src/racing_bringup/*
           - ros_ws/src/racing_controller_baseline/*  # speed_source: trajectory

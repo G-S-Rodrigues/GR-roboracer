@@ -31,12 +31,12 @@ To reproduce a record and compare it, see [Running a scenario](running.md#runnin
 
 ## Localization evidence
 
-There is no golden for localization. The acceptance cases bound the estimate against ground truth on
-Spielberg: `slam_toolbox` within 4.0 m RMSE and `amcl` within 0.65 m, each with availability above
-0.99 (ACC-4030). `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
+There is no golden for localization. The acceptance cases gate on the catastrophic bounds (ATE RMSE 5 m, availability 0.90); the error
+is reported, not a pass condition ([Verification](verification.md)). On Spielberg `slam_toolbox` and `amcl` are measured
+against ground truth (ACC-4030): `amcl` seed-42 runs 0.14-0.44 m, `slam_toolbox` three runs 2.43-2.88 m. `mola`, on MOLA's own map (so including that map's error), 1080 beams, 1x, open
 loop: ATE RMSE 0.70-2.13 m and maximum 1.41-4.15 m over five laps (the spread is wide and varies run to run; three
-runs at low load gave 0.74-0.75 m), availability 0.9975 or better, bounded at 2.5 m RMSE (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
-(ACC-4040). `slam_toolbox` with its 1080-beam file (selected by `spielberg_1080`), 5x, open loop, six laps over seeds 42 and 7: ATE RMSE 0.81-1.25 m, maximum 1.53-2.24 m, map median 0.28-0.56 m and 95th percentile 0.92-1.93 m from the true walls, availability 0.9996 or better; bounded at 1.57 m RMSE and 2.80 m maximum (SIM-3550). The 64-beam file on the same scenario gave 6.9-8.2 m RMSE, which is the number this improved on; the 64 file stays selectable with `slam_toolbox_config:=`.
+runs at low load gave 0.74-0.75 m), availability 0.9975 or better, reported (ACC-4510, SIM-3510). A further case drives a full lap on the `amcl` estimate with zero collisions
+(ACC-4040). `slam_toolbox` with its 1080-beam file (selected by `spielberg_1080`), 5x, open loop, six laps over seeds 42 and 7: ATE RMSE 0.81-1.25 m, maximum 1.53-2.24 m, map median 0.28-0.56 m and 95th percentile 0.92-1.93 m from the true walls, availability 0.9996 or better; reported (SIM-3550). The 64-beam file on the same scenario gave 6.9-8.2 m RMSE, which is the number this improved on; the 64 file stays selectable with `slam_toolbox_config:=`.
 See [Acceptance tests](verification.md#4-acceptance-tests-robot-framework).
 
 ## MOLA map accuracy
@@ -56,13 +56,12 @@ The denser surveys beside the committed grid, measured against the track's groun
 
 ## Pose-source data
 
-The nightly records every pose source on `spielberg` (64 beams) and `spielberg_1080` (1080 beams over
-270 degrees), per seed, as `report.md` and `report.json` in the `pose-source-report` artifact of the
-`slam` seed-42 job (SIM-5510 in [Verification](verification.md#5-nightly-coverage)). It reports the
+The [benchmark command](running.md#comparing-implementations) records every pose source on `spielberg` (64 beams) and `spielberg_1080` (1080 beams over
+270 degrees), per seed, as `report.md` and `report.json` under `log/benchmark/localization/` (the `benchmark-localization` artifact in CI). It reports the
 estimate's error and availability, the rate of changed poses, the scan rate, CPU per scan and the produced
 map's distance to the true walls. The wall distance is the raw distance from each occupied cell's centre
 to the gym map image's wall faces, so a perfect map at 0.05 m cells scores 0.025 m, not 0. The report is
-data: it ranks nothing and bounds no value. No numbers are published here until a nightly produces them. From the merge of the 1080 slam_toolbox
+data: it ranks nothing and bounds no value. No numbers are published here until a benchmark run produces them. From the merge of the 1080 slam_toolbox
 file, its `spielberg_1080` rows run that file instead of the 64-beam one, so earlier and later rows are not
 the same configuration.
 
@@ -77,6 +76,31 @@ is 2.977 m/s at throttle 0.12. Braking depends on the speed it starts from (8.4,
 accelerates at 5.2 m/s^2 (spread 0.08 % over the repeats), and the throttle gain is 24.86 m/s per unit
 throttle. The file is data about the simulator's car, not a result of the stack. To redo it, see
 [The AutoDRIVE vehicle](configuration.md#the-autodrive-vehicle).
+
+## AutoDRIVE fast minimum-time lap
+
+The fast AutoDRIVE car (`autodrive_roboracer_fast`) drove the committed minimum-time Porto line for two laps from one standing
+start on the real simulator, headless, with `scripts/autodrive_qualify.sh --domain 64 --case fast_lap` (2026-11-09, host
+load1 3.0, a rerun after the speed figures were trimmed to the drive; the first run gave stack laps 7.85 s and 7.40 s, simulator laps 7.61 s and 7.39 s). Lap 1 includes the standing start. This is reported, not a bound.
+
+| | lap 1 | lap 2 |
+|---|---|---|
+| stack lap time | 7.82 s | 7.40 s |
+| simulator lap time | 7.60 s | 7.38 s |
+
+Peak speed 4.44 m/s (cap 4.5), mean over lap 2 3.97 m/s (stack lap time window of `/ground_truth/odom` speed), 0 collisions on the stack and the simulator, no latch (every safety status
+message `REASON_NONE`). TUM's own estimate for the line is 7.303 s and the re-profiled line's is 7.306 s.
+
+The recording shows both laps in RViz with the launch's own display configuration, watching the
+run from a second container on the same ROS domain (the command itself starts no RViz). Its run
+gave stack laps 7.93 s and 7.40 s, simulator laps 7.61 s and 7.39 s, 0 collisions on both sides
+and no latch.
+
+[![The fast AutoDRIVE car on the minimum-time Porto line, two laps, 2.0x playback](assets/autodrive-fast-mintime-porto-preview.gif)](https://drive.google.com/file/d/1-ydUWBptUNeeYx-ORXAE2_fLO-hFCgny/view)
+
+▶ [Watch the full video (Google Drive)](https://drive.google.com/file/d/1-ydUWBptUNeeYx-ORXAE2_fLO-hFCgny/view):
+both laps at 1.0x simulated time (the preview above plays at 2.0x). Recorded with `scripts/autodrive_qualify.sh --domain 64 --case fast_lap`
+on `config/scenarios/porto.yaml` at commit `e604c81`.
 
 ## Mapping demonstration
 
