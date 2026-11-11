@@ -1353,3 +1353,51 @@ def test_check_2690_writer_closed_loop_fills_both_files(tmp_path) -> None:
     prow = next(b for b in peak["lateral"]["bins"] if b["radius"] == 2.05)
     assert prow["ay_closed_loop_max"]["value"] == 6.3
     assert "ay_reached" not in prow
+
+
+def test_check_2690_ggv_bin_rule_and_chosen_field(tmp_path) -> None:
+    """CHECK-2690, ggv half: the peak table's bin takes the larger of the
+    open-loop peak and the closed-loop max and names which; the sliding
+    table keeps the open-loop post-cliff value (call #22) and names it, the
+    closed-loop `ay_reached` stays beside it. Both `rule:` texts say so."""
+    import yaml
+
+    tool = _tool()
+    bins = [
+        b
+        for b in tool.lateral_bins(LATERAL_RECORDING, SOURCE)
+        if b.peak is not None and b.post_cliff is not None
+    ]
+    assert len(bins) >= 2
+    big, small = 99.0, 0.5
+    closed = {
+        "ay_reached": 4.5,
+        "ay_closed_loop_max": 6.4,
+        "bins": {
+            bins[0].radius: {"reached": (big, 3), "max": (big, 2)},
+            bins[1].radius: {"reached": (small, 3), "max": (small, 2)},
+        },
+        "recording_sha256": "abc",
+    }
+    tool.write_limits(
+        tmp_path,
+        bins,
+        source=SOURCE,
+        recording_sha256="def",
+        closed_loop=closed,
+    )
+    sliding = yaml.safe_load((tmp_path / "limits_sliding.yaml").read_text())
+    peak = yaml.safe_load((tmp_path / "limits_peak.yaml").read_text())
+    by_r = {b["radius"]: b for b in peak["lateral"]["bins"]}
+    assert by_r[bins[0].radius]["chosen"] == "closed_loop_max"
+    assert by_r[bins[1].radius]["chosen"] == "open_loop_peak"
+    for b in sliding["lateral"]["bins"]:
+        if "ay_post_cliff" in b:
+            assert b["chosen"] == "open_loop_post_cliff"
+    s0 = next(
+        b for b in sliding["lateral"]["bins"] if b["radius"] == bins[0].radius
+    )
+    assert s0["ay_reached"]["value"] == big
+    assert "closed" in peak["ggv"]["rule"] and "max" in peak["ggv"]["rule"]
+    assert "post-cliff" in sliding["ggv"]["rule"]
+    assert "open-loop" in sliding["ggv"]["rule"]

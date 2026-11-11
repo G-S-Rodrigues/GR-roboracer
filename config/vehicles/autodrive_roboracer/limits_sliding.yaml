@@ -46,6 +46,7 @@ lateral:
       source: closed-loop
       n: 10
       recording_sha256: 91f95804e4e6a6b09e8dc8659e475a3af3d2734e9dda1851a23d46c91af8acf9
+    chosen: open_loop_post_cliff
   - radius: 2.05
     n: 24
     bound: lower
@@ -61,6 +62,7 @@ lateral:
       source: open-loop
       n: 3
       recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+    chosen: open_loop_post_cliff
   - radius: 3.08
     n: 24
     bound: lower
@@ -82,6 +84,7 @@ lateral:
       source: closed-loop
       n: 3
       recording_sha256: 91f95804e4e6a6b09e8dc8659e475a3af3d2734e9dda1851a23d46c91af8acf9
+    chosen: open_loop_post_cliff
   ay_reached:
     value: 4.9607
     label: measured
@@ -110,7 +113,9 @@ ggv:
   - ax_max_mps2
   - ay_max_mps2
   rule: 'ax: sliding braking law; ay: root of a = f(v^2 / a) over the radius bins
-    (ggv_from_radius)'
+    (ggv_from_radius); each bin''s value is the open-loop post-cliff value (owner
+    call #22, may be overturned to the closed-loop reached value); closed-loop `ay_reached`
+    is reported beside it; the bin''s `chosen` field names it'
   rows:
   - v: 0.0
     values:

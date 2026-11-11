@@ -1265,6 +1265,34 @@ def _table_rows(v_grid, drive, drive_limit, brake) -> tuple[list, list]:
     return ggv_rows, machine_rows
 
 
+GGV_BIN_RULE = {
+    "peak": "is the larger of the open-loop peak and the closed-loop max "
+    "where a closed-loop value exists (else the open-loop peak); the bin's "
+    "`chosen` field names which",
+    "sliding": "is the open-loop post-cliff value (owner call #22, may be "
+    "overturned to the closed-loop reached value); closed-loop `ay_reached` "
+    "is reported beside it; the bin's `chosen` field names it",
+}
+
+
+def _ggv_bin_choice(
+    sliding: bool,
+    post_cliff: float | None,
+    peak: float | None,
+    closed: float | None,
+) -> tuple[str, float] | None:
+    """The one place a bin's ggv a_y is chosen: (name, value) or None."""
+    if sliding:  # call #22: open-loop post-cliff, closed-loop beside it
+        if post_cliff is None:
+            return None
+        return "open_loop_post_cliff", post_cliff
+    if peak is None and closed is None:
+        return None
+    if closed is not None and (peak is None or closed >= peak):
+        return "closed_loop_max", closed
+    return "open_loop_peak", peak
+
+
 def write_limits(
     out_dir: Path,
     bins: list[RadiusBin],
@@ -1301,6 +1329,7 @@ def write_limits(
         drive = DRIVE_SLIDING if sliding else DRIVE_PEAK
         limit = SLIDING_RANGE if sliding else PEAK_RANGE
         lateral_rows = []
+        picked: dict[float, float] = {}
         for b in bins:
             entry = {"radius": b.radius, "n": b.n, "bound": b.bound}
             if b.post_cliff is not None:
@@ -1330,6 +1359,14 @@ def write_limits(
                     n=pair[1],
                     **cl_measured,
                 )
+            chosen = _ggv_bin_choice(
+                sliding,
+                b.post_cliff.value if b.post_cliff else None,
+                b.peak.value if b.peak else None,
+                pair[0] if pair is not None else None,
+            )
+            if chosen is not None:
+                entry["chosen"], picked[b.radius] = chosen
             lateral_rows.append(entry)
         key = "ay_reached" if sliding else "ay_closed_loop_max"
         lateral = {
@@ -1342,13 +1379,7 @@ def write_limits(
                 else _value(None, "measured", "closed-loop", pending=pending)
             ),
         }
-        if sliding:
-            pick = {
-                b.radius: (b.post_cliff.value if b.post_cliff else None)
-                for b in bins
-            }
-        else:
-            pick = {b.radius: (b.peak.value if b.peak else None) for b in bins}
+        pick = picked
         table = [(r, v) for r, v in sorted(pick.items()) if v is not None]
         ay_rows = ggv_from_radius(table, LIMITS_GRID) if table else []
         brake = BRAKE_SLIDING
@@ -1408,7 +1439,8 @@ def write_limits(
             "ggv": {
                 "columns": ["v_mps", "ax_max_mps2", "ay_max_mps2"],
                 "rule": "ax: sliding braking law; ay: root of a = f(v^2 / a)"
-                " over the radius bins (ggv_from_radius)",
+                " over the radius bins (ggv_from_radius); each bin's value "
+                + GGV_BIN_RULE[kind],
                 "rows": ggv_out,
             },
             "ax_max_machines": {
