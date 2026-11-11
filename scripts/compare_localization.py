@@ -121,7 +121,7 @@ def estimator_start(
     it. Both are ``None`` when there was no estimate (or no topic to look
     for), so a dead estimator does not look like a prompt one (EVAL-1030).
     Never raises. Nightly 2026-11-10: MOLA's first estimate came 1.03 s
-    after the car left, 2.4 m on, and ATE RMSE was 21.5 m."""
+    after the car left, about 2.5 m on, and ATE RMSE was 21.5 m."""
     events = list(events)
     none = {"first_estimate_stamp": None, "travel_before_first_estimate": None}
     try:
