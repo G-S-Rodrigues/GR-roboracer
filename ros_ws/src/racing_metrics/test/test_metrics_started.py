@@ -9,6 +9,10 @@ only, as the supervisor's ``~/clock_received`` is.
 Both nodes run in their own namespace with every absolute name (``/clock``
 included) remapped: colcon runs other packages' tier-2 tests in parallel on
 one domain and the gym publishes ``/clock`` (repo-gotchas #39).
+
+Step 1's samples carry their own s, and an acknowledged flush separates them
+from the first scan, so the test fails only if a state is accepted without a
+scan.
 """
 
 import time
@@ -22,6 +26,7 @@ import launch_testing.actions
 import pytest
 import rclpy
 from racing_interfaces.msg import TrackRelativeState
+from rclpy.duration import Duration
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -46,6 +51,9 @@ TRACK = (
 )
 TIMEOUT_SECONDS = 10.0
 SENT_S = 1.25
+# More than the node's state depth (QoS(10), node.cpp:132): once these are
+# all acked, every step-1 state was taken before any scan or evicted.
+FLUSH_STATES = 20
 
 RELIABLE_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
@@ -127,6 +135,15 @@ class TestMetricsStarted(unittest.TestCase):
         state.s = s
         self.states.publish(state)
 
+    def _drain_states(self):
+        """Barrier: no step-1 state is left unread in the node's reader."""
+        for _ in range(FLUSH_STATES):
+            self._state(0, SENT_S)
+        self.assertTrue(
+            self.states.wait_for_all_acked(Duration(seconds=TIMEOUT_SECONDS)),
+            "flush states not acked by racing_metrics",
+        )
+
     def test_metrics_2020_started_latches_first_accepted_sample(self):
         received = []
         self.node.create_subscription(
@@ -135,10 +152,25 @@ class TestMetricsStarted(unittest.TestCase):
             received.append,
             LATCHED_QOS,
         )
+        # 0. Wait for the node's state reader, so step 1 is not vacuous.
+        deadline = time.monotonic() + TIMEOUT_SECONDS
+        while (
+            self.states.get_subscription_count() < 1
+            and time.monotonic() < deadline
+        ):
+            self._spin(0.05)
+        self.assertGreaterEqual(self.states.get_subscription_count(), 1)
+
         # 1. State only: no clearance yet, so no sample is accepted.
         for _ in range(50):
             self._state(0, 0.0)
             self._spin(0.02)
+        self.assertEqual(received, [])
+
+        # 1b. Flush: every step-1 state is now taken (rejected) or evicted, so
+        # a step-1 s can only be latched by a node that accepts without a scan.
+        self._drain_states()
+        self._spin(0.2)
         self.assertEqual(received, [])
 
         # 2. A scan (best effort, so keep sending it), then stamp-0 state.
