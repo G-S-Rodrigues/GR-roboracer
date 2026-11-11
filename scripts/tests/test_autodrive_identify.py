@@ -461,7 +461,7 @@ def test_check_1790_vehicle_file_states_the_autodrive_car() -> None:
     ):
         assert supervisor[key] == default_supervisor[key], key
     assert controller["maximum_speed"] == default_controller["maximum_speed"]
-    assert supervisor["stale_input_timeout_ms"] == 100
+    assert supervisor["stale_input_timeout_ms"] == 200
     for node in ("racing_metrics", "racing_recording"):
         version = _node(VEHICLE_YAML, node)["vehicle_parameter_version"]
         assert version == "autodrive-roboracer-v2", node
@@ -494,6 +494,31 @@ def test_check_1790_vehicle_file_states_the_autodrive_car() -> None:
 
     text = re.sub(r"\s*#\s*", " ", VEHICLE_YAML.read_text())
     assert "not measured" in text and "depends on speed" in text
+
+
+def test_check_2488_stale_input_timeout_is_per_platform() -> None:
+    """CHECK-2488: AutoDRIVE's two vehicle files carry 200 ms (owner call
+    #27: the sim runs on wall time and its frames arrive with delivery gaps),
+    the gym's two keep 100 ms, and each AutoDRIVE file's comment above the
+    key cites the call."""
+    vehicles = REPO_ROOT / "config" / "vehicles"
+    for name in ("autodrive_roboracer", "autodrive_roboracer_fast"):
+        path = vehicles / f"{name}.yaml"
+        node = _node(path, "racing_safety_supervisor")
+        assert node["stale_input_timeout_ms"] == 200, name
+        lines = path.read_text().splitlines()
+        index = next(
+            i for i, line in enumerate(lines) if "stale_input_timeout_ms" in line
+        )
+        block = []
+        for line in reversed(lines[:index]):
+            if not line.strip().startswith("#"):
+                break
+            block.append(line)
+        assert "call #27" in " ".join(block), name
+    for name in ("f1tenth_default", "f1tenth_gym_limits"):
+        node = _node(vehicles / f"{name}.yaml", "racing_safety_supervisor")
+        assert node["stale_input_timeout_ms"] == 100, name
 
 
 def test_check_1795_autodrive_wheelbase_is_the_specification() -> None:
