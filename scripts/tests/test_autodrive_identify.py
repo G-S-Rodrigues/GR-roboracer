@@ -1031,3 +1031,109 @@ def test_check_2675_lateral_by_radius_recovers_f_of_r() -> None:
         tool.lateral_windows(same, LAT_L, LAT_R, rungs=2), (1.52,)
     )
     assert not b.speed_dependent, b
+
+
+TABLE_LINEAR = tuple((r, 9.0 + 1.5 * r) for r in (0.1, 1.0, 3.0, 6.0, 12.0))
+
+
+def test_check_2680_ggv_from_radius_solves_a_equals_f_of_v2_over_a() -> None:
+    """CHECK-2680: a*(v) is the root of a = f(v^2 / a). Constant f = 10 gives
+    10 at every v; f(R) = 9 + 1.5 R gives the hand-solved roots of
+    a^2 - 9a - 1.5 v^2 = 0 (9.623 at v 2, 11.152 at 4, 13.117 at 6). A falling
+    f flags multiple_roots and takes the smallest; v^2 / a past the measured
+    radii flags extrapolated."""
+    tool = _tool()
+    flat = tuple((r, 10.0) for r in (0.5, 2.0, 8.0))
+    rows = tool.ggv_from_radius(flat, (0.0, 2.0, 4.0, 6.0))
+    assert [round(r.ay, 6) for r in rows] == [10.0] * 4
+    rows = tool.ggv_from_radius(TABLE_LINEAR, (0.0, 2.0, 4.0, 6.0))
+    for row, want in zip(rows[1:], (9.6235, 11.1521, 13.1168), strict=True):
+        assert abs(row.ay - want) < 1e-3, (row, want)
+        assert not row.extrapolated and not row.multiple_roots, row
+    assert rows[0].ay == 9.0 + 1.5 * 0.1 and not rows[0].extrapolated
+    # R = v^2 / a = 22.88^2 / 15 > 12 m: past the table.
+    (top,) = tool.ggv_from_radius(TABLE_LINEAR, (22.88,))
+    assert top.extrapolated, top
+    # f falls steeply with R (12 at 0.5 m to 3 at 1.0 m, then flat): at v 2
+    # a - f(4 / a) crosses zero at 3.0, near 4.4 and at 12; the smallest wins.
+    falling = ((0.5, 12.0), (1.0, 3.0), (8.0, 3.0))
+    (row,) = tool.ggv_from_radius(falling, (2.0,))
+    assert row.multiple_roots and abs(row.ay - 3.0) < 1e-6, row
+
+
+def _bins(tool, peak=9.0, post=5.5):
+    est = tool.Estimate
+    return [
+        tool.RadiusBin(
+            radius=r,
+            n=10,
+            peak=est(peak + r, 3, 0.01),
+            bound="exact" if r < 2 else "lower",
+            post_cliff=est(post, 3, 0.02),
+            cells=(),
+            speed_dependent=False,
+        )
+        for r in (1.0, 1.5, 2.0)
+    ]
+
+
+def test_check_2690_write_limits_writes_labelled_files(tmp_path) -> None:
+    """CHECK-2690: both files, every value a {value, label, source} mapping
+    with label in {measured, inferred, guide}; top speed read from
+    source.yaml, never typed; ggv/ax rows sorted by v, non-negative, <= 50,
+    ending at >= 22.88; the increment-1 a_x laws are inferred; rows past a
+    law's range are extrapolated and the drive column is 0 with clamped above
+    19.7 m/s; the closed-loop fields are null with `pending` until a sweep."""
+    import yaml
+
+    tool = _tool()
+    source = tmp_path / "source.yaml"
+    source.write_text(
+        "car:\n  top_speed_m_s: {value: 22.88, source: guide, line: 204}\n"
+    )
+    tool.write_limits(
+        tmp_path, _bins(tool), source=source, recording_sha256="ab" * 32
+    )
+    docs = {
+        k: yaml.safe_load((tmp_path / f"limits_{k}.yaml").read_text())
+        for k in ("sliding", "peak")
+    }
+
+    def walk(node):
+        if isinstance(node, dict):
+            if "label" in node:
+                assert node["label"] in {"measured", "inferred", "guide"}
+                assert "source" in node and "value" in node, node
+            for v in node.values():
+                walk(v)
+
+    for kind, doc in docs.items():
+        walk(doc)
+        assert doc["top_speed"]["value"] == 22.88
+        assert doc["top_speed"]["label"] == "guide"
+        assert doc["top_speed_predicted"]["label"] == "inferred"
+        for table in ("ggv", "ax_max_machines"):
+            rows = doc[table]["rows"]
+            vs = [r["v"] for r in rows]
+            assert vs == sorted(vs) and vs[-1] >= 22.88, (kind, table)
+            assert all(r["label"] == "inferred" for r in rows)
+            assert all(x >= 0 for r in rows for x in r["values"]), rows
+            assert all(x <= 50 for r in rows for x in r["values"]), rows
+        top = doc["ax_max_machines"]["rows"][-1]
+        assert top["extrapolated"], top
+        if kind == "sliding":  # 5.38 - 0.273 * 22.88 < 0
+            assert top["values"] == [0.0] and top["clamped"], top
+        else:  # 8.15 - 0.273 * 22.88 = 1.90 > 0: extrapolated, not clamped
+            assert (
+                abs(top["values"][0] - 1.9038) < 1e-3 and "clamped" not in top
+            )
+        assert doc["drive_ax"]["label"] == "inferred"
+        assert "plan F2-F4" in doc["drive_ax"]["assumption"]
+    sliding, peak = docs["sliding"], docs["peak"]
+    assert sliding["lateral"]["ay_reached"]["pending"].startswith(
+        "closed-loop sweep"
+    )
+    assert sliding["lateral"]["ay_reached"]["value"] is None
+    assert peak["braking_ax"]["value"] is None
+    assert "sliding used" in peak["ggv"]["braking_note"]
+    assert peak["drive_ax"]["intercept"] > sliding["drive_ax"]["intercept"]

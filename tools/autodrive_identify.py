@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import importlib.util
 import math
 import os
@@ -1066,6 +1067,293 @@ def lateral_by_radius(
     return bins
 
 
+# -- the two limits files (plan "The two files") ----------------------------
+
+LIMITS_GRID = (*(float(v) for v in range(23)), 22.88)  # existing grid + top
+DRIVE_SLIDING = (5.38, 0.273)  # a_x = c - k v, F2/F4: full throttle spins
+BRAKE_SLIDING = (5.40, 0.273)  # a_x = c + k v, F2: throttle 0 locks
+DRIVE_PEAK = (8.15, 0.273)  # F3: slip 0.15
+SLIDING_RANGE = 18.6  # full throttle still slides (slip >= 0.25), F1
+PEAK_RANGE = 21.1  # the peak needs slip 0.15
+TOP_SPEED_PREDICTED = 22.4
+TPH_MAX = 50.0
+ROOT_SCAN = 4000
+A_X_ASSUMPTION = (
+    "offline 2026-11-08 (plan F2-F4); refitted by committed code in increment 2"
+)
+
+
+@dataclass(frozen=True)
+class GgvRow:
+    v: float
+    ay: float
+    extrapolated: bool
+    multiple_roots: bool
+
+
+def _f_of_radius(table, radius: float) -> tuple[float, bool]:
+    """Linear interpolation by radius, clamped to the end rows."""
+    if radius <= table[0][0]:
+        return table[0][1], radius < table[0][0]
+    if radius >= table[-1][0]:
+        return table[-1][1], radius > table[-1][0]
+    for (r0, f0), (r1, f1) in zip(table, table[1:], strict=False):
+        if r0 <= radius <= r1:
+            return f0 + (f1 - f0) * (radius - r0) / (r1 - r0), False
+    raise AssertionError(radius)
+
+
+def ggv_from_radius(table, v_grid) -> list[GgvRow]:
+    """a_y*(v): the smallest root of a = f(v^2 / a), f the radius-keyed
+    limit `table` of (radius, a_y) sorted by radius. A sign scan of
+    a - f(v^2 / a) over (0, max f], then bisection of the first bracket;
+    more than one upward crossing flags `multiple_roots`. `extrapolated`
+    where v^2 / a is outside the measured radii (v = 0 reads the smallest
+    radius's row and is not flagged)."""
+    table = sorted(table)
+    top = max(f for _, f in table)
+    rows = []
+    for v in v_grid:
+        if v <= 0.0:
+            rows.append(GgvRow(v, table[0][1], False, False))
+            continue
+
+        def gap(a: float, v=v) -> float:
+            return a - _f_of_radius(table, v * v / a)[0]
+
+        grid = [top * (i + 1) / ROOT_SCAN for i in range(ROOT_SCAN)]
+        brackets = [
+            (lo, hi)
+            for lo, hi in zip([0.0, *grid], grid, strict=False)
+            if (gap(lo) < 0.0 if lo > 0.0 else True) and gap(hi) >= 0.0
+        ]
+        lo, hi = brackets[0]
+        for _ in range(80):
+            mid = 0.5 * (lo + hi)
+            if gap(mid) < 0.0:
+                lo = mid
+            else:
+                hi = mid
+        root = 0.5 * (lo + hi)
+        rows.append(
+            GgvRow(
+                v,
+                root,
+                _f_of_radius(table, v * v / root)[1],
+                len(brackets) > 1,
+            )
+        )
+    return rows
+
+
+def _top_speed(source: Path) -> dict:
+    import yaml
+
+    def find(node):
+        if isinstance(node, dict):
+            if "top_speed_m_s" in node:
+                return node["top_speed_m_s"]
+            for value in node.values():
+                found = find(value)
+                if found is not None:
+                    return found
+        return None
+
+    entry = find(yaml.safe_load(source.read_text()))
+    if entry is None:
+        raise ValueError(f"{source}: no top_speed_m_s")
+    return entry
+
+
+def _value(value, label, source, **extra) -> dict:
+    return {"value": value, "label": label, "source": source, **extra}
+
+
+def _law_row(v, law, sign, limit):
+    """(value, extrapolated, clamped) of a_x = c +- k v past `limit`."""
+    c, k = law
+    raw = c + sign * k * v
+    return max(raw, 0.0), v > limit, raw < 0.0
+
+
+def _table_rows(v_grid, drive, drive_limit, brake) -> tuple[list, list]:
+    ggv_rows, machine_rows = [], []
+    for v in v_grid:
+        value, extrap, clamped = _law_row(v, drive, -1.0, drive_limit)
+        row = {"v": v, "values": [round(value, 6)], "label": "inferred"}
+        if extrap:
+            row["extrapolated"] = True
+        if clamped:
+            row["clamped"] = True
+        machine_rows.append(row)
+        brake_value = round(brake[0] + brake[1] * v, 6)
+        ggv_rows.append((v, brake_value, bool(extrap)))
+    return ggv_rows, machine_rows
+
+
+def write_limits(
+    out_dir: Path,
+    bins: list[RadiusBin],
+    *,
+    source: Path,
+    recording_sha256: str,
+    closed_loop: dict | None = None,
+) -> None:
+    """Write limits_sliding.yaml and limits_peak.yaml into `out_dir`.
+    `closed_loop` (Step 5d's sweep) fills ay_reached / ay_closed_loop_max;
+    without it they are null with a `pending:` note."""
+    import yaml
+
+    top = _top_speed(source)
+    measured = {"recording_sha256": recording_sha256}
+    pending = "closed-loop sweep (Step 5)"
+    note_min_time = (
+        "# Written by tools/autodrive_identify.py analyse; never edit by hand\n"
+        "# (CHECK-2670 re-derives it from the committed recordings).\n"
+        "# TUM min-time reads only ggv row 0 and its per-axle Pacejka tyres\n"
+        "# (optimize.py:168,202,204): a radius-dependent grip reaches it only\n"
+        "# as that one number. Carrying the dependence needs a tyre set refit\n"
+        "# to the by-radius data or a fork change taking mue(curvature).\n"
+        "# Nothing loads this file until the owner rules.\n"
+    )
+    for kind in ("sliding", "peak"):
+        sliding = kind == "sliding"
+        drive = DRIVE_SLIDING if sliding else DRIVE_PEAK
+        limit = SLIDING_RANGE if sliding else PEAK_RANGE
+        lateral_rows = []
+        for b in bins:
+            entry = {"radius": b.radius, "n": b.n, "bound": b.bound}
+            if b.post_cliff is not None:
+                entry["ay_post_cliff"] = _value(
+                    round(b.post_cliff.value, 6),
+                    "measured",
+                    "open-loop",
+                    n=b.post_cliff.n,
+                    **measured,
+                )
+            if b.peak is not None:
+                entry["ay_peak"] = _value(
+                    round(b.peak.value, 6),
+                    "measured",
+                    "open-loop",
+                    n=b.peak.n,
+                    **measured,
+                )
+            lateral_rows.append(entry)
+        cl = closed_loop or {}
+        key = "ay_reached" if sliding else "ay_closed_loop_max"
+        lateral = {
+            "bins": lateral_rows,
+            key: (
+                _value(cl[key], "measured", "closed-loop", **measured)
+                if cl.get(key) is not None
+                else _value(None, "measured", "closed-loop", pending=pending)
+            ),
+        }
+        if sliding:
+            pick = {
+                b.radius: (b.post_cliff.value if b.post_cliff else None)
+                for b in bins
+            }
+        else:
+            pick = {b.radius: (b.peak.value if b.peak else None) for b in bins}
+        table = [(r, v) for r, v in sorted(pick.items()) if v is not None]
+        ay_rows = ggv_from_radius(table, LIMITS_GRID) if table else []
+        brake = BRAKE_SLIDING
+        brake_rows, machine_rows = _table_rows(LIMITS_GRID, drive, limit, brake)
+        ggv_out = []
+        for (v, ax, extrap), ay in zip(brake_rows, ay_rows, strict=False):
+            row = {
+                "v": v,
+                "values": [ax, round(min(ay.ay, TPH_MAX), 6)],
+                "label": "inferred",
+            }
+            if extrap or ay.extrapolated:
+                row["extrapolated"] = True
+            if ay.multiple_roots:
+                row["multiple_roots"] = True
+            ggv_out.append(row)
+        doc = {
+            "edition": "2026-iros-practice",
+            "kind": kind,
+            "top_speed": {
+                "value": top["value"],
+                "label": "guide",
+                "source": top.get("source", "guide"),
+                "line": top.get("line"),
+            },
+            "top_speed_predicted": _value(
+                TOP_SPEED_PREDICTED,
+                "inferred",
+                "plan facts 2026-11-08",
+                assumption="increment 2's predicted_top_speed recomputes it",
+            ),
+            "lateral": lateral,
+            "drive_ax": {
+                **_value(
+                    None,
+                    "inferred",
+                    "F3" if not sliding else "F2/F4",
+                    assumption=A_X_ASSUMPTION,
+                ),
+                "intercept": drive[0],
+                "slope": -drive[1],
+                "valid_to_mps": limit,
+            },
+            "braking_ax": (
+                {
+                    **_value(None, "inferred", "F2", assumption=A_X_ASSUMPTION),
+                    "intercept": BRAKE_SLIDING[0],
+                    "slope": BRAKE_SLIDING[1],
+                }
+                if sliding
+                else _value(
+                    None,
+                    "inferred",
+                    "needs partial-slip control; increment 2 probes it",
+                )
+            ),
+            "ggv": {
+                "columns": ["v_mps", "ax_max_mps2", "ay_max_mps2"],
+                "rule": "ax: sliding braking law; ay: root of a = f(v^2 / a)"
+                " over the radius bins (ggv_from_radius)",
+                "rows": ggv_out,
+            },
+            "ax_max_machines": {
+                "columns": ["v_mps", "ax_max_machines_mps2"],
+                "rule": "the drive law, clamped at 0, extrapolated past "
+                "its slip range",
+                "rows": machine_rows,
+            },
+        }
+        if not sliding:
+            doc["ggv"]["braking_note"] = (
+                "peak braking not measured; sliding used"
+            )
+        (out_dir / f"limits_{kind}.yaml").write_text(
+            note_min_time + yaml.safe_dump(doc, sort_keys=False)
+        )
+
+
+LATERAL_BIN_CENTRES = (0.56, 0.78, 1.21, 2.05, 3.08)  # R_kin of A 1.0..0.2
+
+
+def lateral_bins(recording: Path, source: Path) -> list[RadiusBin]:
+    """The recording's lateral windows, binned by measured path radius."""
+    import yaml
+
+    values = yaml.safe_load(source.read_text())["values"]
+    header, events = _recorder().read_records(recording)
+    segs = segments(samples_from_events(events))
+    windows = lateral_windows(
+        segs,
+        values["wheelbase_table_m"]["value"],
+        values["wheel_radius_m"]["value"],
+        rungs=len(LATERAL_RUNGS),
+    )
+    return lateral_by_radius(windows, LATERAL_BIN_CENTRES)
+
+
 def _recorder():
     """tools/autodrive_record.py, loaded by path (the two share a folder)."""
     path = Path(__file__).resolve().with_name("autodrive_record.py")
@@ -1327,7 +1615,16 @@ def cmd_analyse(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        raise NotImplementedError("the lateral analysis arrives in Step 6")
+        write_limits(
+            args.out_dir,
+            lateral_bins(args.recording, args.source),
+            source=args.source,
+            recording_sha256=hashlib.sha256(
+                args.recording.read_bytes()
+            ).hexdigest(),
+        )
+        print(f"wrote limits_*.yaml in {args.out_dir}", flush=True)
+        return 0
     raise ValueError(f"unknown schedule {schedule!r} in {args.recording}")
 
 
