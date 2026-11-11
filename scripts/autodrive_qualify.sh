@@ -171,7 +171,9 @@ if [ "$sim_mode" = windows ]; then
     ps_file="$(wslpath -w "$root/scripts/windows/autodrive.ps1" 2>/dev/null ||
         echo "$root/scripts/windows/autodrive.ps1")"
     helper="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \". '$ps_file'; autodrive -SimPath '$sim_exe' -Ip $wsl_ip\""
-    poll="docker exec $dev ss -ltn 'sport = :4567'"
+    # dev has no ss: read the listening sockets (state 0A) of port 4567
+    # (hex 11D7) from /proc/net/tcp and tcp6.
+    poll="docker exec $dev grep -qiE ':11D7 [0-9A-F:]+ 0A ' /proc/net/tcp /proc/net/tcp6"
     if [ "$dry" -eq 1 ]; then
         printf '%s\n%s &\n%s\n%s\n%s\n' "$route" "$run" "$poll" "$helper" "$route stop"
         exit 0
@@ -194,8 +196,8 @@ if [ "$sim_mode" = windows ]; then
     # server in dev listens.
     listening=0
     for _ in $(seq 1 180); do
-        if docker exec "$dev" ss -ltn 'sport = :4567' 2>/dev/null |
-            grep -q ':4567'; then
+        if docker exec "$dev" grep -qiE ':11D7 [0-9A-F:]+ 0A ' \
+            /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
             listening=1
             break
         fi

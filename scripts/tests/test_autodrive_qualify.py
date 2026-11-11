@@ -190,8 +190,8 @@ case "$1" in
     exit 0 ;;
   exec)
     case "$*" in
-      *"ss -ltn"*) [ -n "$STUB_LISTEN" ] && echo "LISTEN 0 100 0.0.0.0:4567"
-                   exit 0 ;;
+      *"/proc/net/tcp"*) [ -n "$STUB_LISTEN" ] && exit 0
+                   exit 1 ;;
     esac
     exit "${STUB_EXIT:-0}" ;;
 esac
@@ -304,8 +304,8 @@ def test_check_2480_sim_windows_dry_run_prints_the_route_not_the_container(
         "autodrive_route.sh",
         "docker exec gr-roboracer-dev bash -lc",
         "tests/autodrive/test_sim_3750_porto_fast_mintime_lap.py",
-        "ss -ltn",
-        ":4567",
+        "/proc/net/tcp",
+        ":11D7",
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command",
         "autodrive.ps1",
         "autodrive -SimPath",
