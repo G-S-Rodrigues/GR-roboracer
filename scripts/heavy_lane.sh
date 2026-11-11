@@ -11,7 +11,8 @@
 # when every holder of fd 9 is gone: a shell orphan of the command keeps it,
 # a Python child (colcon, pytest, ros2 launch) does not.
 # --wait gives up after SECONDS (default: wait forever).
-# Exit: the command's own, 2 bad arguments, 3 gave up waiting, 4 no lane.
+# Exit: the command's own, 2 bad arguments, 3 gave up waiting, 4 no lane, or a
+# lane whose heavy.lock cannot be opened.
 set -euo pipefail
 
 max_load=8
@@ -62,13 +63,14 @@ else
     # can both open it; compose would otherwise create it root-owned.
     (umask 0 && mkdir -p "$lane") && chmod 1777 "$lane" 2>/dev/null || true
 fi
-if [ ! -d "$lane" ] || [ ! -w "$lane" ]; then
-    echo "no writable lane at $lane (owner $(stat -c %U "$lane" 2>/dev/null || echo none), mode $(stat -c %a "$lane" 2>/dev/null || echo none)): if root owns it, run: docker exec gr-roboracer-dev chmod 1777 /lane (or sudo chmod 1777 $lane)" >&2
+lock="$lane/heavy.lock"
+# An unwritable lane (compose made it root 0755) still works when heavy.lock
+# is readable: flock needs a read-only fd, not a writable directory.
+[ -e "$lock" ] || (umask 0 && : >>"$lock") 2>/dev/null || true
+if [ ! -d "$lane" ] || [ ! -r "$lock" ]; then
+    echo "no usable lane at $lane (owner $(stat -c %U "$lane" 2>/dev/null || echo none), mode $(stat -c %a "$lane" 2>/dev/null || echo none)): heavy.lock cannot be opened; if root owns the lane, run: docker exec gr-roboracer-dev chmod 1777 /lane (or sudo chmod 1777 $lane)" >&2
     exit 4
 fi
-
-lock="$lane/heavy.lock"
-(umask 0 && : >>"$lock") 2>/dev/null || true
 exec 9<"$lock"
 flock_args=(-x)
 [ -n "$wait_s" ] && flock_args+=(-w "$wait_s")
@@ -78,7 +80,10 @@ if ! flock "${flock_args[@]}" 9; then
 fi
 
 # Only the holder writes this, so it names the run that is on the machine.
-echo "$(date -u +%FT%TZ) pid $$ $* " >"$lane/owner" 2>/dev/null || true
+stamp="$(date -u +%FT%TZ) pid $$ $* "
+if ! (umask 0 && printf '%s\n' "$stamp" >"$lane/owner") 2>/dev/null; then
+    echo "lane taken; cannot write $lane/owner ($(stat -c '%U %a' "$lane/owner" 2>/dev/null || echo none)): waiters will see \"owner unknown\"; one wrapper run in dev opens the lane" >&2
+fi
 
 # Holding the lock does not make the machine quiet: wait out other load too.
 while [ "$(cut -d. -f1 /proc/loadavg)" -ge "$max_load" ]; do
