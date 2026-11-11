@@ -82,8 +82,12 @@ Traps any task in this repository can hit. Each one cost real time at least once
     unrecoverable stop during startup, on a graph that is otherwise perfectly healthy. Symptom: an
     emergency stop already latched at t=0, with no fault anywhere in the logs. The fix is a
     deterministic t=0 — wait for every participant, then call the sim node's `~/reset` — never a
-    longer timeout. That wait also covers the supervisor's `~/clock_received` (its first `/clock`
-    delivery). The working explanation, which the owner ruled on and nobody measured, is that a
+    longer timeout. t=0 is proven by delivery on each link a seeded metric reads, not by discovery:
+    the supervisor's `~/clock_received` (its first `/clock` delivery, L4), racing_metrics' `~/started`
+    (its first accepted sample, L2) and one `/controller/drive` (L1, where the controller's input
+    exists while held). Discovery is not proof: in 21 of 72 launches the sim's endpoints took
+    0.15-1.07 s to match (findings 2026-11-11). The sim's `/drive` reader (L3) cannot be proven while
+    held, and `drive-start-missed` (first motion later than 3 ticks; normal is 1 tick) names it. The working explanation, which the owner ruled on and nobody measured, is that a
     best-effort `/clock` writer matched after t=0 leaves the supervisor's clock at 0 and latches
     STALE with no gap in the drive stream (F1). The evidence is thin: 6 of 24 lag runs with no
     latch (Step 1) and 1 of 48 lag runs (Step A).
