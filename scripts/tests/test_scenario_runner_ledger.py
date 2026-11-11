@@ -26,9 +26,13 @@ if str(LIB_ROOT) not in sys.path:
 
 from racing_test_keywords import scenario_runner  # noqa: E402
 
+# argv[1] is touched once both handlers are set: "started" in the ledger only
+# means launch spawned the process, and a SIGINT that lands before the
+# handlers would end it with -2 instead of the escalation under test.
 STUBBORN = (
-    "import signal,time; signal.signal(signal.SIGINT, signal.SIG_IGN); "
-    "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)"
+    "import signal,sys,time,pathlib; signal.signal(signal.SIGINT, "
+    "signal.SIG_IGN); signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+    "pathlib.Path(sys.argv[1]).touch(); time.sleep(30)"
 )
 EARLY = "raise SystemExit(3)"
 
@@ -43,8 +47,8 @@ def _process(name: str, *argv: str):
     )
 
 
-def _stubborn():
-    return _process("stubborn", sys.executable, "-c", STUBBORN)
+def _stubborn(ready: Path):
+    return _process("stubborn", sys.executable, "-c", STUBBORN, str(ready))
 
 
 def _polite():
@@ -55,7 +59,22 @@ def _early():
     return _process("early", sys.executable, "-c", EARLY)
 
 
-def _run_launch(entities, ledger, shutdown_after=1.0) -> int:
+def _wait_until(predicate, what: str, deadline: float = 30.0) -> None:
+    """Poll to a bounded deadline; a load-proof stand-in for a fixed sleep."""
+    end = time.monotonic() + deadline
+    while not predicate():
+        if time.monotonic() > end:
+            raise AssertionError(f"timed out after {deadline}s: {what}")
+        time.sleep(0.02)
+
+
+def _ledger_exited(ledger, prefix: str):
+    return lambda: any(n.startswith(prefix) for n in dict(ledger.exited))
+
+
+def _run_launch(entities, ledger, ready=(), exited=()) -> int:
+    """Run launch; shut it down once launch has started every entity, every
+    ``ready`` file exists and every ``exited`` prefix is in the ledger."""
     description = launch.LaunchDescription([*ledger.actions(), *entities])
     service = launch.LaunchService()
     service.include_launch_description(description)
@@ -64,17 +83,38 @@ def _run_launch(entities, ledger, shutdown_after=1.0) -> int:
         ledger.shutting_down = True
         service.shutdown()
 
-    timer = threading.Timer(shutdown_after, stop)
-    timer.start()
+    def when_up() -> None:
+        try:
+            _wait_until(
+                lambda: len(dict(ledger.started)) >= len(entities),
+                "every stand-in started",
+            )
+            for path in ready:
+                _wait_until(path.exists, f"{path} touched")
+            for prefix in exited:
+                _wait_until(
+                    _ledger_exited(ledger, prefix), f"{prefix} exited"
+                )
+        finally:
+            stop()
+
+    thread = threading.Thread(target=when_up, daemon=True)
+    thread.start()
     try:
         return service.run()
     finally:
-        timer.cancel()
+        thread.join(timeout=35)
 
 
-def test_check_2370_ledger_lists_only_the_sigkilled_process():
+def test_check_2370_ledger_lists_only_the_sigkilled_process(tmp_path):
     ledger = scenario_runner._ProcessLedger()
-    code = _run_launch([_stubborn(), _polite(), _early()], ledger)
+    ready = tmp_path / "stubborn.ready"
+    code = _run_launch(
+        [_stubborn(ready), _polite(), _early()],
+        ledger,
+        ready=[ready],
+        exited=["early"],
+    )
     assert code == 0
     escalations = ledger.shutdown_escalations
     assert len(escalations) == 1, escalations
@@ -116,7 +156,10 @@ def _write_launch_file(path: Path, entities: str) -> Path:
     return path
 
 
-STUBBORN_ENTITY = f'_p("stubborn", sys.executable, "-c", {STUBBORN!r})'
+def _stubborn_entity(ready: Path) -> str:
+    return f'_p("stubborn", sys.executable, "-c", {STUBBORN!r}, {str(ready)!r})'
+
+
 EARLY_ENTITY = f'_p("early", sys.executable, "-c", {EARLY!r})'
 POLITE_ENTITY = '_p("polite", "sleep", "30")'
 
@@ -155,7 +198,13 @@ def _metrics_message() -> SimpleNamespace:
 def real_launch_run(tmp_path, monkeypatch):
     """The real ``run_scenario`` and ``LaunchService`` on a stand-in launch
     file, with rclpy, the t=0 reset and the metrics wait faked."""
-    state = {"entities": STUBBORN_ENTITY, "wait": None, "reset": None}
+    ready = tmp_path / "stubborn.ready"
+    state = {"wait": None, "reset": None, "ledger": None}
+
+    class RecordingLedger(scenario_runner._ProcessLedger):
+        def __init__(self) -> None:
+            super().__init__()
+            state["ledger"] = self
 
     def launch_file(entities: str) -> None:
         monkeypatch.setattr(
@@ -165,7 +214,7 @@ def real_launch_run(tmp_path, monkeypatch):
         )
 
     def wait_for_message(*args, **kwargs):
-        time.sleep(1.5)  # the stand-ins are up and have set their handlers
+        _wait_until(ready.exists, "stubborn set its handlers")
         if state["wait"] is not None:
             raise state["wait"]
         return _metrics_message()
@@ -179,11 +228,16 @@ def real_launch_run(tmp_path, monkeypatch):
     monkeypatch.setattr(
         scenario_runner.rclpy, "create_node", lambda *a, **k: _Node()
     )
+    monkeypatch.setattr(scenario_runner, "_ProcessLedger", RecordingLedger)
     monkeypatch.setattr(scenario_runner, "_HangObserver", _Observer)
     monkeypatch.setattr(scenario_runner, "_reset_at_deterministic_t0", reset)
     monkeypatch.setattr(scenario_runner, "wait_for_message", wait_for_message)
-    launch_file(STUBBORN_ENTITY)
-    return SimpleNamespace(state=state, launch_file=launch_file)
+    launch_file(_stubborn_entity(ready))
+    return SimpleNamespace(
+        state=state,
+        launch_file=launch_file,
+        stubborn=_stubborn_entity(ready),
+    )
 
 
 def test_check_2371_a_passing_run_reports_its_escalations(real_launch_run):
@@ -208,7 +262,11 @@ def test_check_2377_a_t0_stall_names_what_exited(real_launch_run):
     real_launch_run.launch_file(f"{EARLY_ENTITY}, {POLITE_ENTITY}")
 
     def stall() -> None:
-        time.sleep(0.8)  # the early stand-in has exited by now
+        _wait_until(
+            lambda: real_launch_run.state["ledger"] is not None
+            and _ledger_exited(real_launch_run.state["ledger"], "early")(),
+            "early exited",
+        )
         raise TimeoutError("node not found within 1s: slam_toolbox")
 
     real_launch_run.state["reset"] = stall
