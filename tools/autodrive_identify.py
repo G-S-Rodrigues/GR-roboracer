@@ -1369,11 +1369,17 @@ def write_limits(
                 entry["chosen"], picked[b.radius] = chosen
             lateral_rows.append(entry)
         key = "ay_reached" if sliding else "ay_closed_loop_max"
+        n_key = "n_reached" if sliding else "n_max"
+        n_overall = {"n": cl[n_key]} if n_key in cl else {}
         lateral = {
             "bins": lateral_rows,
             key: (
                 _value(
-                    round(cl[key], 6), "measured", "closed-loop", **cl_measured
+                    round(cl[key], 6),
+                    "measured",
+                    "closed-loop",
+                    **n_overall,
+                    **cl_measured,
                 )
                 if cl.get(key) is not None
                 else _value(None, "measured", "closed-loop", pending=pending)
@@ -1537,6 +1543,8 @@ def closed_loop_from_sweep(
     return {
         "ay_reached": statistics.median(saturated) if saturated else None,
         "ay_closed_loop_max": max(linear) if linear else None,
+        "n_reached": len(saturated),
+        "n_max": len(linear),
         "bins": bins,
         "recording_sha256": recording_sha256,
     }

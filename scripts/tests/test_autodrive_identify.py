@@ -1323,6 +1323,15 @@ def test_check_2670_sweep_half_closed_loop_fields_rederive(tmp_path) -> None:
         assert "pending" not in committed.read_text(), name
     sliding = yaml.safe_load((VEHICLE_DIR / "limits_sliding.yaml").read_text())
     assert sliding["lateral"]["ay_reached"]["value"] > 0.0
+    assert sliding["lateral"]["ay_reached"]["n"] == len(
+        [
+            w
+            for _, w in tool.closed_loop_windows(SWEEP_RECORDING, SOURCE)
+            if _.get("status") == "kept" and w.label == "saturated"
+        ]
+    )
+    peak = yaml.safe_load((VEHICLE_DIR / "limits_peak.yaml").read_text())
+    assert peak["lateral"]["ay_closed_loop_max"]["n"] >= 1
     kept = tool.sweep_rungs(SWEEP_RECORDING)
     assert [r["status"] for r in kept] == ["kept"] * 3 + ["collision"]
 

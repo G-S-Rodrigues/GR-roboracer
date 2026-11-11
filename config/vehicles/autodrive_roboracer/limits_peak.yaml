@@ -89,6 +89,7 @@ lateral:
     value: 7.15765
     label: measured
     source: closed-loop
+    n: 5
     recording_sha256: 91f95804e4e6a6b09e8dc8659e475a3af3d2734e9dda1851a23d46c91af8acf9
 drive_ax:
   value: null
