@@ -13,6 +13,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 from launch import LaunchContext
 from launch.actions import (
     IncludeLaunchDescription,
@@ -23,6 +24,7 @@ from test_bringup_contract import REPOSITORY_ROOT, _merged
 
 LAUNCH_DIR = Path(__file__).parents[1] / "launch"
 SURVEY = "config/localization/slam_toolbox_survey.yaml"
+SURVEY_TRUTH = "config/localization/slam_toolbox_survey_truth.yaml"
 ONLINE = "config/localization/slam_toolbox_online.yaml"
 
 
@@ -170,3 +172,20 @@ def test_bringup_1983_the_driving_stack_does_not_see_the_mapper_config():
         text(name): text(value) for name, value in includes[0].launch_arguments
     }
     assert given.get("slam_toolbox_config") == "", given
+
+
+def test_bringup_1984_the_truth_survey_config_lays_scans_at_the_truth_pose():
+    """BRINGUP-1984: AutoDRIVE's /odom is dead-reckoned (b0-d measured
+    1.727 m at the end of two laps, 2.487 m at most), so its survey reads the
+    pose from the support node's map -> base_link (`odom_frame: map`) and
+    keeps slam_toolbox's own grid frame apart (`map_frame: survey_map`); it
+    publishes no transform and does not match."""
+    params = yaml.safe_load((REPOSITORY_ROOT / SURVEY_TRUTH).read_text())[
+        "slam_toolbox"
+    ]["ros__parameters"]
+    assert params["odom_frame"] == "map", params
+    assert params["map_frame"] == "survey_map", params
+    assert params["transform_publish_period"] == 0.0, params
+    assert params["use_scan_matching"] is False, params
+    assert params["do_loop_closing"] is False, params
+    assert params["use_sim_time"] is False, params
