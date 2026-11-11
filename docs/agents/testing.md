@@ -199,6 +199,10 @@ Where a test is not where you would look:
   `scripts/autodrive_qualify.sh` or by hand.
 - SIM-3750 is local, run by `autodrive_qualify.sh --case fast_lap`.
 - SIM-3760 is local, run by `autodrive_qualify.sh --case corner_sweep --sweep-dir <dir>`.
+- SIM-3770 (slam_toolbox survey map), SIM-3771 (MOLA map), SIM-3780 (fast lap on amcl) and SIM-3781
+  (fast lap on MOLA) are local, run by `autodrive_qualify.sh --case survey|mola_map|fast_lap_amcl|fast_lap_mola
+  --sim windows`. They fail, never skip, without a sim. SIM-3780/3781 also fail until the data pin carries the
+  Porto `slam/` and `mola/` maps. CHECK-2480..2484 and BRINGUP-1980..1982 are their CI-able parts.
 
 ## The tests that matter most
 

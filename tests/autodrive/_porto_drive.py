@@ -13,6 +13,7 @@ import os
 import subprocess
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -282,6 +283,8 @@ def drive_porto(
     meta: dict | None = None,
     pose_source: str = "ground_truth",
     recording_path: Path | None = None,
+    before_reset: Callable[[], None] | None = None,
+    after_laps: Callable[[], None] | None = None,
 ) -> PortoRun:
     """Drive `launch` for `laps` laps and return what was seen.
 
@@ -301,6 +304,10 @@ def drive_porto(
     line per message, `{"stream": ..., "t": ..., ...}`. `t` is the message's
     own `header.stamp` (the server's receive time, one value per sim frame,
     which joins a frame's streams; never the subscriber's receive time).
+
+    `before_reset` runs after the first frame and the estimator waits, just
+    before the t = 0 reset; `after_laps` runs when the drive ends, with the
+    launch still up (a mapper is saved here). Both default to nothing.
     """
     domain = os.environ.get("ROS_DOMAIN_ID")
     if domain is None or domain == "42":
@@ -432,6 +439,8 @@ def drive_porto(
             )
 
         wait_for_estimator(node, pose_source, ESTIMATOR_WAIT_S)
+        if before_reset is not None:
+            before_reset()
 
         client = node.create_client(Reset, "/racing_sim/reset")
         assert client.wait_for_service(timeout_sec=30.0)
@@ -458,6 +467,8 @@ def drive_porto(
             if metrics and last_count >= laps:
                 break
         load = host_load_delta(load_before, read_host_load())
+        if after_laps is not None:
+            after_laps()
         stale = observer.stale_count
         latch = observer.first_latch
         trace = observer._startup_trace()
