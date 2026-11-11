@@ -418,7 +418,7 @@ def test_check_2375_a_latch_is_not_called_a_collision(tmp_path):
         tmp_path,
         frozen_at=(4.95, 12.0, 0.1),
         stop_context={
-            "text": "first non-NONE status: REASON_TRACK_LIMIT",
+            "text": "first non-NONE status: REASON_STALE_INPUT",
             "latched": True,
         },
     )
@@ -426,7 +426,7 @@ def test_check_2375_a_latch_is_not_called_a_collision(tmp_path):
     assert "ground truth frozen at sim 4.95 s" in text
     assert "a latch, not a collision" in text
     assert "holds its state on a collision" not in text
-    assert "REASON_TRACK_LIMIT" in text
+    assert "REASON_STALE_INPUT" in text
 
 
 def _freeze_text(tmp_path, context) -> str:
