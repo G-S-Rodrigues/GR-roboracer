@@ -229,7 +229,8 @@ class RunOutcome(dict):
     ``shutdown_escalations``: ``[{"name", "signal"}]`` for each process launch
     had to SIGTERM/SIGKILL at the end. ``frozen_at``: ``(t, s, d)`` where a
     frozen-pose stop saw the pose stop, else ``None``. ``stop_context``: on
-    a frozen stop, ``{"text", "latched"}`` from the hang observer. ``start``:
+    a frozen stop, ``{"text", "latched", "latch", "non_latching"}`` from the
+    hang observer. ``start``:
     ``{"metrics_start", "first_motion", "tick", "t0_waits"}``, the record
     ``start_verdict`` judged (F-T0).
     """
@@ -426,7 +427,7 @@ class _HangObserver:
     side of the controller -> supervisor chain went quiet (``verdict``).
     Drive stamps are the odom stamps the controller answered, so they do not
     move when this observer is late. Every sample is kept to sim t <= 2 s;
-    after that a one-second ring buffer, and nothing once the first non-NONE
+    after that a one-second ring buffer, and nothing once the first latching
     status has arrived, so memory is bounded. The callbacks themselves run
     for the whole lap.
     """
@@ -435,8 +436,25 @@ class _HangObserver:
     RING_SAMPLES = 150  # > 1 s of 100 Hz
 
     def __init__(self, node) -> None:
+        # The latch rule lives in scripts/frozen_pose (stdlib-only, shared
+        # with the tier-5 report). Tier 4 runs with tests/lib on the path, so
+        # the repository root is put on it first (as the frozen-pose wait).
+        if str(REPOSITORY_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPOSITORY_ROOT))
+        from scripts.frozen_pose import is_supervisor_latch
+
+        self._is_latch = is_supervisor_latch
         self.status = None
+        # The first non-NONE status, latching or not. judge_stale_input and
+        # SIM-3620 decide pass/fail from it: set once, never re-anchored.
         self.first_latch = None
+        # The first status that latches (STALE_INPUT, ESTOP_LATCHED, or the
+        # CLAMP_ESTOP bit): what verdict() and the trace anchor on, and what
+        # stops the recording of stamps.
+        self.first_stop = None
+        # Non-NONE statuses that do not latch (a clamp, TRACK_LIMIT), newest
+        # last; ~10 s at 100 Hz, longer than the 2 s freeze window.
+        self._non_latching: deque[Any] = deque(maxlen=1000)
         self.stale_count = 0
         self.clock = None
         self._statuses_before_latch = 0
@@ -497,7 +515,7 @@ class _HangObserver:
                 stamps.popleft()
 
     def _on_drive(self, message) -> None:
-        if self.first_latch is not None:
+        if self.first_stop is not None:
             return
         seconds = self._seconds(message.header.stamp)
         if self._last_drive is not None:
@@ -534,11 +552,17 @@ class _HangObserver:
         self.status = message
         if message.reason == SafetyStatus.REASON_STALE_INPUT:
             self.stale_count += 1
-        if self.first_latch is not None:
+        if self.first_stop is not None:
             return
         seconds = self._seconds(message.header.stamp)
         if message.reason != SafetyStatus.REASON_NONE:
-            self.first_latch = message
+            if self.first_latch is None:
+                self.first_latch = message
+            if self._is_latch(message.reason, message.active_clamps):
+                self.first_stop = message
+            else:
+                self._non_latching.append(message)
+                self._statuses_before_latch += 1
         else:
             self._statuses_before_latch += 1
         if self._last_status is not None:
@@ -594,9 +618,9 @@ class _HangObserver:
         subscription can also be late, so it is a verdict about the first
         status seen, not proof. Anything else is ``unclassified``.
         """
-        if self.first_latch is None:
+        if self.first_stop is None:
             return "no-latch"
-        latch = self._seconds(self.first_latch.header.stamp)
+        latch = self._seconds(self.first_stop.header.stamp)
         in_window = [
             stamp
             for stamp in self._drive_stamps
@@ -604,7 +628,7 @@ class _HangObserver:
         ]
         status_skipped = self._max_status_gap >= STALE_INPUT_WINDOW_SECONDS
         if (
-            self.first_latch.reason == SafetyStatus.REASON_STALE_INPUT
+            self.first_stop.reason == SafetyStatus.REASON_STALE_INPUT
             and self._statuses_before_latch == 0
             and latch >= STALE_INPUT_WINDOW_SECONDS - 1e-9
             and in_window
@@ -617,9 +641,9 @@ class _HangObserver:
         return "unclassified"
 
     def _startup_trace(self) -> str:
-        if self.first_latch is None:
+        if self.first_stop is None:
             return ""
-        latch = self._seconds(self.first_latch.header.stamp)
+        latch = self._seconds(self.first_stop.header.stamp)
         recent = [
             f"{stamp:.3f}"
             for stamp in self._drive_stamps
@@ -631,6 +655,27 @@ class _HangObserver:
             f"max drive gap={self._max_drive_gap:.3f}s; "
             f"max status gap={self._max_status_gap:.3f}s"
         )
+
+    def stop_context(self, frozen_t: float) -> dict[str, Any]:
+        """Why the pose froze, from the statuses seen: ``text``; ``latched``
+        (a latching status stamped at or before ``frozen_t``, since a later
+        one cannot have caused the freeze); ``latch``; ``non_latching``, the
+        newest clamp or TRACK_LIMIT stamped at or before it."""
+        stop = self.first_stop
+        latched = (
+            stop is not None and self._seconds(stop.header.stamp) <= frozen_t
+        )
+        earlier = [
+            status
+            for status in self._non_latching
+            if self._seconds(status.header.stamp) <= frozen_t
+        ]
+        return {
+            "text": self.describe(),
+            "latched": latched,
+            "latch": self._describe(stop) if latched else None,
+            "non_latching": self._describe(earlier[-1]) if earlier else None,
+        }
 
     def describe(self) -> str:
         clock = (
@@ -651,9 +696,15 @@ class _HangObserver:
             else "; host load: "
             + ", ".join(f"{key}={value:.4f}" for key, value in load.items())
         )
+        stop = (
+            "none"
+            if self.first_stop is None
+            else self._describe(self.first_stop)
+        )
         return (
             f"last /clock={clock}; last /safety/status={last}; "
             f"first non-NONE status={first}; "
+            f"first latching status={stop}; "
             f"REASON_STALE_INPUT messages={self.stale_count}"
             f"{self._startup_trace()}{load_text}"
         )
@@ -1043,14 +1094,13 @@ def run_scenario(
                     node, timeout, stop_on_frozen_pose, track_length
                 )
                 if frozen_at is not None:
-                    # A supervisor latch freezes the pose too; the keyword
-                    # must not call it a collision (raceline_report orders
-                    # `latched` before `dnf` for this reason).
+                    # A supervisor latch (STALE_INPUT, ESTOP_LATCHED, the
+                    # CLAMP_ESTOP bit) freezes the pose too; the keyword must
+                    # not call it a collision (raceline_report orders `latched`
+                    # before `dnf` for this reason). A clamp or TRACK_LIMIT
+                    # does not latch and is named apart.
                     frozen["at"] = frozen_at
-                    frozen["context"] = {
-                        "text": observer.describe(),
-                        "latched": observer.first_latch is not None,
-                    }
+                    frozen["context"] = observer.stop_context(frozen_at[0])
             outcome.update(metrics_to_dict(message))
             # The start record, from observer stamps only: never lap_time,
             # which is 0 on a frozen-pose stop or a DNF and spans laps.
@@ -1162,7 +1212,8 @@ def run_scenario_with_track_limit_violation(
     ``_reset_at_deterministic_t0`` has released t=0 (repo-gotchas #19), so
     the supervisor's clock has moved before the first fake odometry. The
     outcome's ``safety_record`` is the first non-NONE ``/safety/status`` the
-    stack reported, for a failure message that names a latch.
+    stack reported and also names the first latching status, for a failure
+    message that names a latch.
     """
     ensure_rclpy_initialized()
 
