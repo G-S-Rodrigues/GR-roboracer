@@ -5,15 +5,19 @@ LIVE (needs the AutoDRIVE sim; fails, never skips, without one). Run it with
 `scripts/autodrive_qualify.sh --domain <60-69> --case mola_map --sim
 windows`. The reference stack drives one centerline lap on ground truth
 (recording_path -> `$AUTODRIVE_OUT/recording.jsonl`) while
-mola_mapping.launch.py `simulator:=autodrive` maps beside it. MOLA starts
-before the t = 0 reset, while the car is parked at the spawn; its alignment T
-is the ground-truth pose at the first recorded frame (AutoDRIVE has no held
-start, unlike the gym's stamp 0). At the lap's end SIGINT reaches the MOLA
-session, which saves the simplemap; the script then writes
-`$AUTODRIVE_OUT/Porto.{mm,yaml}` and `Porto_grid.{png,yaml}` (never under
-third_party/). The map's wall p95 against the official map is REPORTED in
-mola_map.json, never bounded. The gates: no latch, the spawn, one lap, no
-collision, a simplemap and a map written.
+mola_mapping.launch.py `simulator:=autodrive` maps beside it. The stack
+drives from launch (AutoDRIVE has no `start_held`), so `drive_porto` holds the
+car: the supervisor's `~/emergency_stop`, the reset to the spawn, MOLA started
+on the parked car, a wait for its initial re-localization, then
+`~/clear_emergency_stop`. The alignment T is the ground-truth pose at MOLA's
+first keyframe stamp, which `mola_map_track.sh` reads from the simplemap. The
+sim's lap time (`laps_sim_s`) includes the hold (`hold_s`, reported). At the
+lap's end SIGINT reaches the MOLA session, which saves the simplemap; the
+script then writes `$AUTODRIVE_OUT/Porto.{mm,yaml}` and `Porto_grid.{png,yaml}`
+(never under third_party/). The map's wall p95 against the official map is
+REPORTED in mola_map.json, never bounded. The gates: a clean hold, no latch,
+the spawn, one lap, no collision, a simplemap and a map written, T at the
+spawn and joined to the first keyframe, and no teleport in the keyframes.
 """
 
 import json
@@ -24,13 +28,22 @@ import subprocess
 import time
 from pathlib import Path
 
-from _porto_drive import SPAWN_MAP, SPAWN_TOL_M, SPAWN_TOL_RAD, drive_porto
+import yaml
+from _porto_drive import (
+    SPAWN_MAP,
+    SPAWN_TOL_M,
+    SPAWN_TOL_RAD,
+    _wrap,
+    drive_porto,
+)
 from racing_evaluation.map_accuracy import (
     load_grid,
     map_to_wall,
     scenario_truth_grid,
 )
 from racing_test_keywords.autodrive_live import judge_stale_input
+
+from scripts.compare_localization import poses, read_recording
 
 REPO = Path(__file__).resolve().parents[2]
 LAPS = 1
@@ -55,6 +68,8 @@ HOST_COMMAND = (
     " windows"
 )
 END_LATCH_WAIT_S = 1.0
+# A teleport is about 8 m; keyframes are 0.2-0.3 m apart.
+MAX_KEYFRAME_STEP_M = 1.0
 
 
 def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
@@ -160,6 +175,8 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
         "collisions_stack": int(m.collision_count) if m else None,
         "collisions_sim": run.sim_collisions,
         "stale_input": run.stale,
+        "hold_s": run.hold_s,
+        "hold_error": run.hold_error,
         "safety_reasons": dict(run.reasons),
         "host_load": run.load,
         "wall_s": run.wall_s,
@@ -177,6 +194,7 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
     verdict = judge_stale_input(
         run.latch, run.stamps, 0.1, run.stale, run.trace, END_LATCH_WAIT_S
     )
+    assert run.hold_error is None, run.hold_error
     assert run.stale == 0, f"STALE_INPUT x{run.stale}: {verdict}"
     assert run.reasons.get("REASON_ESTOP_LATCHED", 0) == 0, (
         f"emergency stop latched: {dict(run.reasons)}"
@@ -197,3 +215,41 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
         "map_script_tail"
     ]
     assert accuracy is not None, "no grid written"
+
+    # A6: T is the parked spawn, taken at MOLA's first keyframe, and the map
+    # holds no teleport. Under the defect T was 6.75 m off.
+    provenance = yaml.safe_load(Path(f"{stem}.yaml").read_text())
+    t = provenance["T_map_mola"]
+    assert (
+        math.hypot(t["x"] - SPAWN_MAP[0], t["y"] - SPAWN_MAP[1]) <= SPAWN_TOL_M
+        and abs(_wrap(t["yaw"] - SPAWN_MAP[2])) <= SPAWN_TOL_RAD
+    ), f"T_map_mola {t} vs the spawn {SPAWN_MAP}"
+    keyframes = out / "mola_keyframes.tum"
+    subprocess.run(
+        [
+            "sm-cli",
+            "export-keyframes",
+            str(simplemap),
+            "--output",
+            str(keyframes),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    rows = [
+        [float(v) for v in line.split()]
+        for line in keyframes.read_text().splitlines()
+    ]
+    assert provenance["T_stamp"] == rows[0][0], (provenance, rows[0])
+    assert provenance["T_stamp_source"] == "simplemap_first_keyframe"
+    truth = min(
+        poses(read_recording(recording), "/ground_truth/odom"),
+        key=lambda p: abs(p.stamp - rows[0][0]),
+    )
+    assert math.hypot(truth.x - t["x"], truth.y - t["y"]) <= 1e-3, (truth, t)
+    assert abs(_wrap(truth.yaw - t["yaw"])) <= 1e-4, (truth, t)
+    step = max(
+        math.hypot(b[1] - a[1], b[2] - a[2])
+        for a, b in zip(rows, rows[1:], strict=False)
+    )
+    assert step < MAX_KEYFRAME_STEP_M, f"keyframe step {step:.2f} m: a teleport"

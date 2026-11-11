@@ -202,7 +202,7 @@ Where a test is not where you would look:
 - SIM-3770 (slam_toolbox survey map), SIM-3771 (MOLA map), SIM-3780 (fast lap on amcl) and SIM-3781
   (fast lap on MOLA) are local, run by `autodrive_qualify.sh --case survey|mola_map|fast_lap_amcl|fast_lap_mola
   --sim windows`. They fail, never skip, without a sim. SIM-3780/3781 also fail until the data pin carries the
-  Porto `slam/` and `mola/` maps. CHECK-2480..2484 and BRINGUP-1980..1984 (1983: the mapping launch hands sim_pure_pursuit no mapper config; 1984: the truth survey config) are their CI-able parts.
+  Porto `slam/` and `mola/` maps. CHECK-2480..2484, CHECK-2486..2487 (the MOLA map's T stamp and the held start's reasons) and BRINGUP-1980..1984 (1983: the mapping launch hands sim_pure_pursuit no mapper config; 1984: the truth survey config) are their CI-able parts.
 
 ## The tests that matter most
 
