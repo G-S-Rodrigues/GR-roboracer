@@ -317,7 +317,12 @@ def test_check_2480_sim_windows_dry_run_prints_the_route_not_the_container(
         assert part not in out, (part, out)
     order = [
         out.index(p)
-        for p in ("autodrive_route.sh", "test_sim_3750", "ss -ltn", "autodrive -SimPath")
+        for p in (
+            "autodrive_route.sh",
+            "test_sim_3750",
+            "ss -ltn",
+            "autodrive -SimPath",
+        )
     ]
     assert order == sorted(order), out
     assert not any("compose" in c or "docker stop" in c for c in calls), calls
@@ -356,9 +361,7 @@ def test_check_2481_sim_windows_refusals_and_the_vsock_retry(tmp_path) -> None:
     done, calls = _run_windows(tmp_path, "nops", *args, powershell=False)
     assert done.returncode == 6, (done.returncode, done.stderr)
     assert not any(c.startswith("route") for c in calls), calls
-    done, calls = _run_windows(
-        tmp_path, "noexe", *args, AUTODRIVE_SIM_EXE=""
-    )
+    done, calls = _run_windows(tmp_path, "noexe", *args, AUTODRIVE_SIM_EXE="")
     assert done.returncode == 2, (done.returncode, done.stderr)
     assert "AUTODRIVE_SIM_EXE" in done.stderr
     assert not any(c.startswith("route") for c in calls), calls
