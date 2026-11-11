@@ -136,6 +136,7 @@ def test_check_2378_the_late_mola_start_is_named(tmp_path):
     ]
     moved = compare_localization.estimator_start(later)
     assert moved["first_estimate_stamp"] == pytest.approx(1.1)
-    assert moved["travel_before_first_estimate"] > start[
-        "travel_before_first_estimate"
-    ]
+    assert (
+        moved["travel_before_first_estimate"]
+        > start["travel_before_first_estimate"]
+    )

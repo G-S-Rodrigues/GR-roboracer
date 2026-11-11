@@ -92,9 +92,7 @@ def _run_launch(entities, ledger, ready=(), exited=()) -> int:
             for path in ready:
                 _wait_until(path.exists, f"{path} touched")
             for prefix in exited:
-                _wait_until(
-                    _ledger_exited(ledger, prefix), f"{prefix} exited"
-                )
+                _wait_until(_ledger_exited(ledger, prefix), f"{prefix} exited")
         finally:
             stop()
 
@@ -263,8 +261,10 @@ def test_check_2377_a_t0_stall_names_what_exited(real_launch_run):
 
     def stall() -> None:
         _wait_until(
-            lambda: real_launch_run.state["ledger"] is not None
-            and _ledger_exited(real_launch_run.state["ledger"], "early")(),
+            lambda: (
+                real_launch_run.state["ledger"] is not None
+                and _ledger_exited(real_launch_run.state["ledger"], "early")()
+            ),
             "early exited",
         )
         raise TimeoutError("node not found within 1s: slam_toolbox")
