@@ -187,7 +187,7 @@ Where a test is not where you would look:
   `docs_check.py`, and `scripts/observer_map.py`, which needs the sourced overlay. Both sit under
   `scripts/tests/*`, so no lap is selected for them.
 - `scripts/tests/test_heavy_lane.py`: CHECK-2441/2442/2444 drop to uid 65534 with `setpriv` when run as
-  root (`dev` and CI are root), and CHECK-2443 asserts root instead of skipping.
+  root (`dev` and CI are root), and CHECK-2443 asserts root instead of skipping and `fs.protected_regular` >= 1 (`ci.yaml` sets it on the runner).
 - SIM-5060 solves only on a night the optimizer code changed. On any other night it records that it
   did not run.
 - The conformance tests select by the backend's declared capabilities

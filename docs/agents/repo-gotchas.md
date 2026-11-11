@@ -74,7 +74,7 @@ Traps any task in this repository can hit. Each one cost real time at least once
     and names `chmod 1777` (CHECK-2444). `fs.protected_regular` also refuses an `O_CREAT` open, root
     included, of another user's file in a sticky directory, so `owner` is stamped in place (`dd
     conv=nocreat`): a plain `>` would leave a stamp that is permanently stale and names the wrong holder,
-    with no error (CHECK-2443). The host's systemd-tmpfiles cleans `/tmp` after 30 days and at boot, and a
+    with no error (CHECK-2443; the CI runner's kernel has it 0, so `ci.yaml` sets it to 1 before `check.sh`). The host's systemd-tmpfiles cleans `/tmp` after 30 days and at boot, and a
     removed host lane leaves `dev`'s `/lane` a deleted directory: the script exits 4 there (CHECK-2445);
     `docs/agents/running-wsl.md` has the exclusion.
 
