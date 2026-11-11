@@ -1,0 +1,354 @@
+# Written by tools/autodrive_identify.py analyse; never edit by hand
+# (CHECK-2670 re-derives it from the committed recordings).
+# TUM min-time reads only ggv row 0 and its per-axle Pacejka tyres
+# (optimize.py:168,202,204): a radius-dependent grip reaches it only
+# as that one number. Carrying the dependence needs a tyre set refit
+# to the by-radius data or a fork change taking mue(curvature).
+# Nothing loads this file until the owner rules.
+edition: 2026-iros-practice
+kind: sliding
+top_speed:
+  value: 22.88
+  label: guide
+  source: guide
+  line: 204
+top_speed_predicted:
+  value: 22.4
+  label: inferred
+  source: plan facts 2026-11-08
+  assumption: increment 2's predicted_top_speed recomputes it
+lateral:
+  bins:
+  - radius: 0.56
+    n: 0
+    bound: lower
+  - radius: 0.78
+    n: 0
+    bound: lower
+  - radius: 1.21
+    n: 9
+    bound: lower
+    ay_post_cliff:
+      value: 4.8928
+      label: measured
+      source: open-loop
+      n: 1
+      recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+    ay_peak:
+      value: 5.10455
+      label: measured
+      source: open-loop
+      n: 3
+      recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+  - radius: 2.05
+    n: 24
+    bound: lower
+    ay_post_cliff:
+      value: 5.34925
+      label: measured
+      source: open-loop
+      n: 4
+      recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+    ay_peak:
+      value: 6.456
+      label: measured
+      source: open-loop
+      n: 3
+      recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+  - radius: 3.08
+    n: 24
+    bound: lower
+    ay_post_cliff:
+      value: 5.501525
+      label: measured
+      source: open-loop
+      n: 18
+      recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+    ay_peak:
+      value: 7.3316
+      label: measured
+      source: open-loop
+      n: 3
+      recording_sha256: 083e3bc888d900399b1a187af75815dc5634ac426eac19de0142718596e9c7f2
+  ay_reached:
+    value: null
+    label: measured
+    source: closed-loop
+    pending: closed-loop sweep (Step 5)
+drive_ax:
+  value: null
+  label: inferred
+  source: F2/F4
+  assumption: offline 2026-11-08 (plan F2-F4); refitted by committed code in increment
+    2
+  intercept: 5.38
+  slope: -0.273
+  valid_to_mps: 18.6
+braking_ax:
+  value: null
+  label: inferred
+  source: F2
+  assumption: offline 2026-11-08 (plan F2-F4); refitted by committed code in increment
+    2
+  intercept: 5.4
+  slope: 0.273
+ggv:
+  columns:
+  - v_mps
+  - ax_max_mps2
+  - ay_max_mps2
+  rule: 'ax: sliding braking law; ay: root of a = f(v^2 / a) over the radius bins
+    (ggv_from_radius)'
+  rows:
+  - v: 0.0
+    values:
+    - 5.4
+    - 4.8928
+    label: inferred
+  - v: 1.0
+    values:
+    - 5.673
+    - 4.8928
+    label: inferred
+    extrapolated: true
+  - v: 2.0
+    values:
+    - 5.946
+    - 4.8928
+    label: inferred
+    extrapolated: true
+  - v: 3.0
+    values:
+    - 6.219
+    - 5.179504
+    label: inferred
+  - v: 4.0
+    values:
+    - 6.492
+    - 5.477986
+    label: inferred
+  - v: 5.0
+    values:
+    - 6.765
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 6.0
+    values:
+    - 7.038
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 7.0
+    values:
+    - 7.311
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 8.0
+    values:
+    - 7.584
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 9.0
+    values:
+    - 7.857
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 10.0
+    values:
+    - 8.13
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 11.0
+    values:
+    - 8.403
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 12.0
+    values:
+    - 8.676
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 13.0
+    values:
+    - 8.949
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 14.0
+    values:
+    - 9.222
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 15.0
+    values:
+    - 9.495
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 16.0
+    values:
+    - 9.768
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 17.0
+    values:
+    - 10.041
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 18.0
+    values:
+    - 10.314
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 19.0
+    values:
+    - 10.587
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 20.0
+    values:
+    - 10.86
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 21.0
+    values:
+    - 11.133
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 22.0
+    values:
+    - 11.406
+    - 5.501525
+    label: inferred
+    extrapolated: true
+  - v: 22.88
+    values:
+    - 11.64624
+    - 5.501525
+    label: inferred
+    extrapolated: true
+ax_max_machines:
+  columns:
+  - v_mps
+  - ax_max_machines_mps2
+  rule: the drive law, clamped at 0, extrapolated past its slip range
+  rows:
+  - v: 0.0
+    values:
+    - 5.38
+    label: inferred
+  - v: 1.0
+    values:
+    - 5.107
+    label: inferred
+  - v: 2.0
+    values:
+    - 4.834
+    label: inferred
+  - v: 3.0
+    values:
+    - 4.561
+    label: inferred
+  - v: 4.0
+    values:
+    - 4.288
+    label: inferred
+  - v: 5.0
+    values:
+    - 4.015
+    label: inferred
+  - v: 6.0
+    values:
+    - 3.742
+    label: inferred
+  - v: 7.0
+    values:
+    - 3.469
+    label: inferred
+  - v: 8.0
+    values:
+    - 3.196
+    label: inferred
+  - v: 9.0
+    values:
+    - 2.923
+    label: inferred
+  - v: 10.0
+    values:
+    - 2.65
+    label: inferred
+  - v: 11.0
+    values:
+    - 2.377
+    label: inferred
+  - v: 12.0
+    values:
+    - 2.104
+    label: inferred
+  - v: 13.0
+    values:
+    - 1.831
+    label: inferred
+  - v: 14.0
+    values:
+    - 1.558
+    label: inferred
+  - v: 15.0
+    values:
+    - 1.285
+    label: inferred
+  - v: 16.0
+    values:
+    - 1.012
+    label: inferred
+  - v: 17.0
+    values:
+    - 0.739
+    label: inferred
+  - v: 18.0
+    values:
+    - 0.466
+    label: inferred
+  - v: 19.0
+    values:
+    - 0.193
+    label: inferred
+    extrapolated: true
+  - v: 20.0
+    values:
+    - 0.0
+    label: inferred
+    extrapolated: true
+    clamped: true
+  - v: 21.0
+    values:
+    - 0.0
+    label: inferred
+    extrapolated: true
+    clamped: true
+  - v: 22.0
+    values:
+    - 0.0
+    label: inferred
+    extrapolated: true
+    clamped: true
+  - v: 22.88
+    values:
+    - 0.0
+    label: inferred
+    extrapolated: true
+    clamped: true

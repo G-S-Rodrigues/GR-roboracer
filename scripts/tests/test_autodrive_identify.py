@@ -1245,3 +1245,34 @@ def test_check_2685_parse_sweep_joins_one_frame_per_stamp(tmp_path) -> None:
         broken = tmp_path / "no_enc.jsonl.gz"
         _sweep_file(broken, drop={"enc"})
         tool.parse_sweep(broken)
+
+
+LATERAL_RECORDING = (
+    VEHICLE_DIR / "identification" / "2026-iros-practice-lateral.jsonl.gz"
+)
+
+
+def test_check_2670_committed_lateral_recording_reanalyses_to_limits(
+    tmp_path,
+) -> None:
+    """CHECK-2670: `limits_sliding.yaml` and `limits_peak.yaml` are exactly
+    what the tool computes from the committed lateral recording and
+    `source.yaml` (CHECK-1780's pattern): no hand edit survives, and the
+    recording's bytes are their provenance."""
+    import hashlib
+
+    tool = _tool()
+    assert LATERAL_RECORDING.is_file(), "lateral recording not committed"
+    digest = hashlib.sha256(LATERAL_RECORDING.read_bytes()).hexdigest()
+    for _ in range(2):  # deterministic
+        tool.write_limits(
+            tmp_path,
+            tool.lateral_bins(LATERAL_RECORDING, SOURCE),
+            source=SOURCE,
+            recording_sha256=digest,
+        )
+    for name in ("limits_sliding.yaml", "limits_peak.yaml"):
+        committed = VEHICLE_DIR / name
+        assert committed.is_file(), f"{name} not committed"
+        assert (tmp_path / name).read_text() == committed.read_text(), name
+        assert digest in committed.read_text(), name
