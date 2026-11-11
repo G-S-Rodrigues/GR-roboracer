@@ -36,6 +36,10 @@ neutral_paths:
   - LICENSE
   - ros_ws/src/*/CLAUDE.md
   - scripts/tests/*
+  # video capture only: no lap starts it (VIDEO.md starts it beside RViz)
+  - scripts/observer_map.py
+  # the repo skill's text and its scripts; no lap reads them
+  - .claude/skills/*
   # raceline/ is offline: its output reaches a lap only through files committed
   # under config/racelines/ (mapped to the optimized_raceline planner).
   - raceline/*

@@ -1566,3 +1566,20 @@ def test_check_2350_a_default_cannot_be_experimental() -> None:
     data["roles"]["controller"]["verified_by"] = []
     with pytest.raises(ValueError, match="controller=pp"):
         _select(["x"], data=data)
+
+
+def test_check_2470_video_tooling_paths_are_neutral_on_the_real_map() -> None:
+    """CHECK-2470: the observer map helper, the repo skill and the skill's
+    tests select only the reference lap: no lap starts or reads them."""
+    stack = load_stack(REPO_ROOT)
+    deps = reverse_dependents(read_manifests(REPO_ROOT))
+
+    for path in (
+        "scripts/observer_map.py",
+        ".claude/skills/gr-roboracer-docs/VIDEO.md",
+        ".claude/skills/gr-roboracer-docs/scripts/docs_check.py",
+        "scripts/tests/test_docs_check.py",
+    ):
+        scope = select_ready([path], stack, deps)
+        assert scope.whole_tree is False, path
+        assert scope.tests == ("SIM-3020",), path
