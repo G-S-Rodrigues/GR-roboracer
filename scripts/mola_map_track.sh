@@ -31,8 +31,11 @@ usage="usage: mola_map_track.sh <scenario.yaml> <output-stem> <seed>"
 # mapping lap already wrote (a lap on another simulator, e.g. AutoDRIVE:
 # mola_mapping.launch.py simulator:=autodrive); the alignment T is then read
 # from the recording at $MOLA_RECORDING (default log/mola_mapping.jsonl) at
-# stamp $FIRST_STAMP (default 0.0). --dry-run prints that plan and exits
-# before anything is read, removed or launched.
+# the stamp of the simplemap's first keyframe (`sm-cli export-keyframes`,
+# CHECK-2486): the script exits non-zero, naming both stamps, unless a
+# /ground_truth/odom record lies within 1 ms of it, or if that keyframe is
+# not MOLA's origin. --dry-run prints that plan and exits before anything is
+# read, removed or launched.
 from_simplemap=
 dry_run=0
 while [ $# -gt 0 ]; do
@@ -84,7 +87,19 @@ simplemap=$(pwd)/log/mola_mapping.simplemap
 if [ -n "$from_simplemap" ]; then
     test -s "$from_simplemap" || { echo "no simplemap: $from_simplemap" >&2; exit 1; }
     simplemap=$(realpath "$from_simplemap")
-    first_stamp=${FIRST_STAMP:-0.0}
+    # MOLA's first processed scan is the simplemap's first keyframe; its stamp
+    # is the one /scan and /ground_truth/odom share (one stamp per frame).
+    kfs=$(pwd)/log/mola_mapping_kfs.tum
+    sm-cli export-keyframes "$simplemap" --output "$kfs" >/dev/null
+    first_stamp=
+    read -r first_stamp _ <"$kfs" || true
+    test -n "$first_stamp" || { echo "no keyframe in $simplemap" >&2; exit 1; }
+    join_tol=0.001
+    t_stamp_source=simplemap_first_keyframe
+else
+    kfs=
+    join_tol=
+    t_stamp_source=held_clock_zero
 fi
 # The lap itself (kept at the top level, as the script was before the flag).
 if [ -z "$from_simplemap" ]; then
@@ -181,10 +196,21 @@ sm2mm -i "$simplemap" -o "$output.mm" -p config/localization/mola_sm2mm.yaml
 # provenance records it so the grid and the yaml agree. Written to a file for
 # the grid step and the provenance step.
 t_file=$(pwd)/log/mola_mapping_T.txt
-python3 - "$first_stamp" "$t_file" "$recording" <<'PY'
+python3 - "$first_stamp" "$t_file" "$recording" "$join_tol" "$kfs" <<'PY'
 import json, math, sys
 
 first_stamp, out = float(sys.argv[1]), sys.argv[2]
+join_tol, kfs = sys.argv[4], sys.argv[5]
+if kfs:  # --from-simplemap: the first keyframe must be MOLA's origin
+    kx, ky, _, _, _, kqz, kqw = (
+        float(v) for v in open(kfs).readline().split()[1:]
+    )
+    kyaw = 2 * math.atan2(kqz, kqw)
+    if max(abs(kx), abs(ky)) > 1e-3 or abs(kyaw) > 1e-3:
+        sys.exit(
+            f"mola_map_track.sh: the first keyframe (stamp {first_stamp}) is"
+            f" not at MOLA's origin: x {kx}, y {ky}, yaw {kyaw}"
+        )
 truth = None
 for line in open(sys.argv[3]):
     try:
@@ -196,6 +222,11 @@ for line in open(sys.argv[3]):
     stamp = record["stamp"]["sec"] + record["stamp"]["nanosec"] * 1e-9
     if truth is None or abs(stamp - first_stamp) < abs(truth[0] - first_stamp):
         truth = (stamp, record["payload"])
+if join_tol and abs(truth[0] - first_stamp) > float(join_tol):
+    sys.exit(
+        f"mola_map_track.sh: no /ground_truth/odom within {join_tol} s of the"
+        f" first keyframe stamp {first_stamp}: nearest {truth[0]}"
+    )
 _, pose = truth
 yaw = 2 * math.atan2(pose["qz"], pose["qw"])
 with open(out, "w") as handle:
@@ -217,11 +248,13 @@ sm2mm -i "$world_simplemap" -o "$grid_mm" -p config/localization/mola_sm2grid.ya
 (cd "$(dirname "$output")" && mm2grid "$grid_mm" --occupied-thresh 0.65 \
     --free-thresh 0.196 -o "$(basename "$output")_grid")
 
-python3 - "$output" "$scenario" "$seed" "$time_scale" "$first_stamp" "$stem" "$t_file" <<'PY'
+python3 - "$output" "$scenario" "$seed" "$time_scale" "$first_stamp" "$stem" "$t_file" "$t_stamp_source" <<'PY'
 import hashlib, subprocess, sys
 import yaml
 
-output, scenario, seed, time_scale, first_stamp, stem, t_file = sys.argv[1:]
+(
+    output, scenario, seed, time_scale, first_stamp, stem, t_file, source
+) = sys.argv[1:]
 first_stamp = float(first_stamp)
 x, y, yaw = (float(v) for v in open(t_file).read().split())
 
@@ -232,6 +265,10 @@ def version(package):
     ).split("-")[0]
 
 
+source_text = {
+    "held_clock_zero": "the held clock's 0 (the gym holds the sim there)",
+    "simplemap_first_keyframe": "the simplemap's first keyframe",
+}[source]
 mm = open(f"{output}.mm", "rb").read()
 grid = open(f"{output}_grid.png", "rb").read()
 name = stem.rsplit("/", 1)[-1]
@@ -252,6 +289,8 @@ provenance = {
         "yaw": yaw,
     },
     "T_source": "first_processed_scan",
+    "T_stamp": first_stamp,
+    "T_stamp_source": source,
     "mm_sha256": hashlib.sha256(mm).hexdigest(),
     "mm_bytes": len(mm),
     "loop_closure": False,
@@ -268,6 +307,7 @@ with open(f"{output}.yaml", "w") as handle:
         f"# T_map_mola is the /ground_truth/odom pose at the stamp "
         f"({first_stamp}) of MOLA's\n# first processed scan, used only to "
         f"score the run against ground truth.\n"
+        f"# The stamp is {source_text}.\n"
     )
     yaml.safe_dump(provenance, handle, sort_keys=False)
 PY
