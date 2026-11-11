@@ -127,6 +127,8 @@ def test_check_2901_a_steering_clamp_is_not_a_latch():
         )
     )
     observer._on_status(_status(96.78, SafetyStatus.REASON_NONE))
+    assert observer._seconds(observer.first_latch.header.stamp) == 96.770
+    assert observer.first_latch.reason == SafetyStatus.REASON_COMMAND_LIMIT
     context = observer.stop_context(97.03)
     assert context["latched"] is False
     assert context["latch"] is None
@@ -156,6 +158,8 @@ def test_check_2902_a_clamp_does_not_move_the_stale_anchor():
             SafetyStatus.CLAMP_STALE_INPUT | SafetyStatus.CLAMP_ESTOP,
         )
     )
+    assert observer.first_latch.reason == SafetyStatus.REASON_COMMAND_LIMIT
+    assert observer._seconds(observer.first_latch.header.stamp) == 0.095
     assert observer.verdict() == "supervisor-lag"
     assert "0.29" in observer._startup_trace()
     context = observer.stop_context(0.31)
