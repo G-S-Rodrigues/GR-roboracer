@@ -1,4 +1,4 @@
-"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2280).
+"""Tier 2: front end B against the devkit stand-in (SIMAD-2200 to 2280, 2320).
 
 B (`racing_sim_autodrive.devkit_node`) and the devkit stand-in run as
 processes: B's stack side on the domain S, its devkit side and the stand-in on
@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 import rclpy
 from ackermann_msgs.msg import AckermannDriveStamped
+from diagnostic_msgs.msg import DiagnosticStatus
 from nav_msgs.msg import Odometry
 from racing_interfaces.srv import Reset
 from rclpy.context import Context
@@ -46,6 +47,12 @@ STATE = QoSProfile(
     depth=2000,
     reliability=ReliabilityPolicy.RELIABLE,
     durability=DurabilityPolicy.VOLATILE,
+)
+LATCHED = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
 )
 FRAMES = 120
 BRIDGE_UP = "devkit bridge on"
@@ -767,3 +774,46 @@ def test_simad_2250_the_devkit_tf_never_reaches_the_stack_domain(
     code = clash.wait(timeout=60.0)
     text = log.read_text(errors="replace")
     assert code != 0 and "TF" in text and str(dl.STACK_DOMAIN) in text, text
+
+
+def test_simad_2320_b_clamps_a_lidar_stamp_that_steps_back(run, observer):
+    """SIMAD-2320: the node's own use of `StampClamp` (SIMAD-1490 holds the
+    class). The stand-in stamps lidar message 60 18 ms before lidar message
+    59, as a stepped host clock would (gotcha 45). B's `/scan` stamps still
+    rise strictly, and `~/stamp_status` reports `clamped_frames >= 1` and
+    `step_backs == 1`."""
+    scans, statuses = [], []
+    stack = observer.stack
+    mine = [
+        stack.create_subscription(
+            LaserScan, dl.topic("/scan"), scans.append, SENSOR
+        ),
+        stack.create_subscription(
+            DiagnosticStatus,
+            dl.topic("/racing_sim/stamp_status"),
+            statuses.append,
+            LATCHED,
+        ),
+    ]
+    spin(observer, 0.5)
+    _, _, standin, _, _ = run(
+        *dl.STATIONARY,
+        "--pace",
+        "recorded",
+        "--count",
+        str(FRAMES),
+        "--lidar-step-back",
+        "60",
+        ready=lambda: all(m.get_publisher_count() >= 1 for m in mine),
+    )
+    spin_until(
+        observer, lambda: standin.poll() is not None, 60.0, "stand-in done"
+    )
+    spin(observer, 1.0)
+    stamps = [stamp_ns(m) for m in scans]
+    assert len(stamps) > 60, len(stamps)
+    assert all(b > a for a, b in zip(stamps, stamps[1:], strict=False))
+    assert statuses, "no stamp_status"
+    values = {kv.key: kv.value for kv in statuses[-1].values}
+    assert int(values["clamped_frames"]) >= 1, values
+    assert int(values["step_backs"]) == 1, values

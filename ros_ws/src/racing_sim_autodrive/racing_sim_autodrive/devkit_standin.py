@@ -280,6 +280,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="lidar",
         help="the scan's frame id; only SIM-3720's negative control sets it",
     )
+    parser.add_argument(
+        "--lidar-step-back",
+        type=int,
+        default=None,
+        metavar="FRAME",
+        help="stamp that lidar message 18 ms before the previous lidar stamp,"
+        " as a stepped host clock would (gotcha 45; SIMAD-2320)",
+    )
     return parser
 
 
@@ -372,6 +380,19 @@ def main(argv: list[str] | None = None) -> int:
     def stamp():
         return node.get_clock().now().to_msg()
 
+    lidar_seen = {"n": 0, "last": None}
+
+    def lidar_stamp():
+        """The lidar message's stamp; with --lidar-step-back it is one frame
+        18 ms behind the previous one."""
+        msg = stamp()
+        lidar_seen["n"] += 1
+        if args.lidar_step_back == lidar_seen["n"] and lidar_seen["last"]:
+            ns = lidar_seen["last"] - 18_000_000
+            msg.sec, msg.nanosec = divmod(ns, 10**9)
+        lidar_seen["last"] = msg.sec * 10**9 + msg.nanosec
+        return msg
+
     def joint(angle, name):
         msg = JointState()
         msg.header.stamp = stamp()
@@ -429,7 +450,7 @@ def main(argv: list[str] | None = None) -> int:
             return msg
         if name == "lidar":
             msg = LaserScan()
-            msg.header.stamp = stamp()
+            msg.header.stamp = lidar_stamp()
             msg.header.frame_id = args.frame_id_lidar
             msg.angle_min = -2.35619
             msg.angle_max = 2.35619
