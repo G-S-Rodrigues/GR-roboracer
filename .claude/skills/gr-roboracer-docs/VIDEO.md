@@ -21,7 +21,7 @@ it publishes none), start `python3 scripts/observer_map.py --scenario <the comma
 --pose-source <its pose source>` in the capture container, **after `record.sh` has written
 `<name>-geom.txt`** (`record.sh`'s leftover check matches `lib/nav2_`, so an observer started
 first makes it exit 3; its `pkill -f lib/nav2_` cleanup stops the observer's nodes and the helper
-exits with them). The helper refuses (exit 3) when the run already has a `/map` publisher. Wait for
+exits with them). The helper refuses `--pose-source amcl` and `slam_toolbox` (exit 3), which publish `/map` themselves; that is what guards against two `/map` publishers, since in the headless AutoDRIVE order the observer starts first and no publisher exists yet to see. Wait for
 its `observer map: ... ok` line before recording starts.
 
 **Only the simulator's window is ever saved** (R-i). Never the desktop, never another window;
