@@ -55,6 +55,14 @@ jobs:
           cache-from: type=gha,scope=dev
           cache-to: type=gha,mode=max,scope=dev
 
+      # CHECK-2443 (gotcha #48) asserts fs.protected_regular >= 1, as on the
+      # owner's kernel; the runner's is 0. The sysctl is not namespaced, so
+      # the container sees it.
+      - name: Set fs.protected_regular=1
+        run: |
+          sudo sysctl -w fs.protected_regular=1
+          sysctl fs.protected_regular
+
       - name: check.sh --ci
         run: |
           docker run --rm \
@@ -141,6 +149,14 @@ jobs:
       - name: Build/setup seconds (E-5)
         run: |
           echo "Build/setup seconds, job start to check.sh: $(( $(date +%s) - NIGHTLY_T0 ))" >> "$GITHUB_STEP_SUMMARY"
+
+      # CHECK-2443 (gotcha #48) asserts fs.protected_regular >= 1, as on the
+      # owner's kernel; the runner's is 0. The sysctl is not namespaced, so
+      # the container sees it.
+      - name: Set fs.protected_regular=1
+        run: |
+          sudo sysctl -w fs.protected_regular=1
+          sysctl fs.protected_regular
 
       # NIGHTLY_TIER5 crosses into the container only through --env: a step
       # `env:` sets it on the runner, not inside `docker run`.

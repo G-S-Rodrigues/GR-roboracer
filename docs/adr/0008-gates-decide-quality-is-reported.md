@@ -16,7 +16,7 @@ load". SIM-3110 and SIM-3120 pin a lap time to 0.05 s. A bound that close to a m
 measures the host as much as the method: an unseeded matcher, a particle filter or a loaded host moves
 the number, the gate goes red, and the work that follows is a fix part and a root-cause hunt, not
 algorithm work. Measured on 2026-11-08: X1 got 0 of 40 runs green in 4 days, and three runs queued on
-one heavy lane (gotcha #29) to re-measure bounds.
+one heavy lane (gotcha #48) to re-measure bounds.
 
 A tight bound also cannot tell a regression from noise, and it penalises improvement work: a method
 that changes for the better has to re-measure and re-set its bound in the same PR. And the stack's
