@@ -57,19 +57,6 @@ HOST_COMMAND = (
 END_LATCH_WAIT_S = 1.0
 
 
-def first_truth_stamp(recording: Path) -> float:
-    """The stamp of the first /ground_truth/odom record: the parked car."""
-    for line in recording.read_text().splitlines():
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if record.get("topic") == "/ground_truth/odom":
-            stamp = record["stamp"]
-            return stamp["sec"] + stamp["nanosec"] * 1e-9
-    raise AssertionError(f"no /ground_truth/odom in {recording}")
-
-
 def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
     out = Path(os.environ.get("AUTODRIVE_OUT", tmp_path))
     out.mkdir(parents=True, exist_ok=True)
@@ -156,7 +143,6 @@ def test_sim_3771_porto_mola_map(tmp_path: Path) -> None:
             env={
                 **os.environ,
                 "MOLA_RECORDING": str(recording),
-                "FIRST_STAMP": repr(first_truth_stamp(recording)),
             },
             capture_output=True,
             text=True,
