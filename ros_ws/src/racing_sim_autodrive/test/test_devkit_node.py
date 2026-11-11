@@ -241,7 +241,7 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
     ]
     assert all(b > a for a, b in zip(stamps, stamps[1:], strict=False))
     # E2: B's receipt stamp is the stand-in's lidar header stamp, unchanged
-    # unless clamped (gotcha 46).
+    # unless clamped (gotcha 45).
     assert lidar_stamps
     seen = [stamp_ns(m) for m in scans if stamp_ns(m) >= min(lidar_stamps)]
     assert seen and all(_lidar_or_clamped(n, lidar_stamps) for n in seen)
@@ -250,7 +250,7 @@ def test_simad_2200_every_contract_topic_flows_from_the_devkit(run, observer):
 
 def _lidar_or_clamped(stamp: int, lidar_stamps: set[int]) -> bool:
     """A B stamp is a devkit lidar stamp, or a clamp run's k us above one
-    (1 <= k <= 1000: the host clock stepped back, gotcha 46)."""
+    (1 <= k <= 1000: the host clock stepped back, gotcha 45)."""
     return stamp in lidar_stamps or any(
         0 < stamp - lidar <= 1_000_000 and (stamp - lidar) % 1000 == 0
         for lidar in lidar_stamps

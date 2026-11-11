@@ -35,6 +35,11 @@ WHOLE_TREE_FILES = (
     ".clang-tidy",
     ".clang-format",
     "ruff.toml",
+    # A data bump is one gitlink path whose contents the diff does not show;
+    # whole tree fails closed (ADR 0007, ADR 0009). Per-file placement of a
+    # bump is an open topic.
+    "third_party/GR-roboracer-data",
+    ".gitmodules",
 )
 WHOLE_TREE_BASENAMES = ("package.xml", "CMakeLists.txt")
 WHOLE_TREE_PREFIXES = ("docker/", "config/", "tests/golden/")

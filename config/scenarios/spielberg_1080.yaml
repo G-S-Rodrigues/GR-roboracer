@@ -62,4 +62,4 @@ metrics:
   scenario_id: spielberg_1080
   track_version: spielberg-v1
 track: ../tracks/spielberg.yaml
-map_directory: maps
+map_directory: ../../third_party/GR-roboracer-data/tracks/Spielberg/maps

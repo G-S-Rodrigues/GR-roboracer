@@ -52,7 +52,7 @@ percentile) and 0.21 m (median).
 
 The denser surveys beside the committed grid, measured against the track's ground-truth walls, have a
 95th-percentile wall deviation of 0.067 m at 0.05 m cells, 0.049 m at 0.025 m and 0.046 m at 0.02 m
-(`config/scenarios/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers hold the full figures).
+(`third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam_0025/` and `slam_0020/`; their headers hold the full figures).
 
 ## Pose-source data
 
@@ -107,7 +107,7 @@ on `config/scenarios/porto.yaml` at commit `e604c81`.
 The recording shows the real simulator, ROS and SLAM Toolbox path building the Spielberg grid
 over a complete survey lap, at a playback acceleration disclosed beside it. The committed map is a
 generated survey map: the vehicle drives on ground truth while SLAM Toolbox builds the grid
-(`config/scenarios/maps/Spielberg/slam/Spielberg.yaml`). It is not an autonomous SLAM result. See
+(`third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg.yaml`). It is not an autonomous SLAM result. See
 [Survey mapping](workflows/mapping.md#survey-mapping) for the command.
 
 [![SLAM Toolbox building the Spielberg survey map, 10.0x playback](assets/mapping-preview.gif)](https://drive.google.com/file/d/1t3zhPOqS_hqWlyoussUel7uGPjXklRbF/view)

@@ -369,7 +369,7 @@ Traps any task in this repository can hit. Each one cost real time at least once
     reference and seeds from the file on disk, and any iteration bound (`MINTIME_MAX_ITER`) is
     measured in `gr-roboracer-dev`, the nightly's image, never copied from the fork's container.
 
-46. **The `dev` container's wall clock steps back, and a node that stamps with it publishes backwards
+45. **The `dev` container's wall clock steps back, and a node that stamps with it publishes backwards
     stamps.** Measured 2026-11-10 in `gr-roboracer-dev` under WSL2 over 120 s, `time.time()` against
     `time.monotonic()`: steps of -18.27, -18.77, -17.05 and -15.31 ms at t = 25.65, 55.65, 85.65 and
     115.66 s, exactly every 30.0 s, and wall minus monotonic -74 ms over the run. The cause is presumed to be
@@ -384,3 +384,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     tolerate backwards stamps: that would hide a real ordering bug on the gym. Any other node that stamps from
     the wall clock under AutoDRIVE has the same trap. **On a real car**, run a time sync that slews (chrony,
     with `makestep` limited to start-up), never one that steps the clock mid-run.
+
+## Track data
+
+44. **A checkout or `.scratch` worktree has no track data until the submodule is initialised.** Run
+    `git submodule update --init third_party/GR-roboracer-data` **on the host**: in `dev` git fails on a
+    host worktree (#23). Do it again in every new worktree and after merging a main that bumped the pin.
+    Without it, real-track scenarios raise at load naming the init command (SIMJAX-1600), where the
+    gym's bundled Spielberg would otherwise have masked the gap silently (G1). analytic_circle and
+    contract_test still run. ADR 0009. Run `python -m raceline` only after the init: its default
+    `--out-dir` is inside the submodule folder, so a run before init fills the empty folder and init
+    then fails with `clone ... failed`. Never push from the submodule checkout: its `origin` is HTTPS
+    and the push prompts forever (#5); push the data repo from a normal clone (`~/gitroot/GR-roboracer-data`).

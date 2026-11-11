@@ -40,9 +40,10 @@ from scripts.raceline_report import (
 
 REPO = Path(__file__).resolve().parents[2]
 REPORT_DIR = REPO / "log" / "raceline-report"
+TRACKS = REPO / "third_party" / "GR-roboracer-data" / "tracks"
 RACELINES = sorted(
     path
-    for path in (REPO / "config" / "racelines").glob("*/*/*.yaml")
+    for path in TRACKS.glob("*/racelines/*/*.yaml")
     if yaml.safe_load(path.read_text())["optimizer"] == "tum_mintime"
 )
 # MINTIME_MAX_WALL_S (1200) for the solve plus the min-curv stages that make
@@ -131,7 +132,12 @@ def regenerate(doc: dict, out_dir: Path) -> tuple[Path, dict, float]:
         f"regeneration exited {done.returncode} (the CLI's verifier rejected "
         f"the line or the solve failed):\n{done.stderr[-2000:]}"
     )
-    folder = out_dir / doc["track"] / doc["vehicle_version"]
+    folder = (
+        out_dir
+        / Path(doc["source"]["path"]).stem
+        / "racelines"
+        / doc["vehicle_version"]
+    )
     fresh_csv = folder / f"{doc['optimizer']}.csv"
     fresh_doc = yaml.safe_load(
         (folder / f"{doc['optimizer']}.yaml").read_text(encoding="utf-8")
@@ -153,11 +159,11 @@ def test_sim_5060_has_mintime_lines_to_regenerate() -> None:
 @pytest.mark.parametrize(
     "yaml_path",
     RACELINES,
-    ids=[str(p.relative_to(REPO / "config" / "racelines")) for p in RACELINES],
+    ids=[str(p.relative_to(TRACKS)) for p in RACELINES],
 )
 def test_sim_5060_mintime_regenerates(yaml_path: Path, tmp_path: Path) -> None:
     committed = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-    name = str(yaml_path.relative_to(REPO / "config" / "racelines"))
+    name = str(yaml_path.relative_to(TRACKS))
     changed = mintime_code_changed(committed, current_fingerprint())
     print(f"\nSIM-5060 {name}: committed solver {committed.get('solver')}")
     print(f"SIM-5060 {name}: optimizer code changed: {changed}")

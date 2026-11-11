@@ -1,8 +1,8 @@
 # Running on WSL2
 
 The validated host for the RViz window is WSL2 (Ubuntu 24.04) with WSLg. User-facing setup is in
-`docs/setup.md` and `docs/quick-start.md` and says nothing about WSL; this file holds what is
-specific to it. Like `repo-gotchas.md`, the wrong thing here does not raise an error.
+`docs/setup.md` and `docs/quick-start.md`, and user docs may cover WSL2 steps; this file holds
+what is specific to the host and agent-only. Like `repo-gotchas.md`, the wrong thing here does not raise an error.
 
 ## Host
 

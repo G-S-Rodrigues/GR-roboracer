@@ -15,7 +15,7 @@ installed into the image unmodified.
   geometry for the report's reference row). Nothing else reads it, and the
   report renders "upstream reference: not available" when the submodule is not
   initialised, which is the default in a clone.
-- The pin matches the revision `config/scenarios/maps/Spielberg/NOTICE.md`
+- The pin matches the revision `third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/NOTICE.md`
   derives the Spielberg track from.
 - Initialise with `git submodule update --init third_party/f1tenth_racetracks`.
 
@@ -31,3 +31,16 @@ installed into the image unmodified.
   BSD.
 - The committed MOLA map (`.mm`) is **data output by** GPL-3.0 software. It is
   data, not a copy of the program.
+
+## GR-roboracer-data (tracks, SLAM maps, racelines)
+
+- Upstream: `https://github.com/G-S-Rodrigues/GR-roboracer-data` (ours), pinned by SHA in the gitlink, no
+  tags. Data lands there by PR into `main` before this repository pins it (ADR 0009).
+- Licence: **GPL-3.0** (`LICENSE` in the submodule). Its `NOTICE.md` carries the Spielberg provenance
+  (GPL-3.0, from `f1tenth_racetracks`) and the Porto notice (BSD-2-Clause, AutoDRIVE-RoboRacer-Racetracks
+  `cf3cf1e`).
+- Use: read at tiers 1 to 5, unlike `f1tenth_racetracks`: the scenarios' `map_directory`, the launch's
+  raceline lookup, the importer's regression test and the raceline records. The default output of
+  `python -m raceline` is its `tracks/` root.
+- Initialise with `git submodule update --init third_party/GR-roboracer-data`, on the host; it is
+  required. CI does the same.

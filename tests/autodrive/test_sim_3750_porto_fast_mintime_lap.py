@@ -32,7 +32,9 @@ LAPS = 2  # owner ruling 2026-11-08: lap 2 is the flying lap
 BUDGET_S = 300.0
 VEHICLE = "config/vehicles/autodrive_roboracer_fast.yaml"
 RACELINE = (
-    REPO / "config/racelines/porto/autodrive-roboracer-fast-v1/tum_mintime.csv"
+    REPO
+    / "third_party/GR-roboracer-data/tracks/Porto/racelines"
+    / "autodrive-roboracer-fast-v1/tum_mintime.csv"
 )
 LAUNCH = [
     "ros2",

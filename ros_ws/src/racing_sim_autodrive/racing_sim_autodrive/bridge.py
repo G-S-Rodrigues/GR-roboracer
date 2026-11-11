@@ -149,7 +149,7 @@ class Step:
 
 
 class StampClamp:
-    """Published stamps never go backwards (gotcha 46).
+    """Published stamps never go backwards (gotcha 45).
 
     Under front end A every stamp is the node's wall clock at receipt, and
     that clock steps back (about every 30 s, 15-19 ms, in `dev` under WSL2).

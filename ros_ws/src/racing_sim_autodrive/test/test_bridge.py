@@ -489,7 +489,7 @@ def test_simad_1340_stall_watch_report_carries_counters_and_gap():
 def test_simad_1490_stamp_clamp_never_goes_backwards():
     """SIMAD-1490: published stamps strictly rise. An input behind or equal
     to the last published stamp becomes last + 1 us (the wall clock steps
-    back, gotcha 46); a later input rejoins the clock. 1 us, not 1 ns: at
+    back, gotcha 45); a later input rejoins the clock. 1 us, not 1 ns: at
     ~1.79e9 s a double resolves 0.24 us, so 1 ns steps collapse to one
     float and a consumer's float seconds merge two frames. The counts say
     how often it happened: frames raised, runs of them (one per clock step)

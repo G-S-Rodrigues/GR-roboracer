@@ -49,7 +49,9 @@ from raceline.track import load_track
 from raceline.vehicle import VehicleLimits, load_tyres, load_vehicle
 
 PACKAGE = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = PACKAGE.parent / "config" / "racelines"
+# The data repo's tracks root: a record goes to
+# `<out-dir>/<Map>/racelines/<vehicle version>/` (ADR 0009).
+DEFAULT_OUT = PACKAGE.parent / "third_party" / "GR-roboracer-data" / "tracks"
 CODE_FILES = (
     "raceline/__main__.py",
     "raceline/extract.py",
@@ -130,7 +132,7 @@ def _parser() -> argparse.ArgumentParser:
         "--plots",
         type=Path,
         help="where the diagnostic plots go (default log/raceline/<track>/"
-        "<vehicle>/<optimizer>/, never config/racelines/)",
+        "<vehicle>/<optimizer>/, never the data repo)",
     )
     p.add_argument(
         "--reprofile-speed",
@@ -321,6 +323,9 @@ def main(argv: list[str] | None = None) -> int:
         args.passes = DEFAULT_PASSES[args.optimizer]
     stem = (args.map or args.track).stem.lower()
     name = args.name or stem
+    # The folder is keyed by the map file's stem with its case kept (the
+    # scenario's `environment.map`); `name` is only the record's `track`.
+    map_key = (args.map or args.track).stem
     vehicle: VehicleLimits = load_vehicle(args.vehicle)
 
     try:
@@ -350,7 +355,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    folder = Path(args.out_dir) / name / vehicle.version
+    folder = Path(args.out_dir) / map_key / "racelines" / vehicle.version
     scratch = tempfile.TemporaryDirectory()
     solver = None
     reference_csv = args.reference

@@ -140,7 +140,7 @@ class ContractNode(Node):
         self._counters_publisher = self.create_publisher(
             SimCounters, "~/autodrive_counters", STATE_QOS
         )
-        # Published stamps never go backwards (gotcha 46); what was clamped is
+        # Published stamps never go backwards (gotcha 45); what was clamped is
         # reported here, private (the name moves with the namespace), latched.
         self._stamp_clamp = bridge.StampClamp()
         self._stamp_reported: tuple[int, int] | None = None
@@ -231,7 +231,7 @@ class ContractNode(Node):
         self._stamp_status_publisher.publish(status)
         if new_run:
             self.get_logger().warning(
-                "host clock stepped back; stamps clamped (gotcha 46): "
+                "host clock stepped back; stamps clamped (gotcha 45): "
                 f"clamped_frames={values['clamped_frames']} "
                 f"step_backs={values['step_backs']} "
                 f"largest_behind_ms={values['largest_behind_ms']:g}"

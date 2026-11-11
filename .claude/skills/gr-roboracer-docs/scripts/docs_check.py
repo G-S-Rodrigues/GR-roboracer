@@ -1,4 +1,4 @@
-"""Check the user docs: links and anchors resolve, no agent-doc links, no WSL.
+"""Check the user docs: links and anchors resolve, no agent-doc links.
 
 usage: python3 -I docs_check.py <repo_root>
 Prints one FAIL line per problem and exits 1 if there is any.
@@ -15,9 +15,6 @@ user_docs = [root / "README.md"] + sorted(
     if p.relative_to(root / "docs").parts[0] not in ("agents", "adr")
 )
 agent_paths = ("docs/agents/", "docs/adr/", "CLAUDE.md")
-banned = re.compile(
-    r"\bwsl\w*\b|wslg|/mnt/c\b|windows shell|docker desktop", re.I
-)
 link = re.compile(r"\]\(([^)\s]+)\)")
 fails = []
 
@@ -39,8 +36,6 @@ for doc in user_docs:
     for n, line in enumerate(text.splitlines(), 1):
         if line.startswith("```"):
             in_fence = not in_fence
-        if banned.search(line):
-            fails.append(f"{rel}:{n} WSL/Windows wording: {line.strip()}")
         if in_fence:
             continue
         for target in link.findall(line):

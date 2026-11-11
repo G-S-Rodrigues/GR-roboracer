@@ -36,8 +36,13 @@ neutral_paths:
   - LICENSE
   - ros_ws/src/*/CLAUDE.md
   - scripts/tests/*
+  # video capture only: no lap starts it (VIDEO.md starts it beside RViz)
+  - scripts/observer_map.py
+  # the repo skill's text and its scripts; no lap reads them
+  - .claude/skills/*
   # raceline/ is offline: its output reaches a lap only through files committed
-  # under config/racelines/ (mapped to the optimized_raceline planner).
+  # in the data submodule (third_party/GR-roboracer-data/tracks/<Map>/racelines/),
+  # whose bump is whole tree (CHECK-2320, ADR 0009).
   - raceline/*
   # read only by tier 5 (SIM-5040), the benchmark and their tier-1 tests; no lap imports it
   # (C8, owner 2026-10-24). Keep it lap-free: the frozen-pose rule a lap uses
@@ -87,7 +92,6 @@ roles:
           - config/vehicles/autodrive_roboracer_fast/*
           - config/tracks/porto.yaml
           - config/scenarios/porto.yaml
-          - config/scenarios/maps/Porto/*
           - scripts/autodrive_gui.sh
           - scripts/autodrive_route.sh
           - scripts/autodrive_relay.py
@@ -127,7 +131,8 @@ roles:
       - implementation: amcl
         package: nav2_amcl
         # Localizes against the track's committed occupancy grid,
-        # config/scenarios/maps/<map>/slam/, served by nav2_map_server.
+        # tracks/<Map>/maps/<Map>/slam/ in the data submodule (a bump is whole
+        # tree, ADR 0009), served by nav2_map_server.
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
           - config/localization/amcl.yaml
@@ -140,14 +145,13 @@ roles:
         # MOLA-LO's lidar2d pipeline: localization on the map MOLA built
         # itself, and the mapping workflow that builds it
         # (mola_mapping.launch.py, mola_map_track.sh). The .mm and the
-        # _grid land in config/scenarios/maps/<map>/mola/ with provenance
-        # (owner ruling 2026-10-25).
+        # _grid land in the data submodule, tracks/<Map>/maps/<Map>/mola/, with
+        # provenance (owner ruling 2026-10-25; a bump is whole tree, ADR 0009).
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
           - ros_ws/src/racing_bringup/racing_bringup/support_node.py  # BRINGUP-2500 hold
           - ros_ws/src/racing_bringup/launch/mola_mapping.launch.py
           - config/localization/mola_*.yaml
-          - config/scenarios/maps/*/mola/*
           - scripts/mola_map_track.sh
           - ros_ws/src/racing_sim_gym_jax/*
           - ros_ws/src/racing_sim_adapter/*
@@ -166,10 +170,10 @@ roles:
     alternatives:
       - implementation: optimized_raceline
         package: racing_bringup
-        # The committed raceline config/racelines/<track>/<vehicle version>/
-        # <raceline_optimizer>.csv, selected by planner:=optimized_raceline.
+        # The committed raceline in the data submodule,
+        # tracks/<Map>/racelines/<vehicle version>/<raceline_optimizer>.csv,
+        # selected by planner:=optimized_raceline (a bump is whole tree, ADR 0009).
         paths:
-          - config/racelines/*
           - ros_ws/src/racing_bringup/*
           - ros_ws/src/racing_controller_baseline/*  # speed_source: trajectory
         # ACC-4040's raceline case (the line driven on amcl's estimate)

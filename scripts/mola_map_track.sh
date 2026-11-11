@@ -16,7 +16,7 @@
 # Run in the dev container, from /ws, after a colcon build:
 #
 #   ./scripts/mola_map_track.sh config/scenarios/spielberg_1080.yaml \
-#       config/scenarios/maps/Spielberg/mola/Spielberg 7
+#       third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/mola/Spielberg 7
 #
 # The output is <stem>.mm, <stem>_grid.{png,yaml} and <stem>.yaml (the
 # provenance, with the alignment T from the map frame to the world frame: the

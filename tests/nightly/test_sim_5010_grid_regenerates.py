@@ -1,6 +1,7 @@
 """SIM-5010: the committed occupancy grid regenerates from the survey.
 
-`config/scenarios/maps/Spielberg/slam/Spielberg.{png,yaml}` is a committed
+`tracks/Spielberg/maps/Spielberg/slam/Spielberg.{png,yaml}` (data repo)
+is a committed
 artifact - the map nav2_map_server serves to nav2_amcl - produced by
 `scripts/map_track.sh` from an exact-sensor survey lap. A committed binary
 that nobody can reproduce is a fact nobody can check, and the survey is not
@@ -28,7 +29,15 @@ from PIL import Image
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SURVEY_SCENARIO = "config/scenarios/spielberg_survey.yaml"
 COMMITTED = (
-    REPOSITORY_ROOT / "config/scenarios/maps/Spielberg/slam/Spielberg.yaml"
+    REPOSITORY_ROOT
+    / "third_party"
+    / "GR-roboracer-data"
+    / "tracks"
+    / "Spielberg"
+    / "maps"
+    / "Spielberg"
+    / "slam"
+    / "Spielberg.yaml"
 )
 # A survey lap at 1x plus the mapper's last update and the save.
 SURVEY_TIMEOUT_SECONDS = 600.0

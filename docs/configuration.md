@@ -41,7 +41,7 @@ These are always launched and have no field. Nothing selects them.
 `track_centerline` publishes the scenario's `<map>_raceline.csv`, which holds the track centerline
 at constant speed. It was called `track_raceline` before part 6 of issue #12 renamed it for what it
 is. `optimized_raceline` publishes the committed minimum-curvature line
-`config/racelines/<track>/<vehicle version>/<raceline_optimizer>.csv` instead. A missing or
+`third_party/GR-roboracer-data/tracks/<Map>/racelines/<vehicle version>/<raceline_optimizer>.csv` instead. A missing or
 mismatched line is an error: the launch never falls back to the centerline. The one exception runs
 the other way: under `track_centerline` a map with no `<map>_raceline.csv` (Porto has none yet) is
 driven on its own centerline, published at speed 0 so the controller's schedule sets the speed;
@@ -74,7 +74,7 @@ no committed raceline of either kind (minimum-curvature or minimum-time) exists 
 `config/vehicles/autodrive_roboracer_fast.yaml` is the same car with higher caps (speed 4.5 m/s, acceleration 4.0 m/s^2,
 steering rate 1.5 rad/s) and its own tables in `config/vehicles/autodrive_roboracer_fast/`. The caps are the owner's choice,
 not measurements, and its GGV is a modelling bound (friction 1.0, from the prefab). It runs on `simulator:=autodrive` only; the
-gym refuses it. A committed minimum-time Porto line exists for it, `config/racelines/porto/autodrive-roboracer-fast-v1/tum_mintime.csv`.
+gym refuses it. A committed minimum-time Porto line exists for it, `third_party/GR-roboracer-data/tracks/Porto/racelines/autodrive-roboracer-fast-v1/tum_mintime.csv`.
 
 To redo the identification for a new edition, start `record` first and the sim after it (the sim
 connects once and never retries):
@@ -201,7 +201,7 @@ Today, from `/ws` inside the container after the Quick Start:
 ros2 launch racing_bringup slam_toolbox_mapping.launch.py scenario:=config/scenarios/spielberg_survey.yaml seed:=42
 ```
 
-The committed survey map is `config/scenarios/maps/Spielberg/slam/Spielberg`, and overwriting it
+The committed survey map is `third_party/GR-roboracer-data/tracks/Spielberg/maps/Spielberg/slam/Spielberg`, and overwriting it
 is a reviewed diff. The example writes to `log/maps/Spielberg` so following it is harmless.
 
 ## Racing example
