@@ -292,7 +292,11 @@ class RacingTestKeywords:
                     "pose frozen after a supervisor latch "
                     f"({context.get('latch')}): a latch, not a collision"
                 )
-            elif non_latching and "REASON_TRACK_LIMIT" in non_latching:
+            elif (
+                non_latching
+                and "REASON_TRACK_LIMIT" in non_latching
+                and self._stamp_within(non_latching, t, 0.1)
+            ):
                 verdict = (
                     "the supervisor zeroes the command while the car is "
                     f"outside the track limit ({non_latching}, does not "
@@ -312,6 +316,15 @@ class RacingTestKeywords:
             return note
         except Exception:  # noqa: BLE001
             return "; ground truth frozen (diagnostic unavailable)"
+
+    @staticmethod
+    def _stamp_within(text: str, t: float, window: float) -> bool:
+        """True when the ``stamp=<s>s`` in a status description is within
+        ``window`` seconds of ``t``; False when it carries none."""
+        import re
+
+        found = re.search(r"stamp=(-?[0-9.]+)s", text)
+        return found is not None and abs(float(found.group(1)) - t) <= window
 
     def _estimate_error_at(self, t: float) -> str:
         """`; estimate lon +1.38 m, lat +0.02 m at the freeze`, from the

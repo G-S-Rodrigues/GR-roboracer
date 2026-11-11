@@ -463,7 +463,8 @@ def test_check_2904_a_latch_names_its_reason(tmp_path):
         {
             "text": "t",
             "latched": True,
-            "latch": "REASON_STALE_INPUT clamps=[] stamp=1.000s",
+            "latch": "REASON_STALE_INPUT "
+            "clamps=['CLAMP_STALE_INPUT', 'CLAMP_ESTOP'] stamp=1.000s",
         },
     )
     assert "pose frozen after a supervisor latch (REASON_STALE_INPUT" in text
@@ -476,14 +477,29 @@ def test_check_2904_track_limit_is_not_a_collision(tmp_path):
         {
             "text": "t",
             "latched": False,
-            "non_latching": "REASON_TRACK_LIMIT clamps=['CLAMP_NONE'] "
-            "stamp=2.000s",
+            "non_latching": "REASON_TRACK_LIMIT clamps=['CLAMP_TRACK_LIMIT'] "
+            "stamp=96.900s",
         },
     )
     assert "REASON_TRACK_LIMIT" in text
     assert "outside the track limit" in text
     assert "does not latch" in text
     assert "the gym holds its state on a collision" not in text
+
+
+def test_check_2904_an_old_track_limit_does_not_explain_the_freeze(tmp_path):
+    text = _freeze_text(
+        tmp_path,
+        {
+            "text": "t",
+            "latched": False,
+            "non_latching": "REASON_TRACK_LIMIT clamps=['CLAMP_TRACK_LIMIT'] "
+            "stamp=2.000s",
+        },
+    )
+    assert "the gym holds its state on a collision" in text
+    assert "outside the track limit" not in text
+    assert "REASON_TRACK_LIMIT" in text
 
 
 def test_check_2375_not_frozen_keeps_todays_text(tmp_path):
