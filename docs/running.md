@@ -129,5 +129,5 @@ exits 1 on a structural failure: a default-vehicle run that does not finish, a l
 infrastructure-failed run on any row, a method it cannot run, or a missing record. Errors are scored against
 simulator ground truth. A full run takes about 34 minutes (localization) and 15 minutes (planning) on a
 CI runner; run it on a private `ROS_DOMAIN_ID`. The Benchmark workflow runs it on a PR that adds an
-implementation to the reference stack, adds or changes a committed Spielberg raceline CSV, or edits
+implementation to the reference stack, bumps the data submodule (any change to its maps or racelines; it then runs the planning benchmark), or edits
 `scripts/benchmark_runs.py`, and by hand with `gh workflow run benchmark.yaml -f role=all`.

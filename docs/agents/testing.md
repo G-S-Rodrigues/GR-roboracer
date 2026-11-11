@@ -75,7 +75,7 @@ justified a bound stays beside the report, as its baseline.
 
 - **Do not add a pass/fail quality bound.** "Is it better than X" is a benchmark.
 - **Benchmarks** compare implementations of one role. They run on demand, or in CI as a non-required
-  job on a PR that adds an implementation. They never run nightly and never block. The command is `python3 scripts/benchmark.py run|render|history` (Running); the Benchmark workflow runs it on a PR whose diff adds an implementation, a Spielberg raceline CSV or edits the runner, uploads `benchmark-<role>` artifacts, and is never waited on.
+  job on a PR that adds an implementation. They never run nightly and never block. The command is `python3 scripts/benchmark.py run|render|history` (Running); the Benchmark workflow runs it on a PR whose diff adds an implementation, bumps the data submodule (any change to its maps or racelines runs the planning benchmark) or edits the runner, uploads `benchmark-<role>` artifacts, and is never waited on.
 - **Regression tracking** of one method over time (SIM-5030) runs in the nightly, reports, and is
   never red on a number.
 - **An experimental implementation** (`status: experimental` in `config/reference_stack.yaml`) is
