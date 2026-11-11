@@ -320,7 +320,7 @@ def test_check_2480_sim_windows_dry_run_prints_the_route_not_the_container(
         for p in (
             "autodrive_route.sh",
             "test_sim_3750",
-            "ss -ltn",
+            "/proc/net/tcp",
             "autodrive -SimPath",
         )
     ]
