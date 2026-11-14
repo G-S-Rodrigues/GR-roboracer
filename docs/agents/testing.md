@@ -142,6 +142,11 @@ All of them run inside the `dev` container (`docker exec gr-roboracer-dev bash -
 `./scripts/run_scenario.py --seed N` runs one seeded lap through the real graph and prints its
 metrics, for when you want an answer rather than a test result.
 
+**A scoped `--fast` can go red on a package it did not test.** `check.sh`'s `colcon test-result
+--verbose` reads all of `build/`, not only the packages a scoped run tested, so a stale failure left in
+an untested package turns `--fast` red. It is a false red, never a false green (seen 2026-09-28).
+`colcon test-result --delete-yes` clears old results.
+
 ## Running one test
 
 The RED/GREEN loop runs one test, not a gate. Every line below runs in `dev` after

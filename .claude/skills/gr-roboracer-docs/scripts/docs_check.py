@@ -12,9 +12,15 @@ root = pathlib.Path(sys.argv[1]).resolve()
 user_docs = [root / "README.md"] + sorted(
     p
     for p in (root / "docs").rglob("*.md")
-    if p.relative_to(root / "docs").parts[0] not in ("agents", "adr")
+    if p.relative_to(root / "docs").parts[0]
+    not in ("agents", "agents_knowledge", "adr")
 )
-agent_paths = ("docs/agents/", "docs/adr/", "CLAUDE.md")
+agent_paths = (
+    "docs/agents/",
+    "docs/agents_knowledge/",
+    "docs/adr/",
+    "CLAUDE.md",
+)
 link = re.compile(r"\]\(([^)\s]+)\)")
 fails = []
 

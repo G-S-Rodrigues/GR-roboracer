@@ -8,6 +8,8 @@ spec and ADRs cite — when an ADR says "research §7", it means the survey belo
 - [Autonomous racing open-source landscape (2026)](autonomous-racing-open-source-2026.md) — survey of
   the open-source autonomous racing ecosystem: simulators, stacks, planners, controllers and the
   trade-offs between them. Cited throughout the spec.
+- [Reliable sources](reliable-sources.md): the codebases and papers this stack trusts, tiered, each
+  with what to trust it for, its licence and the date it was last checked.
 
 ## Reference codebases
 

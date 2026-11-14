@@ -41,6 +41,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
     there then dies with `FileNotFoundError` on a scenario file. Symptom: tests that pass in `/ws`
     fail in the worktree on a file that plainly exists. Point the worktree's
     `install/racing_sim_gym_jax/share/racing_sim_gym_jax/config` at its own `config/`.
+    The remedy has its own trap: with that symlink in place, the next `colcon build` of
+    `racing_sim_gym_jax` copies `config/` onto itself, fails with `cannot copy /ws/.scratch/config/...`,
+    and deletes tracked files under the worktree's `config/` (seen 2026-10-30). Remove the link before
+    rebuilding. To recover: `git checkout -- config/`, `rm -rf build/racing_sim_gym_jax
+    install/racing_sim_gym_jax`, rebuild, link again.
 
 21. **Rebuilding the image can strand the colcon build volume.** The apt layer resolves current
     Jazzy binaries, so a rebuild may bump a library the overlay linked against (seen: `libfastcdr`
@@ -77,6 +82,19 @@ Traps any task in this repository can hit. Each one cost real time at least once
     with no error (CHECK-2443; the CI runner's kernel has it 0, so `ci.yaml` sets it to 1 before `check.sh`). The host's systemd-tmpfiles cleans `/tmp` after 30 days and at boot, and a
     removed host lane leaves `dev`'s `/lane` a deleted directory: the script exits 4 there (CHECK-2445);
     `docs/agents/running-wsl.md` has the exclusion.
+    `HEAVY_LANE_HELD` does not cross `docker exec`: a host wrapper around `docker exec ... heavy_lane.sh
+    -- ...` leaves the inner wrapper waiting on its parent forever, so wrap once, on one side. Killing
+    the `docker exec` client frees the lane while the run inside the container goes on. `--wait N`
+    bounds only the lock wait; the load wait holds the lane with no bound, so load from outside the lane
+    can hold it forever. A missing `flock` reads as "gave up" (rc 127).
+
+57. **Run `git commit` on the host, never through `docker exec`.** `dev` runs as root on a bind mount of
+    a tree owned by UID 1000, so a commit or a pre-commit hook run inside `dev` succeeds and writes
+    root-owned files under `.git/objects`. The next `git add` on the host then fails with `insufficient
+    permission for adding an object to repository database`, far from the cause (seen during issue #1).
+    The host user cannot reclaim them without sudo, so repair from the container: `docker exec
+    gr-roboracer-dev chown -R 1000:1000 /ws/.git`. Build, test and lint stay in `dev`; git writes stay on
+    the host (#23 covers git reads in `dev` on a host worktree).
 
 ## ROS
 
@@ -130,6 +148,16 @@ Traps any task in this repository can hit. Each one cost real time at least once
     only its direct child, so a script's EXIT trap never fires and its `setsid` stacks survive. Start it
     with `start_new_session=True`, signal its group and its children's groups, and check the groups are
     empty (SIM-3530; a leaked map_server fed amcl a second `/map`).
+    Two gates on one `ROS_DOMAIN_ID` hear each other's graph: each `racing_metrics_node` received the
+    other's `/track_relative_state` and aborted with `elapsed_time must be monotonic`, and 9 of 11
+    tier-3 tests failed (2026-10-25); SIM-3060 run twice at once on one domain failed both times while
+    each passed alone. Run gates through `scripts/heavy_lane.sh` (#48), which serializes them. A
+    TaskStop on a runner does not kill what it started through `docker exec`, and a cleanup `pkill -f
+    install/racing_` in `dev` kills every session's nodes, in every domain and worktree: kill your own
+    process group instead.
+    `pkill -f <pattern>` run through `docker exec ... bash -lc` matches its own command line and kills
+    the `docker exec` that carries it, with no error. Bracket one character (`pkill -f
+    'install/racing[_]'`).
 
 47. **A process that launch escalates to SIGKILL loses its buffered tail, and the reader fails far from the cause.**
     In the 2026-11-05 SIM-3510 run the recorder was killed (exit -9) with a partly written line, and
@@ -137,6 +165,33 @@ Traps any task in this repository can hit. Each one cost real time at least once
     Symptom: a parse error in a test far from the node that hung. Remedy: write and flush each record whole
     (REC-1010/2010); `read_recording` stays strict on purpose. `run_scenario` lists the escalations (CHECK-2370/2371).
     Any other buffered writer a launch can kill has the same trap.
+
+50. **A pose-only `/odom` turns Pure Pursuit's speed-scaled lookahead off, silently.** The lookahead is
+    max(`lookahead_distance`, `lookahead_gain` x `/odom`'s `twist.linear.x`), so a pose source that
+    publishes a zero twist (robot_localization with twist off, a new bridge, a hand-written estimate)
+    keeps the lookahead at its floor at every speed. Nothing errors: only a non-finite speed throws, and
+    only when the gain is positive. Today every vehicle file has gain 0, the composed
+    `/localization/odom` carries the dead-reckoning twist (`support_node.py`), and the AutoDRIVE bridge
+    publishes its body twist, so the trap is latent. Any new `/odom` source the controller reads must
+    carry the CoG speed; a real car's wheel speed is measured at the rear axle and must be moved to the
+    CoG first (#26).
+
+53. **MOLA's map and its localization score depend on the map instance, and a one-lap closure report
+    lies.** The same `mola_map_track.sh` command at the same seed gives a different map each run (seed
+    7: wall p95 0.51 vs 0.75 m), most likely from mola-cli dropping scans by thread timing. SIM-3510
+    passed on one map and diverged 3 of 5 times on another at the same settings. Never compare two MOLA
+    configurations on two freshly built maps; build one map and localize both on it.
+    `mola_sm_loop_closure`'s "accepted loop-closures: 1" is counted before GNC: on the one-lap map the
+    only closure was rejected and the graph moved 9e-5 m.
+
+58. **`map_saver_cli` ignores its own flags placed after `--ros-args`, silently.** It then writes with
+    defaults or fails with nothing on stderr (PR #9, D12, where an absolute output stem was also
+    mis-resolved). Put its own flags before `--ros-args`; SIM-5010 guards `map_track.sh`.
+
+59. **A Python node that keeps rclpy's default SIGINT handler can exit 1 out of `take_message` on
+    shutdown.** Every pose source's runs ended non-zero 3 of 10 times until three nodes installed their
+    own handling (PR #9, D9/D11; BRINGUP-1070, EVAL-1050, SIMJAX-1110 pin it). A new Python node
+    repeats it unless it copies them.
 
 ## Simulation
 
@@ -184,6 +239,22 @@ Traps any task in this repository can hit. Each one cost real time at least once
     (`_remove_folds`; SIM-1040/1050/1060/1070 guard it) and raises "self-intersect" past half the
     corridor. The yaml's curvature column is the *upstream raceline's* (it integrates to -394.4 deg
     per lap), so never rebuild a centerline from it.
+
+52. **`/imu`'s orientation is the ground-truth orientation, in both simulators.** The gym copies
+    `ground_truth.pose.pose.orientation` into the `Imu` message (`racing_sim_gym_jax/node.py`) and the
+    AutoDRIVE contract node does the same (`contract_node.py`). Yaw rate and linear acceleration carry
+    the scenario's noise; the orientation carries none and never drifts. An estimator that fuses `/imu`
+    orientation is fusing truth, and its ATE comes out good with no error. Fuse only angular velocity
+    and linear acceleration, or set `orientation_covariance[0] = -1` before an estimator may read it. A
+    real IMU's orientation is its own filter's estimate and drifts in yaw.
+
+56. **The gym loads its own bundled Spielberg, not ours.** In `dev` f1tenth_gym_jax searches
+    `/usr/local/lib/python3.12/dist-packages/maps` before `F1TENTH_GYM_JAX_MAP_DIR`, so `Spielberg` is
+    upstream's 2000x2000 PNG at 0.05796 m/px, never the committed 1344x2085 at 0.05 m. A change to the
+    data repo's Spielberg gym PNG changes no gym lap, and nothing errors; for Porto and
+    `analytic_circle` the gym tries a plain-HTTP download first. SIMJAX-1600 only proves our yaml
+    exists. Fixing the order changes every Spielberg lap number (a reviewed golden diff, #14). Delete
+    this entry when the map-search order is fixed.
 
 ## Visualization
 
@@ -279,6 +350,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     device identifiers (laser_x, LaserMount, the racing_sim_gym_jax.laser module) keep the old word,
     and a bag or RViz config recorded before the rename still names laser.
 
+51. **A gym body collision reads as 0 collisions and no TRACK_LIMIT.** `racing_metrics` counts a
+    collision when a `/ground_truth/scan` range cast from the CoG is at or under `collision_threshold`
+    (0.01 m), and the supervisor's TRACK_LIMIT tests the CoG point with `vehicle_half_width`. At a
+    heading error the car's corner reaches the wall first. Seen in the 2026-11-11 ACC-4040 amcl failure
+    (PR #95, "Ready gate history"): the body hit the wall at 97.03 s with `collision_count` 0, minimum
+    clearance 0.208 m and no TRACK_LIMIT; only the runner's frozen-pose stop (`scripts/frozen_pose.py`;
+    the gym keeps the old state on a collision) caught it. A test asserting `Collision Count Should Be
+    0` cannot see this failure. Read a frozen pose as a likely wall hit.
+
 ## AutoDRIVE
 
 29. **The official devkit stalls on a headless sim, silently.** Its `Bridge` handler reads every key
@@ -301,6 +381,13 @@ Traps any task in this repository can hit. Each one cost real time at least once
     10-90 % range of 11-55 ms (~18-89 Hz) and a longest gap of 145 ms, not a fixed 20 Hz: do not
     assert a rate band on a recorded stream. The first frame has no lidar at all. In every later
     frame `inf` (no return) is ~1.9 % of the ranges; they are not faults, `NaN` would be.
+    The rate can also collapse with the host idle. On 2026-11-01, after a Docker/WSL restart, the
+    headless sim gave 6.6-11.1 Hz (median gap 94-155 ms) to a bare Socket.IO counter with no ROS, at
+    load 3.4, against 126-192 Hz healthy; the Unity main thread spent ~100 ms of CPU per frame. GPU,
+    cgroup limits, memory, network and cpuset were ruled out; the laptop was on battery (not proven the
+    cause). Every live run then latches STALE at start and looks like a stack fault. Before a live
+    AutoDRIVE run, count frames for 15 s with nothing else attached; below ~120 Hz, fix the host (AC
+    power, recreate the sim) before debugging the stack.
 
 32. **Jazzy-Humble DDS discovery is slow, and a loaded host drops 100+ ms of messages anyway.** With
     the devkit's QoS (reliable, volatile, depth 1) a Jazzy publisher and a Humble subscriber needed 0
@@ -419,6 +506,14 @@ Traps any task in this repository can hit. Each one cost real time at least once
     tolerate backwards stamps: that would hide a real ordering bug on the gym. Any other node that stamps from
     the wall clock under AutoDRIVE has the same trap. **On a real car**, run a time sync that slews (chrony,
     with `makestep` limited to start-up), never one that steps the clock mid-run.
+    The clock also steps **forward**. On 2026-11-12 the WSL VM clock ran slow and systemd-timesyncd
+    stepped it forward ~92-122 ms every 30 s (offset +203 ms and growing). Under AutoDRIVE the server's
+    stamps and the supervisor's staleness check both read wall time, so a forward step reads as an input
+    gap with no real pause: SIM-3750 latched STALE_INPUT in the first seconds in 16 of 16 runs (gaps
+    108-288 ms, load 1.8-6.1), on main, on the last commit that had passed, and in a throwaway container
+    from dev's image. The clamp above covers backward steps only. Symptom: AutoDRIVE live cases red at
+    start-up on a host that passed them days earlier. Check `timedatectl timesync-status` (or the offset
+    in `journalctl -u systemd-timesyncd`); `wsl --shutdown` resets the VM clock.
 
 46. **Lateral grip on the AutoDRIVE car depends on the corner radius, so one a_y is the limit at one radius
     only, and nothing errors.** The open-loop peak measured by `limits_peak.yaml` runs from 5.10 m/s^2 at
@@ -427,6 +522,22 @@ Traps any task in this repository can hit. Each one cost real time at least once
     one radius and wrong at every other. Never read one a_y from either file as the car's: read the bin for
     the radius in question (the ggv rows interpolate by radius, `ggv_from_radius`), and say which radius
     when quoting one.
+
+49. **A node that works on AutoDRIVE today may read a topic the league forbids at race time.** The 2026
+    rules allow only `/autodrive/roboracer_1/{lidar, front_camera, imu, left_encoder, right_encoder,
+    steering, throttle}` in and `steering_command`, `throttle_command` out. `ips`, `odom`, `/tf`,
+    `reset_command`, `collision_count`, `lap_count`, `lap_time`, `best_lap_time` and `last_lap_time` are
+    debug-only, and ground truth is forbidden. Nothing errors in development:
+    `pose_source:=ground_truth`, `racing_sim_autodrive.sim_dt` (the `V1 Lap Time` delta) and
+    `/racing_sim/autodrive_counters` all run. PR #88's 7.38 s Porto lap ran on ground truth, so it is a
+    ceiling, never a race-legal time. Any lap time quoted against the league names its pose source; the
+    full list is in `docs/agents_knowledge/competition.md`.
+
+54. **The AutoDRIVE collision respawn is a kidnap.** The car jumps 0.36-1.43 m back and up to 67 deg
+    with v = 0. `/odom` sees no jump and integrates the spinning wheels (0.8-2.0 m of odometry against
+    0.24-0.31 m real in 0.3 s). Each respawn adds 1-2 m of pose error, and the car re-crashes about
+    every 0.5 s. A lap with one collision is not evidence about the pose source after it (b6,
+    2026-11-11).
 
 ## Track data
 
@@ -439,3 +550,15 @@ Traps any task in this repository can hit. Each one cost real time at least once
     `--out-dir` is inside the submodule folder, so a run before init fills the empty folder and init
     then fails with `clone ... failed`. Never push from the submodule checkout: its `origin` is HTTPS
     and the push prompts forever (#5); push the data repo from a normal clone (`~/gitroot/GR-roboracer-data`).
+
+55. **A raceline record pins the bytes of its inputs and code, comments included, and a `--track` run
+    writes where nothing reads.** Every committed `raceline.yaml` holds the sha256 of its vehicle file,
+    map and track and the git blob of every `CODE_FILES` member (`raceline/raceline/__main__.py`), so a
+    comment-only edit to `config/vehicles/f1tenth_*.yaml`, `vehicle.py` or `optimize.py` turns
+    RACELINE-1395 red and needs a reviewed regeneration of every record (about 40 min-1 h of TUM under
+    the lane, a data-repo PR and a re-pin). Never edit those files to green a run or for a typo alone;
+    queue the edit for the next regeneration. Separately, `python -m raceline --track
+    config/tracks/<t>.yaml` writes `tracks/<t>/` with the track file's lower-case stem, but the launch
+    looks the line up by map name (`Spielberg`): on Spielberg `planner:=optimized_raceline` silently
+    keeps the pinned line, on Porto it raises `no committed raceline`. Generate a line meant for the
+    launch with `--map`.
