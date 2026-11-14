@@ -80,6 +80,7 @@ nodes run in `gpu` (`dev` + CUDA), on the owner's machine only.
 
 | Before... | Read |
 |---|---|
+| a grill, spec or plan, or a feature's close-out harvest | `docs/agents_knowledge/README.md`, then each concern file it names for the work |
 | writing or moving any test | `docs/agents/testing.md` |
 | touching `docker/`, or adding a dependency to an image | `docs/adr/0002-development-environment.md` |
 | changing anything under `sim/`, or "unifying" it with `ros_ws/` | `docs/adr/0003-sim-outside-ros-workspace.md` |
@@ -126,6 +127,6 @@ raceline/       Offline raceline generation (TUM optimizer). uv project, no ROS,
 scripts/        check.sh (the gate), run_scenario.py, compare_metrics.py.
 docker/         Multi-stage image: base → underlay → dev (→ gpu) / fast-sim / runtime.
 third_party/    Referenced upstream sources and the track data (GR-roboracer-data), git submodules; NOTICE.md says what and why.
-docs/           ADRs, agent-facing notes, research.
-.scratch/       Grills, specs and plans. Gitignored; `git clean -e .scratch`.
+docs/           ADRs, agent-facing notes (agents/), what the repo has learned (agents_knowledge/), research.
+.scratch/       Worktrees, each named after its branch. Gitignored; `git clean -e .scratch`.
 ```
