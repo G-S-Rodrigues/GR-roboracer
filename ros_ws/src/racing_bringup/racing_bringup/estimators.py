@@ -26,12 +26,15 @@ from launch.actions import (
 )
 from launch.events import matches_action
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.logging import get_logger
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
 from lifecycle_msgs.msg import Transition
 
 from racing_bringup import track_data
+
+LOGGER = get_logger("racing_bringup.estimators")
 
 SLAM_TOOLBOX_EXECUTABLES = {
     "mapping": "async_slam_toolbox_node",
@@ -172,17 +175,55 @@ def mola_alignment_arguments(provenance_yaml: str) -> list[str]:
     ]
 
 
+def identity_alignment_arguments() -> list[str]:
+    """`static_transform_publisher` arguments for an identity
+    `map -> mola_map`: a map with no provenance, whose `map` frame is where
+    its mapping lap started."""
+    return [
+        "--x",
+        "0.0",
+        "--y",
+        "0.0",
+        "--z",
+        "0.0",
+        "--yaw",
+        "0.0",
+        "--frame-id",
+        "map",
+        "--child-frame-id",
+        "mola_map",
+    ]
+
+
 def mola(
-    configuration: str, track_directory: str, use_sim_time: bool = True
+    configuration: str,
+    track_directory: str,
+    use_sim_time: bool = True,
+    mm_file: str | None = None,
 ) -> list:
-    """MOLA-LO localizing on the map it built itself for `track_directory`.
+    """MOLA-LO localizing on the map it built itself for `track_directory`,
+    or on `mm_file` when one is given.
 
     MOLA owns `mola_map -> odom`; the static `map -> mola_map` joins that to
     the world frame (BRINGUP-2010), so the support node's `map -> odom`
-    lookup resolves through the chain unchanged. Reads committed files only
-    and spawns nothing at description time.
+    lookup resolves through the chain unchanged. A given `mm_file` is
+    aligned by the `<same stem>.yaml` beside it when there is one, else by
+    the identity (its `map` is where its mapping lap started), which is
+    logged. Reads files only and spawns nothing at description time.
     """
-    mm_file, provenance = track_data.mola_files(Path(track_directory))
+    if mm_file is None:
+        mm_file, provenance = track_data.mola_files(Path(track_directory))
+        alignment = mola_alignment_arguments(provenance)
+    else:
+        provenance = Path(mm_file).with_suffix(".yaml")
+        if provenance.is_file():
+            alignment = mola_alignment_arguments(str(provenance))
+        else:
+            LOGGER.info(
+                f"{mm_file} has no provenance {provenance}: map -> mola_map "
+                "is the identity (map is where its mapping lap started)"
+            )
+            alignment = identity_alignment_arguments()
     share = Path(get_package_share_directory("mola_lidar_odometry"))
     return [
         Node(
@@ -192,7 +233,7 @@ def mola(
             # `pkill -f install/racing_` never matched it; the name is on its
             # command line (gotcha #10).
             name="racing_mola_map_alignment",
-            arguments=mola_alignment_arguments(provenance),
+            arguments=alignment,
             parameters=[{"use_sim_time": use_sim_time}],
             output="screen",
         ),

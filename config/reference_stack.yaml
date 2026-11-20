@@ -123,6 +123,11 @@ roles:
         paths:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
           - ros_ws/src/racing_bringup/launch/slam_toolbox_mapping.launch.py
+          - ros_ws/src/racing_bringup/launch/slam.launch.py
+          - ros_ws/src/racing_bringup/racing_bringup/slam.py
+          - ros_ws/src/racing_bringup/racing_bringup/autodrive.py
+          - ros_ws/src/racing_bringup/racing_bringup/visualization.py
+          - ros_ws/src/racing_vehicle_description/rviz/slam.rviz
           - config/localization/slam_toolbox_*.yaml
           - ros_ws/src/racing_sim_gym_jax/*
           - ros_ws/src/racing_sim_adapter/*
@@ -151,6 +156,11 @@ roles:
           - ros_ws/src/racing_bringup/racing_bringup/estimators.py
           - ros_ws/src/racing_bringup/racing_bringup/support_node.py  # BRINGUP-2500 hold
           - ros_ws/src/racing_bringup/launch/mola_mapping.launch.py
+          - ros_ws/src/racing_bringup/launch/slam.launch.py
+          - ros_ws/src/racing_bringup/racing_bringup/slam.py
+          - ros_ws/src/racing_bringup/racing_bringup/autodrive.py
+          - ros_ws/src/racing_bringup/racing_bringup/visualization.py
+          - ros_ws/src/racing_vehicle_description/rviz/slam.rviz
           - config/localization/mola_*.yaml
           - scripts/mola_map_track.sh
           - ros_ws/src/racing_sim_gym_jax/*

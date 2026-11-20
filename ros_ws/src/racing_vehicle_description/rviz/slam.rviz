@@ -1,0 +1,70 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+    - Class: rviz_default_plugins/Map
+      Enabled: true
+      Name: Map
+      Alpha: 0.7
+      Color Scheme: map
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+    - Class: rviz_default_plugins/RobotModel
+      Enabled: true
+      Name: RobotModel
+      Description Topic: /robot_description
+    - Class: rviz_default_plugins/LaserScan
+      Enabled: true
+      Name: LaserScan
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan
+      Size (m): 0.05
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: SlamToolboxGraph
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /slam_toolbox/graph_visualization
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: MolaLocalMap
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /lidar_odometry/localmap_points
+      Size (m): 0.05
+      Style: Points
+  Enabled: true
+  Global Options:
+    Background Color: 255; 255; 255
+    Fixed Frame: map
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 25
+      Target Frame: base_link
+Window Geometry:
+  Height: 800
+  Width: 1200
