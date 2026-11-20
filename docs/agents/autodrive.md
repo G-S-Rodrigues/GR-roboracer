@@ -179,3 +179,38 @@ Three places hold its tests, by what each needs:
   cannot see a contact and the sim's counter is the collision truth here; stack lap 1 is longer than the sim's (the stack
   times from the reset, the sim from the line) and is not compared; lap times are wall-clock in the stack and Unity time in the
   sim; SIM-3730 is not in CI; the official-bridge (front end B) run of this was not rehearsed.
+
+## Mapping by hand
+
+`slam.launch.py` maps or localizes Porto while you drive from the AutoDRIVE window in **Manual**
+mode; its arguments are in `docs/configuration.md` ("Hand-driven SLAM launch"). It starts no
+controller, supervisor or support node. In Manual mode the window ignores our drive replies and
+keeps streaming to the server: measured 2026-11-20, `/scan` and `/odom` never fell below 50 Hz over
+4 minutes of driving (max `/scan` gap 0.19 s). Run every `ros2` command in `dev` from `/ws`.
+
+1. Clear any stale graph first (gotcha 10): `pkill -f 'install/racing[_]|mola-cl[i]'`. It kills
+   every session's nodes on every domain, so only when nothing else is running.
+2. Start the launch: `ros2 launch racing_bringup slam.launch.py method:=slam_toolbox`.
+3. On the host: `scripts/autodrive_route.sh` (server first, then the route, then the sim).
+4. In Windows, start the simulator with `-ip <WSL IP>`, click **Menu → Connection** once, then switch
+   to **Manual**. The sim connects once (gotcha 30): restart it for every launch.
+5. Drive two laps. RViz shows `/map` growing, and slam_toolbox's graph markers snap into place when
+   the loop closes.
+6. Save, before Ctrl+C:
+   - the grid: `ros2 run nav2_map_server map_saver_cli -f log/maps/porto_manual --ros-args -p use_sim_time:=false`
+     (its own flags before `--ros-args`, gotcha 58);
+   - the pose graph: `ros2 service call /slam_toolbox/serialize_map slam_toolbox/srv/SerializePoseGraph "{filename: '/ws/log/maps/porto_manual'}"`.
+     Only a graph serialized from this launch's mapping run localizes; a survey graph
+     (`slam_toolbox_survey*.yaml`, matcher off) segfaults slam_toolbox's localization mode.
+7. Ctrl+C, restart the simulator, then
+   `ros2 launch racing_bringup slam.launch.py method:=slam_toolbox mode:=localization map:=/ws/log/maps/porto_manual`.
+   Drive, and check that the scan stays on the map's walls.
+8. MOLA: `method:=mola` (mapping). Watch the PointCloud2 local map grow; Ctrl+C writes
+   `log/maps/mola_manual.simplemap` (`simplemap_output:=` moves it). Convert it to a map MOLA
+   localizes on: `sm2mm -i log/maps/mola_manual.simplemap -o log/maps/mola_manual.mm -p config/localization/mola_sm2mm.yaml`.
+9. `method:=mola mode:=localization` localizes on the committed Porto `.mm`;
+   `map:=log/maps/mola_manual.mm` on your own, with `map -> mola_map` the identity unless a
+   `mola_manual.yaml` provenance file sits beside it. No `/initialpose` is needed on a fresh sim: the
+   AutoDRIVE spawn equals Porto.mm's start within 1 cm.
+10. `ros2 launch racing_bringup slam.launch.py -s` prints every argument; `method:=far_lio` exits
+    with "not integrated yet".
