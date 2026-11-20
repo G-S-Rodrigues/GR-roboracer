@@ -3,7 +3,9 @@
 from pathlib import Path
 
 import pytest
-from racing_bringup import slam
+from launch import LaunchContext
+from racing_bringup import slam, visualization
+from test_bringup_contract import _merged
 
 REPOSITORY_ROOT = Path(__file__).parents[1].parents[2]
 SERIALIZE_COMMAND = (
@@ -97,3 +99,42 @@ def test_bringup_1993_mola_localization_defaults_or_needs_the_file(
     present = tmp_path / "porto.mm"
     present.write_bytes(b"")
     slam.check("mola", "localization", str(present))
+
+
+RVIZ_CONFIG = "/share/racing_vehicle_description/rviz/slam.rviz"
+
+
+def test_bringup_1995_no_viewer_is_no_node() -> None:
+    """BRINGUP-1995: `visualization:=none` starts nothing."""
+    assert visualization.nodes("none", RVIZ_CONFIG, True) == []
+
+
+@pytest.mark.parametrize("use_sim_time", [True, False])
+def test_bringup_1995_rviz_is_one_rviz2_node(use_sim_time: bool) -> None:
+    """BRINGUP-1995: `visualization:=rviz` is exactly one rviz2 node on the
+    given config, whose `use_sim_time` follows the simulator's clock."""
+    started = visualization.nodes("rviz", RVIZ_CONFIG, use_sim_time)
+    assert len(started) == 1
+    (node,) = started
+    assert node._Node__package == "rviz2"
+    assert node._Node__node_executable == "rviz2"
+    assert node._Node__arguments == ["-d", RVIZ_CONFIG]
+    parameters = _merged(LaunchContext(), node)
+    assert parameters["use_sim_time"] is use_sim_time
+
+
+def test_bringup_1995_an_unknown_viewer_is_refused() -> None:
+    """BRINGUP-1995: a viewer with no branch is refused, naming the argument
+    and the choices."""
+    with pytest.raises(RuntimeError) as raised:
+        visualization.nodes("rqt", RVIZ_CONFIG, False)
+    message = str(raised.value)
+    assert "visualization:=rqt" in message
+    assert all(viewer in message for viewer in visualization.VIEWERS)
+
+
+def test_bringup_1995_every_viewer_has_a_branch() -> None:
+    """BRINGUP-1995: every member of VIEWERS is accepted, so a value added
+    to the choices without a branch fails here, not at launch."""
+    for viewer in visualization.VIEWERS:
+        assert isinstance(visualization.nodes(viewer, RVIZ_CONFIG, False), list)
