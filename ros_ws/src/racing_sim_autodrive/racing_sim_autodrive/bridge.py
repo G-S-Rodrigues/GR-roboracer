@@ -409,20 +409,16 @@ class BridgeSession:
         )  # fmt: skip
 
         # a sent reset re-anchors odometry and the loop until the sim has
-        # actually reset (the lap clock stops or the encoders fall back to 0,
-        # then runs again): the recorded reset segment is tens of frames long
+        # actually reset (the lap clock stops or the encoders reset, see
+        # `core.encoders_reset`, then runs again): the recorded reset segment
+        # is tens of frames long
         sim_dt = None if prev is None else core.sim_dt(prev, frame)
-        encoders_fell = prev is not None and any(
-            c < p
-            for p, c in zip(
-                prev.encoder_angles, frame.encoder_angles, strict=True
-            )
-        )
+        encoders_reset = prev is not None and core.encoders_reset(prev, frame)
         reanchor = prev is None
         if self._awaiting_reset:
             reanchor = True
             self._waited += 1
-            if sim_dt is None or encoders_fell:
+            if sim_dt is None or encoders_reset:
                 self._effect_seen = True
             elif self._effect_seen:
                 self._awaiting_reset = False

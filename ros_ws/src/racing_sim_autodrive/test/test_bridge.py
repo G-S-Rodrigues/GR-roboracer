@@ -704,3 +704,99 @@ def test_simad_1560_the_reset_while_reversing_is_held(dt_source):
         )
         < 0.01
     )
+
+
+def _probe_reset_session():
+    """A session on the porto fixture's rest frames after its drive (frames
+    345-350: angles (150.1354, 149.998), the lap clock running), then
+    synthetic reversing frames (angles falling REVERSE_STEP, lap time
+    +REVERSE_DT). Returns (session, state, feed): `state["frame"]` is the
+    last frame sent and feed(angles, lap_time) sends one more."""
+    rest = [
+        core.decode_frame(raw)
+        for _, raw in replay.load_frames(FIXTURE)[345:351]
+    ]
+    session = _session()
+    for frame in rest:
+        session.on_sim_frame(frame, None)
+    state = {"frame": rest[-1]}
+
+    def feed(angles, lap_time):
+        state["frame"] = dataclasses.replace(
+            state["frame"],
+            encoder_angles=(angles, angles),
+            lap_time=lap_time,
+            angular_velocity=(0.0, 0.0, 0.0),
+        )
+        return session.on_sim_frame(state["frame"], None)
+
+    return session, state, feed
+
+
+PROBE_RESET = -0.0295  # the probe's reset frame: 13.2012 -> -0.0295, lap 0.004
+PROBE_HOLD = (-0.036, -0.0295, -0.0131, -0.0425)  # in-band jitter, held wheels
+
+
+def test_simad_1550_reset_requested_while_reversing_waits_for_the_reset():
+    """SIMAD-1550a: a reset requested while reversing does not resume when
+    the reversing stops before the sim has reset (every reversing frame is
+    no reset), and resumes, re-anchored to the truth, once the encoders
+    reset and the lap clock runs (the probe's signature)."""
+    session, state, feed = _probe_reset_session()
+    angle = state["frame"].encoder_angles[0]
+    lap = state["frame"].lap_time
+    for _ in range(2):  # reversing, then the request
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    session.request_reset()
+    angle -= REVERSE_STEP
+    lap += REVERSE_DT
+    assert feed(angle, lap).reply["V1 Reset"] == "True"
+    for _ in range(2):  # still reversing
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    for _ in range(3):  # the car has stopped, the sim has not reset
+        lap += REVERSE_DT
+        step = feed(angle, lap)
+        assert session.awaiting_reset
+        assert step.odometry.x == step.ground_truth.x
+    step = feed(PROBE_RESET, 0.004)  # the reset frame: the lap clock falls
+    assert session.awaiting_reset
+    lap = 0.004
+    lap += 0.004
+    step = feed(PROBE_HOLD[0], lap)  # the held wheels jitter in the band
+    assert not session.awaiting_reset  # the first running frame ends it
+    assert step.odometry.x == step.ground_truth.x  # re-anchored to the truth
+    assert step.odometry.y == step.ground_truth.y
+    lap += 0.004
+    step = feed(PROBE_HOLD[1], lap)  # and dead reckoning is back
+    assert not session.awaiting_reset
+
+
+def test_simad_1550_reverse_after_the_reset_does_not_keep_waiting():
+    """SIMAD-1550b: the car keeps reversing from the reset frame on (the
+    probe held -0.02 throttle through it). The reset is read off the
+    encoders falling into the band, so the handshake ends on the first
+    running frame instead of taking every reversing frame as the reset's
+    effect forever. The car reverses continuously from request_reset()
+    through the reset frame, with no stopped frame before it."""
+    session, state, feed = _probe_reset_session()
+    angle = state["frame"].encoder_angles[0]
+    lap = state["frame"].lap_time
+    session.request_reset()
+    for _ in range(4):
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    assert session.awaiting_reset
+    feed(PROBE_RESET, 0.004)  # the reset frame
+    assert session.awaiting_reset
+    angle = PROBE_RESET
+    lap = 0.004
+    angle -= REVERSE_STEP
+    lap += REVERSE_DT
+    step = feed(angle, lap)  # the first running frame, still reversing
+    assert not session.awaiting_reset
+    assert step.odometry.x == step.ground_truth.x
