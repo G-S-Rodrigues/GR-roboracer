@@ -310,10 +310,8 @@ def test_check_1882_snapshot_key_is_the_ros_snapshot_builder(
     expires = records[pubs[0]][6]
     if expires:
         left = (
-            datetime.datetime.fromtimestamp(
-                int(expires), datetime.timezone.utc
-            )
-            - datetime.datetime.now(datetime.timezone.utc)
+            datetime.datetime.fromtimestamp(int(expires), datetime.UTC)
+            - datetime.datetime.now(datetime.UTC)
         ).days
         if left < 120:
             warnings.warn(
