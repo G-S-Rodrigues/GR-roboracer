@@ -111,6 +111,18 @@ def test_bringup_1998_old_or_missing_input_is_a_zero_target() -> None:
     assert teleop.targets(1.0, 0.2, None, 0.5) == (0.0, 0.0)
 
 
+@pytest.mark.parametrize(
+    ("linear_x", "angular_z"),
+    [(float("nan"), 0.0), (0.0, float("inf")), (float("-inf"), 0.0)],
+)
+def test_bringup_1998_a_non_finite_input_is_a_zero_target(
+    linear_x, angular_z
+) -> None:
+    """BRINGUP-1998: a nan or infinite component reads as a fault, not as
+    full command: min/max would pass it through as the limit."""
+    assert teleop.targets(linear_x, angular_z, 0.0, 0.5) == (0.0, 0.0)
+
+
 def _write(tmp_path: Path, **overrides) -> Path:
     """The default file's parameters with `overrides`; a None value drops
     the key."""

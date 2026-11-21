@@ -7,6 +7,7 @@ standstill. Time is plain floats, so the core tests in milliseconds.
 """
 
 import dataclasses
+import math
 from dataclasses import dataclass
 
 import yaml
@@ -70,7 +71,10 @@ def targets(
     linear_x: float, angular_z: float, age: float | None, timeout: float
 ) -> tuple[float, float]:
     """(speed, steering angle) wanted; (0, 0) when the input is older than
-    `timeout` s or `age` is None (nothing received yet)."""
+    `timeout` s, `age` is None (nothing received yet) or a component is not
+    finite (min/max would pass a nan through as the limit)."""
+    if not (math.isfinite(linear_x) and math.isfinite(angular_z)):
+        return 0.0, 0.0
     if age is None or age > timeout:
         return 0.0, 0.0
     return linear_x, angular_z
