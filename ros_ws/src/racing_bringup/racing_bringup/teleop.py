@@ -6,7 +6,10 @@ rate has no steering angle at zero speed, and a keyboard starts from
 standstill. Time is plain floats, so the core tests in milliseconds.
 """
 
+import dataclasses
 from dataclasses import dataclass
+
+import yaml
 
 
 @dataclass(frozen=True)
@@ -71,3 +74,51 @@ def targets(
     if age is None or age > timeout:
         return 0.0, 0.0
     return linear_x, angular_z
+
+
+NODE_NAME = "racing_bringup_teleop"
+# Limits field -> the vehicle file's racing_safety_supervisor key it may
+# not exceed.
+CAPS = (
+    ("max_speed", "maximum_speed"),
+    ("max_reverse_speed", "maximum_speed"),
+    ("acceleration", "maximum_acceleration"),
+    ("deceleration", "maximum_acceleration"),
+    ("max_steering_angle", "maximum_steering_angle"),
+    ("steering_rate", "maximum_steering_rate"),
+)
+
+
+def load(path) -> Limits:
+    """Limits from a ROS parameter file under `racing_bringup_teleop`;
+    a missing or unknown key raises, naming it."""
+    with open(path, encoding="utf-8") as stream:
+        document = yaml.safe_load(stream)
+    try:
+        values = document[NODE_NAME]["ros__parameters"]
+    except (KeyError, TypeError) as error:
+        raise RuntimeError(
+            f"{path}: no {NODE_NAME}.ros__parameters section"
+        ) from error
+    names = [field.name for field in dataclasses.fields(Limits)]
+    for name in names:
+        if name not in values:
+            raise RuntimeError(f"{path}: missing key {name}")
+    for name in values:
+        if name not in names:
+            raise RuntimeError(f"{path}: unknown key {name}")
+    return Limits(**{name: float(values[name]) for name in names})
+
+
+def check_caps(limits: Limits, vehicle_path) -> None:
+    """Raise when a limit exceeds the vehicle file's supervisor cap."""
+    with open(vehicle_path, encoding="utf-8") as stream:
+        document = yaml.safe_load(stream)
+    caps = document["racing_safety_supervisor"]["ros__parameters"]
+    for name, cap in CAPS:
+        value = getattr(limits, name)
+        if value > caps[cap]:
+            raise RuntimeError(
+                f"teleop {name}={value} exceeds {cap}={caps[cap]} "
+                f"in {vehicle_path}"
+            )
