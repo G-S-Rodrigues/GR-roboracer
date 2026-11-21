@@ -1,0 +1,14 @@
+# The ROS apt snapshot that still serves MOLA 3.3.0 (#109, CHECK-1881).
+# packages.ros.org dropped the pinned closure (mola.closure) for 3.4.0 on
+# 2026-11-09; this dated snapshot is immutable. The closure was measured on
+# the 2026-10-01 index; 2026-10-05 is the first snapshot verified to serve all
+# 52 packages. docker/apt-preferences/ros-snapshots.pref keeps it at -1 so
+# only mola.pref's by-name 1001 pins select from it.
+# Key: 4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA "ROS Snapshot builder",
+# EXPIRES 2027-06-01 (after that apt-get update fails: re-export the same
+# fingerprint into ros-snapshots.asc, repo-gotchas #27).
+Types: deb
+URIs: http://snapshots.ros.org/jazzy/2026-10-05/ubuntu
+Suites: noble
+Components: main
+Signed-By: /usr/share/keyrings/ros-snapshots.asc

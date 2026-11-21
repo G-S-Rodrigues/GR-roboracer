@@ -23,7 +23,11 @@ installed into the image unmodified.
 
 - Source: the `ros-jazzy-mola-*`, `ros-jazzy-mp2p-icp*` and `ros-jazzy-mrpt-*`
   packages of the ROS Jazzy apt index, pinned by name in
-  `docker/apt-preferences/mola.pref` (the closure is `mola.closure`).
+  `docker/apt-preferences/mola.pref` (the closure is `mola.closure`). 50 of
+  the 52 come from the dated ROS snapshot
+  `http://snapshots.ros.org/jazzy/2026-10-05/ubuntu` (#109), signed by its own
+  key; `mola-common` and `mrpt-msgs` are same-upstream rebuilds from the live
+  index (glob pins).
 - Used unmodified from Jazzy apt, as separate processes; not vendored, not
   forked.
 - Licences: `mola_lidar_odometry`, `mola_kernel` and `mola_launcher` are

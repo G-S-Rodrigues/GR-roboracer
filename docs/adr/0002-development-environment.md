@@ -134,3 +134,7 @@ These are the corrections the plan did not anticipate; each is also recorded as 
   directory, not a named volume, because the host must `flock` the same inode and a named volume lives in
   Docker Desktop's VM. Compose creates a missing source `root` 0755, which `scripts/heavy_lane.sh` repairs
   (repo-gotchas #48). No decision above changes.
+- **2026-11-21: a by-name apt pin needs a source that still serves the version.** packages.ros.org dropped
+  MOLA 3.3.0 and the `-1` catch-all failed every build, as designed. The dated ROS snapshot
+  (`docker/apt-sources/ros-snapshots.*`, #109) is that source, kept at `-1` so only the 1001 by-name pins select
+  from it. No decision above changes.
