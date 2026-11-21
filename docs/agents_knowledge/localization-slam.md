@@ -104,7 +104,8 @@ value changed from upstream and the measurement behind it. Read those headers be
   MOLA does not read `/imu` (only `/scan` and `/odom`).
 
 **MOLA in the image.** The apt closure of `ros-jazzy-mola-lidar-odometry` 3.3.0 is pinned by name
-(`docker/apt-preferences/mola.pref` and `mola.closure`, CHECK-1880), GPL-3.0, run as separate
+(`docker/apt-preferences/mola.pref` and `mola.closure`, CHECK-1880) and served from
+the 2026-10-05 ROS snapshot (#109, CHECK-1881/1882), GPL-3.0, run as separate
 processes so the repo stays MIT ([`third_party/NOTICE.md`](../../third_party/NOTICE.md)).
 `mola_sm_loop_closure` is not installed: the owner approved adding it for part M3 (2026-11-02), and
 only a spike image carried it.
