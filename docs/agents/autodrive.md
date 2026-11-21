@@ -182,9 +182,11 @@ Three places hold its tests, by what each needs:
 
 ## Mapping by hand
 
-`slam.launch.py` maps or localizes Porto while you drive from the AutoDRIVE window in **Manual**
-mode; its arguments are in `docs/configuration.md` ("Hand-driven SLAM launch"). It starts no
-controller, supervisor or support node. In Manual mode the window ignores our drive replies and
+`slam.launch.py` maps or localizes Porto while you drive by hand: from the AutoDRIVE window in
+**Manual** mode (`drive:=window`, the default, steps 1-10), or with the keyboard teleop in
+**Autonomous** mode (`drive:=teleop`, "With the keyboard teleop" below). Its arguments are in
+`docs/configuration.md` ("Hand-driven SLAM launch"). It starts no controller, supervisor or support
+node. In Manual mode the window ignores our drive replies and
 keeps streaming to the server: measured 2026-11-20, `/scan` and `/odom` never fell below 50 Hz over
 4 minutes of driving (max `/scan` gap 0.19 s). Run every `ros2` command in `dev` from `/ws`.
 
@@ -214,3 +216,26 @@ keeps streaming to the server: measured 2026-11-20, `/scan` and `/odom` never fe
    AutoDRIVE spawn equals Porto.mm's start within 1 cm.
 10. `ros2 launch racing_bringup slam.launch.py -s` prints every argument; `method:=far_lio` exits
     with "not integrated yet".
+
+### With the keyboard teleop
+
+Manual mode's arrow keys apply full throttle and steering in one step. `drive:=teleop` adds
+`racing_bringup_teleop`, which turns `key_teleop`'s `/key_vel` into a rate-limited `/drive` at
+50 Hz (limits in `config/teleop/autodrive_keyboard.yaml`; `angular.z` is read as a steering angle).
+They replace steps 2-5 above; clearing the graph (1), saving (6) and localizing (7-9) are unchanged.
+
+1. `ros2 launch racing_bringup slam.launch.py method:=slam_toolbox drive:=teleop`
+2. On the host, `scripts/autodrive_route.sh`, then the simulator with `-ip <WSL IP>`, **Menu →
+   Connection** once, and leave it in **Autonomous** (Manual ignores `/drive`).
+3. In a second `dev` shell with the launch's `ROS_DOMAIN_ID` (another domain hears no key):
+   `ros2 run key_teleop key_teleop --ros-args -p forward_rate:=1.5 -p backward_rate:=0.5 -p rotation_rate:=0.35`.
+   The arrows drive; the down arrow reverses at up to 0.5 m/s (`max_reverse_speed`), and the
+   AutoDRIVE server's `/odom` follows the car backward (signed wheel-encoder speed,
+   `racing_sim_autodrive.core.encoder_speed`). `q` quits; 0.5 s later (`input_timeout`) the target
+   becomes zero and the car ramps to a stop at 1.5 m/s² (`deceleration`).
+4. Drive two laps, watching RViz as in step 5 above.
+5. Release the keys and wait for the car to stop (about 0.5 s + v / 1.5 s), save as in step 6, then
+   Ctrl+C. Ctrl+C is not a stop: the teleop node publishes zero on shutdown, but a whole-launch
+   Ctrl+C signals the AutoDRIVE server at the same moment, the server may close before that zero
+   reaches it, and the car keeps the last command (gotcha 41; issue #110). A `kill -9` of the
+   teleop node leaves the car driving the same way.

@@ -191,15 +191,28 @@ starts it beside the held stack and is the supported entry point
 
 ## Hand-driven SLAM launch
 
-`slam.launch.py` maps or localizes the AutoDRIVE Porto track while you drive the car by hand from
-the AutoDRIVE window (**Manual** mode). It starts the AutoDRIVE server, `robot_state_publisher`, one
-SLAM method and a viewer. It starts no controller, safety supervisor or support node, so nothing
-publishes `/drive` and the SLAM method alone owns `map -> odom`. It runs on wall time and on the
-`porto` scenario only. Run it from the repository root (the config paths are relative), then
-`scripts/autodrive_route.sh` on the host, then start the simulator, connect once and switch it to
-Manual. The simulator connects only once, so restart it for every launch. A slam_toolbox map is
-saved before Ctrl+C with `map_saver_cli` (the grid) and the `/slam_toolbox/serialize_map` service
-(the pose graph `map:=` localizes on); MOLA writes its `.simplemap` on Ctrl+C.
+`slam.launch.py` maps or localizes the AutoDRIVE Porto track while you drive the car by hand. It
+starts the AutoDRIVE server, `robot_state_publisher`, one SLAM method and a viewer. It starts no
+controller, safety supervisor or support node, so the SLAM method alone owns `map -> odom`. It runs
+on wall time and on the `porto` scenario only. Run it from the repository root (the config paths are
+relative), then `scripts/autodrive_route.sh` on the host, then start the simulator and connect once.
+The simulator connects only once, so restart it for every launch. A slam_toolbox map is saved before
+Ctrl+C with `map_saver_cli` (the grid) and the `/slam_toolbox/serialize_map` service (the pose graph
+`map:=` localizes on); MOLA writes its `.simplemap` on Ctrl+C.
+
+There are two ways to drive:
+
+- `drive:=window` (the default): nothing publishes `/drive`. Switch the simulator to **Manual** and
+  drive from the AutoDRIVE window's arrow keys, which apply full throttle and steering in one step.
+- `drive:=teleop`: one more node, `racing_bringup_teleop`, publishes `/drive` at 50 Hz from the
+  `geometry_msgs/TwistStamped` messages on `/key_vel`, ramping speed and steering at the limits in
+  `teleop_config`. Leave the simulator in **Autonomous**, and run `key_teleop` in a second shell
+  with the same `ROS_DOMAIN_ID` as the launch, or the node hears no key:
+  `ros2 run key_teleop key_teleop --ros-args -p forward_rate:=1.5 -p backward_rate:=0.5 -p rotation_rate:=0.35`.
+  `linear.x` is read as the target speed in m/s (negative reverses) and `angular.z` as the target
+  **steering angle** in rad, not a yaw rate. With no `/key_vel` for `input_timeout` (0.5 s) the
+  target becomes zero and the car ramps to a stop. Release the keys and wait for the car to stop
+  before Ctrl+C: a Ctrl+C of the whole launch is not guaranteed to stop the car.
 
 | Argument | Default | Meaning |
 |---|---|---|
@@ -211,6 +224,8 @@ saved before Ctrl+C with `map_saver_cli` (the grid) and the `/slam_toolbox/seria
 | `vehicle` | `config/vehicles/autodrive_roboracer.yaml` | `autodrive_roboracer.yaml` or `autodrive_roboracer_fast.yaml`; any other file is refused. |
 | `port` | `4567` | The port the AutoDRIVE server listens on. |
 | `visualization` | `rviz` | `rviz` opens RViz on `slam.rviz` (the map, the scan, the car, slam_toolbox's graph and MOLA's local map); `none` opens nothing. |
+| `drive` | `window` | `window`: nothing publishes `/drive`; drive from the AutoDRIVE window in Manual mode. `teleop`: publish `/drive` from `/key_vel` at limited rates, with the simulator in Autonomous mode and `key_teleop` in a second shell. |
+| `teleop_config` | `config/teleop/autodrive_keyboard.yaml` | `drive:=teleop` only: the limits (`max_speed` 1.5 m/s, `max_reverse_speed` 0.5 m/s, `acceleration` 0.8 m/s², `deceleration` 1.5 m/s², `max_steering_angle` 0.35 rad, `steering_rate` 1.0 rad/s, `input_timeout` 0.5 s, `max_step` 0.1 s, `rate_hz` 50). Every value is a float (`1.0`, not `1`). A speed, acceleration, steering angle or steering rate above the vehicle file's `racing_safety_supervisor` caps is refused at launch. |
 
 ## Mapping example
 
