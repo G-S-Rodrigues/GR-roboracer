@@ -7,11 +7,11 @@ racing_bringup_teleop:
   ros__parameters:
     # m/s forward. Half the vehicle's 3.0: slow enough for a clean scan match.
     max_speed: 1.5
-    # m/s backward (positive). 0.0: the server cannot see reverse. While the
-    # car backs up /odom holds its pose with vx = 0 (bridge.py:23-26,
-    # core.py:215-216), so the map would misregister; the down arrow brakes
-    # to a stop instead. Raise it only once the server measures reverse.
-    max_reverse_speed: 0.0
+    # m/s backward (positive). Owner's choice (2026-11-21), kept for use.
+    # The AutoDRIVE server cannot see reverse: while the car backs up /odom
+    # holds its pose with vx = 0 (bridge.py:23-26, core.py:215-216), so a
+    # map built while reversing misregisters. Back up only off a mapping run.
+    max_reverse_speed: 0.5
     # m/s^2 while |speed| grows. 40 % of the vehicle's 2.0: no pitch on a
     # key press, 1.9 s to the top speed.
     acceleration: 0.8

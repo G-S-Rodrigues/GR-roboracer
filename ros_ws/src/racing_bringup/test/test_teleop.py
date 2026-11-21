@@ -138,11 +138,10 @@ def _write(tmp_path: Path, **overrides) -> Path:
 
 def test_bringup_1999_the_default_file_is_the_gentle_set() -> None:
     """BRINGUP-1999: the committed file loads into Limits, with the gentle
-    values (1.5 m/s, 0.8 m/s^2, 0.35 rad) the plan settled, and no reverse
-    (the server cannot measure it; review M1)."""
+    values (1.5 m/s, 0.8 m/s^2, 0.35 rad) the plan settled."""
     assert teleop.load(KEYBOARD) == teleop.Limits(
         max_speed=1.5,
-        max_reverse_speed=0.0,
+        max_reverse_speed=0.5,
         acceleration=0.8,
         deceleration=1.5,
         max_steering_angle=0.35,
