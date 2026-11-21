@@ -1,0 +1,33 @@
+# Limits for hand driving the AutoDRIVE car with slam.launch.py drive:=teleop
+# (racing_bringup.teleop). Gentle on purpose: the arrow keys of the
+# simulator's Manual mode give full throttle in one step, the car pitches and
+# the map doubles its walls. Edit these to map faster; teleop.check_caps
+# refuses anything above the vehicle file's racing_safety_supervisor caps.
+racing_bringup_teleop:
+  ros__parameters:
+    # m/s forward. Half the vehicle's 3.0: slow enough for a clean scan match.
+    max_speed: 1.5
+    # m/s backward (positive). Owner's choice (2026-11-21). The AutoDRIVE
+    # server's /odom follows reverse from the signed wheel encoders
+    # (racing_sim_autodrive.core.encoder_speed).
+    max_reverse_speed: 0.5
+    # m/s^2 while |speed| grows. 40 % of the vehicle's 2.0: no pitch on a
+    # key press, 1.9 s to the top speed.
+    acceleration: 0.8
+    # m/s^2 while |speed| shrinks (and through zero when reversing). Higher
+    # than acceleration so letting go stops the car in about a metre.
+    deceleration: 1.5
+    # rad, the steering angle a full key press asks for. Two thirds of the
+    # vehicle's 0.5236, so the car never turns at the lock at speed.
+    max_steering_angle: 0.35
+    # rad/s. Two thirds of the vehicle's 1.5: the angle takes 0.35 s to
+    # reach its limit instead of one step.
+    steering_rate: 1.0
+    # s without a /key_vel message before the target becomes zero (the
+    # car then ramps to a stop). key_teleop publishes at 10 Hz.
+    input_timeout: 0.5
+    # s, the largest dt one step may use: a wall-clock step (gotcha #45)
+    # moves the output by this much at most.
+    max_step: 0.1
+    # Hz /drive is published at.
+    rate_hz: 50.0

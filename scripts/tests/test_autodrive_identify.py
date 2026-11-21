@@ -591,9 +591,9 @@ def test_check_2605_wheel_speed_is_the_encoder_delta_over_lap_time() -> None:
     (gotcha 35: never the receive time). None on dt <= 0 (a lap-line reset)
     and on a backward angle (the encoders zero on a reset), never a negative
     speed. It equals `racing_sim_autodrive.core.encoder_speed` on every
-    fixture pair: the tool is stdlib-only and duplicates those 8 lines, and
-    this is what stops the copy drifting. Hand oracle: frames 300 -> 301,
-    1.0521 rad mean in 0.062 s is 1.0012 m/s."""
+    fixture pair, none of which reverses (the tool is a stdlib-only,
+    forward-only copy, and this is what stops it drifting on forward data).
+    Hand oracle: frames 300 -> 301, 1.0521 rad mean in 0.062 s is 1.0012 m/s."""
     import dataclasses
     from types import SimpleNamespace
 

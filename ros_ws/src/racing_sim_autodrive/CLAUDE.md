@@ -4,7 +4,7 @@ Purpose: the ROS-free core both AutoDRIVE front ends share (our Socket.IO server
 neither duplicates a conversion. No network code, no clock, no rclpy.
 
 Public contract: `core.decode_frame` (Socket.IO strings) and `core.frame_from_devkit(DevkitSample)` -> `SimFrame`;
-`rear_axle_to_cog`, `frame_pose`, `sim_dt`, `encoder_speed`; `lidar.decode_lidar`; `control.ThrottleLoop`,
+`rear_axle_to_cog`, `frame_pose`, `sim_dt`, `encoder_speed` (signed), `encoders_reset`; `lidar.decode_lidar`; `control.ThrottleLoop`,
 `steering_to_normalized`, `ResetLatch`. Vehicle values (lr, wheel radius, throttle gain, max steering angle, PI
 gains) are arguments with no defaults. dt is the caller's. A missing key other than the lidar raises `FrameError`.
 

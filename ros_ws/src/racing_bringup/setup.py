@@ -31,6 +31,7 @@ setup(
     entry_points={
         "console_scripts": [
             "racing_bringup_support = racing_bringup.support_node:main",
+            "racing_bringup_teleop = racing_bringup.teleop_node:main",
         ],
     },
 )

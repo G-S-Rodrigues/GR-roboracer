@@ -127,6 +127,10 @@ roles:
           - ros_ws/src/racing_bringup/racing_bringup/slam.py
           - ros_ws/src/racing_bringup/racing_bringup/autodrive.py
           - ros_ws/src/racing_bringup/racing_bringup/visualization.py
+          - ros_ws/src/racing_bringup/racing_bringup/drive.py
+          - ros_ws/src/racing_bringup/racing_bringup/teleop.py
+          - ros_ws/src/racing_bringup/racing_bringup/teleop_node.py
+          - config/teleop/*
           - ros_ws/src/racing_vehicle_description/rviz/slam.rviz
           - config/localization/slam_toolbox_*.yaml
           - ros_ws/src/racing_sim_gym_jax/*
@@ -160,6 +164,10 @@ roles:
           - ros_ws/src/racing_bringup/racing_bringup/slam.py
           - ros_ws/src/racing_bringup/racing_bringup/autodrive.py
           - ros_ws/src/racing_bringup/racing_bringup/visualization.py
+          - ros_ws/src/racing_bringup/racing_bringup/drive.py
+          - ros_ws/src/racing_bringup/racing_bringup/teleop.py
+          - ros_ws/src/racing_bringup/racing_bringup/teleop_node.py
+          - config/teleop/*
           - ros_ws/src/racing_vehicle_description/rviz/slam.rviz
           - config/localization/mola_*.yaml
           - scripts/mola_map_track.sh

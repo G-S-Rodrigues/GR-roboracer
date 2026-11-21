@@ -20,10 +20,10 @@ integrate over is `dt_source`:
 Either way a missing dt means feedforward plus the held integral, never a
 guessed step.
 
-Reversing: any backward wheel motion makes `core.encoder_speed` None, so
-while the car backs up the throttle is feedforward plus the held integral and
-`/odom` holds its pose with `vx = 0`. That is acceptable for racing (the car
-does not reverse) and is not fixed here.
+Reversing: while the car backs up the encoder speed is negative, `/odom`
+integrates it and the throttle loop closes on it. A reset is recognised by
+both encoders falling into a band around 0 (`core.encoders_reset`), never by
+a backward step alone.
 """
 
 from __future__ import annotations
@@ -60,7 +60,8 @@ _LOG = logging.getLogger(__name__)
 # before it logs an ERROR and gives control back. Read off the fixture: the
 # recorded sim was answered `Reset True` for 59 consecutive replies, so the
 # reset takes at least that many frames to be taken seriously, and the
-# handshake here detects its effect (lap clock stops or encoders fall) 11
+# handshake here detects its effect (the lap clock stops or the encoders
+# reset into the band, `core.encoders_reset`) 11
 # frames after the first True in the recording. 120 frames is about twice
 # the longest recorded True run and ten times the detection, so a slow
 # reset is not cut short while a reset the sim ignored (one True may not
@@ -409,20 +410,16 @@ class BridgeSession:
         )  # fmt: skip
 
         # a sent reset re-anchors odometry and the loop until the sim has
-        # actually reset (the lap clock stops or the encoders fall back to 0,
-        # then runs again): the recorded reset segment is tens of frames long
+        # actually reset (the lap clock stops or the encoders reset, see
+        # `core.encoders_reset`, then runs again): the recorded reset segment
+        # is tens of frames long
         sim_dt = None if prev is None else core.sim_dt(prev, frame)
-        encoders_fell = prev is not None and any(
-            c < p
-            for p, c in zip(
-                prev.encoder_angles, frame.encoder_angles, strict=True
-            )
-        )
+        encoders_reset = prev is not None and core.encoders_reset(prev, frame)
         reanchor = prev is None
         if self._awaiting_reset:
             reanchor = True
             self._waited += 1
-            if sim_dt is None or encoders_fell:
+            if sim_dt is None or encoders_reset:
                 self._effect_seen = True
             elif self._effect_seen:
                 self._awaiting_reset = False

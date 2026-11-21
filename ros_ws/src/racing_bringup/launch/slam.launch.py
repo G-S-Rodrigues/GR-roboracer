@@ -2,9 +2,11 @@
 
 Starts the AutoDRIVE server, robot_state_publisher, one SLAM method
 (slam_toolbox or MOLA, mapping or localizing) and a viewer. The controller,
-the safety supervisor and the support node are deliberately absent: nothing
-publishes /drive, and the car is driven from the AutoDRIVE window in Manual
-mode. Without the support node the SLAM method is the only owner of
+the safety supervisor and the support node are deliberately absent. By
+default nothing publishes /drive and the car is driven from the AutoDRIVE
+window in Manual mode; `drive:=teleop` adds one node that publishes /drive
+from /key_vel at limited rates (the simulator then stays in Autonomous).
+Without the support node the SLAM method is the only owner of
 `map -> odom`.
 
 Run from the repository root: the config paths here are relative to the
@@ -20,7 +22,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from racing_bringup import autodrive, estimators, slam, visualization
+from racing_bringup import autodrive, drive, estimators, slam, visualization
 from racing_bringup.scenario_parameters import track_parameters
 from racing_bringup.simulators import sim_time_for
 from racing_bringup.vehicle_description import description_for
@@ -38,6 +40,7 @@ SLAM_TOOLBOX_CONFIGS = {
 MOLA_MAPPING_CONFIG = "config/localization/mola_lidar2d_mapping.yaml"
 MOLA_LOCALIZATION_CONFIG = "config/localization/mola_lidar2d.yaml"
 SIMPLEMAP_OUTPUT = "log/maps/mola_manual.simplemap"
+TELEOP_CONFIG = "config/teleop/autodrive_keyboard.yaml"
 
 
 def _method_nodes(
@@ -120,6 +123,12 @@ def _launch_described(context, description_share: Path) -> list:
             str(description_share / "rviz" / "slam.rviz"),
             use_sim_time,
         ),
+        *drive.nodes(
+            LaunchConfiguration("drive").perform(context),
+            LaunchConfiguration("teleop_config").perform(context),
+            vehicle,
+            use_sim_time,
+        ),
     ]
 
 
@@ -134,9 +143,10 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="slam_toolbox",
                 choices=list(slam.METHODS),
                 description=(
-                    "The SLAM method. The car is driven by hand from the "
-                    "AutoDRIVE window (Manual mode); this launch starts no "
-                    "controller. far_lio is listed but not integrated yet."
+                    "The SLAM method. The car is driven by hand, from the "
+                    "AutoDRIVE window (Manual mode) or with drive:=teleop; "
+                    "this launch starts no controller. far_lio is listed "
+                    "but not integrated yet."
                 ),
             ),
             DeclareLaunchArgument(
@@ -192,6 +202,25 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="rviz",
                 choices=list(visualization.VIEWERS),
                 description="The viewer: rviz on slam.rviz, or none.",
+            ),
+            DeclareLaunchArgument(
+                "drive",
+                default_value="window",
+                choices=list(drive.DRIVES),
+                description=(
+                    "window: nothing publishes /drive, drive from the "
+                    "AutoDRIVE window in Manual mode. teleop: publish /drive "
+                    "from /key_vel at limited rates; needs the simulator in "
+                    "Autonomous mode and key_teleop in a second shell."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "teleop_config",
+                default_value=TELEOP_CONFIG,
+                description=(
+                    "drive:=teleop only: the rate limits, refused above the "
+                    "vehicle file's safety caps."
+                ),
             ),
             OpaqueFunction(
                 function=_launch_described, args=[description_share]

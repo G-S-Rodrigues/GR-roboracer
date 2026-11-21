@@ -1,19 +1,22 @@
 """Tier 1: the ROS-free AutoDRIVE core (SIMAD-*), against the part-1 fixture."""
 
 import base64
+import dataclasses
 import gzip
 import importlib.util
 import math
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from racing_sim_autodrive import control, core, lidar  # noqa: F401
+from racing_sim_autodrive import control, core, lidar, replay  # noqa: F401
 
 REPO = Path(__file__).resolve().parents[4]
 FIXTURE = Path(__file__).parent / "fixtures" / "porto_stream.jsonl.gz"
+REVERSE = Path(__file__).parent / "fixtures" / "reverse_stream.jsonl.gz"
 LIDAR_KEY = "V1 LIDAR Range Array"
 # 1e-3 rad: the telemetry prints 4 decimals, so quaternion and Euler yaw
 # agree to a few 1e-4 rad at most.
@@ -227,8 +230,10 @@ def test_simad_1090_encoder_speed_matches_linear_velocity():
     for radius in (0.0, -0.059):
         with pytest.raises(ValueError):
             core.encoder_speed(a, b, radius, 0.02)
-    # encoders jumping backwards is a reset, never a negative speed
-    fast = [f for _, f in frames if f.encoder_angles[0] > 1.0][0]
+    # encoders falling into the reset band from beyond the minimum drop is a
+    # reset, never a negative speed
+    beyond = core.RESET_MIN_DROP + core.RESET_BAND
+    fast = [f for _, f in frames if min(f.encoder_angles) > beyond][0]
     assert core.encoder_speed(fast, frames[0][1], WHEEL_RADIUS, 0.05) is None
 
 
@@ -449,3 +454,128 @@ def test_simad_1360_counters_carry_the_five_sim_fields():
         best_lap_time=made.best_lap_time,
         collisions=made.collisions,
     )
+
+
+def _angles(left, right):
+    """A stand-in frame: encoder_speed and encoders_reset read only this."""
+    return SimpleNamespace(encoder_angles=(left, right))
+
+
+def _decoded(path):
+    return [(t, core.decode_frame(raw)) for t, raw in replay.load_frames(path)]
+
+
+def test_simad_1500_encoder_speed_is_signed():
+    """SIMAD-1500: a wheel turning backward gives a negative speed (the
+    encoders carry the direction, WheelEncoder.cs integrates the signed
+    rpm); the mean of mixed signs is signed; forward is unchanged."""
+    base = _decoded(FIXTURE)[400][1]
+
+    def speed(before, after, dt=0.02):
+        prev = dataclasses.replace(base, encoder_angles=before)
+        cur = dataclasses.replace(base, encoder_angles=after)
+        return core.encoder_speed(prev, cur, WHEEL_RADIUS, dt)
+
+    assert speed((10.0, 10.0), (9.9, 9.9)) == pytest.approx(
+        -0.1 * WHEEL_RADIUS / 0.02, abs=1e-12
+    )
+    assert speed((10.0, 10.0), (10.01, 9.99)) == pytest.approx(0.0, abs=1e-12)
+    assert speed((10.0, 10.0), (10.1, 10.1)) == pytest.approx(
+        0.1 * WHEEL_RADIUS / 0.02, abs=1e-12
+    )
+    # reversing out of a reset
+    assert speed((0.0, 0.0), (-0.05, -0.05)) < 0.0
+
+
+# (id, prev, cur, expected): the source of each case is in its id.
+RESET_CASES = [
+    ("fixture-reset", (150.1354, 149.998), (0.0, 0.0), True),
+    ("practice-smallest-drop", (12.5893, 12.5893), (0.0, 0.0), True),
+    (
+        "probe-reset-while-reversing",
+        (13.2012, 13.2012),
+        (-0.0295, -0.0295),
+        True,
+    ),
+    (
+        "corner-sweep-largest-landing",
+        (210.5391, 210.382),
+        (0.6087, 0.612),
+        True,
+    ),
+    ("bounds-inclusive-positive", (5.5, 5.5), (1.5, 1.5), True),
+    ("bounds-inclusive-negative", (2.5, 2.5), (-1.5, -1.5), True),
+    ("rest-at-spawn", (0.0, 0.0), (0.0, 0.0), False),
+    ("slow-reverse-through-origin", (0.05, 0.05), (-0.01, -0.01), False),
+    ("teleop-worst-frame-through-origin", (0.6, 0.6), (-0.63, -0.63), False),
+    (
+        "probe-largest-reverse-frame",
+        (18.4765, 18.4765),
+        (18.0576, 18.0576),
+        False,
+    ),
+    ("probe-hold-jitter", (-0.0295, -0.0295), (-0.036, -0.036), False),
+    ("miss-i-too-little-travel", (3.9, 3.9), (0.0, 0.0), False),
+    ("miss-ii-landing-outside-band", (13.2012, 13.2012), (1.6, 1.6), False),
+    ("miss-iii-from-negative-angle", (-13.2, -13.2), (0.0, 0.0), False),
+    ("one-wheel-only", (150.1, 149.9), (0.0, 149.9), False),
+    ("negative-zero-is-in-band", (13.0, 13.0), (-0.0, -0.0), True),
+]
+
+
+@pytest.mark.parametrize(
+    "prev,cur,expected",
+    [pytest.param(p, c, e, id=i) for i, p, c, e in RESET_CASES],
+)
+def test_simad_1510_encoders_reset_hand_cases(prev, cur, expected):
+    """SIMAD-1510: a reset is both encoders falling at least RESET_MIN_DROP
+    into +-RESET_BAND of 0 in one frame; encoder_speed is None exactly then."""
+    a, b = _angles(*prev), _angles(*cur)
+    assert core.encoders_reset(a, b) is expected
+    assert (core.encoder_speed(a, b, WHEEL_RADIUS, 0.02) is None) is expected
+
+
+@pytest.mark.parametrize(
+    "path,at",
+    [(FIXTURE, 13.0358), (REVERSE, 11.0096)],
+    ids=["porto", "reverse"],
+)
+def test_simad_1510_exactly_one_reset_in_each_recording(path, at):
+    """SIMAD-1510: over every consecutive pair of a recording the rule is
+    True once, on the reset frame, and encoder_speed is None exactly there."""
+    frames = _decoded(path)
+    hits = []
+    for (_, prev), (t, cur) in zip(frames, frames[1:], strict=False):
+        reset = core.encoders_reset(prev, cur)
+        speed = core.encoder_speed(prev, cur, WHEEL_RADIUS, 0.02)
+        assert (speed is None) is reset
+        if reset:
+            hits.append(t)
+    assert hits == [pytest.approx(at, abs=1e-6)]
+
+
+def test_simad_1520_forward_recording_is_frame_identical_to_the_old_rule():
+    """SIMAD-1520: the porto fixture never reverses and its one fall is a
+    reset, so the signed encoder_speed equals the old rule (any backward
+    delta is None, else the mean) on every pair, under lap-time dt and under
+    receipt dt (front end B's, the race path; the only place the reset
+    predicate is load-bearing: the reset pair has no lap-time dt)."""
+    frames = _decoded(FIXTURE)
+    compared = 0
+    for (t0, prev), (t1, cur) in zip(frames, frames[1:], strict=False):
+        deltas = [
+            c - p
+            for p, c in zip(
+                prev.encoder_angles, cur.encoder_angles, strict=True
+            )
+        ]
+        for dt in (core.sim_dt(prev, cur), t1 - t0):
+            old = (
+                None
+                if dt is None or not dt > 0.0 or any(d < 0.0 for d in deltas)
+                else sum(deltas) / 2 * WHEEL_RADIUS / dt
+            )
+            new = core.encoder_speed(prev, cur, WHEEL_RADIUS, dt)
+            assert new == old, (t1, dt)
+            compared += 1
+    assert compared == 2 * (len(frames) - 1)

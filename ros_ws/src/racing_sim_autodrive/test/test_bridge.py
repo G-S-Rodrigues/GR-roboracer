@@ -11,6 +11,7 @@ radius 0.059, throttle gain 24.859772, max steering 0.523633. kp/ki are
 UNTUNED test values (no gains exist yet; tuning is part 10).
 """
 
+import dataclasses
 import math
 import re
 from pathlib import Path
@@ -24,6 +25,7 @@ from racing_sim_autodrive import bridge, control, core, replay
 
 REPO = Path(__file__).resolve().parents[4]
 FIXTURE = Path(__file__).parent / "fixtures" / "porto_stream.jsonl.gz"
+REVERSE = Path(__file__).parent / "fixtures" / "reverse_stream.jsonl.gz"
 PORTO = REPO / "config" / "tracks" / "porto.yaml"
 
 VEHICLE = bridge.VehicleValues(
@@ -575,3 +577,255 @@ def test_simad_1400_on_frame_is_decode_plus_on_sim_frame(raws):
         }, k
         fired += b.reset
     assert fired == 1
+
+
+REVERSE_STEP = 0.15  # rad per synthetic frame, both wheels falling
+REVERSE_DT = 0.02  # s of sim (and receive) time per synthetic frame
+
+
+def _reverse_frames(count, start=None):
+    """Fixture rest frames (sim frames 1-36, t < 2 s: nothing driven yet),
+    then `count` synthetic frames copied from the last one with both angles
+    falling REVERSE_STEP per frame, the lap clock +REVERSE_DT and no yaw
+    rate: [(frame, received_at)]."""
+    rest = [
+        (core.decode_frame(raw), t)
+        for t, raw in replay.load_frames(FIXTURE)[1:37]
+    ]
+    frames = list(rest)
+    last, t = rest[-1]
+    angle = last.encoder_angles[0]
+    lap = last.lap_time
+    for _ in range(count):
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        t += REVERSE_DT
+        last = dataclasses.replace(
+            last,
+            encoder_angles=(angle, angle),
+            lap_time=lap,
+            angular_velocity=(0.0, 0.0, 0.0),
+        )
+        frames.append((last, t))
+    return frames, len(rest)
+
+
+@pytest.mark.parametrize("dt_source", ["lap_time", "receipt"])
+def test_simad_1530_odometry_follows_reverse_motion(dt_source):
+    """SIMAD-1530: wheels turning backward move /odom backward along its
+    heading by delta * r per frame and publish vx < 0 (the angles go
+    negative from frame 1, so this also reverses out of the encoder
+    origin)."""
+    frames, rest = _reverse_frames(50)
+    session = _session(dt_source=dt_source)
+    steps = [session.on_sim_frame(f, None, received_at=t) for f, t in frames]
+    per_frame = REVERSE_STEP * VEHICLE.wheel_radius
+    for before, after in zip(steps[rest - 1 :], steps[rest:], strict=False):
+        yaw = before.odometry.yaw
+        along = (after.odometry.x - before.odometry.x) * math.cos(yaw) + (
+            after.odometry.y - before.odometry.y
+        ) * math.sin(yaw)
+        assert along == pytest.approx(-per_frame, abs=1e-9)
+        assert after.odometry.vx == pytest.approx(
+            -per_frame / REVERSE_DT, abs=1e-9
+        )
+        assert after.speed < 0.0
+
+
+def test_simad_1540_reverse_throttle_is_closed_loop():
+    """SIMAD-1540: with a reverse request the loop runs on the signed speed:
+    the integral moves and every reply equals a hand ThrottleLoop."""
+    frames, rest = _reverse_frames(50)
+    request = bridge.DriveRequest(speed=-0.5, steering_angle=0.0)
+    session = _session()
+    for f, t in frames[:rest]:
+        session.on_sim_frame(f, None, received_at=t)
+    before = session.integral
+    hand = control.ThrottleLoop(VEHICLE.throttle_gain, VEHICLE.kp, VEHICLE.ki)
+    speed = -REVERSE_STEP * VEHICLE.wheel_radius / REVERSE_DT
+    for f, t in frames[rest:]:
+        step = session.on_sim_frame(f, request, received_at=t)
+        want = hand.update(-0.5, speed, REVERSE_DT)
+        assert float(step.reply["V1 Throttle"]) == pytest.approx(want, abs=6e-5)
+    assert session.integral != before
+
+
+def _reverse_run(dt_source):
+    """(t, frame, step) for the whole reverse recording, nothing driven."""
+    session = _session(dt_source=dt_source)
+    out = []
+    for t, raw in replay.load_frames(REVERSE):
+        frame = core.decode_frame(raw)
+        out.append((t, frame, session.on_sim_frame(frame, None, t)))
+    return out
+
+
+@pytest.mark.parametrize("dt_source", ["lap_time", "receipt"])
+def test_simad_1560_recorded_reverse_odometry_has_the_sign_and_scale(
+    dt_source,
+):
+    """SIMAD-1560 (i): over the recorded reverse (V1 Throttle echo < 0 before
+    the reset, 766 frames) /odom moves backward along its start heading by
+    about the truth's travel (wheel travel 1.738 m against truth 1.691 m when
+    planned) and the speed is negative on at least 90 % of the frames. A
+    tier-1 sign-and-scale check, not a quality bound."""
+    run = _reverse_run(dt_source)
+    reverse = [
+        (f, s) for t, f, s in run if f.throttle_echo < 0.0 and t < 11.0096
+    ]
+    assert len(reverse) == 766
+    first, last = reverse[0][1], reverse[-1][1]
+    yaw = first.odometry.yaw
+    dx = last.odometry.x - first.odometry.x
+    dy = last.odometry.y - first.odometry.y
+    along = dx * math.cos(yaw) + dy * math.sin(yaw)
+    truth = math.hypot(
+        last.ground_truth.x - first.ground_truth.x,
+        last.ground_truth.y - first.ground_truth.y,
+    )
+    assert along < 0.0
+    assert 0.5 * truth <= math.hypot(dx, dy) <= 2.0 * truth
+    negative = sum(1 for _, s in reverse if s.speed is not None and s.speed < 0)
+    assert negative >= 0.9 * len(reverse)
+
+
+@pytest.mark.parametrize("dt_source", ["lap_time", "receipt"])
+def test_simad_1560_the_reset_while_reversing_is_held(dt_source):
+    """SIMAD-1560 (ii): the recorded reset frame (t 11.0096, angles
+    13.2012 -> -0.0295) is a reset: no speed and /odom moves less than 0.01
+    m across it, under both dt sources."""
+    run = _reverse_run(dt_source)
+    i = next(k for k, (t, _, _) in enumerate(run) if abs(t - 11.0096) < 1e-6)
+    before, at = run[i - 1][2], run[i][2]
+    assert at.speed is None
+    assert (
+        math.hypot(
+            at.odometry.x - before.odometry.x, at.odometry.y - before.odometry.y
+        )
+        < 0.01
+    )
+
+
+def _probe_reset_session():
+    """A session on the porto fixture's rest frames after its drive (frames
+    345-350: angles (150.1354, 149.998), the lap clock running), then
+    synthetic reversing frames (angles falling REVERSE_STEP, lap time
+    +REVERSE_DT). Returns (session, state, feed): `state["frame"]` is the
+    last frame sent and feed(angles, lap_time) sends one more."""
+    rest = [
+        core.decode_frame(raw)
+        for _, raw in replay.load_frames(FIXTURE)[345:351]
+    ]
+    session = _session()
+    for frame in rest:
+        session.on_sim_frame(frame, None)
+    state = {"frame": rest[-1]}
+
+    def feed(angles, lap_time):
+        state["frame"] = dataclasses.replace(
+            state["frame"],
+            encoder_angles=(angles, angles),
+            lap_time=lap_time,
+            angular_velocity=(0.0, 0.0, 0.0),
+        )
+        return session.on_sim_frame(state["frame"], None)
+
+    return session, state, feed
+
+
+PROBE_RESET = -0.0295  # the probe's reset frame: 13.2012 -> -0.0295, lap 0.004
+PROBE_HOLD = (-0.036, -0.0295, -0.0131, -0.0425)  # in-band jitter, held wheels
+
+
+def test_simad_1550_reset_requested_while_reversing_waits_for_the_reset():
+    """SIMAD-1550a: a reset requested while reversing does not resume when
+    the reversing stops before the sim has reset (every reversing frame is
+    no reset), and resumes, re-anchored to the truth, once the encoders
+    reset and the lap clock runs (the probe's signature)."""
+    session, state, feed = _probe_reset_session()
+    angle = state["frame"].encoder_angles[0]
+    lap = state["frame"].lap_time
+    for _ in range(2):  # reversing, then the request
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    session.request_reset()
+    angle -= REVERSE_STEP
+    lap += REVERSE_DT
+    assert feed(angle, lap).reply["V1 Reset"] == "True"
+    for _ in range(2):  # still reversing
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    for _ in range(3):  # the car has stopped, the sim has not reset
+        lap += REVERSE_DT
+        step = feed(angle, lap)
+        assert session.awaiting_reset
+        assert step.odometry.x == step.ground_truth.x
+    step = feed(PROBE_RESET, 0.004)  # the reset frame: the lap clock falls
+    assert session.awaiting_reset
+    lap = 0.004
+    lap += 0.004
+    step = feed(PROBE_HOLD[0], lap)  # the held wheels jitter in the band
+    assert not session.awaiting_reset  # the first running frame ends it
+    assert step.odometry.x == step.ground_truth.x  # re-anchored to the truth
+    assert step.odometry.y == step.ground_truth.y
+    lap += 0.004
+    step = feed(PROBE_HOLD[1], lap)  # and dead reckoning is back
+    assert not session.awaiting_reset
+    assert step.speed is not None  # the wheels' displacement is integrated
+    assert (step.odometry.x, step.odometry.y) != (
+        step.ground_truth.x,
+        step.ground_truth.y,
+    )  # no longer re-anchored to the truth
+
+
+def test_simad_1550_reverse_after_the_reset_does_not_keep_waiting():
+    """SIMAD-1550b: the car keeps reversing from the reset frame on (the
+    probe held -0.02 throttle through it). The reset is read off the
+    encoders falling into the band, so the handshake ends on the first
+    running frame instead of taking every reversing frame as the reset's
+    effect forever. The car reverses continuously from request_reset()
+    through the reset frame, with no stopped frame before it."""
+    session, state, feed = _probe_reset_session()
+    angle = state["frame"].encoder_angles[0]
+    lap = state["frame"].lap_time
+    session.request_reset()
+    for _ in range(4):
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    assert session.awaiting_reset
+    feed(PROBE_RESET, 0.004)  # the reset frame
+    assert session.awaiting_reset
+    angle = PROBE_RESET
+    lap = 0.004
+    angle -= REVERSE_STEP
+    lap += REVERSE_DT
+    step = feed(angle, lap)  # the first running frame, still reversing
+    assert not session.awaiting_reset
+    assert step.odometry.x == step.ground_truth.x
+
+
+def test_simad_1550_the_encoders_alone_mark_the_reset_as_seen():
+    """SIMAD-1550c: the lap clock is debug-only on a race car (gotcha 49), so
+    the encoders must be enough. The reset frame keeps the lap clock rising
+    (angles to -0.0295, lap +0.02), so only `core.encoders_reset` can mark
+    the reset as seen: the session is still awaiting on that frame and has
+    resumed on the next."""
+    session, state, feed = _probe_reset_session()
+    angle = state["frame"].encoder_angles[0]
+    lap = state["frame"].lap_time
+    session.request_reset()
+    for _ in range(4):
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    assert session.awaiting_reset
+    lap += 0.02
+    feed(PROBE_RESET, lap)  # the reset frame, the lap clock still rising
+    assert session.awaiting_reset
+    lap += 0.02
+    step = feed(PROBE_RESET - REVERSE_STEP, lap)
+    assert not session.awaiting_reset
+    assert step.odometry.x == step.ground_truth.x
