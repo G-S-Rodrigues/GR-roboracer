@@ -189,6 +189,29 @@ starts it beside the held stack and is the supported entry point
 | `configuration` | `config/localization/mola_lidar2d_mapping.yaml` | MOLA-LO's launch arguments, as a yaml. |
 | `simulator` | `f1tenth_gym_jax` | Decides `use_sim_time`: simulated time on the gym, wall time on `autodrive`. |
 
+## Hand-driven SLAM launch
+
+`slam.launch.py` maps or localizes the AutoDRIVE Porto track while you drive the car by hand from
+the AutoDRIVE window (**Manual** mode). It starts the AutoDRIVE server, `robot_state_publisher`, one
+SLAM method and a viewer. It starts no controller, safety supervisor or support node, so nothing
+publishes `/drive` and the SLAM method alone owns `map -> odom`. It runs on wall time and on the
+`porto` scenario only. Run it from the repository root (the config paths are relative), then
+`scripts/autodrive_route.sh` on the host, then start the simulator, connect once and switch it to
+Manual. The simulator connects only once, so restart it for every launch. A slam_toolbox map is
+saved before Ctrl+C with `map_saver_cli` (the grid) and the `/slam_toolbox/serialize_map` service
+(the pose graph `map:=` localizes on); MOLA writes its `.simplemap` on Ctrl+C.
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `method` | `slam_toolbox` | `slam_toolbox` or `mola`. `far_lio` is listed and refused: it is not integrated yet. |
+| `mode` | `mapping` | `mapping` builds a map; `localization` localizes on the one `map:=` names. |
+| `map` | empty | Localization only. `slam_toolbox`: the base path (no extension) of a pose graph serialized by a mapping run of this launch; required, and both `<base>.posegraph` and `<base>.data` must exist. `mola`: a `.mm` file (empty = the committed Porto map); a `<same stem>.yaml` beside it gives `map -> mola_map`, otherwise it is the identity. |
+| `slam_toolbox_config` | empty | slam_toolbox's parameter file. Empty = `config/localization/slam_toolbox_online_1080.yaml` for mapping, `config/localization/slam_toolbox_localization_1080.yaml` for localization. |
+| `simplemap_output` | `log/maps/mola_manual.simplemap` | MOLA mapping only: where MOLA writes the `.simplemap` on Ctrl+C. Its folder is created. |
+| `vehicle` | `config/vehicles/autodrive_roboracer.yaml` | `autodrive_roboracer.yaml` or `autodrive_roboracer_fast.yaml`; any other file is refused. |
+| `port` | `4567` | The port the AutoDRIVE server listens on. |
+| `visualization` | `rviz` | `rviz` opens RViz on `slam.rviz` (the map, the scan, the car, slam_toolbox's graph and MOLA's local map); `none` opens nothing. |
+
 ## Mapping example
 
 > **Target contract, not yet executable.** No launcher reads this YAML yet. Run today's command shown beside it.

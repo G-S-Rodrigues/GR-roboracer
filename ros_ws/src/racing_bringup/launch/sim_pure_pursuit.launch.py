@@ -10,7 +10,6 @@ arguments below) resolve the same way ``scripts/check.sh`` resolves them.
 import os
 from pathlib import Path
 
-import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -18,6 +17,13 @@ from launch.conditions import IfCondition
 from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from racing_bringup import autodrive
+from racing_bringup.autodrive import (
+    AUTODRIVE_PORT,
+    AUTODRIVE_SCENARIO,
+    AUTODRIVE_SERVER_CONFIG,
+    world_to_map,
+)
 from racing_bringup.estimators import amcl, mola, slam_toolbox
 from racing_bringup.scenario_parameters import (
     AUTODRIVE_BRIDGES,
@@ -34,17 +40,6 @@ from racing_bringup.vehicle_description import description_for
 LOGGER = get_logger("sim_pure_pursuit.launch")
 VEHICLE_CONFIG = "config/vehicles/f1tenth_default.yaml"
 SCENARIO = "config/scenarios/contract_test.yaml"
-# What `simulator:=autodrive` runs: the only vehicle and the only track the
-# AutoDRIVE build has active, the server's values and the world_to_map it
-# publishes under (config/autodrive/porto_frame.yaml: measured in part 10;
-# plan D3). Paths are repository-relative,
-# like the rest of this file.
-AUTODRIVE_VEHICLES = ("autodrive_roboracer", "autodrive_roboracer_fast")
-AUTODRIVE_SCENARIO = "porto"
-AUTODRIVE_SERVER_CONFIG = "config/vehicles/autodrive_roboracer/server.yaml"
-AUTODRIVE_FRAME = "config/autodrive/porto_frame.yaml"
-# config/autodrive/simulator.yaml bridge_port (BRINGUP-1600 keeps them equal).
-AUTODRIVE_PORT = "4567"
 # How the controller's command speed is chosen: its own curvature schedule, or
 # the speed each /trajectory point carries (a raceline's).
 SPEED_SOURCES = ("curvature_schedule", "trajectory")
@@ -93,15 +88,6 @@ SLAM_TOOLBOX_CONFIGS = {
 INITIAL_POSE_TOPIC = "/initialpose"
 
 
-def _world_to_map() -> dict:
-    """The server's `world_to_map.*` parameters, from AUTODRIVE_FRAME."""
-    document = yaml.safe_load(Path(AUTODRIVE_FRAME).read_text(encoding="utf-8"))
-    return {
-        f"world_to_map.{key}": float(value)
-        for key, value in document["world_to_map"].items()
-    }
-
-
 def _devkit_domain(context) -> int:
     """`autodrive_devkit_domain` as an int 0-101 that differs from this
     launch's own ROS domain, or a RuntimeError naming the argument.
@@ -137,22 +123,11 @@ def _check_autodrive(context, vehicle: str, bridge: str) -> None:
 
     The capabilities it lacks (time scaling, a held start) are refused, not
     ignored: a run that quietly drops `time_scale:=2` measures something else.
-    The build has two car files (the base and the fast caps) and one active
-    track, so no other is offered.
+    The vehicle and the scenario are `autodrive.check`'s.
     """
     if bridge == "official":
         _devkit_domain(context)
-    if Path(vehicle).stem not in AUTODRIVE_VEHICLES:
-        raise RuntimeError(
-            "simulator:=autodrive runs vehicle "
-            f"{' or '.join(AUTODRIVE_VEHICLES)} only, not {vehicle}"
-        )
-    scenario = LaunchConfiguration("scenario").perform(context)
-    if Path(scenario).stem != AUTODRIVE_SCENARIO:
-        raise RuntimeError(
-            f"simulator:=autodrive runs scenario {AUTODRIVE_SCENARIO} only "
-            f"(the build has one active track), not {scenario}"
-        )
+    autodrive.check(vehicle, LaunchConfiguration("scenario").perform(context))
     if LaunchConfiguration("start_held").perform(context).lower() in (
         "true",
         "1",
@@ -321,7 +296,7 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
             parameters=[
                 AUTODRIVE_SERVER_CONFIG,
                 {
-                    **_world_to_map(),
+                    **world_to_map(),
                     "track_path": tracks["racing_safety_supervisor"][
                         "track_path"
                     ],
@@ -335,19 +310,9 @@ def _launch_nodes(context, robot_description: str, rviz_config: str):
             package="racing_sim_autodrive",
             executable="racing_sim_autodrive_server",
             name="racing_sim",
-            parameters=[
-                AUTODRIVE_SERVER_CONFIG,
-                {
-                    **_world_to_map(),
-                    "track_path": tracks["racing_safety_supervisor"][
-                        "track_path"
-                    ],
-                    "scenario_id": AUTODRIVE_SCENARIO,
-                    "port": int(
-                        LaunchConfiguration("autodrive_port").perform(context)
-                    ),
-                },
-            ],
+            parameters=autodrive.server_parameters(
+                tracks, LaunchConfiguration("autodrive_port").perform(context)
+            ),
         )
     support_node = Node(
         package="racing_bringup",

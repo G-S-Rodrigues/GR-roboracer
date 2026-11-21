@@ -9,6 +9,7 @@ REPOSITORY_ROOT = PACKAGE_ROOT.parents[2]
 LOCALIZATION = REPOSITORY_ROOT / "config" / "localization"
 FILE_64 = LOCALIZATION / "slam_toolbox_online.yaml"
 FILE_1080 = LOCALIZATION / "slam_toolbox_online_1080.yaml"
+FILE_LOCALIZATION_1080 = LOCALIZATION / "slam_toolbox_localization_1080.yaml"
 
 # The 64-beam file's keys on origin/main, copied here so the test reads no git.
 KEYS_64 = {
@@ -48,6 +49,18 @@ FRAME_KEYS = (
     "use_sim_time",
     "mode",
 )
+# The keys the localization file shares with the online 1080 file it loads a
+# graph from: the scan it reads, the frames it names, the grid resolution and
+# the matcher's 1080-beam angle step.
+SHARED_KEYS_LOCALIZATION_1080 = (
+    "scan_topic",
+    "max_laser_range",
+    "odom_frame",
+    "map_frame",
+    "base_frame",
+    "resolution",
+    "coarse_angle_resolution",
+)
 
 
 def _parameters(path: Path) -> dict:
@@ -83,3 +96,24 @@ def test_bringup_1820_the_1080_file_differs_by_its_measured_keys() -> None:
 
     for key in FRAME_KEYS:
         assert small[key] == large[key], key
+
+
+def test_bringup_1997_the_1080_localization_file_matches_online() -> None:
+    """BRINGUP-1997: the 1080-beam localization file runs slam_toolbox in
+    localization mode, starting at the graph's first node, on the online 1080
+    file's scan, frames and resolution.
+
+    Shared keys: scan_topic, max_laser_range, odom_frame, map_frame,
+    base_frame, resolution and coarse_angle_resolution. It names no
+    map_file_name: slam.launch.py passes the graph as `map:=`.
+    """
+    assert FILE_LOCALIZATION_1080.is_file(), FILE_LOCALIZATION_1080
+    online = _parameters(FILE_1080)
+    localization = _parameters(FILE_LOCALIZATION_1080)
+
+    assert localization["mode"] == "localization"
+    assert localization["map_start_at_dock"] is True
+    assert "map_file_name" not in localization
+
+    for key in SHARED_KEYS_LOCALIZATION_1080:
+        assert localization[key] == online[key], key

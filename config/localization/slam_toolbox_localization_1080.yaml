@@ -1,0 +1,51 @@
+# slam_toolbox localizing the 1080-beam lidar against a saved pose graph:
+# `slam.launch.py method:=slam_toolbox mode:=localization map:=<graph>`
+# starts localization_slam_toolbox_node with this file and passes the graph
+# as map_file_name, so the file names none. It is the online 1080 file
+# (`slam_toolbox_online_1080.yaml`) with mode: localization and
+# map_start_at_dock: true (the run starts at the graph's first node);
+# every other key, and the measurement beside it, is that file's.
+#
+# The graph must come from an online run (scan matcher on), serialized while
+# it runs, for example:
+#   ros2 service call /slam_toolbox/serialize_map \
+#     slam_toolbox/srv/SerializePoseGraph \
+#     "{filename: '/ws/log/maps/porto_manual'}"
+# Never a survey graph: a graph built with the matcher off has no vertices,
+# and localization_slam_toolbox_node segfaults on it
+# (slam_toolbox_online.yaml:5-9).
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: true
+    mode: localization
+    map_start_at_dock: true
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    transform_publish_period: 0.02
+    resolution: 0.05
+    # The sim reports a no-return as range_max (10.0), not inf, so the
+    # threshold has to sit below it or every no-return is taken as a hit.
+    max_laser_range: 9.5
+    # One graph node per 0.2 m or 0.1 rad: at the controller's 100 Hz this
+    # is what keeps a 10 ms scan stream out of the optimizer (Step 2), and
+    # it is dense enough that map -> odom is never stale for long.
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.1
+    minimum_time_interval: 0.0
+    map_update_interval: 5.0
+    # Odometry is trusted more than Karto's default, measured on this track
+    # (plan D7): its free matcher drifts, our /odom does not scale-drift
+    # more than ~1 % per lap.
+    correlation_search_space_dimension: 0.2
+    coarse_search_angle_offset: 0.05
+    coarse_angle_resolution: 0.0035  # sweep 2026-10-30: 0.0087 -> 0.0035 cut ATE 8.17 -> 1.23 m (seed 42), 6.93 -> 0.88 m (seed 7); 0.005: 1.42/1.22, 0.0017: 7.36/5.74
+    distance_variance_penalty: 0.05
+    angle_variance_penalty: 0.05
+    minimum_angle_penalty: 0.3
+    minimum_distance_penalty: 0.2
+    scan_buffer_size: 30
+    scan_buffer_maximum_scan_distance: 15.0
+    do_loop_closing: true
+    stack_size_to_use: 40000000
