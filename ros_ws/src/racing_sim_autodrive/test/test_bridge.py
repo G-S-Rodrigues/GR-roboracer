@@ -773,6 +773,11 @@ def test_simad_1550_reset_requested_while_reversing_waits_for_the_reset():
     lap += 0.004
     step = feed(PROBE_HOLD[1], lap)  # and dead reckoning is back
     assert not session.awaiting_reset
+    assert step.speed is not None  # the wheels' displacement is integrated
+    assert (step.odometry.x, step.odometry.y) != (
+        step.ground_truth.x,
+        step.ground_truth.y,
+    )  # no longer re-anchored to the truth
 
 
 def test_simad_1550_reverse_after_the_reset_does_not_keep_waiting():
@@ -798,5 +803,29 @@ def test_simad_1550_reverse_after_the_reset_does_not_keep_waiting():
     angle -= REVERSE_STEP
     lap += REVERSE_DT
     step = feed(angle, lap)  # the first running frame, still reversing
+    assert not session.awaiting_reset
+    assert step.odometry.x == step.ground_truth.x
+
+
+def test_simad_1550_the_encoders_alone_mark_the_reset_as_seen():
+    """SIMAD-1550c: the lap clock is debug-only on a race car (gotcha 49), so
+    the encoders must be enough. The reset frame keeps the lap clock rising
+    (angles to -0.0295, lap +0.02), so only `core.encoders_reset` can mark
+    the reset as seen: the session is still awaiting on that frame and has
+    resumed on the next."""
+    session, state, feed = _probe_reset_session()
+    angle = state["frame"].encoder_angles[0]
+    lap = state["frame"].lap_time
+    session.request_reset()
+    for _ in range(4):
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        feed(angle, lap)
+    assert session.awaiting_reset
+    lap += 0.02
+    feed(PROBE_RESET, lap)  # the reset frame, the lap clock still rising
+    assert session.awaiting_reset
+    lap += 0.02
+    step = feed(PROBE_RESET - REVERSE_STEP, lap)
     assert not session.awaiting_reset
     assert step.odometry.x == step.ground_truth.x
