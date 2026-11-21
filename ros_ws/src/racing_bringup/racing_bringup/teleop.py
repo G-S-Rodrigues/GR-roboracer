@@ -95,7 +95,8 @@ CAPS = (
 
 def load(path) -> Limits:
     """Limits from a ROS parameter file under `racing_bringup_teleop`;
-    a missing or unknown key raises, naming it."""
+    a missing or unknown key, a non-float, a non-finite or a non-positive
+    value (max_reverse_speed may be 0) raises, naming it."""
     with open(path, encoding="utf-8") as stream:
         document = yaml.safe_load(stream)
     try:
@@ -111,7 +112,20 @@ def load(path) -> Limits:
     for name in values:
         if name not in names:
             raise RuntimeError(f"{path}: unknown key {name}")
-    return Limits(**{name: float(values[name]) for name in names})
+    for name in names:
+        value = values[name]
+        if not isinstance(value, float):
+            raise RuntimeError(
+                f"{path}: {name}={value!r} is not a float; write 1.0, "
+                "not 1 (the node's parameters are DOUBLE)"
+            )
+        if not math.isfinite(value):
+            raise RuntimeError(f"{path}: {name}={value} is not finite")
+        floor_ok = value >= 0.0 if name == "max_reverse_speed" else value > 0.0
+        if not floor_ok:
+            need = ">= 0" if name == "max_reverse_speed" else "> 0"
+            raise RuntimeError(f"{path}: {name}={value} must be {need}")
+    return Limits(**{name: values[name] for name in names})
 
 
 def check_caps(limits: Limits, vehicle_path) -> None:

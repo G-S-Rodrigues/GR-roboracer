@@ -173,6 +173,34 @@ def test_bringup_1999_a_missing_or_extra_key_is_refused_by_name(
 
 
 @pytest.mark.parametrize(
+    ("key", "value", "match"),
+    [
+        ("max_speed", float("nan"), "max_speed"),
+        ("deceleration", -0.8, "deceleration"),
+        ("acceleration", 1, "write 1.0"),
+        ("rate_hz", 0.0, "rate_hz"),
+        ("max_reverse_speed", -0.1, "max_reverse_speed"),
+    ],
+)
+def test_bringup_1999_a_non_finite_wrong_type_or_non_positive_limit_is_refused(
+    tmp_path: Path, key: str, value: float, match: str
+) -> None:
+    """BRINGUP-1999: load refuses nan, a non-positive value (a negative
+    max_reverse_speed; zero is allowed there only) and an integer, which the
+    node's DOUBLE parameter would reject at start, naming the key."""
+    with pytest.raises(RuntimeError, match=match):
+        teleop.load(_write(tmp_path, **{key: value}))
+
+
+def test_bringup_1999_a_zero_max_reverse_speed_is_allowed(
+    tmp_path: Path,
+) -> None:
+    """BRINGUP-1999: max_reverse_speed 0.0 (no reverse) loads."""
+    limits = teleop.load(_write(tmp_path, max_reverse_speed=0.0))
+    assert limits.max_reverse_speed == 0.0
+
+
+@pytest.mark.parametrize(
     ("key", "value", "cap"),
     [
         ("max_speed", 5.0, "maximum_speed"),
