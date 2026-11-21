@@ -164,6 +164,7 @@ LAUNCH_FILE = Path(__file__).parents[1] / "launch" / "slam.launch.py"
 ONLINE_1080 = "config/localization/slam_toolbox_online_1080.yaml"
 LOCALIZATION_1080 = "config/localization/slam_toolbox_localization_1080.yaml"
 MOLA_LOCALIZATION = "config/localization/mola_lidar2d.yaml"
+TELEOP_CONFIG = "config/teleop/autodrive_keyboard.yaml"
 PORTO_TRACK = (
     REPOSITORY_ROOT / "third_party" / "GR-roboracer-data" / "tracks" / "Porto"
 )
@@ -273,7 +274,11 @@ def test_bringup_1990_every_argument_is_described_with_its_choices(
     """BRINGUP-1990: `ros2 launch racing_bringup slam.launch.py -s` lists
     every argument with a description; method, mode and visualization offer
     exactly slam.METHODS, slam.MODES and visualization.VIEWERS; the defaults
-    map with slam_toolbox, on the AutoDRIVE car, at the bridge's port."""
+    map with slam_toolbox, on the AutoDRIVE car, at the bridge's port; `drive`
+    offers exactly drive.DRIVES (window by default) and `teleop_config` names
+    the committed keyboard limits."""
+    from racing_bringup import drive
+
     declared = _declared(_module())
     assert set(declared) == {
         "method",
@@ -284,6 +289,8 @@ def test_bringup_1990_every_argument_is_described_with_its_choices(
         "vehicle",
         "port",
         "visualization",
+        "drive",
+        "teleop_config",
     }
     for name, argument in declared.items():
         assert argument.description.strip(), name
@@ -293,6 +300,7 @@ def test_bringup_1990_every_argument_is_described_with_its_choices(
     assert list(declared["visualization"].choices) == list(
         visualization.VIEWERS
     )
+    assert list(declared["drive"].choices) == list(drive.DRIVES)
     assert "Manual" in declared["method"].description
     defaults = {name: _default(a) for name, a in declared.items()}
     assert defaults == {
@@ -304,6 +312,8 @@ def test_bringup_1990_every_argument_is_described_with_its_choices(
         "vehicle": "config/vehicles/autodrive_roboracer.yaml",
         "port": autodrive.AUTODRIVE_PORT,
         "visualization": "rviz",
+        "drive": "window",
+        "teleop_config": TELEOP_CONFIG,
     }
 
 
@@ -539,8 +549,9 @@ def test_bringup_1995_slam_rviz_shows_both_methods_maps() -> None:
         {"mode": "localization"},
         {"method": "mola"},
         {"method": "mola", "mode": "localization"},
+        {"drive": "teleop"},
     ],
-    ids=["slam_toolbox", "slam_toolbox_loc", "mola", "mola_loc"],
+    ids=["slam_toolbox", "slam_toolbox_loc", "mola", "mola_loc", "teleop"],
 )
 def test_bringup_1996_every_node_runs_on_wall_time(
     _repository_root, tmp_path: Path, arguments: dict
@@ -562,3 +573,68 @@ def test_bringup_1996_every_node_runs_on_wall_time(
         )
     if arguments.get("method") == "mola":
         assert _include_arguments(actions)["use_sim_time"] == "False"
+
+
+def test_bringup_2000_the_default_drive_starts_no_teleop_node(
+    _repository_root,
+) -> None:
+    """BRINGUP-2000: `drive:=window` (the default) starts no
+    racing_bringup_teleop, and BRINGUP-1992's set is unchanged."""
+    _, actions = _launched()
+    assert ("racing_bringup", "racing_bringup_teleop") not in _started(
+        _nodes(actions)
+    )
+    _, actions = _launched(drive="window")
+    assert len(_nodes(actions)) == 4
+
+
+def test_bringup_2000_drive_teleop_adds_exactly_the_teleop_node(
+    _repository_root,
+) -> None:
+    """BRINGUP-2000: `drive:=teleop` adds exactly one racing_bringup_teleop
+    with the keyboard limits as its parameter file; still no support node,
+    controller or supervisor."""
+    _, actions = _launched(drive="teleop")
+    nodes = _nodes(actions)
+    started = _started(nodes)
+    assert started - _started(_nodes(_launched()[1])) == {
+        ("racing_bringup", "racing_bringup_teleop")
+    }
+    assert ("racing_bringup", "racing_bringup_support") not in started
+    packages = {n._Node__package for n in nodes}
+    assert not packages & {
+        "racing_controller_baseline",
+        "racing_safety_supervisor",
+    }
+    (teleop_node,) = [
+        n for n in nodes if n._Node__node_executable == "racing_bringup_teleop"
+    ]
+    assert _parameter_files(teleop_node) == [TELEOP_CONFIG]
+    assert teleop_node._Node__node_name == "racing_bringup_teleop"
+
+
+def test_bringup_2000_an_unknown_drive_is_refused_by_name(
+    _repository_root,
+) -> None:
+    """BRINGUP-2000: `drive:=joystick` is refused by the declared choices
+    before the OpaqueFunction runs."""
+    argument = _declared(_module())["drive"]
+    context = LaunchContext()
+    context.launch_configurations["drive"] = "joystick"
+    with pytest.raises(RuntimeError, match="joystick"):
+        argument.execute(context)
+
+
+def test_bringup_2000_teleop_limits_above_the_vehicle_caps_are_refused(
+    _repository_root, tmp_path: Path
+) -> None:
+    """BRINGUP-2000: a teleop_config with max_speed 5.0 is refused by
+    check_caps for the default vehicle, naming the key."""
+    document = yaml.safe_load(
+        (REPOSITORY_ROOT / TELEOP_CONFIG).read_text(encoding="utf-8")
+    )
+    document["racing_bringup_teleop"]["ros__parameters"]["max_speed"] = 5.0
+    fast = tmp_path / "fast.yaml"
+    fast.write_text(yaml.safe_dump(document), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="max_speed"):
+        _launched(drive="teleop", teleop_config=str(fast))
