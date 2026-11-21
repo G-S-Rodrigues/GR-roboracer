@@ -597,6 +597,7 @@ def test_bringup_2000_drive_teleop_adds_exactly_the_teleop_node(
     _, actions = _launched(drive="teleop")
     nodes = _nodes(actions)
     started = _started(nodes)
+    assert _started(_nodes(_launched()[1])) <= started
     assert started - _started(_nodes(_launched()[1])) == {
         ("racing_bringup", "racing_bringup_teleop")
     }
