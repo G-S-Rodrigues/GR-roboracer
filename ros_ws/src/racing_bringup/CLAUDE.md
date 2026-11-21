@@ -1,7 +1,7 @@
 # racing_bringup
 
-Launch files and the one support node the slice needs but no other package owns (Python: ROS-only
-scaffolding, kept out of `racing_common`).
+Launch files, the support node the slice needs but no other package owns, and the hand-driving
+node (Python: ROS-only scaffolding, kept out of `racing_common`).
 
 ## Contract
 
@@ -11,6 +11,9 @@ an estimator it stops broadcasting `map -> odom` (`publish_map_to_odom: false`) 
 `composed_odometry_topic` = latest `map -> odom` o `/odom` in `map`, which the controller drives on
 (BRINGUP-1040, BRINGUP-2010). `amcl` starts `nav2_map_server` on the scenario's grid (BRINGUP-1060)
 and takes its start pose from `initial_pose_topic` (BRINGUP-2020).
+
+`teleop_node.py` (`drive:=teleop`): `/key_vel` to a rate-limited `/drive`, limits in `config/teleop/`;
+it owns SIGINT, zeroing `/drive` on exit, not on a whole-launch Ctrl+C (BRINGUP-1998..2001).
 
 ## Running it
 

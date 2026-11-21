@@ -4,7 +4,10 @@
 angle in rad (racing_bringup.teleop). The node owns /drive: nothing else
 runs under `slam.launch.py drive:=teleop`. The AutoDRIVE server keeps the last
 /drive forever, so a dead node leaves the car driving (gotcha #41); the node
-therefore publishes zero on shutdown. A SIGKILL cannot be covered.
+therefore publishes zero on shutdown. That covers this node stopping (a
+crash, or a kill of the node alone), not a whole-launch Ctrl+C, which races
+the server: `ros2 launch` signals every process at once and the server may
+close before this zero reaches it. A SIGKILL cannot be covered either.
 """
 
 import contextlib
