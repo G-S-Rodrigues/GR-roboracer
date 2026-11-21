@@ -60,7 +60,8 @@ _LOG = logging.getLogger(__name__)
 # before it logs an ERROR and gives control back. Read off the fixture: the
 # recorded sim was answered `Reset True` for 59 consecutive replies, so the
 # reset takes at least that many frames to be taken seriously, and the
-# handshake here detects its effect (lap clock stops or encoders fall) 11
+# handshake here detects its effect (the lap clock stops or the encoders
+# reset into the band, `core.encoders_reset`) 11
 # frames after the first True in the recording. 120 frames is about twice
 # the longest recorded True run and ten times the detection, so a slow
 # reset is not cut short while a reset the sim ignored (one True may not

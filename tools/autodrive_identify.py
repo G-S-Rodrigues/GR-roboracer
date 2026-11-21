@@ -388,8 +388,9 @@ def wheel_speed(prev: Sample, cur: Sample, wheel_radius: float) -> float | None:
     None when either frame has no angles, when the lap-time delta is not
     positive (a lap-line reset) or when either wheel's angle went backwards
     (the encoders zero on a reset). A forward-only copy: it agrees with
-    `racing_sim_autodrive.core.encoder_speed` on every recorded pair because
-    none reverses (CHECK-2605 holds them equal there); aligning it is a later
+    `racing_sim_autodrive.core.encoder_speed` on every pair of the porto
+    fixture and the identification recordings, none of which reverses
+    (CHECK-2605 holds them equal on the porto fixture); aligning it is a later
     identification regeneration. This file is a uv script with no overlay.
     """
     if prev.wheel_angles is None or cur.wheel_angles is None:
