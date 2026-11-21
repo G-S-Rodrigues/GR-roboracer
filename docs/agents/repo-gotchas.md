@@ -65,10 +65,11 @@ Traps any task in this repository can hit. Each one cost real time at least once
     follows the same rule (`docker/gpu-apt-pins.txt`, CHECK-1910/1920), and the trap was measured:
     unversioned `cuda-toolkit-config-common` resolved to 13.4.92 on 2026-10-25.
     Second occurrence, 2026-11-20: packages.ros.org dropped MOLA 3.3.0 for 3.4.0, and mola.pref's `-1`
-    catch-all failed "Build the dev image" on every run, as designed (#109). The pinned closure is now served
-    from the dated `snapshots.ros.org/jazzy/2026-10-05` source at `-1` (CHECK-1881/1882); only the 1001
-    by-name pins select from it. The snapshot's signing key expires **2027-06-01**: then `apt-get update`
-    fails in every image build. Re-export the same fingerprint into `docker/apt-sources/ros-snapshots.asc`
+    catch-all failed "Build the dev image" on every run, as designed (#109). 50 of the closure's 52 packages
+    now come from the dated `snapshots.ros.org/jazzy/2026-10-05` source at `-1` (CHECK-1881/1882); only the
+    1001 by-name pins select from it. `mola-common` and `mrpt-msgs` (same upstream version, newer rebuild)
+    come from the live packages.ros.org index (`third_party/NOTICE.md`). The snapshot's signing key
+    expires **2027-06-01**: then `apt-get update` fails in every image build. Re-export the same fingerprint into `docker/apt-sources/ros-snapshots.asc`
     (CHECK-1882 pins the fingerprint, not the expiry, and warns under 120 days).
 
 48. **A lock file in `/tmp` is not shared between the host and a container.** Each has its own `/tmp`, so
