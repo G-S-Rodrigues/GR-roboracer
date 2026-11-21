@@ -33,6 +33,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # the catch-all stanza fails the build rather than let a newer version in.
 COPY docker/apt-preferences/mola.pref /etc/apt/preferences.d/mola.pref
 
+# packages.ros.org dropped MOLA 3.3.0, so the pinned closure is served from a
+# dated ROS snapshot at priority -1 (#109, CHECK-1881/1882).
+COPY docker/apt-sources/ros-snapshots.sources /etc/apt/sources.list.d/ros-snapshots.sources
+COPY docker/apt-sources/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+COPY docker/apt-preferences/ros-snapshots.pref /etc/apt/preferences.d/ros-snapshots.pref
+
 # ros-jazzy-asio-cmake-module is listed explicitly because rosdep does NOT
 # resolve it: it is a transitive export dependency of serial_driver, and
 # vesc_driver fails to configure without it.

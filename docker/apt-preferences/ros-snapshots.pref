@@ -1,0 +1,7 @@
+# The snapshot supplies only the versions mola.pref's 1001 by-name stanzas
+# select (#109). Kept out of mola.pref: CHECK-1880 wants its last stanza to
+# be the catch-all. Pin on the origin hostname, never `release o=ROS`
+# (packages.ros.org is Origin ROS too).
+Package: *
+Pin: origin "snapshots.ros.org"
+Pin-Priority: -1
