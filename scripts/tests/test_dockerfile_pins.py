@@ -7,7 +7,10 @@ reproducibility, E2).
 
 from __future__ import annotations
 
+import datetime
 import re
+import subprocess
+import warnings
 from pathlib import Path
 
 from scripts.dockerfile_parse import instructions as _instructions
@@ -210,3 +213,111 @@ def test_check_1880_mola_closure_is_pinned_by_name() -> None:
         for n in sorted(pinned.keys() - closure.keys())
     ]
     assert not problems, "; ".join(problems)
+
+
+SOURCES_DIR = REPO_ROOT / "docker" / "apt-sources"
+# The ROS snapshot builder key, as OSRF's official ROS images fetch it
+# (osrf/docker_images, ros/<distro>/ubuntu/<codename>/ros-core/Dockerfile).
+ROS_SNAPSHOT_KEY_FPR = "4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA"
+SNAPSHOT_COPIES = {
+    "ros-snapshots.sources": "/etc/apt/sources.list.d/",
+    "ros-snapshots.asc": "/usr/share/keyrings/",
+    "ros-snapshots.pref": "/etc/apt/preferences.d/",
+}
+
+
+def test_check_1881_snapshot_source_is_dated_signed_and_pinned_out() -> None:
+    """CHECK-1881 (#109): the base stage COPYs the ROS snapshot source, its
+    key and its origin pin before the RUN that installs
+    ros-jazzy-mola-lidar-odometry; the source is a dated snapshot (never
+    `final` or a moving name), `noble main`, Signed-By the copied key; the
+    pin file is exactly one `*` stanza on that origin at -1, so the snapshot
+    supplies only what mola.pref's 1001 by-name pins select."""
+    install = None
+    copies: dict[str, int] = {}
+    for number, text in _instructions():
+        if text.startswith("RUN ") and "ros-jazzy-mola-lidar-odometry" in text:
+            install = number
+        if text.startswith("COPY "):
+            for name, target in SNAPSHOT_COPIES.items():
+                if name in text:
+                    assert target in text, text
+                    copies[name] = number
+    assert install, "no RUN installs ros-jazzy-mola-lidar-odometry"
+    missing = sorted(SNAPSHOT_COPIES.keys() - copies.keys())
+    assert not missing, f"not COPY'd into the image: {missing}"
+    late = sorted(n for n, line in copies.items() if line > install)
+    assert not late, f"COPY'd after the install: {late}"
+
+    source = SOURCES_DIR / "ros-snapshots.sources"
+    fields = {
+        k.strip(): v.strip()
+        for k, _, v in (
+            line.partition(":")
+            for line in source.read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        )
+    }
+    assert set(fields) == {
+        "Types",
+        "URIs",
+        "Suites",
+        "Components",
+        "Signed-By",
+    }, fields
+    assert fields["Types"] == "deb"
+    assert fields["Suites"] == "noble"
+    assert fields["Components"] == "main"
+    uri = re.fullmatch(
+        r"http://(snapshots\.ros\.org)/jazzy/\d{4}-\d{2}-\d{2}/ubuntu",
+        fields["URIs"],
+    )
+    assert uri, f"not a dated snapshot URI: {fields['URIs']!r}"
+    assert fields["Signed-By"] == "/usr/share/keyrings/ros-snapshots.asc"
+
+    stanzas = _stanzas(APT_DIR / "ros-snapshots.pref")
+    assert stanzas == [
+        {
+            "Package": "*",
+            "Pin": f'origin "{uri.group(1)}"',
+            "Pin-Priority": "-1",
+        }
+    ], stanzas
+
+
+def test_check_1882_snapshot_key_is_the_ros_snapshot_builder(
+    tmp_path: Path,
+) -> None:
+    """CHECK-1882 (#109): the committed key holds exactly one primary key and
+    its fingerprint is ROS_SNAPSHOT_KEY_FPR (the subkey's own fpr must not
+    count). The expiry is not asserted (a calendar date would red every PR);
+    a key within 120 days of expiring warns."""
+    key = SOURCES_DIR / "ros-snapshots.asc"
+    assert key.is_file(), f"{key} is missing"
+    out = subprocess.run(
+        ["gpg", "--batch", "--show-keys", "--with-colons", str(key)],
+        env={"GNUPGHOME": str(tmp_path), "PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    records = [line.split(":") for line in out.splitlines()]
+    pubs = [i for i, r in enumerate(records) if r[0] == "pub"]
+    assert len(pubs) == 1, f"{len(pubs)} primary keys"
+    after = records[pubs[0] + 1]
+    assert after[0] == "fpr", after
+    assert after[9] == ROS_SNAPSHOT_KEY_FPR, after[9]
+    expires = records[pubs[0]][6]
+    if expires:
+        left = (
+            datetime.datetime.fromtimestamp(
+                int(expires), datetime.timezone.utc
+            )
+            - datetime.datetime.now(datetime.timezone.utc)
+        ).days
+        if left < 120:
+            warnings.warn(
+                f"ROS snapshot key expires in {left} days: re-export "
+                f"{ROS_SNAPSHOT_KEY_FPR} (gotcha #27)",
+                stacklevel=1,
+            )
