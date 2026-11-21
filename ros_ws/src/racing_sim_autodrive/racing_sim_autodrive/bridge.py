@@ -20,10 +20,10 @@ integrate over is `dt_source`:
 Either way a missing dt means feedforward plus the held integral, never a
 guessed step.
 
-Reversing: any backward wheel motion makes `core.encoder_speed` None, so
-while the car backs up the throttle is feedforward plus the held integral and
-`/odom` holds its pose with `vx = 0`. That is acceptable for racing (the car
-does not reverse) and is not fixed here.
+Reversing: while the car backs up the encoder speed is negative, `/odom`
+integrates it and the throttle loop closes on it. A reset is recognised by
+both encoders falling into a band around 0 (`core.encoders_reset`), never by
+a backward step alone.
 """
 
 from __future__ import annotations
