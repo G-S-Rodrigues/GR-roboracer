@@ -18,6 +18,8 @@ from racing_common import CartesianPose as Pose2D
 from racing_sim_autodrive.lidar import decode_lidar
 
 __all__ = [
+    "RESET_BAND",
+    "RESET_MIN_DROP",
     "FrameError",
     "Pose2D",
     "Counters",
@@ -26,6 +28,7 @@ __all__ = [
     "counters",
     "decode_frame",
     "encoder_speed",
+    "encoders_reset",
     "frame_from_devkit",
     "frame_pose",
     "rear_axle_to_cog",
@@ -195,25 +198,48 @@ def sim_dt(prev: SimFrame, cur: SimFrame) -> float | None:
     return None
 
 
+# A reset of the 2026-iros-practice build moves both encoder angles from far
+# out into a band around 0 in one frame. Measured over 54 recorded resets
+# (fixture, identification, lateral, corner-sweep, the reverse probe): the
+# smallest drop is 12.59 rad, the largest landing 0.612 rad (throttle held
+# through the reset); the largest backward step of driving is 0.419 rad
+# (0.5 m/s reverse), 1.23 rad for the teleop's 0.5 m/s cap over a 145 ms
+# frame (gotcha 31). Plan 2026-11-21-autodrive-reverse-odom-tdd.md, Finding 1.
+RESET_BAND = 1.5  # rad: |angle| after a reset
+RESET_MIN_DROP = 4.0  # rad: fall of each wheel on the reset frame
+
+
+def encoders_reset(prev: SimFrame, cur: SimFrame) -> bool:
+    """The sim reset the encoders: both angles fell by at least
+    RESET_MIN_DROP in one frame and landed within RESET_BAND of 0. A wheel
+    turning backward lowers its angle by far less per frame (WheelEncoder.cs
+    integrates the signed Wheel.rpm, AutoDRIVE@75b7df5); turning forward
+    raises it. Reads only `encoder_angles`."""
+    return all(
+        abs(c) <= RESET_BAND and p - c >= RESET_MIN_DROP
+        for p, c in zip(prev.encoder_angles, cur.encoder_angles, strict=True)
+    )
+
+
 def encoder_speed(
     prev: SimFrame, cur: SimFrame, wheel_radius: float, dt: float | None
 ) -> float | None:
-    """Mean wheel speed from the encoder angle deltas, m/s.
+    """Mean wheel speed from the encoder angle deltas, m/s, signed: negative
+    while the wheels turn backward.
 
     Raises ValueError on a wheel radius <= 0. None when dt is missing or not
-    positive, or when either wheel's angle went backwards (the encoders zero
-    on a reset): never a negative speed.
+    positive, or on a reset (`encoders_reset`).
     """
     if not wheel_radius > 0.0:
         raise ValueError(f"wheel_radius must be > 0, got {wheel_radius}")
     if dt is None or not dt > 0.0:
         return None
+    if encoders_reset(prev, cur):
+        return None
     deltas = [
         c - p
         for p, c in zip(prev.encoder_angles, cur.encoder_angles, strict=True)
     ]
-    if any(d < 0.0 for d in deltas):
-        return None
     return sum(deltas) / len(deltas) * wheel_radius / dt
 
 

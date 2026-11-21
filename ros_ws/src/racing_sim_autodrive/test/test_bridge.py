@@ -11,6 +11,7 @@ radius 0.059, throttle gain 24.859772, max steering 0.523633. kp/ki are
 UNTUNED test values (no gains exist yet; tuning is part 10).
 """
 
+import dataclasses
 import math
 import re
 from pathlib import Path
@@ -24,6 +25,7 @@ from racing_sim_autodrive import bridge, control, core, replay
 
 REPO = Path(__file__).resolve().parents[4]
 FIXTURE = Path(__file__).parent / "fixtures" / "porto_stream.jsonl.gz"
+REVERSE = Path(__file__).parent / "fixtures" / "reverse_stream.jsonl.gz"
 PORTO = REPO / "config" / "tracks" / "porto.yaml"
 
 VEHICLE = bridge.VehicleValues(
@@ -575,3 +577,130 @@ def test_simad_1400_on_frame_is_decode_plus_on_sim_frame(raws):
         }, k
         fired += b.reset
     assert fired == 1
+
+
+REVERSE_STEP = 0.15  # rad per synthetic frame, both wheels falling
+REVERSE_DT = 0.02  # s of sim (and receive) time per synthetic frame
+
+
+def _reverse_frames(count, start=None):
+    """Fixture rest frames (sim frames 1-36, t < 2 s: nothing driven yet),
+    then `count` synthetic frames copied from the last one with both angles
+    falling REVERSE_STEP per frame, the lap clock +REVERSE_DT and no yaw
+    rate: [(frame, received_at)]."""
+    rest = [
+        (core.decode_frame(raw), t)
+        for t, raw in replay.load_frames(FIXTURE)[1:37]
+    ]
+    frames = list(rest)
+    last, t = rest[-1]
+    angle = last.encoder_angles[0]
+    lap = last.lap_time
+    for _ in range(count):
+        angle -= REVERSE_STEP
+        lap += REVERSE_DT
+        t += REVERSE_DT
+        last = dataclasses.replace(
+            last,
+            encoder_angles=(angle, angle),
+            lap_time=lap,
+            angular_velocity=(0.0, 0.0, 0.0),
+        )
+        frames.append((last, t))
+    return frames, len(rest)
+
+
+@pytest.mark.parametrize("dt_source", ["lap_time", "receipt"])
+def test_simad_1530_odometry_follows_reverse_motion(dt_source):
+    """SIMAD-1530: wheels turning backward move /odom backward along its
+    heading by delta * r per frame and publish vx < 0 (the angles go
+    negative from frame 1, so this also reverses out of the encoder
+    origin)."""
+    frames, rest = _reverse_frames(50)
+    session = _session(dt_source=dt_source)
+    steps = [session.on_sim_frame(f, None, received_at=t) for f, t in frames]
+    per_frame = REVERSE_STEP * VEHICLE.wheel_radius
+    for before, after in zip(steps[rest - 1 :], steps[rest:], strict=False):
+        yaw = before.odometry.yaw
+        along = (after.odometry.x - before.odometry.x) * math.cos(yaw) + (
+            after.odometry.y - before.odometry.y
+        ) * math.sin(yaw)
+        assert along == pytest.approx(-per_frame, abs=1e-9)
+        assert after.odometry.vx == pytest.approx(
+            -per_frame / REVERSE_DT, abs=1e-9
+        )
+        assert after.speed < 0.0
+
+
+def test_simad_1540_reverse_throttle_is_closed_loop():
+    """SIMAD-1540: with a reverse request the loop runs on the signed speed:
+    the integral moves and every reply equals a hand ThrottleLoop."""
+    frames, rest = _reverse_frames(50)
+    request = bridge.DriveRequest(speed=-0.5, steering_angle=0.0)
+    session = _session()
+    for f, t in frames[:rest]:
+        session.on_sim_frame(f, None, received_at=t)
+    before = session.integral
+    hand = control.ThrottleLoop(VEHICLE.throttle_gain, VEHICLE.kp, VEHICLE.ki)
+    speed = -REVERSE_STEP * VEHICLE.wheel_radius / REVERSE_DT
+    for f, t in frames[rest:]:
+        step = session.on_sim_frame(f, request, received_at=t)
+        want = hand.update(-0.5, speed, REVERSE_DT)
+        assert float(step.reply["V1 Throttle"]) == pytest.approx(want, abs=6e-5)
+    assert session.integral != before
+
+
+def _reverse_run(dt_source):
+    """(t, frame, step) for the whole reverse recording, nothing driven."""
+    session = _session(dt_source=dt_source)
+    out = []
+    for t, raw in replay.load_frames(REVERSE):
+        frame = core.decode_frame(raw)
+        out.append((t, frame, session.on_sim_frame(frame, None, t)))
+    return out
+
+
+@pytest.mark.parametrize("dt_source", ["lap_time", "receipt"])
+def test_simad_1560_recorded_reverse_odometry_has_the_sign_and_scale(
+    dt_source,
+):
+    """SIMAD-1560 (i): over the recorded reverse (V1 Throttle echo < 0 before
+    the reset, 766 frames) /odom moves backward along its start heading by
+    about the truth's travel (wheel travel 1.738 m against truth 1.691 m when
+    planned) and the speed is negative on at least 90 % of the frames. A
+    tier-1 sign-and-scale check, not a quality bound."""
+    run = _reverse_run(dt_source)
+    reverse = [
+        (f, s) for t, f, s in run if f.throttle_echo < 0.0 and t < 11.0096
+    ]
+    assert len(reverse) == 766
+    first, last = reverse[0][1], reverse[-1][1]
+    yaw = first.odometry.yaw
+    dx = last.odometry.x - first.odometry.x
+    dy = last.odometry.y - first.odometry.y
+    along = dx * math.cos(yaw) + dy * math.sin(yaw)
+    truth = math.hypot(
+        last.ground_truth.x - first.ground_truth.x,
+        last.ground_truth.y - first.ground_truth.y,
+    )
+    assert along < 0.0
+    assert 0.5 * truth <= math.hypot(dx, dy) <= 2.0 * truth
+    negative = sum(1 for _, s in reverse if s.speed is not None and s.speed < 0)
+    assert negative >= 0.9 * len(reverse)
+
+
+@pytest.mark.parametrize("dt_source", ["lap_time", "receipt"])
+def test_simad_1560_the_reset_while_reversing_is_held(dt_source):
+    """SIMAD-1560 (ii): the recorded reset frame (t 11.0096, angles
+    13.2012 -> -0.0295) is a reset: no speed and /odom moves less than 0.01
+    m across it, under both dt sources."""
+    run = _reverse_run(dt_source)
+    i = next(k for k, (t, _, _) in enumerate(run) if abs(t - 11.0096) < 1e-6)
+    before, at = run[i - 1][2], run[i][2]
+    assert at.speed is None
+    assert (
+        math.hypot(
+            at.odometry.x - before.odometry.x, at.odometry.y - before.odometry.y
+        )
+        < 0.01
+    )
